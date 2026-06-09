@@ -2,11 +2,9 @@ import { redirect } from 'next/navigation'
 
 import { Button, Card, Input, Label } from '@/components/ui'
 import { getCurrentProfile, requireUser } from '@/features/auth/server'
-import type { Industry } from '@/lib/supabase/database.types'
-
 import { completeOnboarding } from './actions'
 
-const industries: Industry[] = [
+const industries = [
   'Heavy Duty / Fleet',
   'Automotive',
   'Construction',
@@ -17,7 +15,7 @@ const industries: Industry[] = [
   'Property Management',
   'Insurance / Claims',
   'Other',
-]
+] as const
 
 interface OnboardingPageProps {
   searchParams: Promise<{ error?: string }>

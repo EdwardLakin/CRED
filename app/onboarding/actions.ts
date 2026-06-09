@@ -3,8 +3,6 @@
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/lib/supabase/server'
-import type { Industry } from '@/lib/supabase/database.types'
-
 type SafeOnboardingError = {
   code?: string
   message?: string
@@ -55,7 +53,7 @@ export async function completeOnboarding(formData: FormData) {
     redirect('/onboarding?error=Please%20complete%20all%20onboarding%20fields.')
   }
 
-  const industry = industryValue as Industry
+  const industry = industryValue
   const supabase = await createClient()
   const {
     data: { user },

@@ -1,15 +1,15 @@
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/lib/supabase/server'
-import type { Database, Industry } from '@/lib/supabase/database.types'
+import type { Database } from '@/lib/supabase/database.types'
 
 type ProfileRow = Database['public']['Tables']['profiles']['Row']
 type OrganizationRow = Database['public']['Tables']['organizations']['Row']
 type CompanyProfileRow = Database['public']['Tables']['company_profiles']['Row']
 
 export interface CurrentProfile extends ProfileRow {
-  organization: Pick<OrganizationRow, 'id' | 'name'>
-  company_profile: Pick<CompanyProfileRow, 'industry'> | null
+  organization: Pick<OrganizationRow, 'id' | 'name' | 'industry'>
+  company_profile: Pick<CompanyProfileRow, 'company_name'> | null
 }
 
 export async function getCurrentUser() {
@@ -31,8 +31,8 @@ export async function getCurrentProfile(): Promise<CurrentProfile | null> {
   const supabase = await createClient()
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('id, organization_id, full_name, role, created_at')
-    .eq('id', user.id)
+    .select('id, user_id, organization_id, full_name, role, created_at')
+    .eq('user_id', user.id)
     .maybeSingle()
 
   if (profileError || !profile) {
@@ -41,7 +41,7 @@ export async function getCurrentProfile(): Promise<CurrentProfile | null> {
 
   const { data: organization, error: organizationError } = await supabase
     .from('organizations')
-    .select('id, name')
+    .select('id, name, industry')
     .eq('id', profile.organization_id)
     .single()
 
@@ -51,18 +51,19 @@ export async function getCurrentProfile(): Promise<CurrentProfile | null> {
 
   const { data: companyProfile } = await supabase
     .from('company_profiles')
-    .select('industry')
+    .select('company_name')
     .eq('organization_id', profile.organization_id)
     .maybeSingle()
 
   return {
     id: profile.id,
+    user_id: profile.user_id,
     organization_id: profile.organization_id,
     full_name: profile.full_name,
     role: profile.role,
     created_at: profile.created_at,
     organization,
-    company_profile: companyProfile ? { industry: companyProfile.industry as Industry } : null,
+    company_profile: companyProfile,
   }
 }
 
