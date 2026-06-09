@@ -5,3 +5,5 @@ out
 .env
 tsconfig.tsbuildinfo
 npm-debug.log*
+.env.local
+supabase/.temp
