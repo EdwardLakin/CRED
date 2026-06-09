@@ -7,7 +7,7 @@ import { requireSessionWorkspace } from '@/features/sessions/data'
 
 export default async function DashboardPage() {
   const { supabase, profile } = await requireSessionWorkspace()
-  const industry = profile.company_profile?.industry ?? 'Not set'
+  const industry = profile.organization.industry || 'Not set'
   const { data: sessions, error } = await supabase
     .from('documentation_sessions')
     .select('*')

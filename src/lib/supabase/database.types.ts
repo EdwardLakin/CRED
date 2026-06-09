@@ -1,17 +1,5 @@
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[]
 
-export type Industry =
-  | 'Heavy Duty / Fleet'
-  | 'Automotive'
-  | 'Construction'
-  | 'Electrician'
-  | 'HVAC'
-  | 'Plumbing'
-  | 'Home Inspector'
-  | 'Property Management'
-  | 'Insurance / Claims'
-  | 'Other'
-
 export interface Database {
   public: {
     Tables: {
@@ -19,19 +7,19 @@ export interface Database {
         Row: {
           id: string
           name: string
-          created_by: string
+          industry: string
           created_at: string | null
         }
         Insert: {
           id?: string
           name: string
-          created_by?: string
+          industry: string
           created_at?: string | null
         }
         Update: {
           id?: string
           name?: string
-          created_by?: string
+          industry?: string
           created_at?: string | null
         }
         Relationships: []
@@ -39,13 +27,15 @@ export interface Database {
       profiles: {
         Row: {
           id: string
+          user_id: string
           organization_id: string
           full_name: string
           role: 'owner' | 'admin' | 'member'
           created_at: string | null
         }
         Insert: {
-          id: string
+          id?: string
+          user_id: string
           organization_id: string
           full_name: string
           role: 'owner' | 'admin' | 'member'
@@ -53,6 +43,7 @@ export interface Database {
         }
         Update: {
           id?: string
+          user_id?: string
           organization_id?: string
           full_name?: string
           role?: 'owner' | 'admin' | 'member'
@@ -72,19 +63,19 @@ export interface Database {
         Row: {
           id: string
           organization_id: string
-          industry: Industry
+          company_name: string
           created_at: string | null
         }
         Insert: {
           id?: string
           organization_id: string
-          industry: Industry
+          company_name: string
           created_at?: string | null
         }
         Update: {
           id?: string
           organization_id?: string
-          industry?: Industry
+          company_name?: string
           created_at?: string | null
         }
         Relationships: [

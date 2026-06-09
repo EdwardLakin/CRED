@@ -12,7 +12,7 @@ declare
   v_user_id uuid := auth.uid();
   v_full_name text := nullif(trim(p_full_name), '');
   v_company_name text := nullif(trim(p_company_name), '');
-  v_industry public.industry;
+  v_industry text := nullif(trim(p_industry), '');
   v_existing_organization_id uuid;
   v_organization_id uuid;
 begin
@@ -31,38 +31,30 @@ begin
       using errcode = '22023';
   end if;
 
-  if p_industry is null or trim(p_industry) = '' then
+  if v_industry is null then
     raise exception 'Industry is required'
       using errcode = '22023';
   end if;
 
-  begin
-    v_industry := trim(p_industry)::public.industry;
-  exception
-    when invalid_text_representation then
-      raise exception 'Industry is invalid'
-        using errcode = '22023';
-  end;
-
   select profiles.organization_id
     into v_existing_organization_id
   from public.profiles
-  where profiles.id = v_user_id
+  where profiles.user_id = v_user_id
   limit 1;
 
   if v_existing_organization_id is not null then
     return v_existing_organization_id;
   end if;
 
-  insert into public.organizations (name, created_by)
-  values (v_company_name, v_user_id)
+  insert into public.organizations (name, industry)
+  values (v_company_name, v_industry)
   returning id into v_organization_id;
 
-  insert into public.profiles (id, organization_id, full_name, role)
+  insert into public.profiles (user_id, organization_id, full_name, role)
   values (v_user_id, v_organization_id, v_full_name, 'owner');
 
-  insert into public.company_profiles (organization_id, industry)
-  values (v_organization_id, v_industry);
+  insert into public.company_profiles (organization_id, company_name)
+  values (v_organization_id, v_company_name);
 
   return v_organization_id;
 end;
