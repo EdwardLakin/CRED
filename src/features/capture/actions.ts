@@ -18,7 +18,9 @@ import {
 
 const CAPTURE_BUCKET = 'documentation-captures'
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024
+const MAX_BATCH_FILES = 10
 const FILE_TOO_LARGE_MESSAGE = 'That file is too large. Please upload an image under 15MB.'
+const BATCH_UPLOAD_ERROR_MESSAGE = 'Some files could not be uploaded. Please try again.'
 
 const ALLOWED_MIME_TYPES: Record<CaptureType, readonly string[]> = {
   photo: ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif'],
@@ -43,9 +45,34 @@ type CaptureActionSuccess = {
   sessionId: string
 }
 
+type UploadedCapture = {
+  storagePath: string
+  captureItemId?: string
+}
+
+type SafeFailureDetails = {
+  step: string
+  fileIndex: number
+  code?: string
+  message?: string
+  details?: string
+  hint?: string
+}
+
 function getString(formData: FormData, field: string) {
   const value = formData.get(field)
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function getUploads(formData: FormData) {
+  const files = formData.getAll('files').filter((value): value is File => value instanceof File && value.size > 0)
+
+  if (files.length > 0) {
+    return files
+  }
+
+  const legacyFile = formData.get('file')
+  return legacyFile instanceof File && legacyFile.size > 0 ? [legacyFile] : []
 }
 
 function captureError(error: string, sessionId?: string): CaptureActionFailure {
@@ -95,11 +122,55 @@ function getCaptureMetadata(captureIntent: CaptureIntent, manualCaptureType: Cap
   }
 }
 
+function getUploadErrorMessage(errorMessage: string) {
+  const lowerMessage = errorMessage.toLowerCase()
+  const setupHint = lowerMessage.includes('bucket')
+    ? ' The documentation-captures storage bucket may not be set up yet.'
+    : ''
+  const sizeHint = lowerMessage.includes('size') || lowerMessage.includes('large') ? ` ${FILE_TOO_LARGE_MESSAGE}` : ''
+  return `Unable to upload capture.${setupHint}${sizeHint}`
+}
+
+function getSafeErrorDetails(error: unknown) {
+  if (!error || typeof error !== 'object') {
+    return { message: error instanceof Error ? error.message : String(error) }
+  }
+
+  const record = error as Record<string, unknown>
+  return {
+    code: typeof record.code === 'string' ? record.code : undefined,
+    message: typeof record.message === 'string' ? record.message : undefined,
+    details: typeof record.details === 'string' ? record.details : undefined,
+    hint: typeof record.hint === 'string' ? record.hint : undefined,
+  }
+}
+
+function logCaptureFailure(details: SafeFailureDetails) {
+  console.error('Capture batch upload failed', details)
+}
+
+async function cleanupBatch(
+  uploadedCaptures: UploadedCapture[],
+  supabase: Awaited<ReturnType<typeof requireSessionWorkspace>>['supabase'],
+) {
+  const captureItemIds = uploadedCaptures.flatMap((capture) => (capture.captureItemId ? [capture.captureItemId] : []))
+  const storagePaths = uploadedCaptures.map((capture) => capture.storagePath)
+
+  if (captureItemIds.length > 0) {
+    await supabase.from('timeline_events').delete().in('capture_item_id', captureItemIds)
+    await supabase.from('capture_items').delete().in('id', captureItemIds)
+  }
+
+  if (storagePaths.length > 0) {
+    await supabase.storage.from(CAPTURE_BUCKET).remove(storagePaths)
+  }
+}
+
 async function saveCapture(formData: FormData): Promise<CaptureActionFailure | CaptureActionSuccess> {
   const sessionId = getString(formData, 'session_id')
   const rawCaptureIntent = getString(formData, 'capture_intent') || 'auto_image'
   const rawManualCaptureType = getString(formData, 'manual_type')
-  const upload = formData.get('file')
+  const files = getUploads(formData)
 
   if (!sessionId) {
     return captureError('Missing documentation session.')
@@ -118,22 +189,34 @@ async function saveCapture(formData: FormData): Promise<CaptureActionFailure | C
 
   const captureType = captureMetadata.type
 
-  if (!(upload instanceof File) || upload.size === 0) {
-    return captureError('Choose a file to upload.', sessionId)
+  if (files.length === 0) {
+    return captureError('Choose at least one file to upload.', sessionId)
   }
 
-  const file = upload
-
-  if (file.size > MAX_FILE_SIZE_BYTES) {
-    return captureError(FILE_TOO_LARGE_MESSAGE, sessionId)
+  if (files.length > MAX_BATCH_FILES) {
+    return captureError(`Upload up to ${MAX_BATCH_FILES} files at a time.`, sessionId)
   }
 
-  if (rawCaptureIntent === 'auto_image' && !fileIsImage(file)) {
-    return captureError('Capture Evidence accepts image files only.', sessionId)
+  if (rawCaptureIntent === 'manual' && files.length > 1) {
+    return captureError('Advanced manual uploads support one file at a time.', sessionId)
   }
 
-  if (rawCaptureIntent === 'manual' && !fileHasAllowedType(file, captureType)) {
-    return captureError('That file type is not allowed for this capture.', sessionId)
+  for (const [fileIndex, file] of files.entries()) {
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      return captureError(FILE_TOO_LARGE_MESSAGE, sessionId)
+    }
+
+    if (rawCaptureIntent === 'auto_image' && !fileIsImage(file)) {
+      return captureError('Capture Evidence accepts image files only.', sessionId)
+    }
+
+    if (rawCaptureIntent === 'manual' && !fileHasAllowedType(file, captureType)) {
+      return captureError('That file type is not allowed for this capture.', sessionId)
+    }
+
+    if (file.size === 0) {
+      return captureError(`File ${fileIndex + 1} is empty. Choose another file.`, sessionId)
+    }
   }
 
   const { supabase, profile } = await requireSessionWorkspace()
@@ -148,57 +231,67 @@ async function saveCapture(formData: FormData): Promise<CaptureActionFailure | C
     return captureError('Documentation session not found.', sessionId)
   }
 
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const safeFilename = sanitizeFilename(file.name)
-  const storagePath = `organizations/${profile.organization_id}/sessions/${session.id}/captures/${timestamp}-${crypto.randomUUID()}-${safeFilename}`
+  const uploadedCaptures: UploadedCapture[] = []
 
-  const { error: uploadError } = await supabase.storage.from(CAPTURE_BUCKET).upload(storagePath, file, {
-    cacheControl: '3600',
-    contentType: file.type,
-    upsert: false,
-  })
+  for (const [fileIndex, file] of files.entries()) {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const safeFilename = sanitizeFilename(file.name)
+    const storagePath = `organizations/${profile.organization_id}/sessions/${session.id}/captures/${timestamp}-${crypto.randomUUID()}-${safeFilename}`
+    uploadedCaptures.push({ storagePath })
 
-  if (uploadError) {
-    const lowerMessage = uploadError.message.toLowerCase()
-    const setupHint = lowerMessage.includes('bucket')
-      ? ' The documentation-captures storage bucket may not be set up yet.'
-      : ''
-    const sizeHint = lowerMessage.includes('size') || lowerMessage.includes('large') ? ` ${FILE_TOO_LARGE_MESSAGE}` : ''
-    return captureError(`Unable to upload capture.${setupHint}${sizeHint}`, session.id)
-  }
+    const { error: uploadError } = await supabase.storage.from(CAPTURE_BUCKET).upload(storagePath, file, {
+      cacheControl: '3600',
+      contentType: file.type,
+      upsert: false,
+    })
 
-  const capturedAt = new Date().toISOString()
-  const { data: captureItem, error: captureErrorResult } = await supabase
-    .from('capture_items')
-    .insert({
+    if (uploadError) {
+      logCaptureFailure({ step: 'storage_upload', fileIndex, ...getSafeErrorDetails(uploadError) })
+      await cleanupBatch(uploadedCaptures, supabase)
+      const errorMessage = files.length === 1 ? getUploadErrorMessage(uploadError.message) : BATCH_UPLOAD_ERROR_MESSAGE
+      return captureError(errorMessage, session.id)
+    }
+
+    const capturedAt = new Date().toISOString()
+    const { data: captureItem, error: captureErrorResult } = await supabase
+      .from('capture_items')
+      .insert({
+        documentation_session_id: session.id,
+        organization_id: profile.organization_id,
+        type: captureType,
+        storage_path: storagePath,
+        captured_at: capturedAt,
+        ai_status: 'pending',
+        extracted_data: captureMetadata.extractedData,
+      })
+      .select('id')
+      .single()
+
+    if (captureErrorResult || !captureItem) {
+      logCaptureFailure({ step: 'capture_item_insert', fileIndex, ...getSafeErrorDetails(captureErrorResult) })
+      await cleanupBatch(uploadedCaptures, supabase)
+      const errorMessage = files.length === 1 ? captureErrorResult?.message ?? 'Unable to save capture metadata.' : BATCH_UPLOAD_ERROR_MESSAGE
+      return captureError(errorMessage, session.id)
+    }
+
+    uploadedCaptures[fileIndex].captureItemId = captureItem.id
+
+    const { error: timelineError } = await supabase.from('timeline_events').insert({
       documentation_session_id: session.id,
       organization_id: profile.organization_id,
-      type: captureType,
-      storage_path: storagePath,
-      captured_at: capturedAt,
-      ai_status: 'pending',
-      extracted_data: captureMetadata.extractedData,
+      capture_item_id: captureItem.id,
+      title: captureMetadata.timelineTitle,
+      description: captureMetadata.timelineDescription,
+      event_time: capturedAt,
+      event_type: 'capture',
     })
-    .select('id')
-    .single()
 
-  if (captureErrorResult || !captureItem) {
-    await supabase.storage.from(CAPTURE_BUCKET).remove([storagePath])
-    return captureError(captureErrorResult?.message ?? 'Unable to save capture metadata.', session.id)
-  }
-
-  const { error: timelineError } = await supabase.from('timeline_events').insert({
-    documentation_session_id: session.id,
-    organization_id: profile.organization_id,
-    capture_item_id: captureItem.id,
-    title: captureMetadata.timelineTitle,
-    description: captureMetadata.timelineDescription,
-    event_time: capturedAt,
-    event_type: 'capture',
-  })
-
-  if (timelineError) {
-    return captureError(timelineError.message, session.id)
+    if (timelineError) {
+      logCaptureFailure({ step: 'timeline_event_insert', fileIndex, ...getSafeErrorDetails(timelineError) })
+      await cleanupBatch(uploadedCaptures, supabase)
+      const errorMessage = files.length === 1 ? timelineError.message : BATCH_UPLOAD_ERROR_MESSAGE
+      return captureError(errorMessage, session.id)
+    }
   }
 
   revalidatePath('/dashboard')
