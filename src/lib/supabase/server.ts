@@ -1,4 +1,4 @@
-import { createServerClient } from '@supabase/ssr'
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
 import { getSupabaseAnonKey, getSupabaseUrl } from '@/lib/env'
@@ -7,13 +7,7 @@ import type { Database } from './database.types'
 
 export async function createClient() {
   const cookieStore = await cookies()
-
-  console.error('Supabase env diagnostic', {
-    hasUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
-    hasAnonKey: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
-    nodeEnv: process.env.NODE_ENV,
-    vercelEnv: process.env.VERCEL_ENV,
-  })
+  const requestCookies = new Map(cookieStore.getAll().map((cookie) => [cookie.name, cookie.value]))
 
   return createServerClient<Database>(
     getSupabaseUrl(),
@@ -21,21 +15,20 @@ export async function createClient() {
     {
       cookies: {
         getAll() {
-          return cookieStore.getAll()
+          return Array.from(requestCookies.entries()).map(([name, value]) => ({ name, value }))
         },
-        setAll(
-          cookiesToSet: Array<{
-            name: string
-            value: string
-            options?: Parameters<typeof cookieStore.set>[2]
-          }>,
-        ) {
+        setAll(cookiesToSet: Array<{ name: string; value: string; options: CookieOptions }>) {
+          cookiesToSet.forEach(({ name, value }) => {
+            requestCookies.set(name, value)
+          })
+
           try {
             cookiesToSet.forEach(({ name, value, options }) => {
               cookieStore.set(name, value, options)
             })
           } catch {
-            // Server Components cannot write cookies. Middleware or Route Handlers can refresh them.
+            // Server Components cannot write cookies. Server Actions and Route Handlers can,
+            // and the in-memory request cookie map above still preserves auth state for this client.
           }
         },
       },

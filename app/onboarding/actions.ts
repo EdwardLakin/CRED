@@ -2,13 +2,14 @@
 
 import { redirect } from 'next/navigation'
 
-import { requireUser } from '@/features/auth/server'
 import { createClient } from '@/lib/supabase/server'
 import type { Industry } from '@/lib/supabase/database.types'
 
 type SafeOnboardingError = {
   code?: string
   message?: string
+  details?: string
+  hint?: string
 }
 
 const ONBOARDING_ERROR_MESSAGES = {
@@ -20,11 +21,15 @@ const ONBOARDING_ERROR_MESSAGES = {
 function redirectWithOnboardingError(
   step: 'organization' | 'profile' | 'company_profile',
   error: SafeOnboardingError | null,
+  hasUser: boolean,
 ): never {
   console.error('Onboarding creation failed', {
     step,
     code: error?.code,
     message: error?.message,
+    details: error?.details,
+    hint: error?.hint,
+    hasUser,
   })
 
   redirect(`/onboarding?error=${encodeURIComponent(ONBOARDING_ERROR_MESSAGES[step])}`)
@@ -44,7 +49,6 @@ const INDUSTRIES: ReadonlySet<string> = new Set([
 ])
 
 export async function completeOnboarding(formData: FormData) {
-  const user = await requireUser()
   const fullName = String(formData.get('fullName') ?? '').trim()
   const companyName = String(formData.get('companyName') ?? '').trim()
   const industryValue = String(formData.get('industry') ?? '')
@@ -55,6 +59,20 @@ export async function completeOnboarding(formData: FormData) {
 
   const industry = industryValue as Industry
   const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  console.error('Onboarding auth diagnostic', {
+    hasUser: Boolean(user),
+    hasSessionUserId: Boolean(user?.id),
+  })
+
+  if (!user) {
+    redirect('/sign-in?message=session-expired')
+  }
+
+  const hasUser = Boolean(user)
 
   const { data: organization, error: organizationError } = await supabase
     .from('organizations')
@@ -63,7 +81,7 @@ export async function completeOnboarding(formData: FormData) {
     .single()
 
   if (organizationError || !organization) {
-    redirectWithOnboardingError('organization', organizationError)
+    redirectWithOnboardingError('organization', organizationError, hasUser)
   }
 
   const { error: profileError } = await supabase.from('profiles').insert({
@@ -74,7 +92,7 @@ export async function completeOnboarding(formData: FormData) {
   })
 
   if (profileError) {
-    redirectWithOnboardingError('profile', profileError)
+    redirectWithOnboardingError('profile', profileError, hasUser)
   }
 
   const { error: companyProfileError } = await supabase.from('company_profiles').insert({
@@ -83,7 +101,7 @@ export async function completeOnboarding(formData: FormData) {
   })
 
   if (companyProfileError) {
-    redirectWithOnboardingError('company_profile', companyProfileError)
+    redirectWithOnboardingError('company_profile', companyProfileError, hasUser)
   }
 
   redirect('/dashboard')
