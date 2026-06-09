@@ -1,20 +1,17 @@
-import type { Metadata } from "next";
-import type { ReactNode } from "react";
-import "./globals.css";
+import type { Metadata } from 'next'
+import type { ReactNode } from 'react'
+
+import './globals.css'
 
 export const metadata: Metadata = {
-  title: "CRED",
-  description: "AI inspection documentation for service businesses.",
-};
+  title: 'CRED',
+  description: 'AI inspection documentation for service businesses.',
+}
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: ReactNode;
-}>) {
+export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="en" className="h-full antialiased">
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="en">
+      <body>{children}</body>
     </html>
-  );
+  )
 }
