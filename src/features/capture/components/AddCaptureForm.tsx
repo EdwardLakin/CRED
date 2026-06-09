@@ -9,6 +9,7 @@ import { MANUAL_CAPTURE_TYPES, type CaptureIntent, type CaptureType } from '@/fe
 
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024
 const FILE_TOO_LARGE_MESSAGE = 'That file is too large. Please upload an image under 15MB.'
+const MAX_BATCH_FILES = 10
 const INITIAL_CAPTURE_STATE: CaptureActionState = {}
 
 const FILE_INPUT_CONFIG: Record<CaptureType, { accept: string; capture?: 'environment' }> = {
@@ -29,7 +30,24 @@ function SubmitButton({ label = 'Upload selected file' }: { label?: string }) {
   )
 }
 
-export function AddCaptureForm({ sessionId }: { sessionId: string }) {
+function getSuggestedCaptureText(sessionType?: string | null) {
+  const normalizedSessionType = sessionType?.toLowerCase() ?? ''
+
+  if (
+    normalizedSessionType.includes('cvip') ||
+    (normalizedSessionType.includes('commercial') && normalizedSessionType.includes('inspection'))
+  ) {
+    return 'Suggested: registration, VIN plate, licence plate, unit number, inspection sheet.'
+  }
+
+  if (normalizedSessionType.includes('inspection')) {
+    return 'Suggested: VIN plate, info/data plate, odometer/hour meter, work order, concern area, supporting photos.'
+  }
+
+  return 'Suggested: VIN plate, documents, asset labels, field photos, supporting evidence.'
+}
+
+export function AddCaptureForm({ sessionId, sessionType }: { sessionId: string; sessionType?: string | null }) {
   const formRef = useRef<HTMLFormElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [state, formAction] = useActionState(createCapture, INITIAL_CAPTURE_STATE)
@@ -38,16 +56,26 @@ export function AddCaptureForm({ sessionId }: { sessionId: string }) {
   const [manualType, setManualType] = useState<CaptureType>('document')
   const activeType = captureIntent === 'auto_image' ? 'photo' : manualType
   const fileConfig = useMemo(() => FILE_INPUT_CONFIG[activeType], [activeType])
+  const suggestedCaptureText = useMemo(() => getSuggestedCaptureText(sessionType), [sessionType])
   const fileInputId = 'capture-file'
+  const supportsMultipleFiles = captureIntent === 'auto_image'
 
   function submitAfterFileSelection() {
-    const file = fileInputRef.current?.files?.[0]
+    const files = Array.from(fileInputRef.current?.files ?? [])
 
-    if (!file) {
+    if (files.length === 0) {
       return
     }
 
-    if (file.size > MAX_FILE_SIZE_BYTES) {
+    if (files.length > MAX_BATCH_FILES) {
+      setClientError(`Upload up to ${MAX_BATCH_FILES} files at a time.`)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+      return
+    }
+
+    if (files.some((file) => file.size > MAX_FILE_SIZE_BYTES)) {
       setClientError(FILE_TOO_LARGE_MESSAGE)
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
@@ -56,7 +84,10 @@ export function AddCaptureForm({ sessionId }: { sessionId: string }) {
     }
 
     setClientError(null)
-    window.setTimeout(() => formRef.current?.requestSubmit(), 0)
+
+    if (supportsMultipleFiles || files.length === 1) {
+      window.setTimeout(() => formRef.current?.requestSubmit(), 0)
+    }
   }
 
   function openAutoImagePicker() {
@@ -83,9 +114,13 @@ export function AddCaptureForm({ sessionId }: { sessionId: string }) {
           </span>
         </button>
         <p className="muted capture-helper-text">
-          Take photos of VIN labels, info plates, documents, damage, odometers, or field conditions. CRED will organize
-          them automatically.
+          Take or select multiple photos. CRED will save each item separately and organize them automatically.
         </p>
+        <p className="muted capture-upload-hint">
+          Common captures: registration, VIN plate, unit number, licence plate, inspection sheet, work order, odometer,
+          info/data plate, defects.
+        </p>
+        <p className="muted capture-upload-hint">{suggestedCaptureText}</p>
       </div>
 
       <div className="field-stack capture-file-field">
@@ -96,15 +131,18 @@ export function AddCaptureForm({ sessionId }: { sessionId: string }) {
           ref={fileInputRef}
           key={`${captureIntent}-${activeType}`}
           id={fileInputId}
-          name="file"
+          name="files"
           type="file"
           accept={fileConfig.accept}
           capture={fileConfig.capture}
+          multiple={supportsMultipleFiles}
           required
           className="input file-input camera-file-input"
           onChange={submitAfterFileSelection}
         />
-        <p className="muted capture-upload-hint">Maximum file size is 15MB. Images are queued for AI classification.</p>
+        <p className="muted capture-upload-hint">
+          Maximum file size is 15MB per file. Images are queued for AI classification.
+        </p>
       </div>
 
       <details className="advanced-capture-options">
