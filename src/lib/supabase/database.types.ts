@@ -151,6 +151,121 @@ export interface Database {
           },
         ]
       }
+      capture_items: {
+        Row: {
+          id: string
+          documentation_session_id: string
+          organization_id: string
+          type: string
+          storage_path: string
+          thumbnail_path: string | null
+          ai_status: string | null
+          ai_summary: string | null
+          ocr_text: string | null
+          extracted_data: Json | null
+          captured_at: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          documentation_session_id: string
+          organization_id: string
+          type: string
+          storage_path: string
+          thumbnail_path?: string | null
+          ai_status?: string | null
+          ai_summary?: string | null
+          ocr_text?: string | null
+          extracted_data?: Json | null
+          captured_at?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          documentation_session_id?: string
+          organization_id?: string
+          type?: string
+          storage_path?: string
+          thumbnail_path?: string | null
+          ai_status?: string | null
+          ai_summary?: string | null
+          ocr_text?: string | null
+          extracted_data?: Json | null
+          captured_at?: string | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'capture_items_documentation_session_id_fkey'
+            columns: ['documentation_session_id']
+            isOneToOne: false
+            referencedRelation: 'documentation_sessions'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'capture_items_organization_id_fkey'
+            columns: ['organization_id']
+            isOneToOne: false
+            referencedRelation: 'organizations'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      timeline_events: {
+        Row: {
+          id: string
+          documentation_session_id: string
+          organization_id: string
+          capture_item_id: string | null
+          title: string
+          event_type: string
+          occurred_at: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          documentation_session_id: string
+          organization_id: string
+          capture_item_id?: string | null
+          title: string
+          event_type: string
+          occurred_at?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          documentation_session_id?: string
+          organization_id?: string
+          capture_item_id?: string | null
+          title?: string
+          event_type?: string
+          occurred_at?: string | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'timeline_events_capture_item_id_fkey'
+            columns: ['capture_item_id']
+            isOneToOne: false
+            referencedRelation: 'capture_items'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'timeline_events_documentation_session_id_fkey'
+            columns: ['documentation_session_id']
+            isOneToOne: false
+            referencedRelation: 'documentation_sessions'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'timeline_events_organization_id_fkey'
+            columns: ['organization_id']
+            isOneToOne: false
+            referencedRelation: 'organizations'
+            referencedColumns: ['id']
+          },
+        ]
+      }
     }
     Views: Record<string, never>
     Functions: {

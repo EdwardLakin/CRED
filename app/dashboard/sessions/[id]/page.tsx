@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
+import { AddCaptureForm, CaptureList } from '@/features/capture'
 import { SESSION_STATUSES, SessionStatusBadge, formatDateTime } from '@/features/sessions'
 import {
   archiveDocumentationSession,
@@ -35,10 +36,10 @@ export default async function SessionDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ error?: string; saved?: string }>
+  searchParams: Promise<{ captureError?: string; captureSaved?: string; error?: string; saved?: string }>
 }) {
   const { id } = await params
-  const { error, saved } = await searchParams
+  const { captureError, captureSaved, error, saved } = await searchParams
   const { supabase, profile } = await requireSessionWorkspace()
   const { data: session, error: sessionError } = await supabase
     .from('documentation_sessions')
@@ -50,6 +51,24 @@ export default async function SessionDetailPage({
   if (sessionError || !session) {
     notFound()
   }
+
+  const { data: captures } = await supabase
+    .from('capture_items')
+    .select('*')
+    .eq('documentation_session_id', session.id)
+    .eq('organization_id', profile.organization_id)
+    .order('captured_at', { ascending: false })
+
+  const signedUrls: Record<string, string> = {}
+  await Promise.all(
+    (captures ?? []).map(async (capture) => {
+      const { data } = await supabase.storage.from('documentation-captures').createSignedUrl(capture.storage_path, 60 * 10)
+
+      if (data?.signedUrl) {
+        signedUrls[capture.id] = data.signedUrl
+      }
+    }),
+  )
 
   const saveAction = updateDocumentationSession.bind(null, session.id)
   const archiveAction = archiveDocumentationSession.bind(null, session.id)
@@ -79,7 +98,29 @@ export default async function SessionDetailPage({
       </div>
 
       {error ? <p className="error">{error}</p> : null}
+      {captureError ? <p className="error">{captureError}</p> : null}
       {saved ? <p className="success">Session saved.</p> : null}
+      {captureSaved ? <p className="success">Capture added.</p> : null}
+
+
+      <section className="card detail-card capture-card form-stack">
+        <div>
+          <h2>Add Capture</h2>
+          <p className="muted">
+            Capture the manufacturer plate, VIN label, compliance tag, document, or field photo. AI extraction will be
+            added next.
+          </p>
+        </div>
+        <AddCaptureForm sessionId={session.id} />
+      </section>
+
+      <section className="card detail-card capture-card form-stack">
+        <div>
+          <h2>Captures</h2>
+          <p className="muted">Review uploaded files, intake status, and extraction placeholders for this session.</p>
+        </div>
+        <CaptureList captures={captures ?? []} signedUrls={signedUrls} />
+      </section>
 
       <form action={saveAction} className="card detail-card form-stack">
         <section className="form-stack">
