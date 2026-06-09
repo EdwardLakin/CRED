@@ -162,9 +162,10 @@ export interface Database {
           ai_status: string | null
           ai_summary: string | null
           ocr_text: string | null
-          extracted_data: Json | null
-          captured_at: string | null
-          created_at: string | null
+          extracted_data: Json
+          captured_at: string
+          created_at: string
+          updated_at: string
         }
         Insert: {
           id?: string
@@ -176,9 +177,10 @@ export interface Database {
           ai_status?: string | null
           ai_summary?: string | null
           ocr_text?: string | null
-          extracted_data?: Json | null
-          captured_at?: string | null
-          created_at?: string | null
+          extracted_data?: Json
+          captured_at?: string
+          created_at?: string
+          updated_at?: string
         }
         Update: {
           id?: string
@@ -190,9 +192,10 @@ export interface Database {
           ai_status?: string | null
           ai_summary?: string | null
           ocr_text?: string | null
-          extracted_data?: Json | null
-          captured_at?: string | null
-          created_at?: string | null
+          extracted_data?: Json
+          captured_at?: string
+          created_at?: string
+          updated_at?: string
         }
         Relationships: [
           {
@@ -217,30 +220,33 @@ export interface Database {
           documentation_session_id: string
           organization_id: string
           capture_item_id: string | null
+          event_time: string
           title: string
+          description: string | null
           event_type: string
-          occurred_at: string | null
-          created_at: string | null
+          created_at: string
         }
         Insert: {
           id?: string
           documentation_session_id: string
           organization_id: string
           capture_item_id?: string | null
+          event_time?: string
           title: string
+          description?: string | null
           event_type: string
-          occurred_at?: string | null
-          created_at?: string | null
+          created_at?: string
         }
         Update: {
           id?: string
           documentation_session_id?: string
           organization_id?: string
           capture_item_id?: string | null
+          event_time?: string
           title?: string
+          description?: string | null
           event_type?: string
-          occurred_at?: string | null
-          created_at?: string | null
+          created_at?: string
         }
         Relationships: [
           {

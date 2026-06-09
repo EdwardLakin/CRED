@@ -127,6 +127,7 @@ export async function createCapture(formData: FormData) {
     organization_id: profile.organization_id,
     capture_item_id: captureItem.id,
     title: getCaptureEventTitle(captureType),
+    event_time: capturedAt,
     event_type: 'capture',
   })
 
