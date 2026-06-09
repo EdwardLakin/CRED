@@ -19,16 +19,19 @@ export interface Database {
         Row: {
           id: string
           name: string
+          created_by: string
           created_at: string | null
         }
         Insert: {
           id?: string
           name: string
+          created_by?: string
           created_at?: string | null
         }
         Update: {
           id?: string
           name?: string
+          created_by?: string
           created_at?: string | null
         }
         Relationships: []
@@ -159,7 +162,16 @@ export interface Database {
       }
     }
     Views: Record<string, never>
-    Functions: Record<string, never>
+    Functions: {
+      create_onboarding_workspace: {
+        Args: {
+          p_full_name: string
+          p_company_name: string
+          p_industry: string
+        }
+        Returns: string
+      }
+    }
     Enums: Record<string, never>
     CompositeTypes: Record<string, never>
   }

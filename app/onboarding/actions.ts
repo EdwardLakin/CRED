@@ -13,13 +13,11 @@ type SafeOnboardingError = {
 }
 
 const ONBOARDING_ERROR_MESSAGES = {
-  organization: 'We could not create your organization. Please try again.',
-  profile: 'We could not create your profile. Please try again.',
-  company_profile: 'We could not save your company profile. Please try again.',
+  workspace: 'We could not create your workspace. Please try again.',
 } as const
 
 function redirectWithOnboardingError(
-  step: 'organization' | 'profile' | 'company_profile',
+  step: 'workspace',
   error: SafeOnboardingError | null,
   hasUser: boolean,
 ): never {
@@ -74,34 +72,17 @@ export async function completeOnboarding(formData: FormData) {
 
   const hasUser = Boolean(user)
 
-  const { data: organization, error: organizationError } = await supabase
-    .from('organizations')
-    .insert({ name: companyName })
-    .select('id')
-    .single()
+  const { data: organizationId, error: workspaceError } = await supabase.rpc(
+    'create_onboarding_workspace',
+    {
+      p_full_name: fullName,
+      p_company_name: companyName,
+      p_industry: industry,
+    },
+  )
 
-  if (organizationError || !organization) {
-    redirectWithOnboardingError('organization', organizationError, hasUser)
-  }
-
-  const { error: profileError } = await supabase.from('profiles').insert({
-    id: user.id,
-    organization_id: organization.id,
-    full_name: fullName,
-    role: 'owner',
-  })
-
-  if (profileError) {
-    redirectWithOnboardingError('profile', profileError, hasUser)
-  }
-
-  const { error: companyProfileError } = await supabase.from('company_profiles').insert({
-    organization_id: organization.id,
-    industry,
-  })
-
-  if (companyProfileError) {
-    redirectWithOnboardingError('company_profile', companyProfileError, hasUser)
+  if (workspaceError || !organizationId) {
+    redirectWithOnboardingError('workspace', workspaceError, hasUser)
   }
 
   redirect('/dashboard')
