@@ -97,6 +97,69 @@ export interface Database {
           },
         ]
       }
+      documentation_sessions: {
+        Row: {
+          id: string
+          organization_id: string
+          created_by: string
+          title: string
+          session_type: string
+          status: string
+          asset_label: string | null
+          vin: string | null
+          odometer: string | null
+          unit_number: string | null
+          customer_name: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          created_by: string
+          title: string
+          session_type: string
+          status?: string
+          asset_label?: string | null
+          vin?: string | null
+          odometer?: string | null
+          unit_number?: string | null
+          customer_name?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          created_by?: string
+          title?: string
+          session_type?: string
+          status?: string
+          asset_label?: string | null
+          vin?: string | null
+          odometer?: string | null
+          unit_number?: string | null
+          customer_name?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'documentation_sessions_created_by_fkey'
+            columns: ['created_by']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'documentation_sessions_organization_id_fkey'
+            columns: ['organization_id']
+            isOneToOne: false
+            referencedRelation: 'organizations'
+            referencedColumns: ['id']
+          },
+        ]
+      }
     }
     Views: Record<string, never>
     Functions: Record<string, never>
