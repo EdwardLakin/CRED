@@ -33,14 +33,23 @@ create table if not exists public.capture_items (
   type text not null check (type in ('photo', 'document', 'vin_plate', 'info_plate', 'voice_note')),
   storage_path text not null,
   thumbnail_path text,
+  captured_at timestamptz not null default now(),
   ai_status text default 'pending',
   ai_summary text,
   ocr_text text,
   extracted_data jsonb not null default '{}'::jsonb,
-  captured_at timestamptz not null default now(),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
+alter table public.capture_items
+  add column if not exists thumbnail_path text,
+  add column if not exists captured_at timestamptz not null default now(),
+  add column if not exists ai_status text default 'pending',
+  add column if not exists ai_summary text,
+  add column if not exists ocr_text text,
+  add column if not exists extracted_data jsonb not null default '{}'::jsonb,
+  add column if not exists updated_at timestamptz not null default now();
 
 do $$
 declare
@@ -75,14 +84,20 @@ create table if not exists public.timeline_events (
   documentation_session_id uuid not null references public.documentation_sessions(id) on delete cascade,
   organization_id uuid not null references public.organizations(id) on delete cascade,
   capture_item_id uuid references public.capture_items(id) on delete set null,
+  event_time timestamptz not null default now(),
   title text not null,
+  description text,
   event_type text not null,
-  occurred_at timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
 
-create index if not exists timeline_events_session_occurred_at_idx
-  on public.timeline_events (documentation_session_id, occurred_at desc);
+alter table public.timeline_events
+  add column if not exists capture_item_id uuid references public.capture_items(id) on delete set null,
+  add column if not exists event_time timestamptz not null default now(),
+  add column if not exists description text;
+
+create index if not exists timeline_events_session_event_time_idx
+  on public.timeline_events (documentation_session_id, event_time desc);
 
 create index if not exists timeline_events_capture_item_id_idx
   on public.timeline_events (capture_item_id);
@@ -92,115 +107,117 @@ alter table public.timeline_events enable row level security;
 
 do $$
 begin
-  if not exists (
-    select 1 from pg_policies where schemaname = 'public' and tablename = 'capture_items' and policyname = 'Organization members can read capture items'
-  ) then
-    create policy "Organization members can read capture items"
-      on public.capture_items for select
-      to authenticated
-      using (
-        exists (
-          select 1
-          from public.profiles
-          where profiles.organization_id = capture_items.organization_id
-            and profiles.user_id = auth.uid()
-        )
-      );
-  end if;
+  drop policy if exists "Organization members can read capture items" on public.capture_items;
+  create policy "Organization members can read capture items"
+    on public.capture_items for select
+    to authenticated
+    using (
+      exists (
+        select 1
+        from public.profiles
+        where profiles.organization_id = capture_items.organization_id
+          and profiles.user_id = auth.uid()
+      )
+    );
 
-  if not exists (
-    select 1 from pg_policies where schemaname = 'public' and tablename = 'capture_items' and policyname = 'Organization members can create capture items'
-  ) then
-    create policy "Organization members can create capture items"
-      on public.capture_items for insert
-      to authenticated
-      with check (
-        exists (
-          select 1
-          from public.profiles
-          where profiles.organization_id = capture_items.organization_id
-            and profiles.user_id = auth.uid()
-        )
-        and exists (
-          select 1
-          from public.documentation_sessions
-          where documentation_sessions.id = capture_items.documentation_session_id
-            and documentation_sessions.organization_id = capture_items.organization_id
-        )
-      );
-  end if;
+  drop policy if exists "Organization members can create capture items" on public.capture_items;
+  create policy "Organization members can create capture items"
+    on public.capture_items for insert
+    to authenticated
+    with check (
+      exists (
+        select 1
+        from public.profiles
+        where profiles.organization_id = capture_items.organization_id
+          and profiles.user_id = auth.uid()
+      )
+      and exists (
+        select 1
+        from public.documentation_sessions
+        where documentation_sessions.id = capture_items.documentation_session_id
+          and documentation_sessions.organization_id = capture_items.organization_id
+      )
+    );
 
-  if not exists (
-    select 1 from pg_policies where schemaname = 'public' and tablename = 'timeline_events' and policyname = 'Organization members can read timeline events'
-  ) then
-    create policy "Organization members can read timeline events"
-      on public.timeline_events for select
-      to authenticated
-      using (
-        exists (
-          select 1
-          from public.profiles
-          where profiles.organization_id = timeline_events.organization_id
-            and profiles.user_id = auth.uid()
-        )
-      );
-  end if;
+  drop policy if exists "Organization members can read timeline events" on public.timeline_events;
+  create policy "Organization members can read timeline events"
+    on public.timeline_events for select
+    to authenticated
+    using (
+      exists (
+        select 1
+        from public.profiles
+        where profiles.organization_id = timeline_events.organization_id
+          and profiles.user_id = auth.uid()
+      )
+    );
 
-  if not exists (
-    select 1 from pg_policies where schemaname = 'public' and tablename = 'timeline_events' and policyname = 'Organization members can create timeline events'
-  ) then
-    create policy "Organization members can create timeline events"
-      on public.timeline_events for insert
-      to authenticated
-      with check (
-        exists (
-          select 1
-          from public.profiles
-          where profiles.organization_id = timeline_events.organization_id
-            and profiles.user_id = auth.uid()
-        )
-        and exists (
-          select 1
-          from public.documentation_sessions
-          where documentation_sessions.id = timeline_events.documentation_session_id
-            and documentation_sessions.organization_id = timeline_events.organization_id
-        )
-      );
-  end if;
+  drop policy if exists "Organization members can create timeline events" on public.timeline_events;
+  create policy "Organization members can create timeline events"
+    on public.timeline_events for insert
+    to authenticated
+    with check (
+      exists (
+        select 1
+        from public.profiles
+        where profiles.organization_id = timeline_events.organization_id
+          and profiles.user_id = auth.uid()
+      )
+      and exists (
+        select 1
+        from public.documentation_sessions
+        where documentation_sessions.id = timeline_events.documentation_session_id
+          and documentation_sessions.organization_id = timeline_events.organization_id
+      )
+    );
 
-  if not exists (
-    select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'Organization members can upload documentation captures'
-  ) then
-    create policy "Organization members can upload documentation captures"
-      on storage.objects for insert
-      to authenticated
-      with check (
-        bucket_id = 'documentation-captures'
-        and (storage.foldername(name))[1] = 'organizations'
-        and exists (
-          select 1
-          from public.profiles
-          where profiles.organization_id::text = (storage.foldername(name))[2]
-            and profiles.user_id = auth.uid()
-        )
-      );
-  end if;
+  drop policy if exists "Organization members can upload documentation captures" on storage.objects;
+  create policy "Organization members can upload documentation captures"
+    on storage.objects for insert
+    to authenticated
+    with check (
+      bucket_id = 'documentation-captures'
+      and (storage.foldername(name))[1] = 'organizations'
+      and (storage.foldername(name))[3] = 'sessions'
+      and (storage.foldername(name))[5] = 'captures'
+      and array_length(storage.foldername(name), 1) = 5
+      and storage.filename(name) <> ''
+      and exists (
+        select 1
+        from public.profiles
+        where profiles.organization_id::text = (storage.foldername(name))[2]
+          and profiles.user_id = auth.uid()
+      )
+      and exists (
+        select 1
+        from public.documentation_sessions
+        where documentation_sessions.id::text = (storage.foldername(name))[4]
+          and documentation_sessions.organization_id::text = (storage.foldername(name))[2]
+      )
+    );
 
-  if not exists (
-    select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'Organization members can read documentation captures'
-  ) then
-    create policy "Organization members can read documentation captures"
-      on storage.objects for select
-      to authenticated
-      using (
-        bucket_id = 'documentation-captures'
-        and (storage.foldername(name))[1] = 'organizations'
-        and exists (
-          select 1
-          from public.profiles
-          where profiles.organization_id::text = (storage.foldername(name))[2]
-            and profiles.user_id = auth.uid()
-        )
-      );
-  end if;
+  drop policy if exists "Organization members can read documentation captures" on storage.objects;
+  create policy "Organization members can read documentation captures"
+    on storage.objects for select
+    to authenticated
+    using (
+      bucket_id = 'documentation-captures'
+      and (storage.foldername(name))[1] = 'organizations'
+      and (storage.foldername(name))[3] = 'sessions'
+      and (storage.foldername(name))[5] = 'captures'
+      and array_length(storage.foldername(name), 1) = 5
+      and storage.filename(name) <> ''
+      and exists (
+        select 1
+        from public.profiles
+        where profiles.organization_id::text = (storage.foldername(name))[2]
+          and profiles.user_id = auth.uid()
+      )
+      and exists (
+        select 1
+        from public.documentation_sessions
+        where documentation_sessions.id::text = (storage.foldername(name))[4]
+          and documentation_sessions.organization_id::text = (storage.foldername(name))[2]
+      )
+    );
 end $$;
