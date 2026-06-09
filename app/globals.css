@@ -700,6 +700,47 @@ a {
   padding: 12px 14px;
 }
 
+
+.captures-section-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.classification-action-form {
+  align-items: flex-end;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.classification-action-message {
+  margin: 0;
+  max-width: 280px;
+  text-align: right;
+}
+
+.ai-status-pill.needs-review,
+.classification-pill.needs-review {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+@media (max-width: 760px) {
+  .captures-section-header,
+  .classification-action-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .classification-action-message {
+    max-width: none;
+    text-align: left;
+  }
+}
+
 .capture-classification-row {
   align-items: center;
   display: flex;

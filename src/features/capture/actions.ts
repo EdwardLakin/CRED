@@ -5,6 +5,13 @@ import { redirect } from 'next/navigation'
 import { isRedirectError } from 'next/dist/client/components/redirect-error'
 
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import {
+  buildClassifiedImageData,
+  classifyCaptureImage,
+  getCaptureClassificationSummary,
+  getUnknownClassificationResult,
+  type CaptureClassificationResult,
+} from '@/lib/openai/capture-classifier'
 
 import {
   getAutoImageExtractedData,
@@ -52,7 +59,8 @@ type UploadedCapture = {
 
 type SafeFailureDetails = {
   step: string
-  fileIndex: number
+  fileIndex?: number
+  captureId?: string
   code?: string
   message?: string
   details?: string
@@ -318,4 +326,194 @@ export async function createCapture(_previousState: CaptureActionState, formData
     console.error('Capture upload failed', error)
     return { error: 'Unable to upload capture. Please try again.' }
   }
+}
+
+
+export type CaptureClassificationActionState = {
+  ok?: boolean
+  message?: string
+}
+
+type PendingCaptureItem = {
+  id: string
+  documentation_session_id: string
+  organization_id: string
+  storage_path: string
+  extracted_data: import('@/lib/supabase/database.types').Json
+}
+
+const MAX_CLASSIFICATION_BATCH_SIZE = 10
+const CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.7
+const SIGNED_CLASSIFICATION_URL_SECONDS = 60 * 5
+
+function classificationActionMessage(classifiedCount: number, needsReviewCount: number) {
+  const total = classifiedCount + needsReviewCount
+
+  if (total === 0) {
+    return 'No pending captures need classification.'
+  }
+
+  const captureWord = total === 1 ? 'capture' : 'captures'
+  const reviewSuffix = needsReviewCount === 1 ? '1 needs review.' : `${needsReviewCount} need review.`
+
+  return `Classified ${total} ${captureWord}. ${reviewSuffix}`
+}
+
+function getClassificationStatus(classification: CaptureClassificationResult): 'classified' | 'needs_review' {
+  return classification.confidence >= CLASSIFICATION_CONFIDENCE_THRESHOLD && classification.detected_type !== 'unknown'
+    ? 'classified'
+    : 'needs_review'
+}
+
+async function updateCaptureClassification(
+  capture: PendingCaptureItem,
+  classification: CaptureClassificationResult,
+  supabase: Awaited<ReturnType<typeof requireSessionWorkspace>>['supabase'],
+) {
+  const status = getClassificationStatus(classification)
+  const { error } = await supabase
+    .from('capture_items')
+    .update({
+      ai_status: status,
+      ai_summary: getCaptureClassificationSummary(classification),
+      extracted_data: buildClassifiedImageData(capture.extracted_data, classification, status),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', capture.id)
+    .eq('documentation_session_id', capture.documentation_session_id)
+    .eq('organization_id', capture.organization_id)
+
+  if (error) {
+    logCaptureFailure({ step: 'capture_classification_update', captureId: capture.id, ...getSafeErrorDetails(error) })
+    throw error
+  }
+
+  return status
+}
+
+async function markCaptureNeedsReview(
+  capture: PendingCaptureItem,
+  supabase: Awaited<ReturnType<typeof requireSessionWorkspace>>['supabase'],
+  reason: string,
+) {
+  const classification = getUnknownClassificationResult(reason)
+  await updateCaptureClassification(capture, classification, supabase)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function captureNeedsClassification(capture: PendingCaptureItem & { ai_status: string | null }) {
+  const extractedData = isRecord(capture.extracted_data) ? capture.extracted_data : null
+  const classification = extractedData && isRecord(extractedData.classification) ? extractedData.classification : null
+  const classificationStatus = typeof classification?.status === 'string' ? classification.status : null
+
+  return capture.ai_status === 'pending' || capture.ai_status === 'needs_review' || classificationStatus === 'pending'
+}
+
+function isMissingOpenAiKeyError(error: unknown) {
+  return error instanceof Error && error.message === 'OPENAI_API_KEY_MISSING'
+}
+
+export async function classifyPendingCaptures(
+  _previousState: CaptureClassificationActionState,
+  formData: FormData,
+): Promise<CaptureClassificationActionState> {
+  const sessionId = getString(formData, 'session_id')
+
+  if (!sessionId) {
+    return { ok: false, message: 'Missing documentation session.' }
+  }
+
+  const { supabase, profile } = await requireSessionWorkspace()
+  const { data: session, error: sessionError } = await supabase
+    .from('documentation_sessions')
+    .select('id, organization_id')
+    .eq('id', sessionId)
+    .eq('organization_id', profile.organization_id)
+    .single()
+
+  if (sessionError || !session) {
+    return { ok: false, message: 'Documentation session not found.' }
+  }
+
+  const { data: capturesForReview, error: pendingError } = await supabase
+    .from('capture_items')
+    .select('id, documentation_session_id, organization_id, storage_path, extracted_data, ai_status')
+    .eq('documentation_session_id', session.id)
+    .eq('organization_id', profile.organization_id)
+    .eq('type', 'photo')
+    .order('captured_at', { ascending: true })
+    .limit(100)
+
+  if (pendingError) {
+    logCaptureFailure({ step: 'capture_classification_query', ...getSafeErrorDetails(pendingError) })
+    return { ok: false, message: 'Unable to load pending captures for classification.' }
+  }
+
+  const pendingCaptures = (capturesForReview ?? [])
+    .filter(captureNeedsClassification)
+    .slice(0, MAX_CLASSIFICATION_BATCH_SIZE)
+
+  if (pendingCaptures.length === 0) {
+    return { ok: true, message: classificationActionMessage(0, 0) }
+  }
+
+  let classifiedCount = 0
+  let needsReviewCount = 0
+
+  for (const capture of pendingCaptures) {
+    try {
+      const { data: signedData, error: signedUrlError } = await supabase.storage
+        .from(CAPTURE_BUCKET)
+        .createSignedUrl(capture.storage_path, SIGNED_CLASSIFICATION_URL_SECONDS)
+
+      if (signedUrlError || !signedData?.signedUrl) {
+        logCaptureFailure({
+          step: 'capture_classification_signed_url',
+          captureId: capture.id,
+          ...getSafeErrorDetails(signedUrlError),
+        })
+        await markCaptureNeedsReview(capture, supabase, 'Unable to prepare image for classification.')
+        needsReviewCount += 1
+        continue
+      }
+
+      const classification = await classifyCaptureImage(signedData.signedUrl)
+      const status = await updateCaptureClassification(capture, classification, supabase)
+
+      if (status === 'classified') {
+        classifiedCount += 1
+      } else {
+        needsReviewCount += 1
+      }
+    } catch (error) {
+      if (isMissingOpenAiKeyError(error)) {
+        return { ok: false, message: 'AI classification is not configured yet.' }
+      }
+
+      logCaptureFailure({
+        step: 'capture_classification_openai',
+        captureId: capture.id,
+        ...getSafeErrorDetails(error),
+      })
+
+      try {
+        await markCaptureNeedsReview(capture, supabase, 'AI classification failed and needs review.')
+      } catch (updateError) {
+        logCaptureFailure({
+          step: 'capture_classification_failure_update',
+          captureId: capture.id,
+          ...getSafeErrorDetails(updateError),
+        })
+      }
+
+      needsReviewCount += 1
+    }
+  }
+
+  revalidatePath(`/dashboard/sessions/${session.id}`)
+
+  return { ok: true, message: classificationActionMessage(classifiedCount, needsReviewCount) }
 }
