@@ -1,11 +1,15 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useActionState, useMemo, useRef, useState } from 'react'
 import { useFormStatus } from 'react-dom'
 
 import { Button } from '@/components/ui'
-import { createCapture } from '@/features/capture/actions'
+import { createCapture, type CaptureActionState } from '@/features/capture/actions'
 import { MANUAL_CAPTURE_TYPES, type CaptureIntent, type CaptureType } from '@/features/capture/types'
+
+const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024
+const FILE_TOO_LARGE_MESSAGE = 'That file is too large. Please upload an image under 15MB.'
+const INITIAL_CAPTURE_STATE: CaptureActionState = {}
 
 const FILE_INPUT_CONFIG: Record<CaptureType, { accept: string; capture?: 'environment' }> = {
   photo: { accept: 'image/*', capture: 'environment' },
@@ -28,6 +32,8 @@ function SubmitButton({ label = 'Upload selected file' }: { label?: string }) {
 export function AddCaptureForm({ sessionId }: { sessionId: string }) {
   const formRef = useRef<HTMLFormElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [state, formAction] = useActionState(createCapture, INITIAL_CAPTURE_STATE)
+  const [clientError, setClientError] = useState<string | null>(null)
   const [captureIntent, setCaptureIntent] = useState<CaptureIntent>('auto_image')
   const [manualType, setManualType] = useState<CaptureType>('document')
   const activeType = captureIntent === 'auto_image' ? 'photo' : manualType
@@ -35,6 +41,21 @@ export function AddCaptureForm({ sessionId }: { sessionId: string }) {
   const fileInputId = 'capture-file'
 
   function submitAfterFileSelection() {
+    const file = fileInputRef.current?.files?.[0]
+
+    if (!file) {
+      return
+    }
+
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      setClientError(FILE_TOO_LARGE_MESSAGE)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+      return
+    }
+
+    setClientError(null)
     window.setTimeout(() => formRef.current?.requestSubmit(), 0)
   }
 
@@ -44,10 +65,12 @@ export function AddCaptureForm({ sessionId }: { sessionId: string }) {
   }
 
   return (
-    <form ref={formRef} action={createCapture} className="capture-form form-stack">
+    <form ref={formRef} action={formAction} className="capture-form form-stack">
       <input type="hidden" name="session_id" value={sessionId} />
       <input type="hidden" name="capture_intent" value={captureIntent} />
       <input type="hidden" name="manual_type" value={manualType} />
+
+      {clientError || state.error ? <p className="error">{clientError ?? state.error}</p> : null}
 
       <div className="camera-first-panel">
         <button type="button" className="capture-evidence-button touch-target" onClick={openAutoImagePicker}>

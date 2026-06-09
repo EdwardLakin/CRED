@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { isRedirectError } from 'next/dist/client/components/redirect-error'
 
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
@@ -17,6 +18,7 @@ import {
 
 const CAPTURE_BUCKET = 'documentation-captures'
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024
+const FILE_TOO_LARGE_MESSAGE = 'That file is too large. Please upload an image under 15MB.'
 
 const ALLOWED_MIME_TYPES: Record<CaptureType, readonly string[]> = {
   photo: ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif'],
@@ -26,13 +28,28 @@ const ALLOWED_MIME_TYPES: Record<CaptureType, readonly string[]> = {
   voice_note: ['audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/webm', 'audio/ogg', 'audio/aac', 'audio/x-m4a'],
 }
 
+export type CaptureActionState = {
+  error?: string
+}
+
+type CaptureActionFailure = {
+  ok: false
+  sessionId?: string
+  error: string
+}
+
+type CaptureActionSuccess = {
+  ok: true
+  sessionId: string
+}
+
 function getString(formData: FormData, field: string) {
   const value = formData.get(field)
   return typeof value === 'string' ? value.trim() : ''
 }
 
-function redirectWithCaptureError(sessionId: string, message: string): never {
-  redirect(`/dashboard/sessions/${sessionId}?captureError=${encodeURIComponent(message)}`)
+function captureError(error: string, sessionId?: string): CaptureActionFailure {
+  return { ok: false, sessionId, error }
 }
 
 function sanitizeFilename(filename: string) {
@@ -78,45 +95,45 @@ function getCaptureMetadata(captureIntent: CaptureIntent, manualCaptureType: Cap
   }
 }
 
-export async function createCapture(formData: FormData) {
+async function saveCapture(formData: FormData): Promise<CaptureActionFailure | CaptureActionSuccess> {
   const sessionId = getString(formData, 'session_id')
   const rawCaptureIntent = getString(formData, 'capture_intent') || 'auto_image'
   const rawManualCaptureType = getString(formData, 'manual_type')
   const upload = formData.get('file')
 
   if (!sessionId) {
-    redirect('/dashboard/sessions?error=Missing%20documentation%20session.')
+    return captureError('Missing documentation session.')
   }
 
   if (!isCaptureIntent(rawCaptureIntent)) {
-    redirectWithCaptureError(sessionId, 'Choose a valid capture mode.')
+    return captureError('Choose a valid capture mode.', sessionId)
   }
 
   const manualCaptureType = isCaptureType(rawManualCaptureType) ? rawManualCaptureType : null
   const captureMetadata = getCaptureMetadata(rawCaptureIntent, manualCaptureType)
 
   if (!captureMetadata) {
-    redirectWithCaptureError(sessionId, 'Choose a valid manual capture type.')
+    return captureError('Choose a valid manual capture type.', sessionId)
   }
 
   const captureType = captureMetadata.type
 
   if (!(upload instanceof File) || upload.size === 0) {
-    redirectWithCaptureError(sessionId, 'Choose a file to upload.')
+    return captureError('Choose a file to upload.', sessionId)
   }
 
   const file = upload
 
   if (file.size > MAX_FILE_SIZE_BYTES) {
-    redirectWithCaptureError(sessionId, 'Capture files must be 15MB or smaller.')
+    return captureError(FILE_TOO_LARGE_MESSAGE, sessionId)
   }
 
   if (rawCaptureIntent === 'auto_image' && !fileIsImage(file)) {
-    redirectWithCaptureError(sessionId, 'Capture Evidence accepts image files only.')
+    return captureError('Capture Evidence accepts image files only.', sessionId)
   }
 
   if (rawCaptureIntent === 'manual' && !fileHasAllowedType(file, captureType)) {
-    redirectWithCaptureError(sessionId, 'That file type is not allowed for this capture.')
+    return captureError('That file type is not allowed for this capture.', sessionId)
   }
 
   const { supabase, profile } = await requireSessionWorkspace()
@@ -128,7 +145,7 @@ export async function createCapture(formData: FormData) {
     .single()
 
   if (sessionError || !session) {
-    redirect('/dashboard/sessions?error=Documentation%20session%20not%20found.')
+    return captureError('Documentation session not found.', sessionId)
   }
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
@@ -142,14 +159,16 @@ export async function createCapture(formData: FormData) {
   })
 
   if (uploadError) {
-    const setupHint = uploadError.message.toLowerCase().includes('bucket')
+    const lowerMessage = uploadError.message.toLowerCase()
+    const setupHint = lowerMessage.includes('bucket')
       ? ' The documentation-captures storage bucket may not be set up yet.'
       : ''
-    redirectWithCaptureError(session.id, `Unable to upload capture.${setupHint}`)
+    const sizeHint = lowerMessage.includes('size') || lowerMessage.includes('large') ? ` ${FILE_TOO_LARGE_MESSAGE}` : ''
+    return captureError(`Unable to upload capture.${setupHint}${sizeHint}`, session.id)
   }
 
   const capturedAt = new Date().toISOString()
-  const { data: captureItem, error: captureError } = await supabase
+  const { data: captureItem, error: captureErrorResult } = await supabase
     .from('capture_items')
     .insert({
       documentation_session_id: session.id,
@@ -163,9 +182,9 @@ export async function createCapture(formData: FormData) {
     .select('id')
     .single()
 
-  if (captureError || !captureItem) {
+  if (captureErrorResult || !captureItem) {
     await supabase.storage.from(CAPTURE_BUCKET).remove([storagePath])
-    redirectWithCaptureError(session.id, captureError?.message ?? 'Unable to save capture metadata.')
+    return captureError(captureErrorResult?.message ?? 'Unable to save capture metadata.', session.id)
   }
 
   const { error: timelineError } = await supabase.from('timeline_events').insert({
@@ -179,11 +198,31 @@ export async function createCapture(formData: FormData) {
   })
 
   if (timelineError) {
-    redirectWithCaptureError(session.id, timelineError.message)
+    return captureError(timelineError.message, session.id)
   }
 
   revalidatePath('/dashboard')
   revalidatePath('/dashboard/sessions')
   revalidatePath(`/dashboard/sessions/${session.id}`)
-  redirect(`/dashboard/sessions/${session.id}?captureSaved=1`)
+
+  return { ok: true, sessionId: session.id }
+}
+
+export async function createCapture(_previousState: CaptureActionState, formData: FormData): Promise<CaptureActionState> {
+  try {
+    const result = await saveCapture(formData)
+
+    if (!result.ok) {
+      return { error: result.error }
+    }
+
+    redirect(`/dashboard/sessions/${result.sessionId}?captureSaved=1`)
+  } catch (error) {
+    if (isRedirectError(error)) {
+      throw error
+    }
+
+    console.error('Capture upload failed', error)
+    return { error: 'Unable to upload capture. Please try again.' }
+  }
 }
