@@ -107,8 +107,8 @@ export default async function SessionDetailPage({
         <div>
           <h2>Add Capture</h2>
           <p className="muted">
-            Capture the manufacturer plate, VIN label, compliance tag, document, or field photo. AI extraction will be
-            added next.
+            Start with the camera. Capture evidence now, then let CRED classify VIN plates, info plates, documents,
+            odometers, damage, and field photos automatically.
           </p>
         </div>
         <AddCaptureForm sessionId={session.id} />
@@ -118,6 +118,9 @@ export default async function SessionDetailPage({
         <div>
           <h2>Captures</h2>
           <p className="muted">Review uploaded files, intake status, and extraction placeholders for this session.</p>
+          <p className="next-ai-step">
+            Next: AI will identify VIN plates, info plates, documents, odometers, and field photos automatically.
+          </p>
         </div>
         <CaptureList captures={captures ?? []} signedUrls={signedUrls} />
       </section>

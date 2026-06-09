@@ -585,3 +585,163 @@ a {
     align-self: stretch;
   }
 }
+
+.visually-hidden {
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+.camera-first-panel {
+  background: linear-gradient(135deg, #eff6ff, #f8fafc);
+  border: 1px solid #bfdbfe;
+  border-radius: 22px;
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.capture-evidence-button {
+  align-items: center;
+  background: #155dfc;
+  border: 0;
+  border-radius: 20px;
+  box-shadow: 0 18px 36px rgb(21 93 252 / 22%);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  min-height: 76px;
+  padding: 18px 22px;
+  text-align: left;
+  transition:
+    background 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+  width: 100%;
+}
+
+.capture-evidence-button:hover {
+  background: #0f46c7;
+  box-shadow: 0 22px 42px rgb(21 93 252 / 26%);
+  transform: translateY(-1px);
+}
+
+.capture-evidence-button strong,
+.capture-evidence-button small {
+  display: block;
+}
+
+.capture-evidence-button strong {
+  font-size: 1.12rem;
+}
+
+.capture-evidence-button small {
+  color: rgb(255 255 255 / 82%);
+  font-weight: 700;
+  margin-top: 3px;
+}
+
+.capture-evidence-icon {
+  align-items: center;
+  background: rgb(255 255 255 / 16%);
+  border-radius: 16px;
+  display: inline-flex;
+  font-size: 1.6rem;
+  height: 48px;
+  justify-content: center;
+  width: 48px;
+}
+
+.capture-helper-text {
+  font-size: 0.98rem;
+  margin: 0;
+}
+
+.capture-file-field {
+  border: 1px dashed var(--border);
+  border-radius: 16px;
+  padding: 14px;
+}
+
+.advanced-capture-options {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px 14px;
+}
+
+.advanced-capture-options summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.advanced-capture-content {
+  margin-top: 14px;
+}
+
+.advanced-capture-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.next-ai-step {
+  background: #ecfeff;
+  border: 1px solid #a5f3fc;
+  border-radius: 14px;
+  color: #155e75;
+  font-weight: 800;
+  margin: 12px 0 0;
+  padding: 12px 14px;
+}
+
+.capture-classification-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.classification-pill {
+  background: #dcfce7;
+  border-radius: 999px;
+  color: #166534;
+  font-size: 0.82rem;
+  font-weight: 800;
+  padding: 8px 12px;
+  text-transform: capitalize;
+}
+
+.classification-pill.pending {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.correct-type-placeholder {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+
+@media (max-width: 760px) {
+  .capture-evidence-button {
+    justify-content: flex-start;
+    min-height: 84px;
+  }
+
+  .advanced-capture-actions {
+    flex-direction: column;
+  }
+}
+
+.correct-type-placeholder:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}

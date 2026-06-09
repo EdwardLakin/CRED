@@ -5,7 +5,15 @@ import { redirect } from 'next/navigation'
 
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
-import { getCaptureEventTitle, getInitialExtractedData, isCaptureType, type CaptureType } from './types'
+import {
+  getAutoImageExtractedData,
+  getCaptureEventTitle,
+  getInitialExtractedData,
+  isCaptureIntent,
+  isCaptureType,
+  type CaptureIntent,
+  type CaptureType,
+} from './types'
 
 const CAPTURE_BUCKET = 'documentation-captures'
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024
@@ -44,20 +52,54 @@ function fileHasAllowedType(file: File, captureType: CaptureType) {
   return allowedTypes.includes(file.type)
 }
 
+function fileIsImage(file: File) {
+  return ALLOWED_MIME_TYPES.photo.includes(file.type)
+}
+
+function getCaptureMetadata(captureIntent: CaptureIntent, manualCaptureType: CaptureType | null) {
+  if (captureIntent === 'auto_image') {
+    return {
+      type: 'photo' as CaptureType,
+      extractedData: getAutoImageExtractedData(),
+      timelineTitle: getCaptureEventTitle('photo', 'auto_image'),
+      timelineDescription: 'Image captured for AI classification.',
+    }
+  }
+
+  if (!manualCaptureType) {
+    return null
+  }
+
+  return {
+    type: manualCaptureType,
+    extractedData: getInitialExtractedData(manualCaptureType),
+    timelineTitle: getCaptureEventTitle(manualCaptureType, 'manual'),
+    timelineDescription: 'Capture uploaded manually.',
+  }
+}
+
 export async function createCapture(formData: FormData) {
   const sessionId = getString(formData, 'session_id')
-  const rawCaptureType = getString(formData, 'type')
+  const rawCaptureIntent = getString(formData, 'capture_intent') || 'auto_image'
+  const rawManualCaptureType = getString(formData, 'manual_type')
   const upload = formData.get('file')
 
   if (!sessionId) {
     redirect('/dashboard/sessions?error=Missing%20documentation%20session.')
   }
 
-  if (!isCaptureType(rawCaptureType)) {
-    redirectWithCaptureError(sessionId, 'Choose a valid capture type.')
+  if (!isCaptureIntent(rawCaptureIntent)) {
+    redirectWithCaptureError(sessionId, 'Choose a valid capture mode.')
   }
 
-  const captureType: CaptureType = rawCaptureType
+  const manualCaptureType = isCaptureType(rawManualCaptureType) ? rawManualCaptureType : null
+  const captureMetadata = getCaptureMetadata(rawCaptureIntent, manualCaptureType)
+
+  if (!captureMetadata) {
+    redirectWithCaptureError(sessionId, 'Choose a valid manual capture type.')
+  }
+
+  const captureType = captureMetadata.type
 
   if (!(upload instanceof File) || upload.size === 0) {
     redirectWithCaptureError(sessionId, 'Choose a file to upload.')
@@ -69,7 +111,11 @@ export async function createCapture(formData: FormData) {
     redirectWithCaptureError(sessionId, 'Capture files must be 15MB or smaller.')
   }
 
-  if (!fileHasAllowedType(file, captureType)) {
+  if (rawCaptureIntent === 'auto_image' && !fileIsImage(file)) {
+    redirectWithCaptureError(sessionId, 'Capture Evidence accepts image files only.')
+  }
+
+  if (rawCaptureIntent === 'manual' && !fileHasAllowedType(file, captureType)) {
     redirectWithCaptureError(sessionId, 'That file type is not allowed for this capture.')
   }
 
@@ -112,7 +158,7 @@ export async function createCapture(formData: FormData) {
       storage_path: storagePath,
       captured_at: capturedAt,
       ai_status: 'pending',
-      extracted_data: getInitialExtractedData(captureType),
+      extracted_data: captureMetadata.extractedData,
     })
     .select('id')
     .single()
@@ -126,7 +172,8 @@ export async function createCapture(formData: FormData) {
     documentation_session_id: session.id,
     organization_id: profile.organization_id,
     capture_item_id: captureItem.id,
-    title: getCaptureEventTitle(captureType),
+    title: captureMetadata.timelineTitle,
+    description: captureMetadata.timelineDescription,
     event_time: capturedAt,
     event_type: 'capture',
   })

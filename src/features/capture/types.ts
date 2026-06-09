@@ -2,9 +2,10 @@ import type { Database, Json } from '@/lib/supabase/database.types'
 
 export type CaptureItem = Database['public']['Tables']['capture_items']['Row']
 export type CaptureType = 'photo' | 'document' | 'vin_plate' | 'info_plate' | 'voice_note'
+export type CaptureIntent = 'auto_image' | 'manual'
 
 export const CAPTURE_TYPES: Array<{ value: CaptureType; label: string; helper: string }> = [
-  { value: 'photo', label: 'Photo', helper: 'Field photo or supporting image' },
+  { value: 'photo', label: 'Field Photo', helper: 'General image or damage photo' },
   { value: 'document', label: 'Document', helper: 'PDF, document scan, or image' },
   { value: 'vin_plate', label: 'VIN Plate', helper: 'Vehicle VIN label or plate' },
   { value: 'info_plate', label: 'Info/Data Plate', helper: 'Manufacturer, compliance, or data tag' },
@@ -12,15 +13,35 @@ export const CAPTURE_TYPES: Array<{ value: CaptureType; label: string; helper: s
 ]
 
 export const CAPTURE_TYPE_LABELS: Record<CaptureType, string> = {
-  photo: 'Photo',
+  photo: 'Image',
   document: 'Document',
   vin_plate: 'VIN Plate',
   info_plate: 'Info/Data Plate',
   voice_note: 'Voice Note',
 }
 
+export const MANUAL_CAPTURE_TYPES = CAPTURE_TYPES
+
 export function isCaptureType(value: string): value is CaptureType {
   return CAPTURE_TYPES.some((captureType) => captureType.value === value)
+}
+
+export function isCaptureIntent(value: string): value is CaptureIntent {
+  return value === 'auto_image' || value === 'manual'
+}
+
+export function getAutoImageExtractedData(): Json {
+  return {
+    kind: 'unclassified_image',
+    classification: {
+      status: 'pending',
+      detected_type: null,
+      confidence: null,
+    },
+    extraction: {
+      status: 'not_started',
+    },
+  }
 }
 
 export function getInitialExtractedData(type: CaptureType): Json {
@@ -30,15 +51,27 @@ export function getInitialExtractedData(type: CaptureType): Json {
     case 'info_plate':
       return { kind: 'info_plate', fields: {}, status: 'pending_ocr' }
     case 'document':
-      return { kind: 'document', status: 'pending_ocr' }
+      return {
+        kind: 'document',
+        classification: { status: 'manual_document', detected_type: 'document', confidence: null },
+        extraction: { status: 'not_started' },
+      }
     case 'photo':
       return { kind: 'photo', status: 'captured' }
     case 'voice_note':
-      return { kind: 'voice_note', status: 'pending_transcription' }
+      return {
+        kind: 'voice_note',
+        classification: { status: 'manual_audio', detected_type: 'voice_note', confidence: null },
+        extraction: { status: 'not_started' },
+      }
   }
 }
 
-export function getCaptureEventTitle(type: CaptureType) {
+export function getCaptureEventTitle(type: CaptureType, intent: CaptureIntent = 'manual') {
+  if (intent === 'auto_image') {
+    return 'Evidence captured'
+  }
+
   switch (type) {
     case 'vin_plate':
       return 'VIN plate captured'
