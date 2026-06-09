@@ -24,13 +24,39 @@ function formatAiStatus(status: string | null) {
   return status ? status.replace(/_/g, ' ') : 'not started'
 }
 
+const DETECTED_TYPE_LABELS: Record<string, string> = {
+  registration: 'Registration',
+  vin_plate: 'VIN Plate',
+  license_plate: 'Licence Plate',
+  unit_number: 'Unit Number',
+  inspection_sheet: 'Inspection Sheet',
+  work_order: 'Work Order',
+  odometer: 'Odometer',
+  hour_meter: 'Hour Meter',
+  info_plate: 'Info Plate',
+  damage_or_defect: 'Damage or Defect',
+  general_field_photo: 'General Field Photo',
+  other_document: 'Other Document',
+  unknown: 'Unknown',
+}
+
 function formatDetectedType(value: string) {
-  return value.replace(/_/g, ' ')
+  return DETECTED_TYPE_LABELS[value] ?? value.replace(/_/g, ' ')
+}
+
+function formatConfidence(value: Json | undefined) {
+  const confidence = typeof value === 'number' ? value : Number(value)
+
+  if (!Number.isFinite(confidence)) {
+    return null
+  }
+
+  return `${Math.round(Math.min(1, Math.max(0, confidence)) * 100)}%`
 }
 
 function getClassificationSummary(extractedData: Json | null) {
   if (!extractedData || !isRecord(extractedData)) {
-    return { label: 'Needs classification', detectedType: null, status: 'pending' }
+    return { label: 'Needs classification', detectedType: null, status: 'pending', confidence: null }
   }
 
   const classification = isRecord(extractedData.classification) ? extractedData.classification : null
@@ -38,18 +64,20 @@ function getClassificationSummary(extractedData: Json | null) {
   const status = typeof classification?.status === 'string' ? classification.status : 'pending'
 
   if (detectedType) {
-    return { label: `Detected: ${formatDetectedType(detectedType)}`, detectedType, status }
+    const confidence = formatConfidence(classification?.confidence)
+    const confidenceLabel = confidence ? ` · ${confidence}` : ''
+    return { label: `Detected: ${formatDetectedType(detectedType)}${confidenceLabel}`, detectedType, status, confidence }
   }
 
   if (status === 'manual_document') {
-    return { label: 'Document selected manually', detectedType: 'document', status }
+    return { label: 'Document selected manually', detectedType: 'document', status, confidence: null }
   }
 
   if (status === 'manual_audio') {
-    return { label: 'Audio note selected manually', detectedType: 'voice_note', status }
+    return { label: 'Audio note selected manually', detectedType: 'voice_note', status, confidence: null }
   }
 
-  return { label: 'Needs classification', detectedType: null, status }
+  return { label: 'Needs classification', detectedType: null, status, confidence: null }
 }
 
 function formatExtractedDataSummary(type: string, extractedData: Json | null) {
@@ -112,10 +140,20 @@ export function CaptureList({
                 <h3>{label}</h3>
                 <p className="muted">Captured {formatDateTime(capture.captured_at ?? capture.created_at)}</p>
               </div>
-              <span className="ai-status-pill">AI {formatAiStatus(capture.ai_status)}</span>
+              <span className={capture.ai_status === 'needs_review' ? 'ai-status-pill needs-review' : 'ai-status-pill'}>
+                {capture.ai_status === 'needs_review' ? 'Needs review' : `AI ${formatAiStatus(capture.ai_status)}`}
+              </span>
             </div>
             <div className="capture-classification-row">
-              <span className={classification.detectedType ? 'classification-pill' : 'classification-pill pending'}>
+              <span
+                className={
+                  capture.ai_status === 'needs_review'
+                    ? 'classification-pill needs-review'
+                    : classification.detectedType
+                      ? 'classification-pill'
+                      : 'classification-pill pending'
+                }
+              >
                 {classification.label}
               </span>
               <button type="button" className="secondary-link correct-type-placeholder" disabled>

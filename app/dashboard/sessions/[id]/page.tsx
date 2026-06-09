@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
-import { AddCaptureForm, CaptureList } from '@/features/capture'
+import { AddCaptureForm, CaptureList, ClassifyPendingCapturesButton } from '@/features/capture'
 import { SESSION_STATUSES, SessionStatusBadge, formatDateTime } from '@/features/sessions'
 import {
   archiveDocumentationSession,
@@ -115,12 +115,15 @@ export default async function SessionDetailPage({
       </section>
 
       <section className="card detail-card capture-card form-stack">
-        <div>
-          <h2>Captures</h2>
-          <p className="muted">Review uploaded files, intake status, and extraction placeholders for this session.</p>
-          <p className="next-ai-step">
-            Next: AI will identify VIN plates, info plates, documents, odometers, and field photos automatically.
-          </p>
+        <div className="captures-section-header">
+          <div>
+            <h2>Captures</h2>
+            <p className="muted">Review uploaded files, intake status, and extraction placeholders for this session.</p>
+            <p className="next-ai-step">
+              Next: AI will identify VIN plates, info plates, documents, odometers, and field photos automatically.
+            </p>
+          </div>
+          <ClassifyPendingCapturesButton sessionId={session.id} />
         </div>
         <CaptureList captures={captures ?? []} signedUrls={signedUrls} />
       </section>
