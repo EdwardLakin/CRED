@@ -455,3 +455,133 @@ a {
     border-radius: 18px;
   }
 }
+
+.capture-card h2,
+.capture-list-item h3 {
+  margin: 0;
+}
+
+.capture-form {
+  gap: 18px;
+}
+
+.capture-type-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.capture-type-option {
+  align-items: flex-start;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  min-height: 108px;
+  padding: 14px;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.capture-type-option:has(input:checked) {
+  background: #edf2ff;
+  border-color: #8ea8ff;
+  box-shadow: 0 10px 28px rgb(21 93 252 / 12%);
+}
+
+.capture-type-option input {
+  margin-top: 3px;
+}
+
+.capture-type-option span {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.capture-type-option small,
+.capture-upload-hint,
+.capture-storage-path {
+  font-size: 0.86rem;
+}
+
+.file-input {
+  background: #fff;
+  padding: 10px 12px;
+}
+
+.capture-actions {
+  justify-content: flex-start;
+}
+
+.capture-list {
+  display: grid;
+  gap: 14px;
+}
+
+.capture-list-item {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+}
+
+.capture-list-main {
+  align-items: flex-start;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.ai-status-pill {
+  background: #fef3c7;
+  border-radius: 999px;
+  color: #92400e;
+  font-size: 0.82rem;
+  font-weight: 800;
+  padding: 8px 12px;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.capture-summary {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  margin: 0;
+  padding: 12px 14px;
+}
+
+.capture-file-link {
+  align-self: flex-start;
+}
+
+@media (max-width: 980px) {
+  .capture-type-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .capture-type-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .capture-type-option {
+    min-height: auto;
+  }
+
+  .capture-list-main {
+    flex-direction: column;
+  }
+
+  .capture-file-link {
+    align-self: stretch;
+  }
+}
