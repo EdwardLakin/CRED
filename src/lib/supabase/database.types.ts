@@ -19,19 +19,16 @@ export interface Database {
         Row: {
           id: string
           name: string
-          created_by: string
           created_at: string | null
         }
         Insert: {
           id?: string
           name: string
-          created_by: string
           created_at?: string | null
         }
         Update: {
           id?: string
           name?: string
-          created_by?: string
           created_at?: string | null
         }
         Relationships: []
