@@ -55,6 +55,9 @@ export function AddCaptureForm({
   workflow,
   returnPath,
   captureButtonLabel = 'Capture Evidence',
+  helperText = 'Take or select multiple photos. CRED will save each item separately and organize them automatically.',
+  commonCaptureText = 'Common captures: registration, VIN plate, unit number, licence plate, inspection sheet, work order, odometer, info/data plate, defects.',
+  showSuggestedCaptureText = true,
 }: {
   sessionId: string
   sessionType?: string | null
@@ -63,6 +66,9 @@ export function AddCaptureForm({
   workflow?: string
   returnPath?: string
   captureButtonLabel?: string
+  helperText?: string
+  commonCaptureText?: string
+  showSuggestedCaptureText?: boolean
 }) {
   const formRef = useRef<HTMLFormElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -134,14 +140,9 @@ export function AddCaptureForm({
             <small>Open the camera or photo picker</small>
           </span>
         </button>
-        <p className="muted capture-helper-text">
-          Take or select multiple photos. CRED will save each item separately and organize them automatically.
-        </p>
-        <p className="muted capture-upload-hint">
-          Common captures: registration, VIN plate, unit number, licence plate, inspection sheet, work order, odometer,
-          info/data plate, defects.
-        </p>
-        <p className="muted capture-upload-hint">{suggestedCaptureText}</p>
+        <p className="muted capture-helper-text">{helperText}</p>
+        {commonCaptureText ? <p className="muted capture-upload-hint">{commonCaptureText}</p> : null}
+        {showSuggestedCaptureText ? <p className="muted capture-upload-hint">{suggestedCaptureText}</p> : null}
       </div>
 
       <div className="field-stack capture-file-field">
