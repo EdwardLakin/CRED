@@ -286,19 +286,18 @@ function GuidedStepCard({
   step,
   status,
   count,
-  sessionId,
-  sessionType,
-  workflow,
 }: {
   step: GuidedEvidenceStep
   status: StepStatus
   count: number
-  sessionId: string
-  sessionType: string
-  workflow: string
 }) {
+  const isComplete = status === 'Captured' || status === 'Extracted'
+  const className = `guided-step-card guided-step-card-${status.toLowerCase().replace(/\s+/g, '-')} ${
+    isComplete ? 'guided-step-card-compact' : ''
+  }`
+
   return (
-    <article className="guided-step-card" id={`step-${step.key}`}>
+    <article className={className} id={`step-${step.key}`}>
       <div className="guided-step-header">
         <div>
           <h3>{step.label}</h3>
@@ -308,29 +307,24 @@ function GuidedStepCard({
       </div>
       <div className="guided-step-meta">
         <span>{count} related capture{count === 1 ? '' : 's'}</span>
-        <span>Examples: {step.examples.join(', ')}</span>
+        <span>{status.toLowerCase()}</span>
       </div>
-      <AddCaptureForm
-        sessionId={sessionId}
-        sessionType={sessionType}
-        guidedStep={step.key}
-        guidedLabel={step.label}
-        workflow={workflow}
-        returnPath={`/dashboard/sessions/${sessionId}/capture#step-${step.key}`}
-        captureButtonLabel="Capture for this step"
-      />
+      <p className="guided-step-examples">Examples: {step.examples.join(', ')}</p>
+      <Link href="#main-capture-card" className="secondary-link guided-step-capture-link touch-target">
+        Capture evidence
+      </Link>
     </article>
   )
 }
 
 function RecentCaptures({ captures, signedUrls }: { captures: CaptureItem[]; signedUrls: Record<string, string> }) {
   if (captures.length === 0) {
-    return <div className="empty-state">No captures yet. Start with any suggested evidence group above.</div>
+    return <div className="empty-state">No captures yet. Use the main Capture Evidence button when you are ready.</div>
   }
 
   return (
     <div className="recent-capture-list">
-      {captures.slice(0, 8).map((capture) => {
+      {captures.slice(0, 5).map((capture) => {
         const guidance = getGuidance(capture.extracted_data)
         const detectedType = getDetectedType(capture.extracted_data)
         const signedUrl = signedUrls[capture.id]
@@ -391,7 +385,7 @@ export default async function GuidedCapturePage({
   const captureItems = captures ?? []
   const signedUrls: Record<string, string> = {}
   await Promise.all(
-    captureItems.slice(0, 8).map(async (capture) => {
+    captureItems.slice(0, 5).map(async (capture) => {
       const { data } = await supabase.storage.from('documentation-captures').createSignedUrl(capture.storage_path, 60 * 10)
 
       if (data?.signedUrl) {
@@ -439,7 +433,7 @@ export default async function GuidedCapturePage({
 
       <section className="card detail-card guided-progress-card">
         <div>
-          <h2>{capturedStepCount} of {steps.length} suggested evidence groups captured</h2>
+          <h2>{capturedStepCount} of {steps.length} evidence groups captured</h2>
           <p className="muted">
             These groups are guidance only. Skip anything that does not apply, or add extra supporting evidence when needed.
           </p>
@@ -453,10 +447,27 @@ export default async function GuidedCapturePage({
         </div>
       </section>
 
+      <section className="card detail-card guided-main-capture-card" id="main-capture-card">
+        <div>
+          <p className="eyebrow guided-eyebrow">Main field action</p>
+          <h2>Capture Evidence</h2>
+          <p className="muted">Use this for all field evidence. The checklist below updates as AI classifies and extracts details.</p>
+        </div>
+        <AddCaptureForm
+          sessionId={session.id}
+          sessionType={session.session_type}
+          workflow={workflow}
+          returnPath={`/dashboard/sessions/${session.id}/capture#main-capture-card`}
+          helperText="Take or select multiple photos. CRED will classify and organize them automatically."
+          commonCaptureText="Common captures: VIN plate, info/data plate, odometer/hour meter, work order, concern area, defects, supporting photos."
+          showSuggestedCaptureText={false}
+        />
+      </section>
+
       <section className="card detail-card guided-actions-card">
         <div>
-          <h2>Capture actions</h2>
-          <p className="muted">Run AI after adding photos, then review extracted evidence on the session dashboard.</p>
+          <h2>AI actions</h2>
+          <p className="muted">Classify captures, extract details, then review evidence on the session dashboard.</p>
         </div>
         <div className="guided-action-buttons">
           <ClassifyPendingCapturesButton sessionId={session.id} />
@@ -470,33 +481,36 @@ export default async function GuidedCapturePage({
         </div>
       </section>
 
-      <section className="guided-step-list" aria-label="Suggested evidence checklist">
-        {stepSummaries.map((summary) => (
-          <GuidedStepCard
-            key={summary.step.key}
-            step={summary.step}
-            status={summary.status}
-            count={summary.count}
-            sessionId={session.id}
-            sessionType={session.session_type}
-            workflow={workflow}
-          />
-        ))}
+      <section className="guided-checklist-section" aria-label="Suggested evidence checklist">
+        <div className="section-header compact-section-header">
+          <div>
+            <h2>Evidence checklist</h2>
+            <p className="muted">Use these rows for status and guidance only. Capture extra evidence anytime above.</p>
+          </div>
+        </div>
+        <div className="guided-step-list">
+          {stepSummaries.map((summary) => (
+            <GuidedStepCard key={summary.step.key} step={summary.step} status={summary.status} count={summary.count} />
+          ))}
+        </div>
       </section>
 
       <section className="card detail-card recent-captures-card">
         <div>
           <h2>Recent captures</h2>
-          <p className="muted">Compact field review of the latest files, AI status, extraction status, and guided step.</p>
+          <p className="muted">Latest 5 files with AI status, extraction status, and guided step.</p>
         </div>
         <RecentCaptures captures={captureItems} signedUrls={signedUrls} />
+        <Link href={`/dashboard/sessions/${session.id}#captures`} className="secondary-link touch-target">
+          View all on session details
+        </Link>
       </section>
 
       <div className="guided-sticky-actions">
-        <Link href={`#step-${steps[0]?.key ?? 'top'}`} className="button button-secondary touch-target">
-          Checklist
+        <Link href="#main-capture-card" className="button button-primary touch-target">
+          Capture Evidence
         </Link>
-        <Link href={`/dashboard/sessions/${session.id}`} className="button button-primary touch-target">
+        <Link href={`/dashboard/sessions/${session.id}`} className="button button-secondary touch-target">
           Session Details
         </Link>
       </div>

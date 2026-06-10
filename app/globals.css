@@ -1122,6 +1122,7 @@ a:focus-visible {
 
 .field-mode-cta-card,
 .guided-progress-card,
+.guided-main-capture-card,
 .guided-actions-card {
   align-items: center;
   display: flex;
@@ -1131,8 +1132,10 @@ a:focus-visible {
 
 .field-mode-cta-card h2,
 .guided-progress-card h2,
+.guided-main-capture-card h2,
 .guided-actions-card h2,
 .recent-captures-card h2,
+.guided-checklist-section h2,
 .guided-step-card h3 {
   margin: 0;
 }
@@ -1153,6 +1156,17 @@ a:focus-visible {
 .guided-progress-card {
   align-items: stretch;
   flex-direction: column;
+}
+
+.guided-main-capture-card {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 16px;
+  scroll-margin-top: 18px;
+}
+
+.guided-main-capture-card .guided-eyebrow {
+  margin-top: 0;
 }
 
 .guided-progress-track {
@@ -1187,32 +1201,76 @@ a:focus-visible {
   gap: 10px;
 }
 
+.guided-checklist-section {
+  display: grid;
+  gap: 12px;
+}
+
+.compact-section-header {
+  align-items: flex-end;
+}
+
 .guided-step-list {
   display: grid;
-  gap: 16px;
+  gap: 10px;
 }
 
 .guided-step-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-card);
+  border-radius: 18px;
   box-shadow: var(--shadow);
   display: grid;
-  gap: 14px;
-  padding: 18px;
+  gap: 8px;
+  padding: 14px;
   scroll-margin-top: 16px;
+}
+
+.guided-step-card-missing {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-primary);
+}
+
+.guided-step-card-needs-review {
+  border-color: var(--danger);
+}
+
+.guided-step-card-compact {
+  background: var(--surface-muted);
+  box-shadow: none;
+  padding: 12px 14px;
 }
 
 .guided-step-header {
   align-items: flex-start;
   display: flex;
-  gap: 14px;
+  gap: 12px;
   justify-content: space-between;
 }
 
 .guided-step-header p {
   color: var(--muted);
-  margin: 6px 0 0;
+  margin: 4px 0 0;
+}
+
+.guided-step-card-compact .guided-step-header p {
+  display: none;
+}
+
+.guided-step-examples {
+  color: var(--muted);
+  font-size: 0.86rem;
+  margin: 0;
+}
+
+.guided-step-card-compact .guided-step-examples {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.guided-step-capture-link {
+  justify-self: start;
 }
 
 .guided-status {
@@ -1312,7 +1370,8 @@ a:focus-visible {
 @media (max-width: 760px) {
   .field-mode-cta-card,
   .guided-actions-card,
-  .guided-step-header {
+  .guided-step-header,
+  .compact-section-header {
     align-items: stretch;
     flex-direction: column;
   }
