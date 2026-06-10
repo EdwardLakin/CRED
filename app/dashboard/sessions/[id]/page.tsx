@@ -8,6 +8,7 @@ import {
   ExtractCaptureDetailsButton,
   ExtractedEvidencePanel,
 } from '@/features/capture'
+import { ThemeToggle } from '@/components/theme'
 import { SESSION_STATUSES, SessionStatusBadge, formatDateTime } from '@/features/sessions'
 import {
   applySessionSuggestions,
@@ -216,11 +217,14 @@ export default async function SessionDetailPage({
             {session.session_type} · Updated {formatDateTime(session.updated_at ?? session.created_at)}
           </p>
         </div>
-        <form action={isArchived ? restoreAction : archiveAction}>
-          <button className="button button-secondary touch-target">
-            {isArchived ? 'Restore Archived Session' : 'Archive Session'}
-          </button>
-        </form>
+        <div className="page-actions">
+          <ThemeToggle />
+          <form action={isArchived ? restoreAction : archiveAction}>
+            <button className="button button-secondary touch-target">
+              {isArchived ? 'Restore Archived Session' : 'Archive Session'}
+            </button>
+          </form>
+        </div>
       </div>
 
       {error ? <p className="error">{error}</p> : null}

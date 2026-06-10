@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 
+import { ThemeToggle } from '@/components/theme'
 import { Button, Card, Input, Label } from '@/components/ui'
 import { getCurrentProfile, requireUser } from '@/features/auth/server'
 import { completeOnboarding } from './actions'
@@ -34,6 +35,9 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
   return (
     <main className="centered-page">
       <Card>
+        <div className="auth-card-header">
+          <ThemeToggle />
+        </div>
         <div className="stack">
           <div>
             <h1>Set up your workspace</h1>

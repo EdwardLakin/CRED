@@ -1,6 +1,7 @@
 import Link from 'next/link'
 
 import { signOut } from './actions'
+import { ThemeToggle } from '@/components/theme'
 import { Button, Card } from '@/components/ui'
 import { EmptyState, SessionCard } from '@/features/sessions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
@@ -51,11 +52,14 @@ export default async function DashboardPage() {
             <strong>Industry</strong>
             <p className="muted">{industry}</p>
           </div>
-          <form action={signOut} className="sign-out-form">
-            <Button type="submit" variant="secondary">
-              Sign out
-            </Button>
-          </form>
+          <div className="workspace-actions">
+            <ThemeToggle />
+            <form action={signOut} className="sign-out-form">
+              <Button type="submit" variant="secondary">
+                Sign out
+              </Button>
+            </form>
+          </div>
         </div>
       </Card>
 

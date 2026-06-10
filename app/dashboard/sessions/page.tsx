@@ -1,5 +1,6 @@
 import Link from 'next/link'
 
+import { ThemeToggle } from '@/components/theme'
 import { EmptyState, SessionCard } from '@/features/sessions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
@@ -33,9 +34,12 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
           <h1>Documentation Sessions</h1>
           <p className="muted">Search and open every session for your organization.</p>
         </div>
-        <Link href="/dashboard/sessions/new" className="button button-primary touch-target">
-          New Documentation Session
-        </Link>
+        <div className="page-actions">
+          <ThemeToggle />
+          <Link href="/dashboard/sessions/new" className="button button-primary touch-target">
+            New Documentation Session
+          </Link>
+        </div>
       </div>
 
       <form action="/dashboard/sessions" className="search-card">
