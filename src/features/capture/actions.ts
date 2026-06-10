@@ -33,9 +33,9 @@ import {
 } from './types'
 
 const CAPTURE_BUCKET = 'documentation-captures'
-const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024
+const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024
 const MAX_BATCH_FILES = 10
-const FILE_TOO_LARGE_MESSAGE = 'That file is too large. Please upload an image under 15MB.'
+const FILE_TOO_LARGE_MESSAGE = 'That file is too large. Please upload evidence under 100MB.'
 const BATCH_UPLOAD_ERROR_MESSAGE = 'Some files could not be uploaded. Please try again.'
 
 const ALLOWED_MIME_TYPES: Record<CaptureType, readonly string[]> = {
@@ -44,6 +44,8 @@ const ALLOWED_MIME_TYPES: Record<CaptureType, readonly string[]> = {
   info_plate: ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif'],
   document: ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif'],
   voice_note: ['audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/webm', 'audio/ogg', 'audio/aac', 'audio/x-m4a'],
+  video: ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'video/mpeg'],
+  evidence_video: ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'video/mpeg'],
 }
 
 export type CaptureActionState = {
@@ -129,6 +131,26 @@ function fileIsImage(file: File) {
   return ALLOWED_MIME_TYPES.photo.includes(file.type)
 }
 
+function fileIsVideo(file: File) {
+  return ALLOWED_MIME_TYPES.video.includes(file.type)
+}
+
+function getMediaKind(file: File, captureType: CaptureType): 'image' | 'video' | 'audio' | 'document' {
+  if (fileIsVideo(file) || captureType === 'video' || captureType === 'evidence_video') {
+    return 'video'
+  }
+
+  if (captureType === 'voice_note') {
+    return 'audio'
+  }
+
+  if (captureType === 'document' && !fileIsImage(file)) {
+    return 'document'
+  }
+
+  return 'image'
+}
+
 function mergeGuidance(extractedData: Json, guidance: { workflow: string; step: string; label: string } | null): Json {
   if (!guidance) {
     return extractedData
@@ -143,12 +165,12 @@ function mergeGuidance(extractedData: Json, guidance: { workflow: string; step: 
 }
 
 function getCaptureMetadata(captureIntent: CaptureIntent, manualCaptureType: CaptureType | null) {
-  if (captureIntent === 'auto_image') {
+  if (captureIntent === 'auto_image' || captureIntent === 'auto_evidence') {
     return {
       type: 'photo' as CaptureType,
       extractedData: getAutoImageExtractedData(),
       timelineTitle: getCaptureEventTitle('photo', 'auto_image'),
-      timelineDescription: 'Image captured for AI classification.',
+      timelineDescription: 'Evidence captured for AI classification.',
     }
   }
 
@@ -216,6 +238,11 @@ async function saveCapture(formData: FormData): Promise<CaptureActionFailure | C
   const guidedStep = getSafeToken(getString(formData, 'guided_step'))
   const guidedLabel = getSafeToken(getString(formData, 'guided_label'), 120)
   const sessionWorkflow = getSafeToken(getString(formData, 'session_workflow'))
+  const technicianNote = getString(formData, 'technician_note').slice(0, 2000)
+  const rawTranscriptStatus = getString(formData, 'transcript_status')
+  const transcriptStatus = ['pending', 'completed', 'failed', 'unavailable'].includes(rawTranscriptStatus) ? rawTranscriptStatus : 'not_started'
+  const rawNoteSource = getString(formData, 'note_source')
+  const noteSource = ['voice', 'manual', 'edited'].includes(rawNoteSource) ? rawNoteSource : 'manual'
 
   if (!sessionId) {
     return captureError('Missing documentation session.')
@@ -254,8 +281,8 @@ async function saveCapture(formData: FormData): Promise<CaptureActionFailure | C
       return captureError(FILE_TOO_LARGE_MESSAGE, sessionId)
     }
 
-    if (rawCaptureIntent === 'auto_image' && !fileIsImage(file)) {
-      return captureError('Capture Evidence accepts image files only.', sessionId)
+    if ((rawCaptureIntent === 'auto_image' || rawCaptureIntent === 'auto_evidence') && !fileIsImage(file) && !fileIsVideo(file)) {
+      return captureError('Capture Evidence accepts photo or video files only.', sessionId)
     }
 
     if (rawCaptureIntent === 'manual' && !fileHasAllowedType(file, captureType)) {
@@ -301,16 +328,35 @@ async function saveCapture(formData: FormData): Promise<CaptureActionFailure | C
     }
 
     const capturedAt = new Date().toISOString()
+    const itemCaptureType = rawCaptureIntent === 'auto_evidence' && fileIsVideo(file) ? 'video' : captureType
+    const itemMediaKind = getMediaKind(file, itemCaptureType)
+    const itemExtractedData = mergeGuidance(
+      itemMediaKind === 'video' ? getInitialExtractedData('video') : captureMetadata.extractedData,
+      guidance,
+    )
+    const { count: existingCaptureCount } = await supabase
+      .from('capture_items')
+      .select('id', { count: 'exact', head: true })
+      .eq('documentation_session_id', session.id)
+      .eq('organization_id', profile.organization_id)
+    const reportOrder = (existingCaptureCount ?? 0) + fileIndex + 1
     const { data: captureItem, error: captureErrorResult } = await supabase
       .from('capture_items')
       .insert({
         documentation_session_id: session.id,
         organization_id: profile.organization_id,
-        type: captureType,
+        type: itemCaptureType,
         storage_path: storagePath,
         captured_at: capturedAt,
-        ai_status: 'pending',
-        extracted_data: mergeGuidance(captureMetadata.extractedData, guidance),
+        ai_status: itemMediaKind === 'video' ? 'needs_review' : 'pending',
+        extracted_data: itemExtractedData,
+        technician_note: technicianNote || null,
+        transcript: noteSource === 'voice' || noteSource === 'edited' ? technicianNote || null : null,
+        transcript_status: technicianNote ? (transcriptStatus === 'pending' ? 'pending' : 'completed') : transcriptStatus,
+        note_source: technicianNote ? noteSource : 'manual',
+        media_kind: itemMediaKind,
+        report_order: reportOrder,
+        include_in_report: true,
       })
       .select('id')
       .single()
@@ -383,6 +429,9 @@ type PendingCaptureItem = {
   organization_id: string
   storage_path: string
   extracted_data: Json
+  technician_note: string | null
+  transcript: string | null
+  media_kind: string
 }
 
 const MAX_CLASSIFICATION_BATCH_SIZE = 10
@@ -495,7 +544,7 @@ export async function classifyPendingCaptures(
 
   const { data: capturesForReview, error: pendingError } = await supabase
     .from('capture_items')
-    .select('id, documentation_session_id, organization_id, storage_path, extracted_data, ai_status')
+    .select('id, documentation_session_id, organization_id, storage_path, extracted_data, ai_status, technician_note, transcript, media_kind')
     .eq('documentation_session_id', session.id)
     .eq('organization_id', profile.organization_id)
     .eq('type', 'photo')
@@ -535,7 +584,7 @@ export async function classifyPendingCaptures(
         continue
       }
 
-      const classification = await classifyCaptureImage(signedData.signedUrl, getGuidanceContext(capture.extracted_data))
+      const classification = await classifyCaptureImage(signedData.signedUrl, getGuidanceContext(capture.extracted_data), capture.technician_note ?? capture.transcript ?? null)
       const status = await updateCaptureClassification(capture, classification, supabase)
 
       if (status === 'classified') {
@@ -582,6 +631,9 @@ export type CaptureExtractionActionState = {
 type ExtractionCaptureItem = PendingCaptureItem & {
   type: string
   ai_status: string | null
+  technician_note: string | null
+  transcript: string | null
+  media_kind: string
 }
 
 type SuggestedDetail = {
@@ -605,7 +657,7 @@ type SuggestionCandidate = {
 const MAX_EXTRACTION_BATCH_SIZE = 10
 const EXTRACTION_CONFIDENCE_THRESHOLD = 0.65
 const SIGNED_EXTRACTION_URL_SECONDS = 60 * 5
-const EXTRACTABLE_CAPTURE_TYPES = ['photo', 'document']
+const EXTRACTABLE_CAPTURE_TYPES = ['photo', 'document', 'video', 'evidence_video']
 const EXTRACTABLE_DETECTED_TYPES: CaptureClassificationType[] = [
   'registration',
   'vin_plate',
@@ -662,7 +714,7 @@ function captureNeedsExtraction(capture: ExtractionCaptureItem) {
     return false
   }
 
-  if (capture.type === 'document' && !IMAGE_STORAGE_PATH_PATTERN.test(capture.storage_path)) {
+  if ((capture.type === 'document' || capture.media_kind === 'video') && !IMAGE_STORAGE_PATH_PATTERN.test(capture.storage_path)) {
     return false
   }
 
@@ -832,7 +884,7 @@ export async function extractCaptureDetails(
 
   const { data: capturesForExtraction, error: capturesError } = await supabase
     .from('capture_items')
-    .select('id, documentation_session_id, organization_id, type, storage_path, extracted_data, ai_status')
+    .select('id, documentation_session_id, organization_id, type, storage_path, extracted_data, ai_status, technician_note, transcript, media_kind')
     .eq('documentation_session_id', session.id)
     .eq('organization_id', profile.organization_id)
     .in('type', EXTRACTABLE_CAPTURE_TYPES)
@@ -874,7 +926,7 @@ export async function extractCaptureDetails(
         continue
       }
 
-      const extraction = await extractCaptureImageDetails(signedData.signedUrl, detectedType)
+      const extraction = await extractCaptureImageDetails(signedData.signedUrl, detectedType, capture.technician_note ?? capture.transcript ?? null)
       const status = await updateCaptureExtraction(capture, extraction, supabase)
 
       if (status === 'extracted' || status === 'needs_review') {
@@ -908,4 +960,93 @@ export async function extractCaptureDetails(
   revalidatePath(`/dashboard/sessions/${session.id}/capture`)
 
   return { ok: true, message: extractionActionMessage(extractedCount, suggestionCount) }
+}
+
+type CaptureReviewActionState = {
+  ok?: boolean
+  message?: string
+}
+
+async function getAuthorizedCapture(captureId: string) {
+  const { supabase, profile } = await requireSessionWorkspace()
+  const { data: capture, error } = await supabase
+    .from('capture_items')
+    .select('id, documentation_session_id, organization_id, storage_path')
+    .eq('id', captureId)
+    .eq('organization_id', profile.organization_id)
+    .single()
+
+  if (error || !capture) {
+    return { supabase, profile, capture: null }
+  }
+
+  return { supabase, profile, capture }
+}
+
+export async function updateCaptureReview(
+  _previousState: CaptureReviewActionState,
+  formData: FormData,
+): Promise<CaptureReviewActionState> {
+  const captureId = getString(formData, 'capture_id')
+  const note = getString(formData, 'technician_note').slice(0, 2000)
+  const includeInReport = getString(formData, 'include_in_report') === 'on'
+  const reportOrderValue = Number(getString(formData, 'report_order'))
+  const reportOrder = Number.isFinite(reportOrderValue) && reportOrderValue > 0 ? Math.round(reportOrderValue) : null
+
+  if (!captureId) {
+    return { ok: false, message: 'Missing capture.' }
+  }
+
+  const { supabase, profile, capture } = await getAuthorizedCapture(captureId)
+
+  if (!capture) {
+    return { ok: false, message: 'Capture not found.' }
+  }
+
+  const { error } = await supabase
+    .from('capture_items')
+    .update({
+      technician_note: note || null,
+      transcript: note || null,
+      transcript_status: note ? 'completed' : 'not_started',
+      note_source: 'edited',
+      include_in_report: includeInReport,
+      report_order: reportOrder,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', capture.id)
+    .eq('organization_id', profile.organization_id)
+
+  if (error) {
+    logCaptureFailure({ step: 'capture_review_update', captureId, ...getSafeErrorDetails(error) })
+    return { ok: false, message: 'Unable to save note.' }
+  }
+
+  revalidatePath(`/dashboard/sessions/${capture.documentation_session_id}`)
+  revalidatePath(`/dashboard/sessions/${capture.documentation_session_id}/capture`)
+
+  return { ok: true, message: 'Saved.' }
+}
+
+export async function removeCaptureItem(formData: FormData) {
+  const captureId = getString(formData, 'capture_id')
+
+  if (!captureId) {
+    return
+  }
+
+  const { supabase, profile, capture } = await getAuthorizedCapture(captureId)
+
+  if (!capture) {
+    return
+  }
+
+  await supabase
+    .from('capture_items')
+    .update({ include_in_report: false, deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq('id', capture.id)
+    .eq('organization_id', profile.organization_id)
+
+  revalidatePath(`/dashboard/sessions/${capture.documentation_session_id}`)
+  revalidatePath(`/dashboard/sessions/${capture.documentation_session_id}/capture`)
 }

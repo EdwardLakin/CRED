@@ -5,6 +5,12 @@ import { type CaptureClassificationType } from './capture-classifier'
 export const CAPTURE_EXTRACTION_MODEL = 'gpt-4.1-mini'
 
 export const CAPTURE_EXTRACTION_FIELDS = [
+  'location',
+  'component',
+  'measurement',
+  'condition',
+  'recommendation',
+  'severity',
   'vin',
   'unit_number',
   'asset_label',
@@ -44,13 +50,13 @@ const EMPTY_FIELDS = Object.fromEntries(CAPTURE_EXTRACTION_FIELDS.map((field) =>
 
 const EXTRACTION_SYSTEM_PROMPT = `You extract cautious structured text from CRED classified captures for commercial vehicle/equipment documentation.
 Return JSON only, no markdown.
-Use null for any field that is not visible, unclear, cropped, or not confidently readable.
+Use null for any field that is not visible, unclear, or supported by technician context. Technician note/transcript is high-value context for location, component, measurement, condition, recommendation, and severity, but do not blindly override image evidence.
 Do not invent values. Preserve exact VIN, plate, unit, serial, and reference strings as shown.
 VIN values must be exactly 17 characters after removing spaces. If a possible VIN is not exactly 17 characters or is uncertain, put it in notes instead of vin.
 For unit number, extract fleet/unit decals or obvious unit identifiers.
 For work orders, extract work order number and customer/unit/VIN only if clearly visible.
 For hour meters, put the hour reading in hour_meter; the app may suggest it to the odometer/session reading if no hour field exists.
-Keep summary brief and human readable.`
+Keep summary brief and human readable. Example note 'left front brake pads at wear limit of 2mm' should extract component brake pads, location left front, measurement 2mm, condition at wear limit, severity red, recommendation replace front brake pads when visually plausible.`
 
 const TARGET_INSTRUCTIONS: Partial<Record<CaptureClassificationType, string>> = {
   unit_number: 'Focus on fleet/unit number decals or labels. Return unit_number and asset_label when the same visible value identifies the asset.',
@@ -186,6 +192,7 @@ export function getCaptureExtractionSummary(extraction: CaptureExtractionResult)
 export async function extractCaptureImageDetails(
   signedImageUrl: string,
   detectedType: CaptureClassificationType,
+  note?: string | null,
 ): Promise<CaptureExtractionResult> {
   const apiKey = getOpenAiApiKey()
 
@@ -213,7 +220,7 @@ export async function extractCaptureImageDetails(
           content: [
             {
               type: 'input_text',
-              text: `Classified capture type: ${detectedType}. ${targetInstruction}\nReturn exactly the JSON schema fields.`,
+              text: `Classified capture type: ${detectedType}. ${targetInstruction}${note ? `\nTechnician note/transcript: "${note.slice(0, 1000)}". Use it as strong context while checking visual consistency.` : ''}\nReturn exactly the JSON schema fields.`,
             },
             { type: 'input_image', image_url: signedImageUrl },
           ],

@@ -1409,3 +1409,154 @@ a:focus-visible {
   background-position: center;
   background-size: cover;
 }
+
+.selected-evidence-list {
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+}
+
+.selected-evidence-list span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.capture-note-composer,
+.capture-review-form {
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px;
+}
+
+.note-textarea {
+  line-height: 1.5;
+  min-height: 104px;
+  resize: vertical;
+}
+
+.capture-note-actions,
+.capture-card-actions,
+.capture-review-controls {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.evidence-feed {
+  gap: 18px;
+}
+
+.evidence-preview-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.evidence-preview-card > :not(.evidence-media-frame) {
+  margin-left: 18px;
+  margin-right: 18px;
+}
+
+.evidence-preview-card > :first-child {
+  margin-top: 18px;
+}
+
+.evidence-preview-card > :last-child {
+  margin-bottom: 18px;
+}
+
+.evidence-media-frame {
+  background: #0f172a;
+  min-height: 260px;
+  position: relative;
+}
+
+.evidence-media {
+  display: block;
+  max-height: 520px;
+  min-height: 260px;
+  object-fit: contain;
+  width: 100%;
+}
+
+.evidence-file-placeholder {
+  align-items: center;
+  color: white;
+  display: flex;
+  font-size: 1.1rem;
+  font-weight: 800;
+  justify-content: center;
+  min-height: 260px;
+  padding: 24px;
+  text-align: center;
+}
+
+.evidence-note-overlay {
+  background: color-mix(in srgb, var(--hero-background) 88%, transparent);
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 16px;
+  bottom: 14px;
+  color: white;
+  display: grid;
+  gap: 4px;
+  left: 14px;
+  padding: 12px 14px;
+  position: absolute;
+  right: 14px;
+}
+
+.evidence-note-overlay span {
+  line-height: 1.45;
+}
+
+.checkbox-row,
+.report-order-field {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+  font-weight: 800;
+}
+
+.report-order-field .input {
+  min-height: 42px;
+  padding: 8px 10px;
+  width: 86px;
+}
+
+.inline-evidence-feed {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 14px;
+  padding-top: 18px;
+}
+
+.danger-link {
+  background: transparent;
+  border: 0;
+  color: var(--danger);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+
+@media (max-width: 760px) {
+  .evidence-media-frame,
+  .evidence-media,
+  .evidence-file-placeholder {
+    min-height: 220px;
+  }
+
+  .evidence-note-overlay {
+    border-radius: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+  }
+}

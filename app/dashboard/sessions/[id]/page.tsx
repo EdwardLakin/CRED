@@ -186,9 +186,10 @@ export default async function SessionDetailPage({
     .eq('organization_id', profile.organization_id)
     .order('captured_at', { ascending: false })
 
+  const visibleCaptures = (captures ?? []).filter((capture) => !capture.deleted_at)
   const signedUrls: Record<string, string> = {}
   await Promise.all(
-    (captures ?? []).map(async (capture) => {
+    visibleCaptures.map(async (capture) => {
       const { data } = await supabase.storage.from('documentation-captures').createSignedUrl(capture.storage_path, 60 * 10)
 
       if (data?.signedUrl) {
@@ -219,6 +220,9 @@ export default async function SessionDetailPage({
         </div>
         <div className="page-actions">
           <ThemeToggle />
+          <Link href={`/api/dashboard/sessions/${session.id}/report-pdf`} className="button button-primary touch-target" target="_blank">
+            Export PDF
+          </Link>
           <form action={isArchived ? restoreAction : archiveAction}>
             <button className="button button-secondary touch-target">
               {isArchived ? 'Restore Archived Session' : 'Archive Session'}
@@ -269,11 +273,11 @@ export default async function SessionDetailPage({
             <ExtractCaptureDetailsButton sessionId={session.id} />
           </div>
         </div>
-        <CaptureList captures={captures ?? []} signedUrls={signedUrls} />
+        <CaptureList captures={visibleCaptures} signedUrls={signedUrls} />
       </section>
 
       <div id="extracted-evidence">
-        <ExtractedEvidencePanel captures={captures ?? []} signedUrls={signedUrls} />
+        <ExtractedEvidencePanel captures={visibleCaptures} signedUrls={signedUrls} />
       </div>
 
       <SuggestedSessionDetailsCard sessionId={session.id} suggestedDetails={session.suggested_details} />
