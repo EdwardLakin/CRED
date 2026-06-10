@@ -1652,3 +1652,145 @@ a:focus-visible {
     right: 0;
   }
 }
+
+.focused-capture-shell {
+  padding-bottom: 112px;
+}
+
+.focused-capture-header h1,
+.focused-capture-card h2,
+.evidence-checklist-summary-card h2,
+.final-report-review-card h2 {
+  margin: 0;
+}
+
+.focused-capture-card,
+.evidence-checklist-summary-card,
+.final-report-review-card {
+  display: grid;
+  gap: 16px;
+}
+
+.final-report-review-card {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.compact-checklist-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.compact-checklist-item {
+  align-items: center;
+  background: var(--success-soft);
+  border: 1px solid color-mix(in srgb, var(--success) 35%, var(--border));
+  border-radius: 999px;
+  color: var(--success);
+  display: inline-flex;
+  font-weight: 900;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.compact-checklist-item.missing {
+  background: var(--surface-muted);
+  border-color: var(--border);
+  color: var(--muted-foreground);
+}
+
+.expanded-checklist-details {
+  display: grid;
+  gap: 12px;
+}
+
+.expanded-checklist-details summary {
+  cursor: pointer;
+  font-weight: 900;
+  list-style-position: inside;
+}
+
+.compact-expanded-step-list {
+  margin-top: 12px;
+}
+
+.recent-capture-card {
+  align-items: center;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 12px 14px;
+}
+
+.recent-capture-card h3 {
+  margin: 0;
+}
+
+.recent-capture-card p {
+  margin: 4px 0 0;
+}
+
+.focused-capture-done-actions {
+  min-width: min(520px, calc(100vw - 20px));
+  justify-content: center;
+}
+
+@media (max-width: 760px) {
+  .final-report-review-card,
+  .focused-capture-header,
+  .recent-capture-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .compact-checklist-grid {
+    flex-direction: column;
+  }
+}
+
+.findings-summary-card {
+  display: grid;
+  gap: 16px;
+}
+
+.findings-summary-card h2 {
+  margin: 0;
+}
+
+.findings-summary-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.findings-summary-grid div {
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+}
+
+.findings-summary-grid strong {
+  color: var(--foreground);
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.findings-summary-grid span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+@media (max-width: 760px) {
+  .findings-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

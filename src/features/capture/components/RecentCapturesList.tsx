@@ -1,0 +1,34 @@
+import type { CaptureItem } from '../types'
+import { CAPTURE_TYPE_LABELS, type CaptureType } from '../types'
+import { formatDateTime } from '@/features/sessions'
+
+function getCaptureLabel(capture: CaptureItem) {
+  const note = capture.technician_note?.trim() || capture.transcript?.trim()
+  return note || CAPTURE_TYPE_LABELS[capture.type as CaptureType] || 'Captured evidence'
+}
+
+export function RecentCapturesList({ captures, signedUrls, limit = 6 }: { captures: CaptureItem[]; signedUrls: Record<string, string>; limit?: number }) {
+  const recentCaptures = captures.filter((capture) => !capture.deleted_at).slice(0, limit)
+
+  if (recentCaptures.length === 0) {
+    return <div className="empty-state capture-empty-state">No captures yet. Use the large Capture Evidence button to add photos, videos, or voice-noted evidence.</div>
+  }
+
+  return (
+    <div className="recent-capture-list">
+      {recentCaptures.map((capture) => (
+        <article key={capture.id} className="recent-capture-card">
+          <div>
+            <h3>{getCaptureLabel(capture)}</h3>
+            <p className="muted">{CAPTURE_TYPE_LABELS[capture.type as CaptureType] ?? capture.type} · {formatDateTime(capture.captured_at ?? capture.created_at)}</p>
+          </div>
+          {signedUrls[capture.id] ? (
+            <a href={signedUrls[capture.id]} target="_blank" rel="noreferrer" className="secondary-link touch-target">
+              Open
+            </a>
+          ) : null}
+        </article>
+      ))}
+    </div>
+  )
+}
