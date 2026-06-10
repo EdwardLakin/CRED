@@ -93,6 +93,11 @@ create table if not exists public.exports (
   created_at timestamptz not null default now()
 );
 
+alter table public.exports
+  add column if not exists status text not null default 'generated',
+  add column if not exists metadata jsonb not null default '{}'::jsonb,
+  add column if not exists created_by uuid references public.profiles(id) on delete set null;
+
 create index if not exists exports_session_created_at_idx
   on public.exports (documentation_session_id, created_at desc);
 

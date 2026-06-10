@@ -256,7 +256,7 @@ export default async function SessionDetailPage({
             odometers, damage, and field photos automatically.
           </p>
         </div>
-        <AddCaptureForm sessionId={session.id} sessionType={session.session_type} />
+        <AddCaptureForm sessionId={session.id} organizationId={session.organization_id} sessionType={session.session_type} />
       </section>
 
       <section className="card detail-card capture-card form-stack">

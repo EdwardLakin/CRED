@@ -196,6 +196,32 @@ begin
       )
     );
 
+
+  drop policy if exists "Organization members can delete documentation captures" on storage.objects;
+  create policy "Organization members can delete documentation captures"
+    on storage.objects for delete
+    to authenticated
+    using (
+      bucket_id = 'documentation-captures'
+      and (storage.foldername(name))[1] = 'organizations'
+      and (storage.foldername(name))[3] = 'sessions'
+      and (storage.foldername(name))[5] = 'captures'
+      and array_length(storage.foldername(name), 1) = 5
+      and storage.filename(name) <> ''
+      and exists (
+        select 1
+        from public.profiles
+        where profiles.organization_id::text = (storage.foldername(name))[2]
+          and profiles.user_id = auth.uid()
+      )
+      and exists (
+        select 1
+        from public.documentation_sessions
+        where documentation_sessions.id::text = (storage.foldername(name))[4]
+          and documentation_sessions.organization_id::text = (storage.foldername(name))[2]
+      )
+    );
+
   drop policy if exists "Organization members can read documentation captures" on storage.objects;
   create policy "Organization members can read documentation captures"
     on storage.objects for select
