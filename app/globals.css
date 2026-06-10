@@ -1435,10 +1435,29 @@ a:focus-visible {
   padding: 14px;
 }
 
+.report-note-editor {
+  background: color-mix(in srgb, var(--primary-soft) 62%, var(--surface));
+  border: 1px solid var(--focus-ring);
+  border-radius: 14px;
+  padding: 12px;
+}
+
 .note-textarea {
   line-height: 1.5;
   min-height: 104px;
   resize: vertical;
+}
+
+.prominent-note-textarea {
+  background: var(--surface);
+  border: 2px solid var(--primary);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 12%, transparent);
+  min-height: 132px;
+}
+
+.note-helper-text {
+  font-size: 0.9rem;
+  margin: 0;
 }
 
 .capture-note-actions,
@@ -1530,17 +1549,50 @@ a:focus-visible {
 }
 
 .evidence-note-overlay {
-  background: color-mix(in srgb, var(--hero-background) 88%, transparent);
-  border: 1px solid rgb(255 255 255 / 18%);
+  background: color-mix(in srgb, var(--hero-background) 90%, transparent);
   border-radius: 16px;
   bottom: 14px;
   color: white;
   display: grid;
-  gap: 4px;
+  gap: 6px;
   left: 14px;
   padding: 12px 14px;
   position: absolute;
   right: 14px;
+}
+
+.evidence-note-overlay-header {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.evidence-note-overlay-header strong {
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.evidence-note-edit-link {
+  background: rgb(255 255 255 / 14%);
+  border: 0;
+  border-radius: 999px;
+  color: white;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  padding: 6px 10px;
+}
+
+.evidence-note-edit-link:hover {
+  background: rgb(255 255 255 / 22%);
+}
+
+.evidence-note-edit-link:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 .evidence-note-overlay span {

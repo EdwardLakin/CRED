@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useRef, useState } from 'react'
 import { useFormStatus } from 'react-dom'
 
 import { removeCaptureItem, updateCaptureReview } from '@/features/capture/actions'
@@ -106,8 +106,7 @@ function SaveButton() {
   return <button className="button button-primary touch-target" disabled={pending}>{pending ? 'Saving…' : 'Save review'}</button>
 }
 
-function MediaPreview({ capture, signedUrl }: { capture: CaptureItem; signedUrl?: string }) {
-  const note = capture.technician_note || capture.transcript || (capture.transcript_status === 'pending' ? 'Transcribing…' : 'Add note before finalizing')
+function MediaPreview({ note, capture, signedUrl, onEditNote }: { note: string; capture: CaptureItem; signedUrl?: string; onEditNote: () => void }) {
   const mediaKind = capture.media_kind || (capture.type === 'video' ? 'video' : capture.type === 'voice_note' ? 'audio' : capture.type === 'document' ? 'document' : 'image')
 
   return (
@@ -122,13 +121,27 @@ function MediaPreview({ capture, signedUrl }: { capture: CaptureItem; signedUrl?
       ) : (
         <div className="evidence-file-placeholder">Stored evidence</div>
       )}
-      <div className="evidence-note-overlay"><strong>Note</strong><span>{note}</span></div>
+      <div className="evidence-note-overlay" aria-label="Read-only note shown on report">
+        <div className="evidence-note-overlay-header">
+          <strong>Note shown on report</strong>
+          <button type="button" className="evidence-note-edit-link" onClick={onEditNote}>Edit note</button>
+        </div>
+        <span>{note}</span>
+      </div>
     </div>
   )
 }
 
 function EvidenceCard({ capture, signedUrl }: { capture: CaptureItem; signedUrl?: string }) {
   const [state, formAction] = useActionState(updateCaptureReview, {})
+  const initialNote = capture.technician_note ?? capture.transcript ?? ''
+  const [note, setNote] = useState(initialNote)
+  const noteTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const overlayNote = note.trim() || (capture.transcript_status === 'pending' ? 'Transcribing…' : 'Add note before finalizing')
+  const focusNoteTextarea = () => {
+    noteTextareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    noteTextareaRef.current?.focus({ preventScroll: true })
+  }
   const label = CAPTURE_TYPE_LABELS[capture.type as CaptureType] ?? capture.type
   const classification = getClassificationSummary(capture.extracted_data)
 
@@ -144,7 +157,7 @@ function EvidenceCard({ capture, signedUrl }: { capture: CaptureItem; signedUrl?
         </span>
       </div>
 
-      <MediaPreview capture={capture} signedUrl={signedUrl} />
+      <MediaPreview note={overlayNote} capture={capture} signedUrl={signedUrl} onEditNote={focusNoteTextarea} />
 
       <div className="capture-classification-row">
         <span className={capture.ai_status === 'needs_review' ? 'classification-pill needs-review' : classification.detectedType ? 'classification-pill' : 'classification-pill pending'}>{classification.label}</span>
@@ -154,9 +167,20 @@ function EvidenceCard({ capture, signedUrl }: { capture: CaptureItem; signedUrl?
 
       <form action={formAction} className="capture-review-form form-stack">
         <input type="hidden" name="capture_id" value={capture.id} />
-        <label className="field-stack label">Editable note / transcript
-          <textarea name="technician_note" className="input note-textarea" defaultValue={capture.technician_note ?? capture.transcript ?? ''} placeholder={capture.transcript_status === 'pending' ? 'Transcribing…' : 'Type the technician note for this evidence'} rows={3} />
-        </label>
+        <div className="field-stack report-note-editor">
+          <label htmlFor={`technician-note-${capture.id}`} className="label">Edit note shown on report</label>
+          <textarea
+            ref={noteTextareaRef}
+            id={`technician-note-${capture.id}`}
+            name="technician_note"
+            className="input note-textarea prominent-note-textarea"
+            value={note}
+            placeholder={capture.transcript_status === 'pending' ? 'Transcribing…' : 'Type the technician note for this evidence'}
+            onChange={(event) => setNote(event.target.value)}
+            rows={4}
+          />
+          <p className="muted note-helper-text">Changes update the note overlay and exported PDF.</p>
+        </div>
         <div className="capture-review-controls">
           <label className="checkbox-row"><input type="checkbox" name="include_in_report" defaultChecked={capture.include_in_report} /> Include in report</label>
           <label className="report-order-field">Order <input type="number" name="report_order" className="input" min={1} defaultValue={capture.report_order ?? ''} /></label>
