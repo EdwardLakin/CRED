@@ -414,6 +414,7 @@ export default async function GuidedCapturePage({
         </div>
         <AddCaptureForm
           sessionId={session.id}
+          organizationId={session.organization_id}
           sessionType={session.session_type}
           workflow={workflow}
           returnPath={`/dashboard/sessions/${session.id}/capture#main-capture-card`}
