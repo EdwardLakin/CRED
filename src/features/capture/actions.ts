@@ -668,7 +668,14 @@ const EXTRACTABLE_DETECTED_TYPES: CaptureClassificationType[] = [
   'odometer',
   'hour_meter',
   'info_plate',
-  'other_document',
+  'brake_measurement',
+  'tire_tread_measurement',
+  'battery_test',
+  'battery_condition',
+  'fluid_level',
+  'defect_photo',
+  'general_evidence',
+  'supporting_photo',
 ]
 const IMAGE_STORAGE_PATH_PATTERN = /\.(jpe?g|png|webp|gif|heic|heif)$/i
 
@@ -682,7 +689,12 @@ const SOURCE_PRIORITIES: Record<string, Partial<Record<CaptureExtractionField | 
   info_plate: { vin: 85, manufacturer: 100, model: 100, serial_number: 100, gvwr: 100, gawr_front: 100, gawr_rear: 100, tire_size: 100 },
   work_order: { work_order_number: 100, customer_name: 75, unit_number: 70, vin: 65 },
   inspection_sheet: { document_type: 80, inspection_date: 80 },
-  other_document: { document_type: 60 },
+  brake_measurement: { component: 80, location: 80, measurement: 90, condition: 80, recommendation: 70, severity: 70 },
+  tire_tread_measurement: { component: 70, location: 80, measurement: 90, condition: 80, recommendation: 70, severity: 70 },
+  battery_test: { component: 70, measurement: 80, condition: 80, recommendation: 70, severity: 60 },
+  battery_condition: { component: 70, condition: 80, recommendation: 70, severity: 60 },
+  fluid_level: { component: 70, location: 60, measurement: 70, condition: 70, recommendation: 60, severity: 60 },
+  defect_photo: { component: 70, location: 70, condition: 80, recommendation: 70, severity: 70 },
 }
 
 function extractionActionMessage(extractedCount: number, suggestionCount: number) {

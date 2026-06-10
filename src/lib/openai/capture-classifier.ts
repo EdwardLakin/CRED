@@ -3,18 +3,23 @@ import type { Json } from '@/lib/supabase/database.types'
 export const CAPTURE_CLASSIFICATION_MODEL = 'gpt-4.1-mini'
 
 export const CAPTURE_CLASSIFICATION_TYPES = [
-  'registration',
   'vin_plate',
-  'license_plate',
-  'unit_number',
-  'inspection_sheet',
+  'info_plate',
+  'registration',
   'work_order',
+  'inspection_sheet',
   'odometer',
   'hour_meter',
-  'info_plate',
-  'damage_or_defect',
-  'general_field_photo',
-  'other_document',
+  'unit_number',
+  'license_plate',
+  'brake_measurement',
+  'tire_tread_measurement',
+  'battery_test',
+  'battery_condition',
+  'fluid_level',
+  'defect_photo',
+  'general_evidence',
+  'supporting_photo',
   'unknown',
 ] as const
 
@@ -33,44 +38,62 @@ const CVIP_RELEVANCE_VALUES: CvipRelevance[] = ['required', 'supporting', 'optio
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 
 const CLASSIFICATION_LABELS: Record<CaptureClassificationType, string> = {
-  registration: 'Registration',
   vin_plate: 'VIN Plate',
-  license_plate: 'Licence Plate',
-  unit_number: 'Unit Number',
-  inspection_sheet: 'Inspection Sheet',
+  info_plate: 'Info Plate',
+  registration: 'Registration',
   work_order: 'Work Order',
+  inspection_sheet: 'Inspection Sheet',
   odometer: 'Odometer',
   hour_meter: 'Hour Meter',
-  info_plate: 'Info Plate',
-  damage_or_defect: 'Damage or Defect',
-  general_field_photo: 'General Field Photo',
-  other_document: 'Other Document',
+  unit_number: 'Unit Number',
+  license_plate: 'License Plate',
+  brake_measurement: 'Brake Measurement',
+  tire_tread_measurement: 'Tire Tread Measurement',
+  battery_test: 'Battery Test',
+  battery_condition: 'Battery Condition',
+  fluid_level: 'Fluid Level',
+  defect_photo: 'Defect Photo',
+  general_evidence: 'General Evidence',
+  supporting_photo: 'Supporting Photo',
   unknown: 'Unknown',
 }
 
 const CLASSIFIER_SYSTEM_PROMPT = `You classify captured evidence images for CRED CVIP/commercial inspection workflows.
 Return JSON only, no markdown.
 Choose exactly one detected_type from the allowed list.
-Use unknown if the image is too blurry, cropped, dark, or ambiguous.
-Do not perform OCR extraction. Only classify the image/video still category. Use technician note/transcript as high-value context, but do not blindly override visual evidence.
+Treat technician_note/transcript as high-value inspection context, especially for component, location, and measurement. Do not blindly override visual evidence, but prefer the inspection evidence label when the note is specific and visually plausible.
+Use unknown with low confidence if the image is too blurry, cropped, dark, or ambiguous.
+Do not perform OCR extraction. Only classify the image/video still category.
+Never return 0 confidence for a positive non-unknown classification.
 
 Allowed detected_type values:
-registration, vin_plate, license_plate, unit_number, inspection_sheet, work_order, odometer, hour_meter, info_plate, damage_or_defect, general_field_photo, other_document, unknown.
+vin_plate, info_plate, registration, work_order, inspection_sheet, odometer, hour_meter, unit_number, license_plate, brake_measurement, tire_tread_measurement, battery_test, battery_condition, fluid_level, defect_photo, general_evidence, supporting_photo, unknown.
 
 Definitions:
-registration: vehicle registration document/card.
 vin_plate: VIN label/plate or stamped VIN.
-license_plate: exterior vehicle plate.
-unit_number: fleet/unit number decal or label.
-inspection_sheet: CVIP/checklist/inspection form.
+info_plate: manufacturer/data/compliance plate or printed equipment label showing ratings, model, serial, GVWR/GAWR, tire/loading info, etc.
+registration: vehicle registration document/card.
 work_order: repair order/work order/document from shop system.
+inspection_sheet: CVIP/checklist/inspection form.
 odometer: dashboard mileage/odometer.
 hour_meter: engine/equipment hours display.
-info_plate: manufacturer/data/compliance plate showing ratings, model, serial, GVWR/GAWR, tire/loading info, etc.
-damage_or_defect: visible failed/damaged/worn/broken/leaking/unsafe condition.
-general_field_photo: context/supporting photo with no specific document/plate/defect.
-other_document: document that is not clearly registration, inspection sheet, or work order.
+unit_number: fleet/unit number decal or label.
+license_plate: exterior vehicle plate.
+brake_measurement: brake evidence with pad, rotor, lining, caliper, shoe, or drum context; includes brake pad/lining thickness or mm measurements near brake components.
+tire_tread_measurement: tire tread depth evidence, tread gauge photos, or notes about tread depth/tire measurements.
+battery_test: battery tester display/printout or evidence with battery voltage, CCA, state of health, or load test result.
+battery_condition: battery physical condition such as corrosion, terminal, battery post, hold-down, case damage, or cable issues.
+fluid_level: dipstick, reservoir, sight glass, leak/level evidence, or note about a measured fluid level.
+defect_photo: visible failed/damaged/worn/broken/leaking/unsafe condition that is not better covered by a specific measurement/test label.
+general_evidence: inspection evidence photo with a specific vehicle/equipment context but no more specific label.
+supporting_photo: context/supporting photo with no specific document/plate/measurement/defect.
 unknown: unclear image.
+
+Inspection context rules:
+- If technician note/transcript mentions brake pad, rotor, lining, caliper, shoe, drum, or a mm measurement near brakes, prefer brake_measurement over document/supporting/general labels when visually plausible.
+- If technician note/transcript mentions tire tread, tread depth, or tire measurement, prefer tire_tread_measurement.
+- If technician note/transcript mentions battery voltage, CCA, corrosion, terminal, or battery post, prefer battery_test for test readings/displays and battery_condition for physical condition evidence.
+- Only use registration, work_order, inspection_sheet, or info_plate when the image actually shows paperwork, forms, work orders, registrations, labels, plates, or printed documents.
 
 Use cvip_relevance required for evidence usually required in CVIP/commercial inspection records, supporting for helpful evidence, optional for context-only images, and unknown when unclear.`
 
@@ -96,6 +119,14 @@ function clampConfidence(value: unknown) {
   return Math.min(1, Math.max(0, numberValue))
 }
 
+function normalizeClassificationConfidence(detectedType: CaptureClassificationType, confidence: number) {
+  if (detectedType === 'unknown') {
+    return confidence > 0 ? confidence : 0.15
+  }
+
+  return confidence > 0 ? confidence : 0.35
+}
+
 function isCaptureClassificationType(value: unknown): value is CaptureClassificationType {
   return typeof value === 'string' && CAPTURE_CLASSIFICATION_TYPES.includes(value as CaptureClassificationType)
 }
@@ -111,6 +142,68 @@ function sanitizeShortText(value: unknown, fallback: string, maxLength = 180) {
 
   const trimmed = value.replace(/\s+/g, ' ').trim()
   return trimmed ? trimmed.slice(0, maxLength) : fallback
+}
+
+function noteMatches(note: string | null | undefined, pattern: RegExp) {
+  return typeof note === 'string' && pattern.test(note)
+}
+
+function getContextClassificationFromNote(note?: string | null): CaptureClassificationResult | null {
+  if (noteMatches(note, /\bbrake\b(?=.*\b(?:pad|pads|rotor|rotors|lining|linings|caliper|calipers|shoe|shoes|drum|drums|\d+(?:\.\d+)?\s*mm)\b)|\b(?:pad|pads|rotor|rotors|lining|linings|caliper|calipers|shoe|shoes|drum|drums)\b(?=.*\bbrake\b)|\b(?:pad|pads|lining|linings)\b(?=.*\b\d+(?:\.\d+)?\s*mm\b)/i)) {
+    return {
+      detected_type: 'brake_measurement',
+      confidence: 0.82,
+      label: CLASSIFICATION_LABELS.brake_measurement,
+      reason: 'Technician note/transcript identifies brake component measurement evidence.',
+      cvip_relevance: 'required',
+    }
+  }
+
+  if (noteMatches(note, /\b(?:tire|tyre)\b(?=.*\b(?:tread|depth|measurement|measure|mm|32nds?|\/32)\b)|\btread\s+depth\b/i)) {
+    return {
+      detected_type: 'tire_tread_measurement',
+      confidence: 0.82,
+      label: CLASSIFICATION_LABELS.tire_tread_measurement,
+      reason: 'Technician note/transcript identifies tire tread measurement evidence.',
+      cvip_relevance: 'required',
+    }
+  }
+
+  if (noteMatches(note, /\b(?:battery|batteries)\b(?=.*\b(?:voltage|volt|volts|cca|cold\s+cranking|load\s+test|test(?:ed|er|ing)?|state\s+of\s+health|soh)\b)|\b(?:cca|cold\s+cranking\s+amps?)\b/i)) {
+    return {
+      detected_type: 'battery_test',
+      confidence: 0.78,
+      label: CLASSIFICATION_LABELS.battery_test,
+      reason: 'Technician note/transcript identifies battery test evidence.',
+      cvip_relevance: 'supporting',
+    }
+  }
+
+  if (noteMatches(note, /\b(?:battery|batteries)\b(?=.*\b(?:corrosion|corroded|terminal|terminals|post|posts|cable|hold-down|case|leak)\b)/i)) {
+    return {
+      detected_type: 'battery_condition',
+      confidence: 0.78,
+      label: CLASSIFICATION_LABELS.battery_condition,
+      reason: 'Technician note/transcript identifies battery condition evidence.',
+      cvip_relevance: 'supporting',
+    }
+  }
+
+  return null
+}
+
+function applyInspectionContextClassification(classification: CaptureClassificationResult, note?: string | null): CaptureClassificationResult {
+  const contextClassification = getContextClassificationFromNote(note)
+
+  if (!contextClassification) {
+    return classification
+  }
+
+  if (classification.detected_type === contextClassification.detected_type || ['unknown', 'general_evidence', 'supporting_photo'].includes(classification.detected_type)) {
+    return { ...contextClassification, confidence: Math.max(classification.confidence, contextClassification.confidence) }
+  }
+
+  return classification
 }
 
 function extractOutputText(response: unknown) {
@@ -147,7 +240,7 @@ function extractOutputText(response: unknown) {
 export function getUnknownClassificationResult(reason = 'Classification could not be completed.'): CaptureClassificationResult {
   return {
     detected_type: 'unknown',
-    confidence: 0,
+    confidence: 0.15,
     label: CLASSIFICATION_LABELS.unknown,
     reason,
     cvip_relevance: 'unknown',
@@ -160,7 +253,7 @@ export function validateCaptureClassification(value: unknown): CaptureClassifica
   }
 
   const detectedType = isCaptureClassificationType(value.detected_type) ? value.detected_type : 'unknown'
-  const confidence = clampConfidence(value.confidence)
+  const confidence = normalizeClassificationConfidence(detectedType, clampConfidence(value.confidence))
   const label = sanitizeShortText(value.label, CLASSIFICATION_LABELS[detectedType], 80)
   const reason = sanitizeShortText(value.reason, 'Image classified from visual evidence.')
   const cvipRelevance = isCvipRelevance(value.cvip_relevance) ? value.cvip_relevance : 'unknown'
@@ -292,12 +385,12 @@ export async function classifyCaptureImage(
   const outputText = extractOutputText(body)
 
   if (!outputText) {
-    return getUnknownClassificationResult('Classifier response was empty.')
+    return applyInspectionContextClassification(getUnknownClassificationResult('Classifier response was empty.'), note)
   }
 
   try {
-    return validateCaptureClassification(JSON.parse(outputText))
+    return applyInspectionContextClassification(validateCaptureClassification(JSON.parse(outputText)), note)
   } catch {
-    return getUnknownClassificationResult('Classifier response could not be parsed.')
+    return applyInspectionContextClassification(getUnknownClassificationResult('Classifier response could not be parsed.'), note)
   }
 }
