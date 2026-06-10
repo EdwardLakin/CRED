@@ -52,7 +52,7 @@ const CLASSIFIER_SYSTEM_PROMPT = `You classify captured evidence images for CRED
 Return JSON only, no markdown.
 Choose exactly one detected_type from the allowed list.
 Use unknown if the image is too blurry, cropped, dark, or ambiguous.
-Do not perform OCR extraction. Only classify the image category.
+Do not perform OCR extraction. Only classify the image/video still category. Use technician note/transcript as high-value context, but do not blindly override visual evidence.
 
 Allowed detected_type values:
 registration, vin_plate, license_plate, unit_number, inspection_sheet, work_order, odometer, hour_meter, info_plate, damage_or_defect, general_field_photo, other_document, unknown.
@@ -208,19 +208,22 @@ export type CaptureGuidanceContext = {
   label: string
 }
 
-function getGuidancePrompt(guidance?: CaptureGuidanceContext | null) {
+function getGuidancePrompt(guidance?: CaptureGuidanceContext | null, note?: string | null) {
+  const notePrompt = note ? `\nTechnician note/transcript: "${note.slice(0, 700)}". Treat this as useful context, not absolute truth.` : ''
+
   if (!guidance) {
-    return CLASSIFIER_USER_TEXT
+    return `${CLASSIFIER_USER_TEXT}${notePrompt}`
   }
 
   return `${CLASSIFIER_USER_TEXT}
 
-The user captured this image while on the suggested step "${guidance.label}" in the ${guidance.workflow} workflow. Use this only as weak context. Do not blindly trust it; classify based on image content.`
+The user captured this image while on the suggested step "${guidance.label}" in the ${guidance.workflow} workflow. Use this only as weak context. Do not blindly trust it; classify based on image content.${notePrompt}`
 }
 
 export async function classifyCaptureImage(
   signedImageUrl: string,
   guidance?: CaptureGuidanceContext | null,
+  note?: string | null,
 ): Promise<CaptureClassificationResult> {
   const apiKey = getOpenAiApiKey()
 
@@ -244,7 +247,7 @@ export async function classifyCaptureImage(
         {
           role: 'user',
           content: [
-            { type: 'input_text', text: getGuidancePrompt(guidance) },
+            { type: 'input_text', text: getGuidancePrompt(guidance, note) },
             { type: 'input_image', image_url: signedImageUrl },
           ],
         },

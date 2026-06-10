@@ -162,6 +162,16 @@ export interface Database {
           type: string
           storage_path: string
           thumbnail_path: string | null
+          capture_group_id: string | null
+          evidence_event_id: string | null
+          technician_note: string | null
+          transcript: string | null
+          transcript_status: string
+          note_source: string
+          media_kind: string
+          report_order: number | null
+          include_in_report: boolean
+          deleted_at: string | null
           ai_status: string | null
           ai_summary: string | null
           ocr_text: string | null
@@ -177,6 +187,16 @@ export interface Database {
           type: string
           storage_path: string
           thumbnail_path?: string | null
+          capture_group_id?: string | null
+          evidence_event_id?: string | null
+          technician_note?: string | null
+          transcript?: string | null
+          transcript_status?: string
+          note_source?: string
+          media_kind?: string
+          report_order?: number | null
+          include_in_report?: boolean
+          deleted_at?: string | null
           ai_status?: string | null
           ai_summary?: string | null
           ocr_text?: string | null
@@ -192,6 +212,16 @@ export interface Database {
           type?: string
           storage_path?: string
           thumbnail_path?: string | null
+          capture_group_id?: string | null
+          evidence_event_id?: string | null
+          technician_note?: string | null
+          transcript?: string | null
+          transcript_status?: string
+          note_source?: string
+          media_kind?: string
+          report_order?: number | null
+          include_in_report?: boolean
+          deleted_at?: string | null
           ai_status?: string | null
           ai_summary?: string | null
           ocr_text?: string | null
@@ -210,6 +240,55 @@ export interface Database {
           },
           {
             foreignKeyName: 'capture_items_organization_id_fkey'
+            columns: ['organization_id']
+            isOneToOne: false
+            referencedRelation: 'organizations'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+
+      exports: {
+        Row: {
+          id: string
+          documentation_session_id: string
+          organization_id: string
+          export_type: string
+          status: string
+          metadata: Json
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          documentation_session_id: string
+          organization_id: string
+          export_type?: string
+          status?: string
+          metadata?: Json
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          documentation_session_id?: string
+          organization_id?: string
+          export_type?: string
+          status?: string
+          metadata?: Json
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'exports_documentation_session_id_fkey'
+            columns: ['documentation_session_id']
+            isOneToOne: false
+            referencedRelation: 'documentation_sessions'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'exports_organization_id_fkey'
             columns: ['organization_id']
             isOneToOne: false
             referencedRelation: 'organizations'

@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 
 import {
   AddCaptureForm,
+  CaptureList,
   ClassifyPendingCapturesButton,
   ExtractCaptureDetailsButton,
   type CaptureItem,
@@ -269,13 +270,7 @@ function getStepStatus(stepCaptures: CaptureItem[]): StepStatus {
   return 'Captured'
 }
 
-function formatDetectedType(value: string | null) {
-  return value ? value.replace(/_/g, ' ') : 'pending classification'
-}
 
-function formatAiStatus(value: string | null) {
-  return value ? value.replace(/_/g, ' ') : 'pending'
-}
 
 function StepStatusBadge({ status }: { status: StepStatus }) {
   const className = `guided-status guided-status-${status.toLowerCase().replace(/\s+/g, '-')}`
@@ -317,43 +312,6 @@ function GuidedStepCard({
   )
 }
 
-function RecentCaptures({ captures, signedUrls }: { captures: CaptureItem[]; signedUrls: Record<string, string> }) {
-  if (captures.length === 0) {
-    return <div className="empty-state">No captures yet. Use the main Capture Evidence button when you are ready.</div>
-  }
-
-  return (
-    <div className="recent-capture-list">
-      {captures.slice(0, 5).map((capture) => {
-        const guidance = getGuidance(capture.extracted_data)
-        const detectedType = getDetectedType(capture.extracted_data)
-        const signedUrl = signedUrls[capture.id]
-
-        return (
-          <article key={capture.id} className="recent-capture-item">
-            {signedUrl ? (
-              <a href={signedUrl} target="_blank" rel="noreferrer" className="recent-capture-thumb-link" aria-label="Open capture file">
-                <span
-                  aria-hidden="true"
-                  className="recent-capture-thumb recent-capture-thumb-image"
-                  style={{ backgroundImage: `url(${signedUrl})` }}
-                />
-              </a>
-            ) : (
-              <div className="recent-capture-thumb recent-capture-thumb-empty">File</div>
-            )}
-            <div className="recent-capture-copy">
-              <strong>{formatDetectedType(detectedType)}</strong>
-              <span className="muted">AI {formatAiStatus(capture.ai_status)} · Extraction {getExtractionStatus(capture.extracted_data)?.replace(/_/g, ' ') ?? 'not started'}</span>
-              <span className="muted">{guidance ? `Guided: ${guidance.label}` : 'No guided step'} · {formatDateTime(capture.captured_at ?? capture.created_at)}</span>
-            </div>
-          </article>
-        )
-      })}
-    </div>
-  )
-}
-
 export default async function GuidedCapturePage({
   params,
   searchParams,
@@ -380,12 +338,13 @@ export default async function GuidedCapturePage({
     .select('*')
     .eq('documentation_session_id', session.id)
     .eq('organization_id', profile.organization_id)
+    .is('deleted_at', null)
     .order('captured_at', { ascending: false })
 
   const captureItems = captures ?? []
   const signedUrls: Record<string, string> = {}
   await Promise.all(
-    captureItems.slice(0, 5).map(async (capture) => {
+    captureItems.map(async (capture) => {
       const { data } = await supabase.storage.from('documentation-captures').createSignedUrl(capture.storage_path, 60 * 10)
 
       if (data?.signedUrl) {
@@ -458,10 +417,17 @@ export default async function GuidedCapturePage({
           sessionType={session.session_type}
           workflow={workflow}
           returnPath={`/dashboard/sessions/${session.id}/capture#main-capture-card`}
-          helperText="Take or select multiple photos. CRED will classify and organize them automatically."
-          commonCaptureText="Common captures: VIN plate, info/data plate, odometer/hour meter, work order, concern area, defects, supporting photos."
+          helperText="Capture photos or videos, add voice/typed context, then review the card below."
+          commonCaptureText="Common captures: VIN plate, info/data plate, odometer/hour meter, work order, concern area, defects, supporting photos or videos."
           showSuggestedCaptureText={false}
         />
+        <div className="inline-evidence-feed">
+          <div>
+            <h2>Evidence feed</h2>
+            <p className="muted">Preview, edit notes, remove, and choose report inclusion before finalizing.</p>
+          </div>
+          <CaptureList captures={captureItems} signedUrls={signedUrls} />
+        </div>
       </section>
 
       <section className="card detail-card guided-actions-card">
@@ -493,17 +459,6 @@ export default async function GuidedCapturePage({
             <GuidedStepCard key={summary.step.key} step={summary.step} status={summary.status} count={summary.count} />
           ))}
         </div>
-      </section>
-
-      <section className="card detail-card recent-captures-card">
-        <div>
-          <h2>Recent captures</h2>
-          <p className="muted">Latest 5 files with AI status, extraction status, and guided step.</p>
-        </div>
-        <RecentCaptures captures={captureItems} signedUrls={signedUrls} />
-        <Link href={`/dashboard/sessions/${session.id}#captures`} className="secondary-link touch-target">
-          View all on session details
-        </Link>
       </section>
 
       <div className="guided-sticky-actions">
