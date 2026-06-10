@@ -1119,3 +1119,234 @@ a:focus-visible {
     flex: 1;
   }
 }
+
+.field-mode-cta-card,
+.guided-progress-card,
+.guided-actions-card {
+  align-items: center;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+}
+
+.field-mode-cta-card h2,
+.guided-progress-card h2,
+.guided-actions-card h2,
+.recent-captures-card h2,
+.guided-step-card h3 {
+  margin: 0;
+}
+
+.guided-capture-shell {
+  padding-bottom: 112px;
+}
+
+.guided-page-header h1 {
+  margin: 0;
+}
+
+.guided-eyebrow {
+  color: var(--primary);
+  margin-top: 14px;
+}
+
+.guided-progress-card {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.guided-progress-track {
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  height: 16px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.guided-progress-fill {
+  background: linear-gradient(90deg, var(--primary), var(--accent));
+  height: 100%;
+}
+
+.guided-progress-meta,
+.guided-step-meta {
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.9rem;
+  font-weight: 700;
+  gap: 10px 18px;
+  justify-content: space-between;
+}
+
+.guided-action-buttons {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.guided-step-list {
+  display: grid;
+  gap: 16px;
+}
+
+.guided-step-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  scroll-margin-top: 16px;
+}
+
+.guided-step-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.guided-step-header p {
+  color: var(--muted);
+  margin: 6px 0 0;
+}
+
+.guided-status {
+  border-radius: 999px;
+  flex: 0 0 auto;
+  font-size: 0.82rem;
+  font-weight: 900;
+  padding: 8px 12px;
+}
+
+.guided-status-missing {
+  background: var(--surface-muted);
+  color: var(--muted-foreground);
+}
+
+.guided-status-captured {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.guided-status-needs-review {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.guided-status-extracted {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.recent-captures-card {
+  display: grid;
+  gap: 16px;
+}
+
+.recent-capture-list {
+  display: grid;
+  gap: 12px;
+}
+
+.recent-capture-item {
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 74px minmax(0, 1fr);
+  padding: 10px;
+}
+
+.recent-capture-thumb-link {
+  display: block;
+}
+
+.recent-capture-thumb {
+  aspect-ratio: 1;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  color: var(--muted);
+  display: grid;
+  height: 74px;
+  object-fit: cover;
+  place-items: center;
+  width: 74px;
+}
+
+.recent-capture-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.recent-capture-copy strong,
+.recent-capture-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.guided-sticky-actions {
+  align-items: center;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  bottom: 18px;
+  box-shadow: var(--shadow);
+  display: flex;
+  gap: 10px;
+  left: 50%;
+  padding: 10px;
+  position: fixed;
+  transform: translateX(-50%);
+  z-index: 20;
+}
+
+@media (max-width: 760px) {
+  .field-mode-cta-card,
+  .guided-actions-card,
+  .guided-step-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .guided-action-buttons,
+  .guided-action-buttons .classification-action-form {
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .recent-capture-item {
+    grid-template-columns: 58px minmax(0, 1fr);
+  }
+
+  .recent-capture-thumb {
+    height: 58px;
+    width: 58px;
+  }
+
+  .guided-sticky-actions {
+    border-radius: 22px;
+    bottom: 10px;
+    left: 10px;
+    right: 10px;
+    transform: none;
+  }
+
+  .guided-sticky-actions .button {
+    flex: 1;
+    width: auto;
+  }
+}
+
+.recent-capture-thumb-image {
+  background-position: center;
+  background-size: cover;
+}

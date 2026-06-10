@@ -81,6 +81,18 @@ function getString(formData: FormData, field: string) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function getSafeToken(value: string, maxLength = 80) {
+  return value
+    .replace(/[^a-zA-Z0-9 _/-]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength)
+}
+
+function getSafeReturnPath(value: string, sessionId: string) {
+  return value.startsWith(`/dashboard/sessions/${sessionId}`) ? value : `/dashboard/sessions/${sessionId}`
+}
+
 function getUploads(formData: FormData) {
   const files = formData.getAll('files').filter((value): value is File => value instanceof File && value.size > 0)
 
@@ -115,6 +127,19 @@ function fileHasAllowedType(file: File, captureType: CaptureType) {
 
 function fileIsImage(file: File) {
   return ALLOWED_MIME_TYPES.photo.includes(file.type)
+}
+
+function mergeGuidance(extractedData: Json, guidance: { workflow: string; step: string; label: string } | null): Json {
+  if (!guidance) {
+    return extractedData
+  }
+
+  const existingObject = isRecord(extractedData) ? extractedData : {}
+
+  return {
+    ...existingObject,
+    guidance,
+  }
 }
 
 function getCaptureMetadata(captureIntent: CaptureIntent, manualCaptureType: CaptureType | null) {
@@ -188,6 +213,9 @@ async function saveCapture(formData: FormData): Promise<CaptureActionFailure | C
   const rawCaptureIntent = getString(formData, 'capture_intent') || 'auto_image'
   const rawManualCaptureType = getString(formData, 'manual_type')
   const files = getUploads(formData)
+  const guidedStep = getSafeToken(getString(formData, 'guided_step'))
+  const guidedLabel = getSafeToken(getString(formData, 'guided_label'), 120)
+  const sessionWorkflow = getSafeToken(getString(formData, 'session_workflow'))
 
   if (!sessionId) {
     return captureError('Missing documentation session.')
@@ -205,6 +233,9 @@ async function saveCapture(formData: FormData): Promise<CaptureActionFailure | C
   }
 
   const captureType = captureMetadata.type
+  const guidance = guidedStep && guidedLabel && sessionWorkflow
+    ? { workflow: sessionWorkflow, step: guidedStep, label: guidedLabel }
+    : null
 
   if (files.length === 0) {
     return captureError('Choose at least one file to upload.', sessionId)
@@ -279,7 +310,7 @@ async function saveCapture(formData: FormData): Promise<CaptureActionFailure | C
         storage_path: storagePath,
         captured_at: capturedAt,
         ai_status: 'pending',
-        extracted_data: captureMetadata.extractedData,
+        extracted_data: mergeGuidance(captureMetadata.extractedData, guidance),
       })
       .select('id')
       .single()
@@ -314,6 +345,7 @@ async function saveCapture(formData: FormData): Promise<CaptureActionFailure | C
   revalidatePath('/dashboard')
   revalidatePath('/dashboard/sessions')
   revalidatePath(`/dashboard/sessions/${session.id}`)
+  revalidatePath(`/dashboard/sessions/${session.id}/capture`)
 
   return { ok: true, sessionId: session.id }
 }
@@ -326,7 +358,9 @@ export async function createCapture(_previousState: CaptureActionState, formData
       return { error: result.error }
     }
 
-    redirect(`/dashboard/sessions/${result.sessionId}?captureSaved=1`)
+    const returnPath = getSafeReturnPath(getString(formData, 'return_path'), result.sessionId)
+    const separator = returnPath.includes('?') ? '&' : '?'
+    redirect(`${returnPath}${separator}captureSaved=1`)
   } catch (error) {
     if (isRedirectError(error)) {
       throw error
@@ -413,6 +447,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+function getGuidanceContext(extractedData: Json | null) {
+  if (!isRecord(extractedData) || !isRecord(extractedData.guidance)) {
+    return null
+  }
+
+  const workflow = typeof extractedData.guidance.workflow === 'string' ? extractedData.guidance.workflow : null
+  const step = typeof extractedData.guidance.step === 'string' ? extractedData.guidance.step : null
+  const label = typeof extractedData.guidance.label === 'string' ? extractedData.guidance.label : null
+
+  return workflow && step && label ? { workflow, step, label } : null
+}
+
 function captureNeedsClassification(capture: PendingCaptureItem & { ai_status: string | null }) {
   const extractedData = isRecord(capture.extracted_data) ? capture.extracted_data : null
   const classification = extractedData && isRecord(extractedData.classification) ? extractedData.classification : null
@@ -489,7 +535,7 @@ export async function classifyPendingCaptures(
         continue
       }
 
-      const classification = await classifyCaptureImage(signedData.signedUrl)
+      const classification = await classifyCaptureImage(signedData.signedUrl, getGuidanceContext(capture.extracted_data))
       const status = await updateCaptureClassification(capture, classification, supabase)
 
       if (status === 'classified') {
@@ -523,6 +569,7 @@ export async function classifyPendingCaptures(
   }
 
   revalidatePath(`/dashboard/sessions/${session.id}`)
+  revalidatePath(`/dashboard/sessions/${session.id}/capture`)
 
   return { ok: true, message: classificationActionMessage(classifiedCount, needsReviewCount) }
 }
@@ -858,6 +905,7 @@ export async function extractCaptureDetails(
   }
 
   revalidatePath(`/dashboard/sessions/${session.id}`)
+  revalidatePath(`/dashboard/sessions/${session.id}/capture`)
 
   return { ok: true, message: extractionActionMessage(extractedCount, suggestionCount) }
 }

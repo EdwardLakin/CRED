@@ -233,6 +233,17 @@ export default async function SessionDetailPage({
       {captureSaved ? <p className="success">Capture added.</p> : null}
 
 
+      <section className="card detail-card field-mode-cta-card">
+        <div>
+          <p className="eyebrow guided-eyebrow">Field mode</p>
+          <h2>Capture Session</h2>
+          <p className="muted">Use guided capture for CVIP/inspection evidence.</p>
+        </div>
+        <Link href={`/dashboard/sessions/${session.id}/capture`} className="button button-primary touch-target">
+          Start / Continue Capture
+        </Link>
+      </section>
+
       <section className="card detail-card capture-card form-stack">
         <div>
           <h2>Add Capture</h2>
@@ -261,7 +272,9 @@ export default async function SessionDetailPage({
         <CaptureList captures={captures ?? []} signedUrls={signedUrls} />
       </section>
 
-      <ExtractedEvidencePanel captures={captures ?? []} signedUrls={signedUrls} />
+      <div id="extracted-evidence">
+        <ExtractedEvidencePanel captures={captures ?? []} signedUrls={signedUrls} />
+      </div>
 
       <SuggestedSessionDetailsCard sessionId={session.id} suggestedDetails={session.suggested_details} />
 

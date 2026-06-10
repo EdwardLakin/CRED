@@ -47,7 +47,23 @@ function getSuggestedCaptureText(sessionType?: string | null) {
   return 'Suggested: VIN plate, documents, asset labels, field photos, supporting evidence.'
 }
 
-export function AddCaptureForm({ sessionId, sessionType }: { sessionId: string; sessionType?: string | null }) {
+export function AddCaptureForm({
+  sessionId,
+  sessionType,
+  guidedStep,
+  guidedLabel,
+  workflow,
+  returnPath,
+  captureButtonLabel = 'Capture Evidence',
+}: {
+  sessionId: string
+  sessionType?: string | null
+  guidedStep?: string
+  guidedLabel?: string
+  workflow?: string
+  returnPath?: string
+  captureButtonLabel?: string
+}) {
   const formRef = useRef<HTMLFormElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [state, formAction] = useActionState(createCapture, INITIAL_CAPTURE_STATE)
@@ -57,7 +73,8 @@ export function AddCaptureForm({ sessionId, sessionType }: { sessionId: string; 
   const activeType = captureIntent === 'auto_image' ? 'photo' : manualType
   const fileConfig = useMemo(() => FILE_INPUT_CONFIG[activeType], [activeType])
   const suggestedCaptureText = useMemo(() => getSuggestedCaptureText(sessionType), [sessionType])
-  const fileInputId = 'capture-file'
+  const guidanceKey = guidedStep ? `${workflow ?? 'guided'}-${guidedStep}` : 'general'
+  const fileInputId = `capture-file-${guidanceKey}`
   const supportsMultipleFiles = captureIntent === 'auto_image'
 
   function submitAfterFileSelection() {
@@ -100,6 +117,10 @@ export function AddCaptureForm({ sessionId, sessionType }: { sessionId: string; 
       <input type="hidden" name="session_id" value={sessionId} />
       <input type="hidden" name="capture_intent" value={captureIntent} />
       <input type="hidden" name="manual_type" value={manualType} />
+      {guidedStep ? <input type="hidden" name="guided_step" value={guidedStep} /> : null}
+      {guidedLabel ? <input type="hidden" name="guided_label" value={guidedLabel} /> : null}
+      {workflow ? <input type="hidden" name="session_workflow" value={workflow} /> : null}
+      {returnPath ? <input type="hidden" name="return_path" value={returnPath} /> : null}
 
       {clientError || state.error ? <p className="error">{clientError ?? state.error}</p> : null}
 
@@ -109,7 +130,7 @@ export function AddCaptureForm({ sessionId, sessionType }: { sessionId: string; 
             📷
           </span>
           <span>
-            <strong>Capture Evidence</strong>
+            <strong>{captureButtonLabel}</strong>
             <small>Open the camera or photo picker</small>
           </span>
         </button>
