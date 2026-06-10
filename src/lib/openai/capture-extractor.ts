@@ -56,7 +56,7 @@ VIN values must be exactly 17 characters after removing spaces. If a possible VI
 For unit number, extract fleet/unit decals or obvious unit identifiers.
 For work orders, extract work order number and customer/unit/VIN only if clearly visible.
 For hour meters, put the hour reading in hour_meter; the app may suggest it to the odometer/session reading if no hour field exists.
-Keep summary brief and human readable. Example note 'left front brake pads at wear limit of 2mm' should extract component brake pads, location left front, measurement 2mm, condition at wear limit, severity red, recommendation replace front brake pads when visually plausible.`
+Keep summary brief and human readable. For brake_measurement, always populate component, location, measurement, condition, recommendation, and severity when visible or supported by technician context. Example note 'left front brake pads at wear limit of 2mm' should extract component brake pads, location left front, measurement 2mm, condition at wear limit, severity red, recommendation replace front brake pads when visually plausible.`
 
 const TARGET_INSTRUCTIONS: Partial<Record<CaptureClassificationType, string>> = {
   unit_number: 'Focus on fleet/unit number decals or labels. Return unit_number and asset_label when the same visible value identifies the asset.',
@@ -69,7 +69,14 @@ const TARGET_INSTRUCTIONS: Partial<Record<CaptureClassificationType, string>> = 
   odometer: 'Focus on the mileage/odometer reading exactly as displayed.',
   hour_meter: 'Focus on the hour meter reading exactly as displayed.',
   inspection_sheet: 'Focus on inspection/checklist title, visible date, inspector, and form type. Put inspector/checklist title in notes if no direct field fits.',
-  other_document: 'Focus on document title/type and obvious reference numbers. Put reference numbers in notes if no direct field fits.',
+  brake_measurement: 'Extract brake component, location, exact measurement, condition, recommendation, and severity. Use technician note/transcript as strong context for brake pad/rotor/lining/caliper/shoe/drum measurements when visually plausible.',
+  tire_tread_measurement: 'Extract tire location, tread measurement, condition, recommendation, and severity when present.',
+  battery_test: 'Extract battery test result details including voltage/CCA/state of health in measurement or condition, plus recommendation and severity when present.',
+  battery_condition: 'Extract physical battery condition details such as corrosion, terminal/post/cable issues, condition, recommendation, and severity.',
+  fluid_level: 'Extract fluid type/component, location, level or measurement, condition, recommendation, and severity.',
+  defect_photo: 'Extract visible defect component, location, condition, recommendation, and severity.',
+  general_evidence: 'Extract only useful inspection details that are visible or strongly supported by technician context.',
+  supporting_photo: 'Extract only clearly useful context details; leave unsupported fields null.',
 }
 
 function getOpenAiApiKey() {
@@ -200,7 +207,7 @@ export async function extractCaptureImageDetails(
     throw new Error('OPENAI_API_KEY_MISSING')
   }
 
-  const targetInstruction = TARGET_INSTRUCTIONS[detectedType] ?? 'Extract only clearly visible useful document or asset details.'
+  const targetInstruction = TARGET_INSTRUCTIONS[detectedType] ?? 'Extract only clearly visible useful inspection, document, asset, or evidence details.'
 
   const response = await fetch(OPENAI_RESPONSES_URL, {
     method: 'POST',

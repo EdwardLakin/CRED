@@ -65,7 +65,7 @@ export function getInitialExtractedData(type: CaptureType): Json {
     case 'evidence_video':
       return {
         kind: 'video',
-        classification: { status: 'pending', detected_type: 'general_field_photo', confidence: null },
+        classification: { status: 'pending', detected_type: 'supporting_photo', confidence: null },
         extraction: { status: 'not_started' },
       }
     case 'voice_note':
