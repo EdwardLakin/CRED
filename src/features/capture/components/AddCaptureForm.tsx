@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useMemo, useRef, useState } from 'react'
+import { useActionState, useEffect, useMemo, useRef, useState } from 'react'
 import { useFormStatus } from 'react-dom'
 
 import { Button } from '@/components/ui'
@@ -11,6 +11,14 @@ const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024
 const FILE_TOO_LARGE_MESSAGE = 'That file is too large. Please upload evidence under 100MB.'
 const MAX_BATCH_FILES = 10
 const INITIAL_CAPTURE_STATE: CaptureActionState = {}
+
+type SelectedEvidenceFile = {
+  id: string
+  name: string
+  type: string
+  size: number
+  previewUrl: string
+}
 
 type SpeechRecognitionConstructor = new () => {
   continuous: boolean
@@ -91,11 +99,12 @@ export function AddCaptureForm({
   const formRef = useRef<HTMLFormElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const recognitionRef = useRef<InstanceType<SpeechRecognitionConstructor> | null>(null)
+  const selectedFilesRef = useRef<SelectedEvidenceFile[]>([])
   const [state, formAction] = useActionState(createCapture, INITIAL_CAPTURE_STATE)
   const [clientError, setClientError] = useState<string | null>(null)
   const [captureIntent, setCaptureIntent] = useState<CaptureIntent>('auto_evidence')
   const [manualType, setManualType] = useState<CaptureType>('document')
-  const [selectedFiles, setSelectedFiles] = useState<Array<{ name: string; type: string; size: number }>>([])
+  const [selectedFiles, setSelectedFiles] = useState<SelectedEvidenceFile[]>([])
   const [note, setNote] = useState('')
   const [noteSource, setNoteSource] = useState<'manual' | 'voice' | 'edited'>('manual')
   const [transcriptStatus, setTranscriptStatus] = useState<'not_started' | 'pending' | 'completed' | 'unavailable'>('not_started')
@@ -106,32 +115,71 @@ export function AddCaptureForm({
   const fileInputId = `capture-file-${guidanceKey}`
   const supportsMultipleFiles = captureIntent === 'auto_evidence' || captureIntent === 'auto_image'
 
+  useEffect(() => {
+    return () => {
+      selectedFilesRef.current.forEach((file) => URL.revokeObjectURL(file.previewUrl))
+    }
+  }, [])
+
+  function replaceSelectedFiles(files: SelectedEvidenceFile[]) {
+    selectedFilesRef.current.forEach((file) => URL.revokeObjectURL(file.previewUrl))
+    selectedFilesRef.current = files
+    setSelectedFiles(files)
+  }
+
+  function resetFileSelection() {
+    replaceSelectedFiles([])
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  function buildSelectedEvidenceFiles(files: File[]): SelectedEvidenceFile[] {
+    return files.map((file, index) => ({
+      id: `${file.name}-${file.size}-${file.lastModified}-${index}`,
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      previewUrl: URL.createObjectURL(file),
+    }))
+  }
+
   function validateFileSelection() {
     const files = Array.from(fileInputRef.current?.files ?? [])
-    setSelectedFiles(files.map((file) => ({ name: file.name, type: file.type, size: file.size })))
 
     if (files.length === 0) {
+      replaceSelectedFiles([])
+      setClientError(null)
       return
     }
 
     if (files.length > MAX_BATCH_FILES) {
       setClientError(`Upload up to ${MAX_BATCH_FILES} files at a time.`)
-      setSelectedFiles([])
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
-      }
+      resetFileSelection()
       return
     }
 
     if (files.some((file) => file.size > MAX_FILE_SIZE_BYTES)) {
       setClientError(FILE_TOO_LARGE_MESSAGE)
-      setSelectedFiles([])
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
-      }
+      resetFileSelection()
       return
     }
 
+    replaceSelectedFiles(buildSelectedEvidenceFiles(files))
+    setClientError(null)
+  }
+
+  function removeSelectedFile(fileId: string) {
+    const input = fileInputRef.current
+    if (!input?.files) {
+      return
+    }
+
+    const remainingFiles = Array.from(input.files).filter((file, index) => `${file.name}-${file.size}-${file.lastModified}-${index}` !== fileId)
+    const dataTransfer = new DataTransfer()
+    remainingFiles.forEach((file) => dataTransfer.items.add(file))
+    input.files = dataTransfer.files
+    replaceSelectedFiles(buildSelectedEvidenceFiles(remainingFiles))
     setClientError(null)
   }
 
@@ -211,7 +259,44 @@ export function AddCaptureForm({
         {selectedFiles.length > 0 ? (
           <div className="selected-evidence-list">
             <strong>{selectedFiles.length} file{selectedFiles.length === 1 ? '' : 's'} ready</strong>
-            {selectedFiles.map((file) => <span key={`${file.name}-${file.size}`}>{file.name}</span>)}
+            {selectedFiles.map((file) => <span key={file.id}>{file.name}</span>)}
+          </div>
+        ) : null}
+        {selectedFiles.length > 0 ? (
+          <div className="draft-evidence-preview-list" aria-label="Draft evidence previews">
+            {selectedFiles.map((file) => (
+              <article key={file.id} className="capture-list-item evidence-preview-card draft-evidence-preview-card">
+                <div className="capture-list-main">
+                  <div>
+                    <h3>{file.name}</h3>
+                    <p className="muted">Draft evidence preview</p>
+                  </div>
+                  <span className="ai-status-pill draft-status-pill">Ready to save</span>
+                </div>
+
+                <div className="evidence-media-frame">
+                  {file.type.startsWith('video/') ? (
+                    <video src={file.previewUrl} controls preload="metadata" className="evidence-media" />
+                  ) : file.type.startsWith('image/') ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={file.previewUrl} alt={`Draft preview for ${file.name}`} className="evidence-media" />
+                  ) : (
+                    <div className="evidence-file-placeholder">Preview unavailable for {file.type || 'this file type'}</div>
+                  )}
+                  <div className="evidence-note-overlay">
+                    <strong>Note</strong>
+                    <span>{note.trim() || (transcriptStatus === 'pending' ? 'Transcribing…' : 'Add note before saving')}</span>
+                  </div>
+                </div>
+
+                <div className="draft-evidence-preview-footer">
+                  <span className="muted draft-evidence-filename">{file.name}</span>
+                  <button type="button" className="secondary-link danger-link" onClick={() => removeSelectedFile(file.id)}>
+                    Remove selected file
+                  </button>
+                </div>
+              </article>
+            ))}
           </div>
         ) : null}
         <p className="muted capture-upload-hint">Maximum file size is 100MB per file. Photos and videos are queued for AI review.</p>

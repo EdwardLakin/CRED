@@ -1454,6 +1454,37 @@ a:focus-visible {
   gap: 18px;
 }
 
+.draft-evidence-preview-list {
+  display: grid;
+  gap: 16px;
+}
+
+.draft-evidence-preview-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
+.draft-status-pill {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.draft-evidence-preview-footer {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.draft-evidence-filename {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .evidence-preview-card {
   padding: 0;
   overflow: hidden;
@@ -1547,6 +1578,15 @@ a:focus-visible {
 }
 
 @media (max-width: 760px) {
+  .draft-evidence-preview-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .draft-evidence-filename {
+    width: 100%;
+  }
+
   .evidence-media-frame,
   .evidence-media,
   .evidence-file-placeholder {
