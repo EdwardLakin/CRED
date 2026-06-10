@@ -11,7 +11,16 @@ import {
   getCaptureClassificationSummary,
   getUnknownClassificationResult,
   type CaptureClassificationResult,
+  type CaptureClassificationType,
 } from '@/lib/openai/capture-classifier'
+import {
+  buildExtractedCaptureData,
+  extractCaptureImageDetails,
+  getCaptureExtractionSummary,
+  type CaptureExtractionField,
+  type CaptureExtractionResult,
+} from '@/lib/openai/capture-extractor'
+import type { Json } from '@/lib/supabase/database.types'
 
 import {
   getAutoImageExtractedData,
@@ -339,7 +348,7 @@ type PendingCaptureItem = {
   documentation_session_id: string
   organization_id: string
   storage_path: string
-  extracted_data: import('@/lib/supabase/database.types').Json
+  extracted_data: Json
 }
 
 const MAX_CLASSIFICATION_BATCH_SIZE = 10
@@ -516,4 +525,342 @@ export async function classifyPendingCaptures(
   revalidatePath(`/dashboard/sessions/${session.id}`)
 
   return { ok: true, message: classificationActionMessage(classifiedCount, needsReviewCount) }
+}
+
+export type CaptureExtractionActionState = {
+  ok?: boolean
+  message?: string
+}
+
+type ExtractionCaptureItem = PendingCaptureItem & {
+  type: string
+  ai_status: string | null
+}
+
+type SuggestedDetail = {
+  value: string
+  source_capture_id: string
+  confidence: number
+  reason: string
+  source_type: string
+  priority: number
+  applied?: boolean
+}
+
+type SuggestedDetails = Record<string, SuggestedDetail>
+
+type SuggestionCandidate = {
+  field: string
+  value: string | null
+  reason: string
+}
+
+const MAX_EXTRACTION_BATCH_SIZE = 10
+const EXTRACTION_CONFIDENCE_THRESHOLD = 0.65
+const SIGNED_EXTRACTION_URL_SECONDS = 60 * 5
+const EXTRACTABLE_CAPTURE_TYPES = ['photo', 'document']
+const EXTRACTABLE_DETECTED_TYPES: CaptureClassificationType[] = [
+  'registration',
+  'vin_plate',
+  'license_plate',
+  'unit_number',
+  'inspection_sheet',
+  'work_order',
+  'odometer',
+  'hour_meter',
+  'info_plate',
+  'other_document',
+]
+const IMAGE_STORAGE_PATH_PATTERN = /\.(jpe?g|png|webp|gif|heic|heif)$/i
+
+const SOURCE_PRIORITIES: Record<string, Partial<Record<CaptureExtractionField | 'asset_label', number>>> = {
+  vin_plate: { vin: 100 },
+  unit_number: { unit_number: 100, asset_label: 90 },
+  registration: { vin: 90, plate_number: 100, customer_name: 85, registration_number: 100 },
+  license_plate: { plate_number: 95 },
+  odometer: { odometer: 100 },
+  hour_meter: { hour_meter: 100, odometer: 60 },
+  info_plate: { vin: 85, manufacturer: 100, model: 100, serial_number: 100, gvwr: 100, gawr_front: 100, gawr_rear: 100, tire_size: 100 },
+  work_order: { work_order_number: 100, customer_name: 75, unit_number: 70, vin: 65 },
+  inspection_sheet: { document_type: 80, inspection_date: 80 },
+  other_document: { document_type: 60 },
+}
+
+function extractionActionMessage(extractedCount: number, suggestionCount: number) {
+  if (extractedCount === 0) {
+    return 'No classified captures are ready for extraction.'
+  }
+
+  const captureWord = extractedCount === 1 ? 'capture' : 'captures'
+  const suggestionWord = suggestionCount === 1 ? 'suggestion' : 'suggestions'
+
+  return `Extracted details from ${extractedCount} ${captureWord}. ${suggestionCount} session ${suggestionWord} ready.`
+}
+
+function getDetectedType(extractedData: Json | null): CaptureClassificationType | null {
+  if (!isRecord(extractedData)) {
+    return null
+  }
+
+  const classification = isRecord(extractedData.classification) ? extractedData.classification : null
+  const detectedType = typeof classification?.detected_type === 'string' ? classification.detected_type : null
+
+  return EXTRACTABLE_DETECTED_TYPES.includes(detectedType as CaptureClassificationType)
+    ? (detectedType as CaptureClassificationType)
+    : null
+}
+
+function captureNeedsExtraction(capture: ExtractionCaptureItem) {
+  if (!EXTRACTABLE_CAPTURE_TYPES.includes(capture.type) || !['classified', 'needs_review'].includes(capture.ai_status ?? '')) {
+    return false
+  }
+
+  if (capture.type === 'document' && !IMAGE_STORAGE_PATH_PATTERN.test(capture.storage_path)) {
+    return false
+  }
+
+  const extractedData = isRecord(capture.extracted_data) ? capture.extracted_data : null
+  const extraction = extractedData && isRecord(extractedData.extraction) ? extractedData.extraction : null
+  const extractionStatus = typeof extraction?.status === 'string' ? extraction.status : null
+
+  return extractionStatus === null || ['not_started', 'pending', 'failed'].includes(extractionStatus)
+}
+
+function hasAnyExtractedField(extraction: CaptureExtractionResult) {
+  return Object.values(extraction.fields).some((value) => typeof value === 'string' && value.trim().length > 0)
+}
+
+function getSuggestionPriority(sourceType: string, field: string) {
+  return SOURCE_PRIORITIES[sourceType]?.[field as CaptureExtractionField] ?? 50
+}
+
+function getSuggestionCandidates(sourceType: string, fields: CaptureExtractionResult['fields']): SuggestionCandidate[] {
+  const candidates: SuggestionCandidate[] = [
+    { field: 'vin', value: fields.vin, reason: `Detected from ${sourceType.replace(/_/g, ' ')}` },
+    { field: 'unit_number', value: fields.unit_number, reason: `Detected from ${sourceType.replace(/_/g, ' ')}` },
+    { field: 'asset_label', value: fields.asset_label, reason: `Detected from ${sourceType.replace(/_/g, ' ')}` },
+    { field: 'odometer', value: fields.odometer, reason: `Detected from ${sourceType.replace(/_/g, ' ')}` },
+    { field: 'customer_name', value: fields.customer_name, reason: `Detected from ${sourceType.replace(/_/g, ' ')}` },
+    { field: 'plate_number', value: fields.plate_number, reason: `Detected from ${sourceType.replace(/_/g, ' ')}` },
+    { field: 'work_order_number', value: fields.work_order_number, reason: `Detected from ${sourceType.replace(/_/g, ' ')}` },
+    { field: 'registration_number', value: fields.registration_number, reason: `Detected from ${sourceType.replace(/_/g, ' ')}` },
+  ]
+
+  if (sourceType === 'unit_number' && !fields.asset_label && fields.unit_number) {
+    candidates.push({ field: 'asset_label', value: fields.unit_number, reason: 'Detected from unit number decal' })
+  }
+
+  if (sourceType === 'hour_meter' && fields.hour_meter && !fields.odometer) {
+    candidates.push({ field: 'odometer', value: fields.hour_meter, reason: 'Detected from hour meter; no separate session hour field exists yet' })
+  }
+
+  return candidates
+}
+
+function mergeSuggestion(existing: SuggestedDetail | undefined, next: SuggestedDetail) {
+  if (!existing) {
+    return next
+  }
+
+  if (next.confidence < existing.confidence) {
+    return existing
+  }
+
+  if (next.priority > (existing.priority ?? 0)) {
+    return next
+  }
+
+  if (next.priority === (existing.priority ?? 0) && next.confidence > existing.confidence) {
+    return next
+  }
+
+  return existing
+}
+
+function mergeSessionSuggestions(
+  existingSuggestions: Json | null,
+  capture: ExtractionCaptureItem,
+  detectedType: CaptureClassificationType,
+  extraction: CaptureExtractionResult,
+): SuggestedDetails {
+  const merged: SuggestedDetails = isRecord(existingSuggestions) ? { ...(existingSuggestions as SuggestedDetails) } : {}
+
+  for (const candidate of getSuggestionCandidates(detectedType, extraction.fields)) {
+    if (!candidate.value) {
+      continue
+    }
+
+    const priority = getSuggestionPriority(detectedType, candidate.field)
+    const next: SuggestedDetail = {
+      value: candidate.value,
+      source_capture_id: capture.id,
+      confidence: extraction.confidence,
+      reason: candidate.reason,
+      source_type: detectedType,
+      priority,
+    }
+
+    merged[candidate.field] = mergeSuggestion(merged[candidate.field], next)
+  }
+
+  return merged
+}
+
+async function updateCaptureExtraction(
+  capture: ExtractionCaptureItem,
+  extraction: CaptureExtractionResult,
+  supabase: Awaited<ReturnType<typeof requireSessionWorkspace>>['supabase'],
+) {
+  const status = extraction.confidence >= EXTRACTION_CONFIDENCE_THRESHOLD && hasAnyExtractedField(extraction) ? 'extracted' : 'needs_review'
+
+  const { error } = await supabase
+    .from('capture_items')
+    .update({
+      ai_status: status,
+      ai_summary: getCaptureExtractionSummary(extraction),
+      extracted_data: buildExtractedCaptureData(capture.extracted_data, extraction, status),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', capture.id)
+    .eq('documentation_session_id', capture.documentation_session_id)
+    .eq('organization_id', capture.organization_id)
+
+  if (error) {
+    logCaptureFailure({ step: 'capture_extraction_update', captureId: capture.id, ...getSafeErrorDetails(error) })
+    throw error
+  }
+
+  return status
+}
+
+async function markCaptureExtractionFailed(
+  capture: ExtractionCaptureItem,
+  supabase: Awaited<ReturnType<typeof requireSessionWorkspace>>['supabase'],
+  message: string,
+) {
+  const existingData = isRecord(capture.extracted_data) ? capture.extracted_data : {}
+  const { error } = await supabase
+    .from('capture_items')
+    .update({
+      ai_status: 'needs_review',
+      extracted_data: {
+        ...existingData,
+        extraction: {
+          status: 'failed',
+          summary: message,
+          confidence: 0,
+          fields: {},
+          notes: [message],
+        },
+      },
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', capture.id)
+    .eq('documentation_session_id', capture.documentation_session_id)
+    .eq('organization_id', capture.organization_id)
+
+  if (error) {
+    logCaptureFailure({ step: 'capture_extraction_failure_update', captureId: capture.id, ...getSafeErrorDetails(error) })
+  }
+}
+
+export async function extractCaptureDetails(
+  _previousState: CaptureExtractionActionState,
+  formData: FormData,
+): Promise<CaptureExtractionActionState> {
+  const sessionId = getString(formData, 'session_id')
+
+  if (!sessionId) {
+    return { ok: false, message: 'Missing documentation session.' }
+  }
+
+  const { supabase, profile } = await requireSessionWorkspace()
+  const { data: session, error: sessionError } = await supabase
+    .from('documentation_sessions')
+    .select('id, organization_id, suggested_details')
+    .eq('id', sessionId)
+    .eq('organization_id', profile.organization_id)
+    .single()
+
+  if (sessionError || !session) {
+    return { ok: false, message: 'Documentation session not found.' }
+  }
+
+  const { data: capturesForExtraction, error: capturesError } = await supabase
+    .from('capture_items')
+    .select('id, documentation_session_id, organization_id, type, storage_path, extracted_data, ai_status')
+    .eq('documentation_session_id', session.id)
+    .eq('organization_id', profile.organization_id)
+    .in('type', EXTRACTABLE_CAPTURE_TYPES)
+    .in('ai_status', ['classified', 'needs_review'])
+    .order('captured_at', { ascending: true })
+    .limit(100)
+
+  if (capturesError) {
+    logCaptureFailure({ step: 'capture_extraction_query', ...getSafeErrorDetails(capturesError) })
+    return { ok: false, message: 'Unable to load classified captures for extraction.' }
+  }
+
+  const extractableCaptures = (capturesForExtraction ?? [])
+    .filter((capture): capture is ExtractionCaptureItem => Boolean(getDetectedType(capture.extracted_data)) && captureNeedsExtraction(capture))
+    .slice(0, MAX_EXTRACTION_BATCH_SIZE)
+
+  if (extractableCaptures.length === 0) {
+    return { ok: false, message: 'Classify captures before extracting details.' }
+  }
+
+  let extractedCount = 0
+  let suggestedDetails = isRecord(session.suggested_details) ? (session.suggested_details as Json) : {}
+
+  for (const capture of extractableCaptures) {
+    const detectedType = getDetectedType(capture.extracted_data)
+
+    if (!detectedType) {
+      continue
+    }
+
+    try {
+      const { data: signedData, error: signedUrlError } = await supabase.storage
+        .from(CAPTURE_BUCKET)
+        .createSignedUrl(capture.storage_path, SIGNED_EXTRACTION_URL_SECONDS)
+
+      if (signedUrlError || !signedData?.signedUrl) {
+        logCaptureFailure({ step: 'capture_extraction_signed_url', captureId: capture.id, ...getSafeErrorDetails(signedUrlError) })
+        await markCaptureExtractionFailed(capture, supabase, 'Unable to prepare image for extraction.')
+        continue
+      }
+
+      const extraction = await extractCaptureImageDetails(signedData.signedUrl, detectedType)
+      const status = await updateCaptureExtraction(capture, extraction, supabase)
+
+      if (status === 'extracted' || status === 'needs_review') {
+        extractedCount += 1
+        suggestedDetails = mergeSessionSuggestions(suggestedDetails, capture, detectedType, extraction)
+      }
+    } catch (error) {
+      if (isMissingOpenAiKeyError(error)) {
+        return { ok: false, message: 'AI extraction is not configured yet.' }
+      }
+
+      logCaptureFailure({ step: 'capture_extraction_openai', captureId: capture.id, ...getSafeErrorDetails(error) })
+      await markCaptureExtractionFailed(capture, supabase, 'AI extraction failed and needs review.')
+    }
+  }
+
+  const suggestionCount = isRecord(suggestedDetails) ? Object.keys(suggestedDetails).length : 0
+
+  const { error: suggestionsError } = await supabase
+    .from('documentation_sessions')
+    .update({ suggested_details: suggestedDetails, updated_at: new Date().toISOString() })
+    .eq('id', session.id)
+    .eq('organization_id', profile.organization_id)
+
+  if (suggestionsError) {
+    logCaptureFailure({ step: 'session_suggestions_update', ...getSafeErrorDetails(suggestionsError) })
+    return { ok: false, message: 'Extracted capture details, but could not save session suggestions.' }
+  }
+
+  revalidatePath(`/dashboard/sessions/${session.id}`)
+
+  return { ok: true, message: extractionActionMessage(extractedCount, suggestionCount) }
 }
