@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
+import type { Json } from '@/lib/supabase/database.types'
+
 import { requireSessionWorkspace } from './data'
 import { SESSION_STATUSES, SESSION_TYPES, type SessionStatus } from './types'
 
@@ -122,4 +124,93 @@ export async function restoreDocumentationSession(sessionId: string) {
   revalidatePath('/dashboard/sessions')
   revalidatePath(`/dashboard/sessions/${sessionId}`)
   redirect(`/dashboard/sessions/${sessionId}?saved=1`)
+}
+
+const APPLY_SUGGESTION_FIELDS = ['asset_label', 'vin', 'odometer', 'unit_number', 'customer_name'] as const
+
+type ApplySuggestionField = (typeof APPLY_SUGGESTION_FIELDS)[number]
+
+type SessionSuggestion = {
+  value?: Json
+  source_capture_id?: Json
+  confidence?: Json
+  reason?: Json
+  source_type?: Json
+  priority?: Json
+  applied?: Json
+}
+
+function isApplySuggestionField(value: string): value is ApplySuggestionField {
+  return APPLY_SUGGESTION_FIELDS.includes(value as ApplySuggestionField)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function getSelectedSuggestionFields(formData: FormData) {
+  return formData
+    .getAll('selected_fields')
+    .filter((value): value is string => typeof value === 'string')
+    .filter(isApplySuggestionField)
+}
+
+export async function applySessionSuggestions(sessionId: string, formData: FormData) {
+  const selectedFields = Array.from(new Set(getSelectedSuggestionFields(formData)))
+
+  if (selectedFields.length === 0) {
+    redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent('Choose at least one supported suggestion to apply.')}`)
+  }
+
+  const { supabase, profile } = await requireSessionWorkspace()
+  const { data: session, error: sessionError } = await supabase
+    .from('documentation_sessions')
+    .select('id, organization_id, suggested_details')
+    .eq('id', sessionId)
+    .eq('organization_id', profile.organization_id)
+    .single()
+
+  if (sessionError || !session) {
+    redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent('Documentation session not found.')}`)
+  }
+
+  const suggestedDetails: Record<string, Json> = isRecord(session.suggested_details) ? { ...(session.suggested_details as Record<string, Json>) } : {}
+  const updates: Partial<Record<ApplySuggestionField, string>> & { updated_at: string; suggested_details?: Json } = {
+    updated_at: new Date().toISOString(),
+  }
+
+  for (const field of selectedFields) {
+    const suggestion = isRecord(suggestedDetails[field]) ? (suggestedDetails[field] as SessionSuggestion) : null
+    const value = typeof suggestion?.value === 'string' ? suggestion.value.trim() : ''
+
+    if (!value) {
+      continue
+    }
+
+    updates[field] = value
+    suggestedDetails[field] = { ...suggestion, value, applied: true } as Json
+  }
+
+  const appliedCount = Object.keys(updates).filter((field) => field !== 'updated_at' && field !== 'suggested_details').length
+
+  if (appliedCount === 0) {
+    redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent('Selected suggestions no longer have values to apply.')}`)
+  }
+
+  updates.suggested_details = suggestedDetails
+
+  const { error } = await supabase
+    .from('documentation_sessions')
+    .update(updates)
+    .eq('id', session.id)
+    .eq('organization_id', profile.organization_id)
+
+  if (error) {
+    redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent(error.message)}`)
+  }
+
+  revalidatePath('/dashboard')
+  revalidatePath('/dashboard/sessions')
+  revalidatePath(`/dashboard/sessions/${sessionId}`)
+  redirect(`/dashboard/sessions/${sessionId}?saved=1&suggestionsApplied=${appliedCount}`)
 }

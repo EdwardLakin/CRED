@@ -54,6 +54,37 @@ function formatConfidence(value: Json | undefined) {
   return `${Math.round(Math.min(1, Math.max(0, confidence)) * 100)}%`
 }
 
+
+function getFieldText(value: Json | undefined) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function formatExtractedFields(fields: { [key: string]: Json | undefined }) {
+  const labels: Array<[string, string]> = [
+    ['vin', 'VIN'],
+    ['unit_number', 'Unit'],
+    ['asset_label', 'Asset'],
+    ['odometer', 'Odometer'],
+    ['hour_meter', 'Hours'],
+    ['plate_number', 'Plate'],
+    ['work_order_number', 'WO'],
+    ['customer_name', 'Customer'],
+    ['registration_number', 'Registration'],
+    ['manufacturer', 'Manufacturer'],
+    ['model', 'Model'],
+    ['serial_number', 'Serial'],
+  ]
+
+  return labels
+    .map(([field, label]) => {
+      const value = getFieldText(fields[field])
+      return value ? `${label} ${value}` : null
+    })
+    .filter((value): value is string => Boolean(value))
+    .slice(0, 4)
+    .join(', ')
+}
+
 function getClassificationSummary(extractedData: Json | null) {
   if (!extractedData || !isRecord(extractedData)) {
     return { label: 'Needs classification', detectedType: null, status: 'pending', confidence: null }
@@ -88,7 +119,23 @@ function formatExtractedDataSummary(type: string, extractedData: Json | null) {
   }
 
   const extraction = isRecord(extractedData.extraction) ? extractedData.extraction : null
-  const extractionStatus = typeof extraction?.status === 'string' ? extraction.status.replace(/_/g, ' ') : null
+  const extractionStatusRaw = typeof extraction?.status === 'string' ? extraction.status : null
+  const extractionStatus = extractionStatusRaw?.replace(/_/g, ' ') ?? null
+  const extractionFields = extraction && isRecord(extraction.fields) ? extraction.fields : null
+  const extractedFieldsSummary = extractionFields ? formatExtractedFields(extractionFields) : ''
+  const extractionConfidence = formatConfidence(extraction?.confidence)
+
+  if (extractionStatusRaw === 'extracted' && extractedFieldsSummary) {
+    return `Extracted: ${extractedFieldsSummary}${extractionConfidence ? ` · ${extractionConfidence}` : ''}`
+  }
+
+  if (extractionStatusRaw === 'needs_review') {
+    return `Needs review${extractedFieldsSummary ? `: ${extractedFieldsSummary}` : ''}${extractionConfidence ? ` · ${extractionConfidence}` : ''}`
+  }
+
+  if (extractionStatusRaw === 'failed') {
+    return `Extraction failed${typeof extraction?.summary === 'string' ? `: ${extraction.summary}` : ''}`
+  }
 
   if (classification.status === 'pending') {
     return `${classification.label} · Extraction ${extractionStatus ?? 'not started'}`

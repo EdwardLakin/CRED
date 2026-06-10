@@ -786,3 +786,60 @@ a {
   cursor: not-allowed;
   opacity: 0.72;
 }
+
+.capture-ai-actions {
+  align-items: flex-end;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.suggested-details-card h2 {
+  margin: 0;
+}
+
+.suggestion-list {
+  display: grid;
+  gap: 10px;
+}
+
+.suggestion-row {
+  align-items: flex-start;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+}
+
+.suggestion-row.unsupported {
+  opacity: 0.72;
+}
+
+.suggestion-select {
+  padding-top: 4px;
+}
+
+.suggestion-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.suggestion-main small {
+  color: var(--muted);
+}
+
+.suggestion-actions {
+  border-top: 0;
+  padding-top: 6px;
+}
+
+@media (max-width: 760px) {
+  .capture-ai-actions {
+    align-items: stretch;
+    width: 100%;
+  }
+}

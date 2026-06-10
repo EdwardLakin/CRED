@@ -1,14 +1,139 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
-import { AddCaptureForm, CaptureList, ClassifyPendingCapturesButton } from '@/features/capture'
+import { AddCaptureForm, CaptureList, ClassifyPendingCapturesButton, ExtractCaptureDetailsButton } from '@/features/capture'
 import { SESSION_STATUSES, SessionStatusBadge, formatDateTime } from '@/features/sessions'
 import {
+  applySessionSuggestions,
   archiveDocumentationSession,
   restoreDocumentationSession,
   updateDocumentationSession,
 } from '@/features/sessions/actions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+
+
+const SUGGESTION_FIELD_LABELS: Record<string, string> = {
+  asset_label: 'Asset Label',
+  vin: 'VIN',
+  odometer: 'Odometer',
+  unit_number: 'Unit Number',
+  customer_name: 'Customer',
+  work_order_number: 'Work Order Number',
+  plate_number: 'Plate Number',
+  registration_number: 'Registration Number',
+}
+
+const SUPPORTED_APPLY_FIELDS = ['asset_label', 'vin', 'odometer', 'unit_number', 'customer_name']
+
+const SUGGESTION_SOURCE_LABELS: Record<string, string> = {
+  registration: 'Registration',
+  vin_plate: 'VIN Plate',
+  license_plate: 'License Plate',
+  unit_number: 'Unit Number',
+  inspection_sheet: 'Inspection Sheet',
+  work_order: 'Work Order',
+  odometer: 'Odometer',
+  hour_meter: 'Hour Meter',
+  info_plate: 'Info Plate',
+  other_document: 'Other Document',
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function formatConfidence(value: unknown) {
+  const confidence = typeof value === 'number' ? value : Number(value)
+
+  if (!Number.isFinite(confidence)) {
+    return '—'
+  }
+
+  return `${Math.round(Math.min(1, Math.max(0, confidence)) * 100)}%`
+}
+
+function formatSuggestionSource(value: unknown) {
+  return typeof value === 'string' && value ? SUGGESTION_SOURCE_LABELS[value] ?? value.replace(/_/g, ' ') : 'capture'
+}
+
+function getSuggestionRows(suggestedDetails: unknown) {
+  if (!isRecord(suggestedDetails)) {
+    return []
+  }
+
+  return Object.entries(suggestedDetails)
+    .map(([field, suggestion]) => {
+      if (!isRecord(suggestion) || typeof suggestion.value !== 'string' || !suggestion.value.trim()) {
+        return null
+      }
+
+      return {
+        field,
+        label: SUGGESTION_FIELD_LABELS[field] ?? field.replace(/_/g, ' '),
+        value: suggestion.value.trim(),
+        source: formatSuggestionSource(suggestion.source_type),
+        confidence: formatConfidence(suggestion.confidence),
+        supported: SUPPORTED_APPLY_FIELDS.includes(field),
+        applied: suggestion.applied === true,
+      }
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row))
+    .sort((a, b) => Number(b.supported) - Number(a.supported) || a.label.localeCompare(b.label))
+}
+
+function SuggestedSessionDetailsCard({ sessionId, suggestedDetails }: { sessionId: string; suggestedDetails: unknown }) {
+  const suggestions = getSuggestionRows(suggestedDetails)
+  const applyAction = applySessionSuggestions.bind(null, sessionId)
+  const hasSupportedSuggestions = suggestions.some((suggestion) => suggestion.supported)
+
+  return (
+    <section className="card detail-card suggested-details-card form-stack">
+      <div>
+        <h2>Suggested Session Details</h2>
+        <p className="muted">
+          Review extracted values before applying them. CRED will not overwrite Session Details until you choose what to apply.
+        </p>
+      </div>
+
+      {suggestions.length === 0 ? (
+        <div className="empty-state suggestions-empty-state">
+          No suggestions yet. Classify captures, then extract details from captures to prepare session updates.
+        </div>
+      ) : (
+        <form action={applyAction} className="form-stack">
+          <div className="suggestion-list">
+            {suggestions.map((suggestion) => (
+              <label key={suggestion.field} className={`suggestion-row${suggestion.supported ? '' : ' unsupported'}`}>
+                <span className="suggestion-select">
+                  <input
+                    type="checkbox"
+                    name="selected_fields"
+                    value={suggestion.field}
+                    disabled={!suggestion.supported}
+                    defaultChecked={suggestion.supported && !suggestion.applied}
+                  />
+                </span>
+                <span className="suggestion-main">
+                  <strong>{suggestion.label}</strong>
+                  <span>{suggestion.value}</span>
+                  <small>
+                    from {suggestion.source}, {suggestion.confidence}{suggestion.applied ? ' · applied' : ''}
+                    {!suggestion.supported ? ' · kept for review' : ''}
+                  </small>
+                </span>
+              </label>
+            ))}
+          </div>
+          <div className="form-actions suggestion-actions">
+            <button className="button button-primary touch-target" disabled={!hasSupportedSuggestions}>
+              Apply selected suggestions
+            </button>
+          </div>
+        </form>
+      )}
+    </section>
+  )
+}
 
 function DetailField({
   id,
@@ -36,10 +161,10 @@ export default async function SessionDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ captureError?: string; captureSaved?: string; error?: string; saved?: string }>
+  searchParams: Promise<{ captureError?: string; captureSaved?: string; error?: string; saved?: string; suggestionsApplied?: string }>
 }) {
   const { id } = await params
-  const { captureError, captureSaved, error, saved } = await searchParams
+  const { captureError, captureSaved, error, saved, suggestionsApplied } = await searchParams
   const { supabase, profile } = await requireSessionWorkspace()
   const { data: session, error: sessionError } = await supabase
     .from('documentation_sessions')
@@ -99,7 +224,7 @@ export default async function SessionDetailPage({
 
       {error ? <p className="error">{error}</p> : null}
       {captureError ? <p className="error">{captureError}</p> : null}
-      {saved ? <p className="success">Session saved.</p> : null}
+      {saved ? <p className="success">{suggestionsApplied ? `Applied ${suggestionsApplied} session suggestion${suggestionsApplied === '1' ? '' : 's'}.` : 'Session saved.'}</p> : null}
       {captureSaved ? <p className="success">Capture added.</p> : null}
 
 
@@ -123,10 +248,15 @@ export default async function SessionDetailPage({
               Next: AI will identify VIN plates, info plates, documents, odometers, and field photos automatically.
             </p>
           </div>
-          <ClassifyPendingCapturesButton sessionId={session.id} />
+          <div className="capture-ai-actions">
+            <ClassifyPendingCapturesButton sessionId={session.id} />
+            <ExtractCaptureDetailsButton sessionId={session.id} />
+          </div>
         </div>
         <CaptureList captures={captures ?? []} signedUrls={signedUrls} />
       </section>
+
+      <SuggestedSessionDetailsCard sessionId={session.id} suggestedDetails={session.suggested_details} />
 
       <form action={saveAction} className="card detail-card form-stack">
         <section className="form-stack">
