@@ -14,6 +14,7 @@ export const CAPTURE_EXTRACTION_FIELDS = [
   'work_order_number',
   'customer_name',
   'registration_number',
+  'registered_owner',
   'manufacturer',
   'model',
   'serial_number',
@@ -21,6 +22,7 @@ export const CAPTURE_EXTRACTION_FIELDS = [
   'gawr_front',
   'gawr_rear',
   'tire_size',
+  'tire_pressure',
   'document_type',
   'inspection_date',
 ] as const
@@ -54,9 +56,9 @@ const TARGET_INSTRUCTIONS: Partial<Record<CaptureClassificationType, string>> = 
   unit_number: 'Focus on fleet/unit number decals or labels. Return unit_number and asset_label when the same visible value identifies the asset.',
   vin_plate: 'Focus on VIN labels, stamped VINs, and vehicle certification labels. Return vin only when exactly 17 characters and clearly readable.',
   info_plate:
-    'Focus on manufacturer/data/compliance plate values including possible VIN, manufacturer, model, serial number, GVWR, GAWR, tire size/loading, and compliance text. Put long compliance/tire-loading text in notes if it does not fit a field.',
+    'Focus on manufacturer/data/compliance plate values including possible VIN, manufacturer, model, serial number, GVWR, GAWR, tire size, tire pressure/loading, and compliance text. Put long compliance/tire-loading text in notes if it does not fit a field.',
   work_order: 'Focus on work order/repair order number, customer name, unit number, and VIN if clearly visible.',
-  registration: 'Focus on VIN, plate number, registered owner/customer, and registration number.',
+  registration: 'Focus on VIN, plate number, registered owner/customer, and registration number. Return registered_owner when the registration owner is clearly visible, and customer_name only when a customer/account name is clearly indicated.',
   license_plate: 'Focus on the exact license plate number only.',
   odometer: 'Focus on the mileage/odometer reading exactly as displayed.',
   hour_meter: 'Focus on the hour meter reading exactly as displayed.',

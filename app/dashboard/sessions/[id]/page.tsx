@@ -1,7 +1,13 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
-import { AddCaptureForm, CaptureList, ClassifyPendingCapturesButton, ExtractCaptureDetailsButton } from '@/features/capture'
+import {
+  AddCaptureForm,
+  CaptureList,
+  ClassifyPendingCapturesButton,
+  ExtractCaptureDetailsButton,
+  ExtractedEvidencePanel,
+} from '@/features/capture'
 import { SESSION_STATUSES, SessionStatusBadge, formatDateTime } from '@/features/sessions'
 import {
   applySessionSuggestions,
@@ -18,9 +24,6 @@ const SUGGESTION_FIELD_LABELS: Record<string, string> = {
   odometer: 'Odometer',
   unit_number: 'Unit Number',
   customer_name: 'Customer',
-  work_order_number: 'Work Order Number',
-  plate_number: 'Plate Number',
-  registration_number: 'Registration Number',
 }
 
 const SUPPORTED_APPLY_FIELDS = ['asset_label', 'vin', 'odometer', 'unit_number', 'customer_name']
@@ -62,6 +65,7 @@ function getSuggestionRows(suggestedDetails: unknown) {
   }
 
   return Object.entries(suggestedDetails)
+    .filter(([field]) => SUPPORTED_APPLY_FIELDS.includes(field))
     .map(([field, suggestion]) => {
       if (!isRecord(suggestion) || typeof suggestion.value !== 'string' || !suggestion.value.trim()) {
         return null
@@ -73,18 +77,17 @@ function getSuggestionRows(suggestedDetails: unknown) {
         value: suggestion.value.trim(),
         source: formatSuggestionSource(suggestion.source_type),
         confidence: formatConfidence(suggestion.confidence),
-        supported: SUPPORTED_APPLY_FIELDS.includes(field),
         applied: suggestion.applied === true,
       }
     })
     .filter((row): row is NonNullable<typeof row> => Boolean(row))
-    .sort((a, b) => Number(b.supported) - Number(a.supported) || a.label.localeCompare(b.label))
+    .sort((a, b) => a.label.localeCompare(b.label))
 }
 
 function SuggestedSessionDetailsCard({ sessionId, suggestedDetails }: { sessionId: string; suggestedDetails: unknown }) {
   const suggestions = getSuggestionRows(suggestedDetails)
   const applyAction = applySessionSuggestions.bind(null, sessionId)
-  const hasSupportedSuggestions = suggestions.some((suggestion) => suggestion.supported)
+  const hasSupportedSuggestions = suggestions.length > 0
 
   return (
     <section className="card detail-card suggested-details-card form-stack">
@@ -103,14 +106,13 @@ function SuggestedSessionDetailsCard({ sessionId, suggestedDetails }: { sessionI
         <form action={applyAction} className="form-stack">
           <div className="suggestion-list">
             {suggestions.map((suggestion) => (
-              <label key={suggestion.field} className={`suggestion-row${suggestion.supported ? '' : ' unsupported'}`}>
+              <label key={suggestion.field} className="suggestion-row">
                 <span className="suggestion-select">
                   <input
                     type="checkbox"
                     name="selected_fields"
                     value={suggestion.field}
-                    disabled={!suggestion.supported}
-                    defaultChecked={suggestion.supported && !suggestion.applied}
+                    defaultChecked={!suggestion.applied}
                   />
                 </span>
                 <span className="suggestion-main">
@@ -118,7 +120,6 @@ function SuggestedSessionDetailsCard({ sessionId, suggestedDetails }: { sessionI
                   <span>{suggestion.value}</span>
                   <small>
                     from {suggestion.source}, {suggestion.confidence}{suggestion.applied ? ' · applied' : ''}
-                    {!suggestion.supported ? ' · kept for review' : ''}
                   </small>
                 </span>
               </label>
@@ -255,6 +256,8 @@ export default async function SessionDetailPage({
         </div>
         <CaptureList captures={captures ?? []} signedUrls={signedUrls} />
       </section>
+
+      <ExtractedEvidencePanel captures={captures ?? []} signedUrls={signedUrls} />
 
       <SuggestedSessionDetailsCard sessionId={session.id} suggestedDetails={session.suggested_details} />
 

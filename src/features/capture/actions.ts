@@ -641,9 +641,6 @@ function getSuggestionCandidates(sourceType: string, fields: CaptureExtractionRe
     { field: 'asset_label', value: fields.asset_label, reason: `Detected from ${sourceType.replace(/_/g, ' ')}` },
     { field: 'odometer', value: fields.odometer, reason: `Detected from ${sourceType.replace(/_/g, ' ')}` },
     { field: 'customer_name', value: fields.customer_name, reason: `Detected from ${sourceType.replace(/_/g, ' ')}` },
-    { field: 'plate_number', value: fields.plate_number, reason: `Detected from ${sourceType.replace(/_/g, ' ')}` },
-    { field: 'work_order_number', value: fields.work_order_number, reason: `Detected from ${sourceType.replace(/_/g, ' ')}` },
-    { field: 'registration_number', value: fields.registration_number, reason: `Detected from ${sourceType.replace(/_/g, ' ')}` },
   ]
 
   if (sourceType === 'unit_number' && !fields.asset_label && fields.unit_number) {
