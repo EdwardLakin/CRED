@@ -202,7 +202,26 @@ export function getCaptureClassificationSummary(classification: CaptureClassific
   return `${classification.label} (${Math.round(classification.confidence * 100)}% confidence): ${classification.reason}`
 }
 
-export async function classifyCaptureImage(signedImageUrl: string): Promise<CaptureClassificationResult> {
+export type CaptureGuidanceContext = {
+  workflow: string
+  step: string
+  label: string
+}
+
+function getGuidancePrompt(guidance?: CaptureGuidanceContext | null) {
+  if (!guidance) {
+    return CLASSIFIER_USER_TEXT
+  }
+
+  return `${CLASSIFIER_USER_TEXT}
+
+The user captured this image while on the suggested step "${guidance.label}" in the ${guidance.workflow} workflow. Use this only as weak context. Do not blindly trust it; classify based on image content.`
+}
+
+export async function classifyCaptureImage(
+  signedImageUrl: string,
+  guidance?: CaptureGuidanceContext | null,
+): Promise<CaptureClassificationResult> {
   const apiKey = getOpenAiApiKey()
 
   if (!apiKey) {
@@ -225,7 +244,7 @@ export async function classifyCaptureImage(signedImageUrl: string): Promise<Capt
         {
           role: 'user',
           content: [
-            { type: 'input_text', text: CLASSIFIER_USER_TEXT },
+            { type: 'input_text', text: getGuidancePrompt(guidance) },
             { type: 'input_image', image_url: signedImageUrl },
           ],
         },
