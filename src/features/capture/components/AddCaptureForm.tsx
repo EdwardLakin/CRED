@@ -98,6 +98,7 @@ export function AddCaptureForm({
 }) {
   const formRef = useRef<HTMLFormElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const noteTextareaRef = useRef<HTMLTextAreaElement>(null)
   const recognitionRef = useRef<InstanceType<SpeechRecognitionConstructor> | null>(null)
   const selectedFilesRef = useRef<SelectedEvidenceFile[]>([])
   const [state, formAction] = useActionState(createCapture, INITIAL_CAPTURE_STATE)
@@ -283,8 +284,20 @@ export function AddCaptureForm({
                   ) : (
                     <div className="evidence-file-placeholder">Preview unavailable for {file.type || 'this file type'}</div>
                   )}
-                  <div className="evidence-note-overlay">
-                    <strong>Note</strong>
+                  <div className="evidence-note-overlay" aria-label="Read-only note shown on report">
+                    <div className="evidence-note-overlay-header">
+                      <strong>Note shown on report</strong>
+                      <button
+                        type="button"
+                        className="evidence-note-edit-link"
+                        onClick={() => {
+                          noteTextareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                          noteTextareaRef.current?.focus({ preventScroll: true })
+                        }}
+                      >
+                        Edit note
+                      </button>
+                    </div>
                     <span>{note.trim() || (transcriptStatus === 'pending' ? 'Transcribing…' : 'Add note before saving')}</span>
                   </div>
                 </div>
@@ -302,12 +315,13 @@ export function AddCaptureForm({
         <p className="muted capture-upload-hint">Maximum file size is 100MB per file. Photos and videos are queued for AI review.</p>
       </div>
 
-      <div className="field-stack capture-note-composer">
-        <label htmlFor={`technician-note-${guidanceKey}`} className="label">Technician note / transcript</label>
+      <div className="field-stack capture-note-composer report-note-editor">
+        <label htmlFor={`technician-note-${guidanceKey}`} className="label">Edit note shown on report</label>
         <textarea
+          ref={noteTextareaRef}
           id={`technician-note-${guidanceKey}`}
           name="technician_note"
-          className="input note-textarea"
+          className="input note-textarea prominent-note-textarea"
           value={note}
           placeholder={transcriptStatus === 'pending' ? 'Transcribing…' : 'Speak or type what matters: location, component, measurement, condition, recommendation.'}
           onChange={(event) => {
@@ -320,6 +334,7 @@ export function AddCaptureForm({
           }}
           rows={4}
         />
+        <p className="muted note-helper-text">Changes update the note overlay and exported PDF.</p>
         <div className="capture-note-actions">
           <button type="button" className="button button-secondary touch-target" onClick={startVoiceNote}>
             {transcriptStatus === 'pending' ? 'Listening…' : 'Add voice note'}
