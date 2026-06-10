@@ -1,5 +1,6 @@
 import Link from 'next/link'
 
+import { ThemeToggle } from '@/components/theme'
 import { Button, Card, Input, Label } from '@/components/ui'
 
 import { signUp } from './actions'
@@ -14,6 +15,9 @@ export default async function SignUpPage({ searchParams }: SignUpPageProps) {
   return (
     <main className="centered-page">
       <Card>
+        <div className="auth-card-header">
+          <ThemeToggle />
+        </div>
         <div className="stack">
           <div>
             <h1>Create your CRED account</h1>

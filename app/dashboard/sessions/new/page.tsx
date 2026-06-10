@@ -1,5 +1,6 @@
 import Link from 'next/link'
 
+import { ThemeToggle } from '@/components/theme'
 import { createDocumentationSession } from '@/features/sessions/actions'
 import { SESSION_TYPES } from '@/features/sessions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
@@ -10,9 +11,12 @@ export default async function NewSessionPage({ searchParams }: { searchParams: P
 
   return (
     <main className="page-shell form-page-shell">
-      <Link href="/dashboard" className="secondary-link touch-target">
-        ← Back to dashboard
-      </Link>
+      <div className="section-header page-header">
+        <Link href="/dashboard" className="secondary-link touch-target">
+          ← Back to dashboard
+        </Link>
+        <ThemeToggle />
+      </div>
       <div>
         <h1>New Documentation Session</h1>
         <p className="muted">
