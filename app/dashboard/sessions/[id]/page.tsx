@@ -2,9 +2,9 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import {
-  AddCaptureForm,
   CaptureList,
   ClassifyPendingCapturesButton,
+  EvidenceChecklistSummary,
   ExtractCaptureDetailsButton,
   ExtractedEvidencePanel,
 } from '@/features/capture'
@@ -202,6 +202,9 @@ export default async function SessionDetailPage({
   const archiveAction = archiveDocumentationSession.bind(null, session.id)
   const restoreAction = restoreDocumentationSession.bind(null, session.id)
   const isArchived = session.status === 'archived'
+  const includedCaptureCount = visibleCaptures.filter((capture) => capture.include_in_report).length
+  const needsReviewCount = visibleCaptures.filter((capture) => capture.ai_status === 'needs_review').length
+  const extractedCaptureCount = visibleCaptures.filter((capture) => capture.ai_status === 'completed').length
 
   return (
     <main className="page-shell dashboard-shell">
@@ -215,8 +218,9 @@ export default async function SessionDetailPage({
             <SessionStatusBadge status={session.status} />
           </div>
           <p className="muted">
-            {session.session_type} · Updated {formatDateTime(session.updated_at ?? session.created_at)}
+            Unit {session.unit_number || session.asset_label || 'Unassigned'} · Customer {session.customer_name || 'Not set'} · {session.session_type} · Created {formatDateTime(session.created_at)}
           </p>
+          <p className="muted">Updated {formatDateTime(session.updated_at ?? session.created_at)}</p>
         </div>
         <div className="page-actions">
           <ThemeToggle />
@@ -236,36 +240,49 @@ export default async function SessionDetailPage({
       {saved ? <p className="success">{suggestionsApplied ? `Applied ${suggestionsApplied} session suggestion${suggestionsApplied === '1' ? '' : 's'}.` : 'Session saved.'}</p> : null}
       {captureSaved ? <p className="success">Capture added.</p> : null}
 
+      <section className="card detail-card findings-summary-card">
+        <div>
+          <h2>Findings Summary</h2>
+          <p className="muted">Session-level evidence status for report readiness.</p>
+        </div>
+        <div className="findings-summary-grid">
+          <div>
+            <strong>{visibleCaptures.length}</strong>
+            <span>Saved captures</span>
+          </div>
+          <div>
+            <strong>{includedCaptureCount}</strong>
+            <span>Included in report</span>
+          </div>
+          <div>
+            <strong>{needsReviewCount}</strong>
+            <span>Need AI review</span>
+          </div>
+          <div>
+            <strong>{extractedCaptureCount}</strong>
+            <span>AI completed</span>
+          </div>
+        </div>
+      </section>
 
       <section className="card detail-card field-mode-cta-card">
         <div>
           <p className="eyebrow guided-eyebrow">Field mode</p>
-          <h2>Capture Session</h2>
-          <p className="muted">Use guided capture for CVIP/inspection evidence.</p>
+          <h2>Capture Evidence</h2>
+          <p className="muted">Open a focused technician workspace for photos, videos, voice notes, and draft previews.</p>
         </div>
         <Link href={`/dashboard/sessions/${session.id}/capture`} className="button button-primary touch-target">
-          Start / Continue Capture
+          Capture Evidence
         </Link>
-      </section>
-
-      <section className="card detail-card capture-card form-stack">
-        <div>
-          <h2>Add Capture</h2>
-          <p className="muted">
-            Start with the camera. Capture evidence now, then let CRED classify VIN plates, info plates, documents,
-            odometers, damage, and field photos automatically.
-          </p>
-        </div>
-        <AddCaptureForm sessionId={session.id} organizationId={session.organization_id} sessionType={session.session_type} />
       </section>
 
       <section className="card detail-card capture-card form-stack">
         <div className="captures-section-header">
           <div>
-            <h2>Captures</h2>
-            <p className="muted">Review uploaded files, intake status, and extraction placeholders for this session.</p>
+            <h2>Evidence Gallery</h2>
+            <p className="muted">Review saved captures, notes, AI results, report inclusion, and PDF ordering for this session.</p>
             <p className="next-ai-step">
-              Next: AI will identify VIN plates, info plates, documents, odometers, and field photos automatically.
+              AI actions are managed here so Session Details remains the source of truth for review and reporting.
             </p>
           </div>
           <div className="capture-ai-actions">
@@ -281,6 +298,20 @@ export default async function SessionDetailPage({
       </div>
 
       <SuggestedSessionDetailsCard sessionId={session.id} suggestedDetails={session.suggested_details} />
+
+      <EvidenceChecklistSummary captures={visibleCaptures} sessionType={session.session_type} />
+
+      <section className="card detail-card final-report-review-card">
+        <div>
+          <h2>Final Report Review</h2>
+          <p className="muted">
+            Confirm Session Details, evidence notes, included captures, and report ordering before exporting the final PDF.
+          </p>
+        </div>
+        <Link href={`/api/dashboard/sessions/${session.id}/report-pdf`} className="button button-primary touch-target" target="_blank">
+          Export PDF
+        </Link>
+      </section>
 
       <form action={saveAction} className="card detail-card form-stack">
         <section className="form-stack">
