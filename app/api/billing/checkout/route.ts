@@ -5,8 +5,53 @@ import {
   createStripeCustomer,
   createSubscriptionCheckoutSession,
   parseBillingPlan,
+  type BillingPlan,
 } from '@/lib/stripe'
 import { createClient } from '@/lib/supabase/server'
+
+const REQUIRED_CHECKOUT_ENV_VARS = [
+  'STRIPE_SECRET_KEY',
+  'STRIPE_PRICE_INDIVIDUAL',
+  'STRIPE_PRICE_TEAM',
+  'STRIPE_PRICE_SHOP',
+  'NEXT_PUBLIC_APP_URL',
+] as const
+
+function validateCheckoutEnvironment(): { appUrl: string } | { error: string } {
+  const missing = REQUIRED_CHECKOUT_ENV_VARS.filter((key) => !process.env[key])
+
+  if (missing.length > 0) {
+    return { error: `Missing billing configuration: ${missing.join(', ')}` }
+  }
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL as string
+
+  try {
+    return { appUrl: new URL(appUrl).origin }
+  } catch {
+    return { error: 'Invalid billing configuration: NEXT_PUBLIC_APP_URL must be a valid URL' }
+  }
+}
+
+function getCheckoutUrls(appUrl: string) {
+  return {
+    successUrl: `${appUrl}/dashboard?billing=success`,
+    cancelUrl: `${appUrl}/dashboard?billing=cancelled`,
+  }
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'Unknown checkout error'
+}
+
+function logCheckoutError(message: string, input: { error?: unknown; organizationId?: string; plan?: BillingPlan }) {
+  console.error('Stripe checkout failed', {
+    message,
+    organizationId: input.organizationId,
+    plan: input.plan,
+    error: input.error ? getErrorMessage(input.error) : undefined,
+  })
+}
 
 export async function POST(request: Request) {
   const user = await getCurrentUser()
@@ -30,7 +75,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Choose a valid billing plan before checkout.' }, { status: 400 })
   }
 
-  const origin = request.headers.get('origin') ?? new URL(request.url).origin
+  const environment = validateCheckoutEnvironment()
+
+  if ('error' in environment) {
+    logCheckoutError(environment.error, { organizationId: profile.organization_id, plan })
+    return NextResponse.json({ error: 'Billing configuration is incomplete.' }, { status: 503 })
+  }
+
+  const { successUrl, cancelUrl } = getCheckoutUrls(environment.appUrl)
   const supabase = await createClient()
   let customerId = profile.organization.stripe_customer_id
 
@@ -57,8 +109,8 @@ export async function POST(request: Request) {
       customerId,
       organizationId: profile.organization_id,
       plan,
-      successUrl: `${origin}/dashboard?billing=success`,
-      cancelUrl: `${origin}/?billing=cancelled`,
+      successUrl,
+      cancelUrl,
     })
 
     if (!session.url) {
@@ -67,7 +119,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ url: session.url })
   } catch (error) {
-    console.error('Stripe checkout failed', error)
-    return NextResponse.json({ error: 'Unable to start checkout.' }, { status: 500 })
+    logCheckoutError('Unable to create Stripe Checkout session.', {
+      error,
+      organizationId: profile.organization_id,
+      plan,
+    })
+    return NextResponse.json({ error: 'Unable to create Stripe Checkout session.' }, { status: 502 })
   }
 }
