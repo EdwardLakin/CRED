@@ -1,6 +1,6 @@
 import Link from 'next/link'
 
-import type { DocumentationSession } from '../types'
+import { getSessionTypeLabel, type DocumentationSession } from '../types'
 import { formatDate, formatDateTime } from '../utils'
 import { SessionStatusBadge } from './SessionStatusBadge'
 
@@ -20,7 +20,7 @@ export function SessionCard({
       <div className="session-card-header">
         <div className="session-card-title-block">
           <h3>{session.title}</h3>
-          <p className="muted">{session.session_type}</p>
+          <p className="muted">{getSessionTypeLabel(session.session_type)}</p>
         </div>
         <SessionStatusBadge status={session.status} />
       </div>
