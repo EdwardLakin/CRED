@@ -197,6 +197,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const { id } = await params
   const requestUrl = new URL(_request.url)
   const shareTokenValue = requestUrl.searchParams.get('share_token')
+  const previewOnly = requestUrl.searchParams.get('preview') === '1'
   const sharedAccess = Boolean(shareTokenValue)
 
   let supabase: SupabaseClient<Database>
@@ -250,6 +251,13 @@ export async function GET(_request: Request, { params }: RouteContext) {
       .single()
 
     if (sessionError || !ownedSession) notFound()
+
+    if (!previewOnly && ownedSession.review_status !== 'ready_for_delivery') {
+      redirect(
+        `/dashboard/sessions/${id}/report?error=${encodeURIComponent('Review and mark this report ready before delivery.')}`,
+      )
+    }
+
     session = ownedSession
   }
 
@@ -284,7 +292,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     if (data?.signedUrl) signatureUrls[signature.id] = data.signedUrl
   }))
 
-  if (!sharedAccess) {
+  if (!sharedAccess && !previewOnly) {
     await supabase.from('exports').insert({
       documentation_session_id: session.id,
       organization_id: organizationId,

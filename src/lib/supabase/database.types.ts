@@ -170,6 +170,9 @@ export interface Database {
           suggested_details: Json
           field_service_details: Json
           workflow_template_id: string | null
+          review_status: string
+          reviewed_at: string | null
+          reviewed_by: string | null
           created_at: string | null
           updated_at: string | null
         }
@@ -188,6 +191,9 @@ export interface Database {
           suggested_details?: Json
           field_service_details?: Json
           workflow_template_id?: string | null
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
           created_at?: string | null
           updated_at?: string | null
         }
@@ -206,6 +212,9 @@ export interface Database {
           suggested_details?: Json
           field_service_details?: Json
           workflow_template_id?: string | null
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
           created_at?: string | null
           updated_at?: string | null
         }

@@ -17,12 +17,17 @@ import {
 import { createClient } from '@/lib/supabase/client'
 
 const MAX_BATCH_FILES = 10
+type UploadStatus = 'queued' | 'uploading' | 'saved' | 'failed'
+
 type SelectedEvidenceFile = {
   id: string
+  file: File
   name: string
   type: string
   size: number
   previewUrl: string
+  status: UploadStatus
+  error?: string
 }
 
 type SpeechRecognitionConstructor = new () => {
@@ -156,19 +161,52 @@ function formatFileSize(bytes: number) {
 function SubmitButton({
   hasFiles,
   pending,
+  hasActiveUploads,
+  retryOnly,
 }: {
   hasFiles: boolean
   pending: boolean
+  hasActiveUploads: boolean
+  retryOnly: boolean
 }) {
   return (
     <Button
       type="submit"
       className="button button-primary touch-target"
-      disabled={pending || !hasFiles}
+      disabled={pending || hasActiveUploads || !hasFiles}
     >
-      {pending ? 'Saving…' : 'Done — save evidence'}
+      {pending || hasActiveUploads
+        ? 'Uploading…'
+        : retryOnly
+          ? 'Retry failed upload'
+          : 'Done — save evidence'}
     </Button>
   )
+}
+
+function getUploadStatusLabel(status: UploadStatus, error?: string) {
+  if (status === 'uploading') return 'Uploading…'
+  if (status === 'saved') return 'Saved'
+  if (status === 'failed') return error ? `Upload failed — retry: ${error}` : 'Upload failed — retry'
+  return 'Queued'
+}
+
+function getFriendlyUploadError(message: string) {
+  const normalized = message.toLowerCase()
+
+  if (normalized.includes('larger than your plan') || normalized.includes('maximum file size')) {
+    return 'File too large for your plan'
+  }
+
+  if (normalized.includes('storage') && (normalized.includes('limit') || normalized.includes('allowance'))) {
+    return 'Storage limit reached'
+  }
+
+  if (normalized.includes('failed to fetch') || normalized.includes('network') || normalized.includes('offline')) {
+    return 'Upload failed — bad connection'
+  }
+
+  return message || 'Upload failed — retry'
 }
 
 function getSuggestedCaptureText(sessionType?: string | null) {
@@ -228,6 +266,7 @@ export function AddCaptureForm({
   const recognitionRef =
     useRef<InstanceType<SpeechRecognitionConstructor> | null>(null)
   const selectedFilesRef = useRef<SelectedEvidenceFile[]>([])
+  const isSavingRef = useRef(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [clientError, setClientError] = useState<string | null>(null)
@@ -259,6 +298,9 @@ export function AddCaptureForm({
     captureIntent === 'auto_evidence' || captureIntent === 'auto_image'
   const captureSizeLabel = maxFileSizeLabel ?? formatFileSize(maxCaptureFileSizeBytes)
   const videoSizeLabel = formatFileSize(maxVideoFileSizeBytes)
+  const hasActiveUploads = selectedFiles.some((file) => file.status === 'uploading')
+  const failedFiles = selectedFiles.filter((file) => file.status === 'failed')
+  const uploadableFiles = failedFiles.length > 0 ? failedFiles : selectedFiles.filter((file) => file.status === 'queued')
 
   function getMaxFileSizeForFile(file: File) {
     return fileIsVideo(file) ? maxVideoFileSizeBytes : maxCaptureFileSizeBytes
@@ -291,14 +333,30 @@ export function AddCaptureForm({
     }
   }
 
+  function getSelectedEvidenceFileId(file: File, index: number) {
+    return `${file.name}-${file.size}-${file.lastModified}-${index}`
+  }
+
   function buildSelectedEvidenceFiles(files: File[]): SelectedEvidenceFile[] {
     return files.map((file, index) => ({
-      id: `${file.name}-${file.size}-${file.lastModified}-${index}`,
+      id: getSelectedEvidenceFileId(file, index),
+      file,
       name: file.name,
       type: file.type,
       size: file.size,
       previewUrl: URL.createObjectURL(file),
+      status: 'queued',
     }))
+  }
+
+  function updateSelectedFileStatus(fileId: string, status: UploadStatus, error?: string) {
+    setSelectedFiles((currentFiles) => {
+      const nextFiles = currentFiles.map((file) =>
+        file.id === fileId ? { ...file, status, error } : file,
+      )
+      selectedFilesRef.current = nextFiles
+      return nextFiles
+    })
   }
 
   function validateFileSelection() {
@@ -347,20 +405,25 @@ export function AddCaptureForm({
   }
 
   function removeSelectedFile(fileId: string) {
-    const input = fileInputRef.current
-    if (!input?.files) {
+    const fileToRemove = selectedFilesRef.current.find((file) => file.id === fileId)
+
+    if (fileToRemove?.status === 'uploading' || fileToRemove?.status === 'saved') {
       return
     }
 
-    const remainingFiles = Array.from(input.files).filter(
-      (file, index) =>
-        `${file.name}-${file.size}-${file.lastModified}-${index}` !== fileId,
-    )
-    const dataTransfer = new DataTransfer()
-    remainingFiles.forEach((file) => dataTransfer.items.add(file))
-    input.files = dataTransfer.files
-    replaceSelectedFiles(buildSelectedEvidenceFiles(remainingFiles))
+    const remainingFiles = selectedFilesRef.current.filter((file) => file.id !== fileId)
+    URL.revokeObjectURL(fileToRemove?.previewUrl ?? '')
+    selectedFilesRef.current = remainingFiles
+    setSelectedFiles(remainingFiles)
+
+    if (fileInputRef.current && typeof DataTransfer !== 'undefined') {
+      const dataTransfer = new DataTransfer()
+      remainingFiles.forEach((file) => dataTransfer.items.add(file.file))
+      fileInputRef.current.files = dataTransfer.files
+    }
+
     setClientError(null)
+    setActionError(null)
   }
 
   function openEvidencePicker() {
@@ -368,73 +431,35 @@ export function AddCaptureForm({
     window.setTimeout(() => fileInputRef.current?.click(), 0)
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-
-    const files = Array.from(fileInputRef.current?.files ?? [])
-
-    if (files.length === 0) {
-      setClientError('Choose at least one file to upload.')
-      return
-    }
-
-    if (files.length > MAX_BATCH_FILES) {
-      setClientError(`Upload up to ${MAX_BATCH_FILES} files at a time.`)
-      return
-    }
-
-    if (captureIntent === 'manual' && files.length > 1) {
-      setClientError('Advanced manual uploads support one file at a time.')
-      return
-    }
-
-    if (files.some((file) => file.size <= 0)) {
-      setClientError('One selected file is empty. Choose another file.')
-      return
-    }
-
-    const oversizedFile = files.find((file) => file.size > getMaxFileSizeForFile(file))
-
-    if (oversizedFile) {
-      setClientError(getFileTooLargeMessage(oversizedFile))
-      return
-    }
-
-    if (
-      (captureIntent === 'auto_image' || captureIntent === 'auto_evidence') &&
-      files.some((file) => !fileIsImage(file) && !fileIsVideo(file))
-    ) {
-      setClientError('Capture Evidence accepts photo or video files only.')
-      return
-    }
-
-    if (
-      captureIntent === 'manual' &&
-      files.some((file) => !fileHasAllowedType(file, manualType))
-    ) {
-      setClientError('That file type is not allowed for this capture.')
-      return
-    }
-
-    setClientError(null)
-    setActionError(null)
-    setIsSaving(true)
-
+  async function uploadSelectedFiles(filesToUpload: SelectedEvidenceFile[]) {
     const supabase = createClient()
-    const uploadedPaths: string[] = []
+    let savedCount = 0
+    let failedCount = 0
 
-    try {
-      const accessResult = await validateCaptureBillingAccess(
-        sessionId,
-        files.map((file) => ({ size: file.size, mimeType: file.type })),
+    const accessResult = await validateCaptureBillingAccess(
+      sessionId,
+      filesToUpload.map((selectedFile) => ({
+        size: selectedFile.file.size,
+        mimeType: selectedFile.file.type,
+      })),
+    )
+
+    if (!accessResult.ok) {
+      const friendlyError = getFriendlyUploadError(accessResult.error)
+      filesToUpload.forEach((selectedFile) =>
+        updateSelectedFileStatus(selectedFile.id, 'failed', friendlyError),
       )
+      setActionError(friendlyError)
+      return { savedCount, failedCount: filesToUpload.length }
+    }
 
-      if (!accessResult.ok) {
-        throw new Error(accessResult.error)
-      }
+    for (const selectedFile of filesToUpload) {
+      const { file } = selectedFile
+      const storagePath = `organizations/${organizationId}/sessions/${sessionId}/captures/${buildStorageFilename(file)}`
 
-      for (const file of files) {
-        const storagePath = `organizations/${organizationId}/sessions/${sessionId}/captures/${buildStorageFilename(file)}`
+      updateSelectedFileStatus(selectedFile.id, 'uploading')
+
+      try {
         const { error: uploadError } = await supabase.storage
           .from('documentation-captures')
           .upload(storagePath, file, {
@@ -446,8 +471,6 @@ export function AddCaptureForm({
         if (uploadError) {
           throw new Error(uploadError.message)
         }
-
-        uploadedPaths.push(storagePath)
 
         const result = await createCaptureRecordFromUploadedFile({
           sessionId,
@@ -468,39 +491,119 @@ export function AddCaptureForm({
         })
 
         if (!result.ok) {
-          await supabase.storage
-            .from('documentation-captures')
-            .remove([storagePath])
+          await supabase.storage.from('documentation-captures').remove([storagePath])
           throw new Error(result.error)
         }
 
-        uploadedPaths.pop()
+        savedCount += 1
+        updateSelectedFileStatus(selectedFile.id, 'saved')
+      } catch (error) {
+        failedCount += 1
+        const message = getFriendlyUploadError(
+          error instanceof Error
+            ? error.message
+            : 'Upload failed. Check your connection and retry.',
+        )
+        updateSelectedFileStatus(selectedFile.id, 'failed', message)
+      }
+    }
+
+    return { savedCount, failedCount }
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (isSavingRef.current || isSaving || hasActiveUploads) {
+      return
+    }
+
+    const filesToUpload = uploadableFiles
+
+    if (filesToUpload.length === 0) {
+      setClientError('Choose at least one file to upload.')
+      return
+    }
+
+    if (selectedFiles.length > MAX_BATCH_FILES) {
+      setClientError(`Upload up to ${MAX_BATCH_FILES} files at a time.`)
+      return
+    }
+
+    if (captureIntent === 'manual' && selectedFiles.length > 1) {
+      setClientError('Advanced manual uploads support one file at a time.')
+      return
+    }
+
+    if (filesToUpload.some(({ file }) => file.size <= 0)) {
+      setClientError('One selected file is empty. Choose another file.')
+      return
+    }
+
+    const oversizedFile = filesToUpload.find(
+      ({ file }) => file.size > getMaxFileSizeForFile(file),
+    )
+
+    if (oversizedFile) {
+      const message = 'File too large for your plan'
+      updateSelectedFileStatus(oversizedFile.id, 'failed', message)
+      setClientError(message)
+      return
+    }
+
+    if (
+      (captureIntent === 'auto_image' || captureIntent === 'auto_evidence') &&
+      filesToUpload.some(({ file }) => !fileIsImage(file) && !fileIsVideo(file))
+    ) {
+      setClientError('Capture Evidence accepts photo or video files only.')
+      return
+    }
+
+    if (
+      captureIntent === 'manual' &&
+      filesToUpload.some(({ file }) => !fileHasAllowedType(file, manualType))
+    ) {
+      setClientError('That file type is not allowed for this capture.')
+      return
+    }
+
+    setClientError(null)
+    setActionError(null)
+    isSavingRef.current = true
+    setIsSaving(true)
+
+    try {
+      const result = await uploadSelectedFiles(filesToUpload)
+
+      if (result.savedCount > 0) {
+        router.refresh()
       }
 
-      resetFileSelection()
-      setNote('')
-      setNoteSource('manual')
-      setTranscriptStatus('not_started')
-      router.refresh()
+      if (result.failedCount > 0) {
+        setActionError(
+          result.savedCount > 0
+            ? 'Some files were saved. Failed files are still here — retry them when your connection is better.'
+            : 'Upload failed — retry when your connection is better.',
+        )
+        return
+      }
+
+      window.setTimeout(() => {
+        resetFileSelection()
+        setNote('')
+        setNoteSource('manual')
+        setTranscriptStatus('not_started')
+      }, 900)
 
       if (returnPath) {
-        window.location.assign(
-          `${returnPath}${returnPath.includes('?') ? '&' : '?'}captureSaved=1`,
-        )
+        window.setTimeout(() => {
+          window.location.assign(
+            `${returnPath}${returnPath.includes('?') ? '&' : '?'}captureSaved=1`,
+          )
+        }, 900)
       }
-    } catch (error) {
-      if (uploadedPaths.length > 0) {
-        await supabase.storage
-          .from('documentation-captures')
-          .remove(uploadedPaths)
-      }
-
-      setActionError(
-        error instanceof Error
-          ? error.message
-          : 'Unable to upload capture. Please try again.',
-      )
     } finally {
+      isSavingRef.current = false
       setIsSaving(false)
     }
   }
@@ -568,6 +671,7 @@ export function AddCaptureForm({
           type="button"
           className="capture-evidence-button touch-target"
           onClick={openEvidencePicker}
+          disabled={isSaving || hasActiveUploads}
         >
           <span className="capture-evidence-icon" aria-hidden="true">
             📷
@@ -601,15 +705,17 @@ export function AddCaptureForm({
           required
           className="input file-input camera-file-input"
           onChange={validateFileSelection}
+          disabled={isSaving || hasActiveUploads}
         />
         {selectedFiles.length > 0 ? (
           <div className="selected-evidence-list">
             <strong>
-              {selectedFiles.length} file{selectedFiles.length === 1 ? '' : 's'}{' '}
-              ready
+              {selectedFiles.length} file{selectedFiles.length === 1 ? '' : 's'} in this upload
             </strong>
             {selectedFiles.map((file) => (
-              <span key={file.id}>{file.name}</span>
+              <span key={file.id}>
+                {file.name} — {getUploadStatusLabel(file.status, file.error)}
+              </span>
             ))}
           </div>
         ) : null}
@@ -629,7 +735,7 @@ export function AddCaptureForm({
                     <p className="muted">Draft evidence preview</p>
                   </div>
                   <span className="ai-status-pill draft-status-pill">
-                    Ready to save
+                    {getUploadStatusLabel(file.status, file.error)}
                   </span>
                 </div>
 
@@ -688,13 +794,34 @@ export function AddCaptureForm({
                   <span className="muted draft-evidence-filename">
                     {file.name}
                   </span>
-                  <button
-                    type="button"
-                    className="secondary-link danger-link"
-                    onClick={() => removeSelectedFile(file.id)}
-                  >
-                    Remove selected file
-                  </button>
+                  {file.status === 'failed' ? (
+                    <>
+                      <button
+                        type="submit"
+                        className="secondary-link"
+                        disabled={isSaving || hasActiveUploads}
+                      >
+                        Retry failed upload
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-link danger-link"
+                        onClick={() => removeSelectedFile(file.id)}
+                        disabled={isSaving || hasActiveUploads}
+                      >
+                        Remove failed upload
+                      </button>
+                    </>
+                  ) : file.status === 'queued' ? (
+                    <button
+                      type="button"
+                      className="secondary-link danger-link"
+                      onClick={() => removeSelectedFile(file.id)}
+                      disabled={isSaving || hasActiveUploads}
+                    >
+                      Remove selected file
+                    </button>
+                  ) : null}
                 </div>
               </article>
             ))}
@@ -751,7 +878,12 @@ export function AddCaptureForm({
         </div>
       </div>
 
-      <SubmitButton hasFiles={selectedFiles.length > 0} pending={isSaving} />
+      <SubmitButton
+        hasFiles={uploadableFiles.length > 0}
+        pending={isSaving}
+        hasActiveUploads={hasActiveUploads}
+        retryOnly={failedFiles.length > 0}
+      />
 
       {stickyDoneHref ? (
         <div className="guided-sticky-actions focused-capture-done-actions">
@@ -759,12 +891,19 @@ export function AddCaptureForm({
             type="button"
             className="button button-primary touch-target"
             onClick={openEvidencePicker}
+            disabled={isSaving || hasActiveUploads}
           >
             Capture
           </button>
-          <Link href={stickyDoneHref} className="button button-secondary touch-target">
-            Done
-          </Link>
+          {hasActiveUploads || isSaving ? (
+            <button type="button" className="button button-secondary touch-target" disabled>
+              Done
+            </button>
+          ) : (
+            <Link href={stickyDoneHref} className="button button-secondary touch-target">
+              Done
+            </Link>
+          )}
         </div>
       ) : null}
 
