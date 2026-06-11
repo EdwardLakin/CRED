@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
+import { getBillingAccessErrorMessage, getOrganizationBillingAccess } from '@/features/billing'
 import type { Json } from '@/lib/supabase/database.types'
 
 import { requireSessionWorkspace } from './data'
@@ -35,6 +36,12 @@ export async function createDocumentationSession(formData: FormData) {
   }
 
   const { supabase, profile } = await requireSessionWorkspace()
+  const billingAccess = getOrganizationBillingAccess(profile.organization)
+
+  if (!billingAccess.hasAccess) {
+    redirect(`/dashboard?error=${encodeURIComponent(getBillingAccessErrorMessage(billingAccess))}`)
+  }
+
   const { data: session, error } = await supabase
     .from('documentation_sessions')
     .insert({

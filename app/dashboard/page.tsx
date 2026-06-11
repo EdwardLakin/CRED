@@ -3,17 +3,17 @@ import Link from 'next/link'
 import { signOut } from './actions'
 import { ThemeToggle } from '@/components/theme'
 import { Button, Card } from '@/components/ui'
-import { getPlanDisplayName, parseBillingPlan } from '@/features/billing'
+import { getOrganizationBillingAccess, getPlanDisplayName, parseBillingPlan } from '@/features/billing'
 import { DashboardCheckoutLauncher } from '@/features/billing/components/DashboardCheckoutLauncher'
 import { EmptyState, SessionCard } from '@/features/sessions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
 interface DashboardPageProps {
-  searchParams: Promise<{ billing?: string; checkout?: string }>
+  searchParams: Promise<{ billing?: string; checkout?: string; error?: string }>
 }
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
-  const { billing, checkout } = await searchParams
+  const { billing, checkout, error: dashboardError } = await searchParams
   const checkoutPlan = parseBillingPlan(checkout) ?? undefined
   const { supabase, profile } = await requireSessionWorkspace()
   const industry = profile.organization.industry || 'Not set'
@@ -29,18 +29,33 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   }
 
   const recentSessions = sessions ?? []
-  const currentPlan = getPlanDisplayName(profile.organization.plan) ?? 'Free trial'
+  const billingAccess = getOrganizationBillingAccess(profile.organization)
+  const currentPlan = getPlanDisplayName(profile.organization.plan) ?? 'Individual'
   const subscriptionStatus = profile.organization.subscription_status ?? 'not started'
-  const periodEnd = profile.organization.current_period_end
-    ? new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(
-        new Date(profile.organization.current_period_end),
-      )
-    : null
+  const dateFormatter = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' })
+  const trialEndsAt = profile.organization.trial_ends_at
+    ? dateFormatter.format(new Date(profile.organization.trial_ends_at))
+    : 'Expired'
+  const billingButtonLabel = subscriptionStatus === 'active' ? 'Manage Billing' : 'Subscribe Now'
 
   return (
     <main className="page-shell dashboard-shell">
       <DashboardCheckoutLauncher plan={checkoutPlan} />
       {billing === 'success' ? <div className="success">Billing checkout completed. Your subscription is being synced.</div> : null}
+      {dashboardError ? <p className="error">{dashboardError}</p> : null}
+      {checkoutPlan ? (
+        <Card className="dashboard-card billing-checkout-callout">
+          <div className="section-header">
+            <div>
+              <strong>Ready to subscribe to {getPlanDisplayName(checkoutPlan)}?</strong>
+              <p className="muted">Start checkout when you are ready. Your dashboard remains available during the trial.</p>
+            </div>
+            <Link href={`/dashboard?checkout=${checkoutPlan}`} className="button button-primary">
+              Start Checkout
+            </Link>
+          </div>
+        </Card>
+      ) : null}
       <section className="hero-card">
         <div>
           <p className="eyebrow">Documentation workflow</p>
@@ -93,16 +108,23 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             <p className="muted">{subscriptionStatus}</p>
           </div>
           <div>
-            <strong>Renewal Date</strong>
-            <p className="muted">{periodEnd ?? 'Pending checkout'}</p>
+            <strong>Trial ends date</strong>
+            <p className="muted">{trialEndsAt}</p>
           </div>
           <div className="workspace-actions">
-            <Link href="/#pricing" className="button button-secondary billing-manage-button">
-              Upgrade Plan
+            <Link
+              href={subscriptionStatus === 'active' ? '/dashboard' : `/dashboard?checkout=${billingAccess.plan ?? 'individual'}`}
+              className="button button-secondary billing-manage-button"
+            >
+              {billingButtonLabel}
             </Link>
           </div>
         </div>
       </Card>
+
+      {billingAccess.trialExpired ? (
+        <p className="error">Your trial has ended. Subscribe to continue.</p>
+      ) : null}
 
       <section className="stack" aria-label="Recent sessions">
         <div className="section-header">

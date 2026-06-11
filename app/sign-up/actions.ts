@@ -14,13 +14,16 @@ export async function signUp(formData: FormData) {
   const planValue = String(formData.get('plan') ?? '')
   const plan = parseBillingPlan(planValue)
   const planQuery = plan ? `?plan=${plan}` : ''
+  const emailRedirectPath = plan
+    ? `/auth/callback?next=${encodeURIComponent(`/onboarding?plan=${plan}`)}`
+    : '/auth/callback'
 
   const supabase = await createClient()
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
-      emailRedirectTo: `${origin ?? ''}/auth/callback`,
+      emailRedirectTo: `${origin ?? ''}${emailRedirectPath}`,
     },
   })
 

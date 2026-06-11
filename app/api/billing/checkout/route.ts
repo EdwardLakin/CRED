@@ -23,10 +23,11 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => null)) as { plan?: unknown } | null
 
-  const plan = parseBillingPlan(body?.plan)
+  const requestedPlan = parseBillingPlan(body?.plan)
+  const plan = requestedPlan ?? parseBillingPlan(profile.organization.plan)
 
   if (!plan) {
-    return NextResponse.json({ error: 'Invalid billing plan.' }, { status: 400 })
+    return NextResponse.json({ error: 'Choose a valid billing plan before checkout.' }, { status: 400 })
   }
 
   const origin = request.headers.get('origin') ?? new URL(request.url).origin

@@ -50,8 +50,7 @@ export async function completeOnboarding(formData: FormData) {
   const companyName = String(formData.get('companyName') ?? '').trim()
   const industryValue = String(formData.get('industry') ?? '')
   const planValue = String(formData.get('plan') ?? '')
-  const plan = parseBillingPlan(planValue)
-  const planQuery = plan ? `?checkout=${plan}` : ''
+  const plan = parseBillingPlan(planValue) ?? 'individual'
 
   if (!fullName || !companyName || !INDUSTRIES.has(industryValue)) {
     redirect('/onboarding?error=Please%20complete%20all%20onboarding%20fields.')
@@ -80,6 +79,7 @@ export async function completeOnboarding(formData: FormData) {
       p_full_name: fullName,
       p_company_name: companyName,
       p_industry: industry,
+      p_plan: plan,
     },
   )
 
@@ -87,5 +87,5 @@ export async function completeOnboarding(formData: FormData) {
     redirectWithOnboardingError('workspace', workspaceError, hasUser)
   }
 
-  redirect(`/dashboard${planQuery}`)
+  redirect('/dashboard')
 }

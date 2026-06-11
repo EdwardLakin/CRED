@@ -13,6 +13,8 @@ export interface Database {
           plan: 'individual' | 'team' | 'shop' | 'enterprise' | null
           subscription_status: string | null
           current_period_end: string | null
+          trial_ends_at: string | null
+          billing_started_at: string | null
           created_at: string | null
         }
         Insert: {
@@ -24,6 +26,8 @@ export interface Database {
           plan?: 'individual' | 'team' | 'shop' | 'enterprise' | null
           subscription_status?: string | null
           current_period_end?: string | null
+          trial_ends_at?: string | null
+          billing_started_at?: string | null
           created_at?: string | null
         }
         Update: {
@@ -35,6 +39,8 @@ export interface Database {
           plan?: 'individual' | 'team' | 'shop' | 'enterprise' | null
           subscription_status?: string | null
           current_period_end?: string | null
+          trial_ends_at?: string | null
+          billing_started_at?: string | null
           created_at?: string | null
         }
         Relationships: []
@@ -377,6 +383,7 @@ export interface Database {
           p_full_name: string
           p_company_name: string
           p_industry: string
+          p_plan?: string
         }
         Returns: string
       }
