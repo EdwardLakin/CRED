@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">CRED maskable app icon</title>
+  <desc id="desc">Maskable CRED app icon with safe-zone centered logo artwork.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#155dfc"/>
+      <stop offset="1" stop-color="#14213d"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <circle cx="256" cy="240" r="124" fill="#ffffff"/>
+  <circle cx="256" cy="240" r="96" fill="#155dfc"/>
+  <text x="256" y="263" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="58" font-weight="800" letter-spacing="2" fill="#ffffff">CRED</text>
+  <text x="256" y="376" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="800" letter-spacing="4" fill="#dbe3ef">PROFIXIQ</text>
+</svg>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">CRED by ProFixIQ app icon</title>
+  <desc id="desc">Blue and navy CRED branded app icon with CRED lettering.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#155dfc"/>
+      <stop offset="1" stop-color="#14213d"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#07111f" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect x="52" y="52" width="408" height="408" rx="92" fill="#ffffff" opacity="0.12"/>
+  <circle cx="256" cy="246" r="146" fill="#ffffff" filter="url(#shadow)"/>
+  <circle cx="256" cy="246" r="114" fill="#155dfc"/>
+  <text x="256" y="273" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="70" font-weight="800" letter-spacing="2" fill="#ffffff">CRED</text>
+  <text x="256" y="401" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="800" letter-spacing="4" fill="#dbe3ef">PROFIXIQ</text>
+</svg>
