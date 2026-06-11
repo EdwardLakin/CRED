@@ -155,7 +155,7 @@ export async function emailReport(sessionId: string, formData: FormData) {
     subject,
     branding: profile.organization.name,
     delivery: 'secure_printable_report_link',
-    provider: 'resend',
+    provider: 'sendgrid',
     provider_message_id: providerMessageId,
     custom_message_included: Boolean(message),
   }
