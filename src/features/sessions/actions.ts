@@ -58,6 +58,7 @@ function buildFieldServiceDetails(formData: FormData, existingDetails: Json | nu
 export async function createDocumentationSession(formData: FormData) {
   const title = getTrimmedValue(formData, 'title')
   const sessionType = getTrimmedValue(formData, 'session_type')
+  const workflowTemplateId = getNullableValue(formData, 'workflow_template_id')
 
   if (!title || !isAllowedSessionType(sessionType)) {
     redirect('/dashboard/sessions/new?error=Please%20enter%20a%20title%20and%20session%20type.')
@@ -78,6 +79,7 @@ export async function createDocumentationSession(formData: FormData) {
       status: 'draft',
       created_by: profile.id,
       organization_id: profile.organization_id,
+      workflow_template_id: workflowTemplateId,
     })
     .select('id')
     .single()

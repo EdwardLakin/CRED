@@ -293,3 +293,101 @@ export function getEvidenceChecklistSummary(captures: CaptureItem[], sessionType
     }
   })
 }
+
+export type RequiredEvidenceRule = {
+  key: string
+  label: string
+  required: boolean
+  matchTerms: string[]
+}
+
+function normalizeKey(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+function getTextHaystack(capture: CaptureItem) {
+  const chunks = [capture.technician_note, capture.transcript, capture.ai_summary, capture.ocr_text, JSON.stringify(capture.extracted_data ?? {})]
+  return chunks.filter((chunk): chunk is string => typeof chunk === 'string').join(' ').toLowerCase()
+}
+
+function normalizeEvidenceRules(value: Json | null | undefined): RequiredEvidenceRule[] {
+  if (!Array.isArray(value)) return []
+  return value.map((item) => {
+    if (typeof item === 'string') {
+      return { key: normalizeKey(item), label: item, required: true, matchTerms: [item.toLowerCase()] }
+    }
+
+    if (isRecord(item)) {
+      const label = typeof item.label === 'string' ? item.label : typeof item.key === 'string' ? item.key : 'Evidence'
+      const terms = Array.isArray(item.matchTerms)
+        ? item.matchTerms.filter((term): term is string => typeof term === 'string')
+        : Array.isArray(item.match_terms)
+          ? item.match_terms.filter((term): term is string => typeof term === 'string')
+          : [label.toLowerCase()]
+      return {
+        key: typeof item.key === 'string' ? item.key : normalizeKey(label),
+        label,
+        required: typeof item.required === 'boolean' ? item.required : true,
+        matchTerms: terms.length > 0 ? terms.map((term) => term.toLowerCase()) : [label.toLowerCase()],
+      }
+    }
+
+    return null
+  }).filter((item): item is RequiredEvidenceRule => Boolean(item))
+}
+
+export function getSessionEvidenceRules(sessionType: string, templateRequiredEvidence?: Json | null): RequiredEvidenceRule[] {
+  const templateRules = normalizeEvidenceRules(templateRequiredEvidence)
+  if (templateRules.length > 0) return templateRules
+
+  const workflow = getWorkflow(sessionType)
+  if (workflow === 'cvip') {
+    return ['VIN Plate', 'Registration', 'Odometer', 'Front Brakes', 'Rear Brakes', 'Tire Tread'].map((label) => ({
+      key: normalizeKey(label),
+      label,
+      required: true,
+      matchTerms: [label.toLowerCase(), ...label.toLowerCase().split(' ')],
+    }))
+  }
+
+  if (sessionType.toLowerCase().includes('field_service')) {
+    return ['Unit Identification', 'Data Plate', 'Defect Photo', 'Repair Photo'].map((label) => ({
+      key: normalizeKey(label),
+      label,
+      required: true,
+      matchTerms: [label.toLowerCase(), ...label.toLowerCase().split(' ')],
+    }))
+  }
+
+  return getSteps(workflow).map((step) => ({
+    key: step.key,
+    label: step.shortLabel,
+    required: true,
+    matchTerms: [step.label.toLowerCase(), step.shortLabel.toLowerCase(), ...step.acceptedTypes],
+  }))
+}
+
+export function getRequiredEvidenceCompletion(captures: CaptureItem[], sessionType: string, templateRequiredEvidence?: Json | null) {
+  const rules = getSessionEvidenceRules(sessionType, templateRequiredEvidence).filter((rule) => rule.required)
+  const rows = rules.map((rule) => {
+    const matchingCaptures = captures.filter((capture) => {
+      const haystack = getTextHaystack(capture)
+      const detectedType = getDetectedType(capture.extracted_data)
+      const guidance = getGuidance(capture.extracted_data)
+      return guidance?.step === rule.key || detectedType === rule.key || rule.matchTerms.some((term) => haystack.includes(term))
+    })
+
+    return {
+      rule,
+      completed: matchingCaptures.length > 0,
+      count: matchingCaptures.length,
+      status: matchingCaptures.length > 0 ? 'Completed' : 'Missing',
+    }
+  })
+  return {
+    rows,
+    completedCount: rows.filter((row) => row.completed).length,
+    totalCount: rows.length,
+    missing: rows.filter((row) => !row.completed),
+  }
+}

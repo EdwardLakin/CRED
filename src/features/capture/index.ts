@@ -7,4 +7,4 @@ export { ExtractCaptureDetailsButton } from './components/ExtractCaptureDetailsB
 export { ExtractedEvidencePanel } from './components/ExtractedEvidencePanel'
 export { CAPTURE_TYPES, CAPTURE_TYPE_LABELS } from './types'
 export type { CaptureItem, CaptureType } from './types'
-export { WORKFLOW_LABELS, getWorkflow } from './guided-workflow'
+export { WORKFLOW_LABELS, getRequiredEvidenceCompletion, getWorkflow } from './guided-workflow'
