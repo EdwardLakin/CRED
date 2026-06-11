@@ -4,8 +4,12 @@ import { randomBytes } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
+import { getBillingAccessErrorMessage, getOrganizationBillingAccess } from '@/features/billing'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import { ReportEmailError, sendReportEmail, validateReportEmailRecipients } from '@/lib/email/reports'
 import type { Json } from '@/lib/supabase/database.types'
+
+const REPORT_SHARE_EXPIRATION_DAYS = 30
 
 function getString(formData: FormData, field: string) {
   const value = formData.get(field)
@@ -13,7 +17,31 @@ function getString(formData: FormData, field: string) {
 }
 
 function getRecipients(formData: FormData) {
-  return getString(formData, 'recipients').split(/[;,\s]+/).map((item) => item.trim()).filter(Boolean)
+  return getString(formData, 'recipients')
+}
+
+function getReportRedirectPath(sessionId: string, params: Record<string, string | number> = {}) {
+  const searchParams = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => searchParams.set(key, String(value)))
+  const query = searchParams.toString()
+
+  return `/dashboard/sessions/${sessionId}/report${query ? `?${query}` : ''}`
+}
+
+function getPublicAppUrl() {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim()
+
+  if (!appUrl) {
+    console.error('Report email delivery requires NEXT_PUBLIC_APP_URL to generate public share links.')
+    throw new ReportEmailError('Email delivery is not configured.')
+  }
+
+  try {
+    return new URL(appUrl).origin
+  } catch {
+    console.error('Report email delivery has an invalid NEXT_PUBLIC_APP_URL value.')
+    throw new ReportEmailError('Email delivery is not configured.')
+  }
 }
 
 async function requireOwnedSession(sessionId: string) {
@@ -24,16 +52,113 @@ async function requireOwnedSession(sessionId: string) {
     .eq('id', sessionId)
     .eq('organization_id', workspace.profile.organization_id)
     .single()
-  if (error || !session) redirect(`/dashboard/sessions/${sessionId}/report?error=${encodeURIComponent('Documentation session not found.')}`)
+  if (error || !session) redirect(getReportRedirectPath(sessionId, { error: 'Documentation session not found.' }))
   return { ...workspace, session }
 }
 
+async function getOrCreateActiveShareToken({
+  createdBy,
+  organizationId,
+  sessionId,
+  supabase,
+}: {
+  createdBy: string
+  organizationId: string
+  sessionId: string
+  supabase: Awaited<ReturnType<typeof requireSessionWorkspace>>['supabase']
+}) {
+  const now = new Date()
+  const { data: existingTokens, error: existingTokenError } = await supabase
+    .from('report_share_tokens')
+    .select('id, token, expires_at')
+    .eq('documentation_session_id', sessionId)
+    .eq('organization_id', organizationId)
+    .is('disabled_at', null)
+    .order('created_at', { ascending: false })
+
+  if (existingTokenError) {
+    throw new ReportEmailError(existingTokenError.message)
+  }
+
+  const activeToken = existingTokens?.find((shareToken) => !shareToken.expires_at || new Date(shareToken.expires_at) > now)
+  if (activeToken) {
+    return activeToken.token
+  }
+
+  const expiresAt = new Date(now)
+  expiresAt.setDate(expiresAt.getDate() + REPORT_SHARE_EXPIRATION_DAYS)
+
+  const { data: createdToken, error: createTokenError } = await supabase
+    .from('report_share_tokens')
+    .insert({
+      documentation_session_id: sessionId,
+      organization_id: organizationId,
+      token: randomBytes(24).toString('hex'),
+      expires_at: expiresAt.toISOString(),
+      created_by: createdBy,
+    })
+    .select('token')
+    .single()
+
+  if (createTokenError || !createdToken) {
+    throw new ReportEmailError(createTokenError?.message ?? 'Could not create secure report link.')
+  }
+
+  return createdToken.token
+}
+
 export async function emailReport(sessionId: string, formData: FormData) {
-  const recipients = getRecipients(formData)
-  if (recipients.length === 0) redirect(`/dashboard/sessions/${sessionId}/report?error=${encodeURIComponent('Enter at least one recipient email.')}`)
   const message = getString(formData, 'message')
+  let recipients: string[]
+
+  try {
+    recipients = validateReportEmailRecipients(getRecipients(formData))
+  } catch (error) {
+    const message = error instanceof ReportEmailError ? error.message : 'Check the recipient email addresses.'
+    redirect(getReportRedirectPath(sessionId, { error: message }))
+  }
+
   const { supabase, profile, session } = await requireOwnedSession(sessionId)
-  const metadata: Json = { recipients, message, subject: `Inspection Report - ${session.title}`, branding: profile.organization.name, attachment: 'printable_report_link' }
+  const billingAccess = getOrganizationBillingAccess(profile.organization)
+  if (!billingAccess.hasAccess) {
+    redirect(getReportRedirectPath(session.id, { error: getBillingAccessErrorMessage(billingAccess) }))
+  }
+
+  const subject = `Inspection Report - ${session.title}`
+  let providerMessageId: string
+
+  try {
+    const token = await getOrCreateActiveShareToken({
+      createdBy: profile.id,
+      organizationId: profile.organization_id,
+      sessionId: session.id,
+      supabase,
+    })
+    const reportUrl = `${getPublicAppUrl()}/reports/share/${token}`
+    const result = await sendReportEmail({
+      to: recipients,
+      subject,
+      message,
+      reportUrl,
+      organizationName: profile.organization.name,
+      sessionTitle: session.title,
+    })
+    providerMessageId = result.id
+    recipients = result.recipients
+  } catch (error) {
+    const message = error instanceof ReportEmailError ? error.message : 'Email could not be sent. Please try again.'
+    redirect(getReportRedirectPath(session.id, { error: message }))
+  }
+
+  const metadata: Json = {
+    recipients,
+    subject,
+    branding: profile.organization.name,
+    delivery: 'secure_printable_report_link',
+    provider: 'resend',
+    provider_message_id: providerMessageId,
+    custom_message_included: Boolean(message),
+  }
   const { error } = await supabase.from('exports').insert({
     documentation_session_id: session.id,
     organization_id: profile.organization_id,
@@ -42,9 +167,10 @@ export async function emailReport(sessionId: string, formData: FormData) {
     created_by: profile.id,
     metadata,
   })
-  if (error) redirect(`/dashboard/sessions/${session.id}/report?error=${encodeURIComponent(error.message)}`)
+  if (error) redirect(getReportRedirectPath(session.id, { error: error.message }))
   revalidatePath(`/dashboard/sessions/${session.id}`)
-  redirect(`/dashboard/sessions/${session.id}/report?emailed=1`)
+  revalidatePath(`/dashboard/sessions/${session.id}/report`)
+  redirect(getReportRedirectPath(session.id, { emailed: 1 }))
 }
 
 export async function createReportShareLink(sessionId: string, formData: FormData) {
@@ -58,17 +184,17 @@ export async function createReportShareLink(sessionId: string, formData: FormDat
     expires_at: expiresAt,
     created_by: profile.id,
   })
-  if (error) redirect(`/dashboard/sessions/${session.id}/report?error=${encodeURIComponent(error.message)}`)
+  if (error) redirect(getReportRedirectPath(session.id, { error: error.message }))
   revalidatePath(`/dashboard/sessions/${session.id}/report`)
-  redirect(`/dashboard/sessions/${session.id}/report?shared=1`)
+  redirect(getReportRedirectPath(session.id, { shared: 1 }))
 }
 
 export async function disableReportShareLink(sessionId: string, tokenId: string) {
   const { supabase, profile, session } = await requireOwnedSession(sessionId)
   const { error } = await supabase.from('report_share_tokens').update({ disabled_at: new Date().toISOString() }).eq('id', tokenId).eq('organization_id', profile.organization_id)
-  if (error) redirect(`/dashboard/sessions/${session.id}/report?error=${encodeURIComponent(error.message)}`)
+  if (error) redirect(getReportRedirectPath(session.id, { error: error.message }))
   revalidatePath(`/dashboard/sessions/${session.id}/report`)
-  redirect(`/dashboard/sessions/${session.id}/report?disabled=1`)
+  redirect(getReportRedirectPath(session.id, { disabled: 1 }))
 }
 
 export async function saveReport(sessionId: string) {
@@ -81,7 +207,7 @@ export async function saveReport(sessionId: string) {
     created_by: profile.id,
     metadata: { retention: 'indefinite_until_deleted' },
   })
-  if (error) redirect(`/dashboard/sessions/${session.id}/report?error=${encodeURIComponent(error.message)}`)
+  if (error) redirect(getReportRedirectPath(session.id, { error: error.message }))
   revalidatePath(`/dashboard/sessions/${session.id}`)
-  redirect(`/dashboard/sessions/${session.id}/report?saved=1`)
+  redirect(getReportRedirectPath(session.id, { saved: 1 }))
 }
