@@ -122,7 +122,7 @@ export default async function GuidedCapturePage({
         <div className="captures-section-header">
           <div>
             <h2>Recent Captures</h2>
-            <p className="muted">Quick confirmation of the latest saved evidence. Full review, AI actions, checklist, and export live on Session Details.</p>
+            <p className="muted">Quick confirmation of the latest saved evidence. Full review, AI actions, checklist, and report preparation live on Session Details.</p>
           </div>
           <span className="ai-status-pill">{captureItems.length} saved</span>
         </div>

@@ -698,7 +698,7 @@ export function AddCaptureForm({
           rows={4}
         />
         <p className="muted note-helper-text">
-          Changes update the note overlay and exported PDF.
+          Changes update the note overlay and printable report.
         </p>
         <div className="capture-note-actions">
           <button

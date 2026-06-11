@@ -33,7 +33,7 @@ export async function emailReport(sessionId: string, formData: FormData) {
   if (recipients.length === 0) redirect(`/dashboard/sessions/${sessionId}/report?error=${encodeURIComponent('Enter at least one recipient email.')}`)
   const message = getString(formData, 'message')
   const { supabase, profile, session } = await requireOwnedSession(sessionId)
-  const metadata: Json = { recipients, message, subject: `Inspection Report - ${session.title}`, branding: profile.organization.name, attachment: 'report_pdf' }
+  const metadata: Json = { recipients, message, subject: `Inspection Report - ${session.title}`, branding: profile.organization.name, attachment: 'printable_report_link' }
   const { error } = await supabase.from('exports').insert({
     documentation_session_id: session.id,
     organization_id: profile.organization_id,

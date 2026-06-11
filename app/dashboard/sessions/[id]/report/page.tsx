@@ -76,10 +76,10 @@ export default async function SessionReportPreviewPage({
         <div>
           <p className="eyebrow guided-eyebrow">Report page</p>
           <h1>{session.title}</h1>
-          <p className="muted">Preview, Download, Email, Share, Save, and Finish. Template: {template?.name ?? 'Standard workflow'}.</p>
+          <p className="muted">Preview, Open, Email, Share, Save, and Finish. Template: {template?.name ?? 'Standard workflow'}.</p>
         </div>
         <div className="page-actions report-preview-actions">
-          <Link href={reportPath} className="button button-primary touch-target" target="_blank">Download PDF</Link>
+          <Link href={reportPath} className="button button-primary touch-target" target="_blank">Open Printable Report</Link>
           <Link href={`/dashboard/sessions/${session.id}`} className="button button-secondary touch-target">Back to Session</Link>
           <Link href="/dashboard" className="button button-secondary touch-target">Finish</Link>
         </div>
@@ -102,7 +102,7 @@ export default async function SessionReportPreviewPage({
             {evidence.missing.map((row) => <p key={row.rule.key} className="checkline missing">○ {row.rule.label}</p>)}
           </div>
           <div className="form-actions">
-            <Link href={reportPath} target="_blank" className="button button-secondary touch-target">Generate Anyway</Link>
+            <Link href={reportPath} target="_blank" className="button button-secondary touch-target">Open Report Anyway</Link>
             <Link href={`/dashboard/sessions/${session.id}/capture`} className="button button-primary touch-target">Return to Capture</Link>
           </div>
         </section>
@@ -157,8 +157,9 @@ export default async function SessionReportPreviewPage({
         </div>
       </section>
 
-      <section className="card detail-card report-preview-card" aria-label="CRED report PDF preview">
-        <iframe src={reportPath} title={`CRED report preview for ${session.title}`} className="report-preview-frame" />
+      <section className="card detail-card report-preview-card" aria-label="CRED printable report preview">
+        <p className="muted">Use your browser’s Print or Share menu from the printable report to save as PDF.</p>
+        <iframe src={reportPath} title={`CRED printable report preview for ${session.title}`} className="report-preview-frame" />
       </section>
     </main>
   )

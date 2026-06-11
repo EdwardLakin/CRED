@@ -212,7 +212,7 @@ function EvidenceCard({ capture, signedUrl }: { capture: CaptureItem; signedUrl?
               onChange={(event) => setNote(event.target.value)}
               rows={4}
             />
-            <p className="muted note-helper-text">Changes update the note overlay and exported PDF.</p>
+            <p className="muted note-helper-text">Changes update the note overlay and printable report.</p>
           </div>
           <div className="capture-review-controls">
             <label className="checkbox-row"><input type="checkbox" name="include_in_report" defaultChecked={capture.include_in_report} /> Include in report</label>

@@ -33,8 +33,8 @@ export default async function SharedReportPage({ params }: { params: Promise<{ t
         </div>
       </div>
       <section className="card detail-card report-preview-card">
-        <p className="muted">Open the report from the secure shared preview below.</p>
-        <iframe src={`/api/dashboard/sessions/${session.id}/report-pdf?share_token=${token}`} title={`Shared report preview for ${session.title}`} className="report-preview-frame" />
+        <p className="muted">Open the printable report from the secure shared preview below. Use your browser’s Print or Share menu to save as PDF.</p>
+        <iframe src={`/api/dashboard/sessions/${session.id}/report-pdf?share_token=${token}`} title={`Shared printable report preview for ${session.title}`} className="report-preview-frame" />
       </section>
     </main>
   )

@@ -9,7 +9,7 @@ const steps = [
   ['Capture evidence', 'Photo and video intake optimized for technicians, inspectors, and field teams.'],
   ['Add voice/context', 'Attach narration, asset details, and field notes while work is still fresh.'],
   ['AI extracts details', 'Classify evidence and pull out defects, identifiers, observations, and next steps.'],
-  ['Review/export report', 'Approve the structured documentation and export clean reports for stakeholders.'],
+  ['Review/print report', 'Approve the structured documentation and open clean printable reports for stakeholders.'],
 ] as const
 
 const useCases = [
@@ -32,8 +32,8 @@ const screenshots = [
     rows: ['Classification: mechanical', 'Severity: needs review', 'Extracted: axle 2 / air leak'],
   },
   {
-    title: 'PDF Report',
-    detail: 'Export professional documentation with reviewed evidence and a clear timeline.',
+    title: 'Printable Report',
+    detail: 'Open professional printable documentation with reviewed evidence and a clear timeline.',
     rows: ['Executive summary', 'Evidence checklist', 'Findings with media references'],
   },
 ] as const
@@ -55,7 +55,7 @@ const plans: Array<{
       'Unlimited inspections',
       'AI classification',
       'AI extraction',
-      'PDF reports',
+      'Printable reports',
       'Mobile capture workflow',
     ],
   },
@@ -84,7 +84,7 @@ const plans: Array<{
       'Shared inspection library',
       'Team-wide evidence management',
       'AI-powered findings extraction',
-      'Customer-ready PDF reports',
+      'Customer-ready printable reports',
       'Shop branding and report customization',
       'Inspection history and audit trail',
       'Priority support',
@@ -94,9 +94,9 @@ const plans: Array<{
 
 const faqs = [
   ['Who is CRED built for?', 'CRED is built for technicians, inspectors, fleet teams, mechanical shops, property teams, and service organizations that need defensible field documentation.'],
-  ['What does the AI do?', 'AI helps classify captures, extract field details, summarize context, and prepare documentation for human review before export.'],
+  ['What does the AI do?', 'AI helps classify captures, extract field details, summarize context, and prepare documentation for human review before sharing or printing.'],
   ['Can I use CRED for CVIP and fleet inspections?', 'Yes. CRED is positioned for CVIP, fleet, mechanical, and warranty workflows where photo/video evidence and clean reporting matter.'],
-  ['Do reports export to PDF?', 'Yes. Reviewed evidence can be assembled into clean documentation reports for customers, claims, compliance, and internal records.'],
+  ['Can I save reports as PDF?', 'Yes. CRED opens polished printable reports that you can save as PDF from your browser’s Print or Share menu for customers, claims, compliance, and internal records.'],
 ] as const
 
 export default async function HomePage() {

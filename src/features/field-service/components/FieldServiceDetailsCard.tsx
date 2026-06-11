@@ -62,7 +62,7 @@ export function FieldServiceDetailsCard({ details }: { details: Json | null }) {
         <p className="eyebrow guided-eyebrow">Field service report</p>
         <h2>Field Service Details</h2>
         <p className="muted">
-          Wajax-style service report fields for documentation only. Evidence capture, review, and final report export remain unchanged.
+          Wajax-style service report fields for documentation only. Evidence capture, review, and printable report preparation remain unchanged.
         </p>
       </div>
 
