@@ -1856,3 +1856,63 @@ a:focus-visible {
     width: 100%;
   }
 }
+
+.pwa-install-prompt {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 20px;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  box-shadow: var(--shadow-hover);
+  display: flex;
+  gap: 16px;
+  left: 50%;
+  max-width: min(640px, calc(100vw - 24px));
+  padding: 16px;
+  position: fixed;
+  transform: translateX(-50%);
+  width: 100%;
+  z-index: 50;
+}
+
+.pwa-install-prompt strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.pwa-install-prompt p {
+  color: var(--muted);
+  line-height: 1.45;
+  margin: 0;
+}
+
+.pwa-install-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 10px;
+}
+
+[data-display-mode='standalone'] .browser-only {
+  display: none;
+}
+
+.offline-card {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: center;
+}
+
+.offline-card h1,
+.offline-card p {
+  margin: 0;
+}
+
+@media (max-width: 760px) {
+  .pwa-install-prompt,
+  .pwa-install-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
