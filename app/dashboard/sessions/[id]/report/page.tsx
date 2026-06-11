@@ -8,7 +8,7 @@ import { formatDateTime } from '@/features/sessions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
 function getReportOrigin(headersList: Headers) {
-  const configuredUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim()
+  const configuredUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() ?? process.env.NEXT_PUBLIC_SITE_URL?.trim()
   if (configuredUrl) return configuredUrl.replace(/\/$/, '')
   const vercelUrl = process.env.VERCEL_URL?.trim()
   if (vercelUrl) return `https://${vercelUrl.replace(/\/$/, '')}`
@@ -86,7 +86,7 @@ export default async function SessionReportPreviewPage({
       </div>
 
       {status.error ? <p className="error">{status.error}</p> : null}
-      {status.emailed ? <p className="success">Report email recorded with organization profile branding.</p> : null}
+      {status.emailed ? <p className="success">Printable report email sent.</p> : null}
       {status.shared ? <p className="success">Secure share link generated.</p> : null}
       {status.saved ? <p className="success">Report saved indefinitely unless deleted.</p> : null}
       {status.disabled ? <p className="success">Share link disabled.</p> : null}
@@ -111,13 +111,13 @@ export default async function SessionReportPreviewPage({
       <section className="card detail-card report-delivery-card form-stack">
         <div>
           <p className="eyebrow">Report Delivery</p>
-          <h2>Email Report</h2>
-          <p className="muted">Uses organization profile branding. Subject example: Inspection Report - Unit 1234.</p>
+          <h2>Email Printable Report</h2>
+          <p className="muted">Recipients receive a secure link to the printable report.</p>
         </div>
         <form action={emailAction} className="field-grid">
-          <div className="field-stack"><label htmlFor="recipients" className="label">Customer email / recipients</label><input id="recipients" name="recipients" className="input" placeholder="customer@example.com; manager@example.com" required /></div>
-          <div className="field-stack"><label htmlFor="message" className="label">Custom message</label><textarea id="message" name="message" className="input text-area" placeholder="Please review the attached report." /></div>
-          <div className="form-actions field-wide"><button className="button button-primary touch-target">Email Report</button></div>
+          <div className="field-stack"><label htmlFor="recipients" className="label">Customer email / recipients</label><input id="recipients" name="recipients" className="input" placeholder="customer@example.com, manager@example.com" required /></div>
+          <div className="field-stack"><label htmlFor="message" className="label">Custom message</label><textarea id="message" name="message" className="input text-area" placeholder="Please review the printable report." /></div>
+          <div className="form-actions field-wide"><button className="button button-primary touch-target">Email Printable Report</button></div>
         </form>
       </section>
 
