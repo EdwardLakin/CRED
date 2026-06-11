@@ -50,12 +50,57 @@ async function requireOwnedSession(sessionId: string) {
   const workspace = await requireSessionWorkspace()
   const { data: session, error } = await workspace.supabase
     .from('documentation_sessions')
-    .select('id, title, organization_id')
+    .select('id, title, organization_id, review_status')
     .eq('id', sessionId)
     .eq('organization_id', workspace.profile.organization_id)
     .single()
   if (error || !session) redirect(getReportRedirectPath(sessionId, { error: 'Documentation session not found.' }))
   return { ...workspace, session }
+}
+
+
+function reportIsReadyForDelivery(session: { review_status?: string | null }) {
+  return session.review_status === 'ready_for_delivery'
+}
+
+function requireReportReadyForDelivery(sessionId: string, session: { review_status?: string | null }) {
+  if (!reportIsReadyForDelivery(session)) {
+    redirect(
+      getReportRedirectPath(sessionId, {
+        error: 'Review and mark this report ready before delivery.',
+      }),
+    )
+  }
+}
+
+export async function markReportReviewed(sessionId: string, formData: FormData) {
+  const missingEvidenceCount = Number(getString(formData, 'missing_evidence_count') || 0)
+  const missingEvidenceAcknowledged = formData.get('missing_evidence_acknowledged') === 'on'
+  const { supabase, profile, session } = await requireOwnedSession(sessionId)
+
+  if (missingEvidenceCount > 0 && !missingEvidenceAcknowledged) {
+    redirect(
+      getReportRedirectPath(session.id, {
+        error: 'Acknowledge the missing required evidence before marking this report reviewed.',
+      }),
+    )
+  }
+
+  const { error } = await supabase
+    .from('documentation_sessions')
+    .update({
+      review_status: 'ready_for_delivery',
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: profile.id,
+    })
+    .eq('id', session.id)
+    .eq('organization_id', profile.organization_id)
+
+  if (error) redirect(getReportRedirectPath(session.id, { error: error.message }))
+
+  revalidatePath(`/dashboard/sessions/${session.id}`)
+  revalidatePath(`/dashboard/sessions/${session.id}/report`)
+  redirect(getReportRedirectPath(session.id, { reviewed: 1 }))
 }
 
 async function getOrCreateActiveShareToken({
@@ -142,6 +187,7 @@ export async function emailReport(sessionId: string, formData: FormData) {
   }
 
   const { supabase, profile, session } = await requireOwnedSession(sessionId)
+  requireReportReadyForDelivery(session.id, session)
   const billingAccess = requireActiveBillingAccess(profile)
   if (!billingAccess.ok) {
     redirect(getReportRedirectPath(session.id, { error: billingAccess.message }))
@@ -218,6 +264,7 @@ export async function emailReport(sessionId: string, formData: FormData) {
 export async function createReportShareLink(sessionId: string, formData: FormData) {
   const expiresAt = getString(formData, 'expires_at') || null
   const { supabase, profile, session } = await requireOwnedSession(sessionId)
+  requireReportReadyForDelivery(session.id, session)
   const billingAccess = requireActiveBillingAccess(profile)
   if (!billingAccess.ok) {
     redirect(getReportRedirectPath(session.id, { error: billingAccess.message }))
@@ -264,6 +311,7 @@ export async function disableReportShareLink(sessionId: string, tokenId: string)
 
 export async function saveReport(sessionId: string) {
   const { supabase, profile, session } = await requireOwnedSession(sessionId)
+  requireReportReadyForDelivery(session.id, session)
   const billingAccess = requireActiveBillingAccess(profile)
   if (!billingAccess.ok) {
     redirect(getReportRedirectPath(session.id, { error: billingAccess.message }))
