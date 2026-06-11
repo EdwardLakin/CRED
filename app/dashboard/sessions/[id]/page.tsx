@@ -16,6 +16,7 @@ import {
   restoreDocumentationSession,
   updateDocumentationSession,
 } from '@/features/sessions/actions'
+import { SignatureCaptureForm } from '@/features/signatures'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
 function DetailField({
@@ -79,6 +80,32 @@ export default async function SessionDetailPage({
     }),
   )
 
+  const { data: workflowTemplate } = session.workflow_template_id
+    ? await supabase
+        .from('documentation_workflow_templates')
+        .select('id, name, required_evidence, signature_requirements')
+        .eq('id', session.workflow_template_id)
+        .eq('organization_id', profile.organization_id)
+        .maybeSingle()
+    : { data: null }
+
+  const { data: reportEvents } = await supabase
+    .from('exports')
+    .select('*')
+    .eq('documentation_session_id', session.id)
+    .eq('organization_id', profile.organization_id)
+    .order('created_at', { ascending: false })
+    .limit(8)
+
+  const { data: signatures } = await supabase
+    .from('signature_captures')
+    .select('*')
+    .eq('documentation_session_id', session.id)
+    .eq('organization_id', profile.organization_id)
+    .order('signed_at', { ascending: false })
+
+  const savedSignatures = signatures ?? []
+
   const saveAction = updateDocumentationSession.bind(null, session.id)
   const archiveAction = archiveDocumentationSession.bind(null, session.id)
   const restoreAction = restoreDocumentationSession.bind(null, session.id)
@@ -102,6 +129,7 @@ export default async function SessionDetailPage({
             Unit {session.unit_number || session.asset_label || 'Unassigned'} · Customer {session.customer_name || 'Not set'} · {getSessionTypeLabel(session.session_type)} · Created {formatDateTime(session.created_at)}
           </p>
           <p className="muted">Updated {formatDateTime(session.updated_at ?? session.created_at)}</p>
+          <p className="muted">Template: {workflowTemplate?.name ?? 'Standard workflow'}</p>
         </div>
         <div className="page-actions">
           <ThemeToggle />
@@ -202,6 +230,25 @@ export default async function SessionDetailPage({
 
       <EvidenceChecklistSummary captures={visibleCaptures} sessionType={session.session_type} />
 
+
+      <section className="card detail-card form-stack">
+        <div>
+          <p className="eyebrow">Digital Signatures</p>
+          <h2>Signature Capture</h2>
+          <p className="muted">Capture reusable technician, customer, inspector, or supervisor signatures with mouse, touch, or stylus. Signatures render inside the report PDF output.</p>
+        </div>
+        <SignatureCaptureForm sessionId={session.id} />
+        <div className="signature-list">
+          {savedSignatures.length > 0 ? savedSignatures.map((signature) => (
+            <article key={signature.id} className="signature-list-item">
+              <strong>{signature.signature_type}</strong>
+              <span>{signature.signer_name}</span>
+              <span className="muted">Signed {formatDateTime(signature.signed_at)}</span>
+            </article>
+          )) : <p className="muted">No signatures captured yet.</p>}
+        </div>
+      </section>
+
       <section className="card detail-card capture-card form-stack">
         <div className="captures-section-header">
           <div>
@@ -239,6 +286,23 @@ export default async function SessionDetailPage({
         />
       </div>
 
+
+      <section className="card detail-card form-stack">
+        <div>
+          <h2>Reports</h2>
+          <p className="muted">Generated, sent, downloaded, shared, and saved report actions for this session.</p>
+        </div>
+        <div className="signature-list">
+          {(reportEvents ?? []).length > 0 ? (reportEvents ?? []).map((event) => (
+            <article key={event.id} className="signature-list-item">
+              <strong>{event.export_type}</strong>
+              <span>{event.status}</span>
+              <span className="muted">{formatDateTime(event.created_at)}</span>
+            </article>
+          )) : <p className="muted">No report actions yet.</p>}
+        </div>
+      </section>
+
       <section className="card detail-card final-report-review-card">
         <div>
           <h2>Final Report Review</h2>
@@ -246,8 +310,8 @@ export default async function SessionDetailPage({
             Confirm Session Details, evidence notes, included captures, and report ordering before exporting the final PDF.
           </p>
         </div>
-        <Link href={`/api/dashboard/sessions/${session.id}/report-pdf`} className="button button-primary touch-target" target="_blank">
-          Export PDF
+        <Link href={`/dashboard/sessions/${session.id}/report`} className="button button-primary touch-target">
+          Report Review
         </Link>
       </section>
     </main>

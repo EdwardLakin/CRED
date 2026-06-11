@@ -7,7 +7,15 @@ import { requireSessionWorkspace } from '@/features/sessions/data'
 
 export default async function NewSessionPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams
-  await requireSessionWorkspace()
+  const { supabase, profile } = await requireSessionWorkspace()
+  const { data: templates } = await supabase
+    .from('documentation_workflow_templates')
+    .select('id, name, template_type')
+    .eq('organization_id', profile.organization_id)
+    .eq('status', 'active')
+    .order('name', { ascending: true })
+
+  const workflowTemplates = templates ?? []
 
   return (
     <main className="page-shell form-page-shell">
@@ -53,6 +61,21 @@ export default async function NewSessionPage({ searchParams }: { searchParams: P
               </option>
             ))}
           </select>
+        </div>
+
+        <div className="field-stack">
+          <label htmlFor="workflow_template_id" className="label">
+            Template
+          </label>
+          <select id="workflow_template_id" name="workflow_template_id" defaultValue="" className="select">
+            <option value="">No template / standard workflow</option>
+            {workflowTemplates.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.name} ({template.template_type})
+              </option>
+            ))}
+          </select>
+          <p className="muted">Templates define required evidence, signatures, and report structure.</p>
         </div>
 
         <button className="button button-primary touch-target">Create Session</button>

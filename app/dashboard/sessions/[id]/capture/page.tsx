@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
-import { AddCaptureForm, RecentCapturesList, WORKFLOW_LABELS, getWorkflow } from '@/features/capture'
+import { AddCaptureForm, RecentCapturesList, WORKFLOW_LABELS, getRequiredEvidenceCompletion, getWorkflow } from '@/features/capture'
 import { formatDateTime } from '@/features/sessions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
@@ -46,7 +46,17 @@ export default async function GuidedCapturePage({
     }),
   )
 
+  const { data: workflowTemplate } = session.workflow_template_id
+    ? await supabase
+        .from('documentation_workflow_templates')
+        .select('name, required_evidence')
+        .eq('id', session.workflow_template_id)
+        .eq('organization_id', profile.organization_id)
+        .maybeSingle()
+    : { data: null }
+
   const workflow = getWorkflow(session.session_type)
+  const requiredEvidence = getRequiredEvidenceCompletion(captureItems, session.session_type, workflowTemplate?.required_evidence ?? null)
 
   return (
     <main className="page-shell dashboard-shell focused-capture-shell">
@@ -64,6 +74,27 @@ export default async function GuidedCapturePage({
       </div>
 
       {captureSaved ? <p className="success">Capture saved. Continue gathering evidence or tap Done.</p> : null}
+
+      <section className="card detail-card evidence-progress-card">
+        <div className="captures-section-header">
+          <div>
+            <p className="eyebrow">Progress</p>
+            <h2>{requiredEvidence.completedCount} / {requiredEvidence.totalCount} required evidence</h2>
+            <p className="muted">{workflowTemplate?.name ? `Template: ${workflowTemplate.name}` : 'Standard evidence guidance'} · AI classification, extraction, technician notes, and transcript content can satisfy evidence rules.</p>
+          </div>
+          <span className="ai-status-pill">Progress {requiredEvidence.completedCount} / {requiredEvidence.totalCount}</span>
+        </div>
+        <div className="required-evidence-grid">
+          <div>
+            <h3>Completed</h3>
+            {requiredEvidence.rows.filter((row) => row.completed).length > 0 ? requiredEvidence.rows.filter((row) => row.completed).map((row) => <p key={row.rule.key} className="checkline completed">✓ {row.rule.label}</p>) : <p className="muted">No required evidence completed yet.</p>}
+          </div>
+          <div>
+            <h3>Missing Evidence</h3>
+            {requiredEvidence.missing.length > 0 ? requiredEvidence.missing.map((row) => <p key={row.rule.key} className="checkline missing">○ {row.rule.label}</p>) : <p className="success">All required evidence is complete.</p>}
+          </div>
+        </div>
+      </section>
 
       <section className="card detail-card focused-capture-card" id="main-capture-card">
         <div>

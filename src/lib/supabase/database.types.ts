@@ -124,6 +124,7 @@ export interface Database {
           customer_name: string | null
           suggested_details: Json
           field_service_details: Json
+          workflow_template_id: string | null
           created_at: string | null
           updated_at: string | null
         }
@@ -141,6 +142,7 @@ export interface Database {
           customer_name?: string | null
           suggested_details?: Json
           field_service_details?: Json
+          workflow_template_id?: string | null
           created_at?: string | null
           updated_at?: string | null
         }
@@ -158,6 +160,7 @@ export interface Database {
           customer_name?: string | null
           suggested_details?: Json
           field_service_details?: Json
+          workflow_template_id?: string | null
           created_at?: string | null
           updated_at?: string | null
         }
@@ -270,6 +273,117 @@ export interface Database {
             referencedColumns: ['id']
           },
         ]
+      }
+
+
+      template_imports: {
+        Row: {
+          id: string
+          organization_id: string
+          filename: string
+          source_file_path: string
+          ai_status: string
+          extracted_structure: Json
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          filename: string
+          source_file_path: string
+          ai_status?: string
+          extracted_structure?: Json
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          filename?: string
+          source_file_path?: string
+          ai_status?: string
+          extracted_structure?: Json
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      documentation_workflow_templates: {
+        Row: {
+          id: string
+          organization_id: string | null
+          name: string
+          description: string | null
+          template_type: string
+          source_import_id: string | null
+          required_evidence: Json
+          recommended_evidence: Json
+          sections: Json
+          fields: Json
+          pdf_layout: Json
+          signature_requirements: Json
+          status: string
+          created_by: string | null
+          created_at: string
+          updated_at: string
+          profiles?: { full_name: string } | null
+        }
+        Insert: {
+          id?: string
+          organization_id?: string | null
+          name: string
+          description?: string | null
+          template_type?: string
+          source_import_id?: string | null
+          required_evidence?: Json
+          recommended_evidence?: Json
+          sections?: Json
+          fields?: Json
+          pdf_layout?: Json
+          signature_requirements?: Json
+          status?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string | null
+          name?: string
+          description?: string | null
+          template_type?: string
+          source_import_id?: string | null
+          required_evidence?: Json
+          recommended_evidence?: Json
+          sections?: Json
+          fields?: Json
+          pdf_layout?: Json
+          signature_requirements?: Json
+          status?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      template_required_evidence: {
+        Row: { id: string; template_id: string; organization_id: string | null; label: string; evidence_key: string; requirement_type: string; match_terms: string[]; sort_order: number; created_at: string }
+        Insert: { id?: string; template_id: string; organization_id?: string | null; label: string; evidence_key: string; requirement_type?: string; match_terms?: string[]; sort_order?: number; created_at?: string }
+        Update: { id?: string; template_id?: string; organization_id?: string | null; label?: string; evidence_key?: string; requirement_type?: string; match_terms?: string[]; sort_order?: number; created_at?: string }
+        Relationships: []
+      }
+      signature_captures: {
+        Row: { id: string; documentation_session_id: string; organization_id: string; signature_type: string; signer_name: string; signature_image_path: string; signed_at: string; created_by: string | null; created_at: string }
+        Insert: { id?: string; documentation_session_id: string; organization_id: string; signature_type: string; signer_name: string; signature_image_path: string; signed_at?: string; created_by?: string | null; created_at?: string }
+        Update: { id?: string; documentation_session_id?: string; organization_id?: string; signature_type?: string; signer_name?: string; signature_image_path?: string; signed_at?: string; created_by?: string | null; created_at?: string }
+        Relationships: []
+      }
+      report_share_tokens: {
+        Row: { id: string; documentation_session_id: string; organization_id: string; token: string; expires_at: string | null; disabled_at: string | null; view_count: number; last_viewed_at: string | null; created_by: string | null; created_at: string; documentation_sessions?: { id: string; title: string; organization_id: string } | null }
+        Insert: { id?: string; documentation_session_id: string; organization_id: string; token: string; expires_at?: string | null; disabled_at?: string | null; view_count?: number; last_viewed_at?: string | null; created_by?: string | null; created_at?: string }
+        Update: { id?: string; documentation_session_id?: string; organization_id?: string; token?: string; expires_at?: string | null; disabled_at?: string | null; view_count?: number; last_viewed_at?: string | null; created_by?: string | null; created_at?: string }
+        Relationships: []
       }
 
       exports: {
