@@ -2,6 +2,7 @@ import Link from 'next/link'
 
 import { ThemeToggle } from '@/components/theme'
 import { Button, Card, Input, Label } from '@/components/ui'
+import { parseBillingPlan } from '@/features/billing'
 
 import { signUp } from './actions'
 
@@ -10,7 +11,8 @@ interface SignUpPageProps {
 }
 
 export default async function SignUpPage({ searchParams }: SignUpPageProps) {
-  const { error, plan } = await searchParams
+  const { error, plan: planValue } = await searchParams
+  const plan = parseBillingPlan(planValue)
 
   return (
     <main className="centered-page">

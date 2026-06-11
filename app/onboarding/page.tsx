@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { ThemeToggle } from '@/components/theme'
 import { Button, Card, Input, Label } from '@/components/ui'
 import { getCurrentProfile, requireUser } from '@/features/auth/server'
-import { isBillingPlan } from '@/features/billing'
+import { parseBillingPlan } from '@/features/billing'
 import { completeOnboarding } from './actions'
 
 const industries = [
@@ -25,7 +25,7 @@ interface OnboardingPageProps {
 
 export default async function OnboardingPage({ searchParams }: OnboardingPageProps) {
   const { error, plan: planValue } = await searchParams
-  const plan = isBillingPlan(planValue) ? planValue : null
+  const plan = parseBillingPlan(planValue)
 
   await requireUser()
   const profile = await getCurrentProfile()

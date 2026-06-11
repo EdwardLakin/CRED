@@ -46,25 +46,49 @@ const plans: Array<{
   features: string[]
 }> = [
   {
-    key: 'starter',
-    name: 'Starter',
-    price: '$49/month',
-    description: 'For solo operators building reliable documentation habits.',
-    features: ['1 user', 'Evidence capture', 'AI classification', 'PDF export'],
+    key: 'individual',
+    name: 'Individual',
+    price: '$39/month',
+    description: 'AI-powered inspection documentation for independent technicians and inspectors.',
+    features: [
+      '1 user',
+      'Unlimited inspections',
+      'AI classification',
+      'AI extraction',
+      'PDF reports',
+      'Mobile capture workflow',
+    ],
   },
   {
-    key: 'pro',
-    name: 'Pro',
+    key: 'team',
+    name: 'Team',
     price: '$99/month',
-    description: 'For growing teams that need deeper extraction and review workflows.',
-    features: ['5 users', 'Everything in Starter', 'AI extraction', 'Report review', 'More sessions'],
+    description: 'Collaborative inspection platform for growing service and maintenance teams.',
+    features: [
+      'Up to 5 users',
+      'Shared inspections',
+      'Team reporting',
+      'Organization dashboard',
+      'Centralized evidence management',
+    ],
   },
   {
-    key: 'business',
-    name: 'Business',
+    key: 'shop',
+    name: 'Shop',
     price: '$199/month',
-    description: 'For field organizations standardizing evidence operations.',
-    features: ['20 users', 'Everything in Pro', 'Team workflows', 'Priority support', 'Higher usage limits'],
+    description:
+      'Built for repair shops, fleet maintenance facilities, inspection companies, and service teams that need consistent, professional documentation across multiple technicians.',
+    features: [
+      'Up to 25 users',
+      'Everything in Team',
+      'Shared inspection library',
+      'Team-wide evidence management',
+      'AI-powered findings extraction',
+      'Customer-ready PDF reports',
+      'Shop branding and report customization',
+      'Inspection history and audit trail',
+      'Priority support',
+    ],
   },
 ]
 
@@ -106,7 +130,7 @@ export default async function HomePage() {
             photo/video evidence, voice notes, and job context into clean, review-ready reports.
           </p>
           <div className="landing-hero-actions">
-            <Link href={isAuthenticated ? '/dashboard?checkout=starter' : '/sign-up?plan=starter'} className="button button-primary">
+            <Link href={isAuthenticated ? '/dashboard?checkout=individual' : '/sign-up?plan=individual'} className="button button-primary">
               Start Free Trial
             </Link>
             <Link href="/sign-in" className="button button-secondary">
@@ -186,8 +210,8 @@ export default async function HomePage() {
         <h2>Start small. Scale documentation across the team.</h2>
         <div className="pricing-grid">
           {plans.map((plan) => (
-            <article className={`pricing-card ${plan.key === 'pro' ? 'featured-plan' : ''}`} key={plan.key}>
-              {plan.key === 'pro' ? <span className="plan-badge">Most popular</span> : null}
+            <article className={`pricing-card ${plan.key === 'team' ? 'featured-plan' : ''}`} key={plan.key}>
+              {plan.key === 'team' ? <span className="plan-badge">Most popular</span> : null}
               <h3>{plan.name}</h3>
               <p className="plan-price">{plan.price}</p>
               <p className="muted">{plan.description}</p>

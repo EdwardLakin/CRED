@@ -10,7 +10,7 @@ export interface Database {
           industry: string
           stripe_customer_id: string | null
           stripe_subscription_id: string | null
-          plan: 'starter' | 'pro' | 'business' | null
+          plan: 'individual' | 'team' | 'shop' | 'enterprise' | null
           subscription_status: string | null
           current_period_end: string | null
           created_at: string | null
@@ -21,7 +21,7 @@ export interface Database {
           industry: string
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
-          plan?: 'starter' | 'pro' | 'business' | null
+          plan?: 'individual' | 'team' | 'shop' | 'enterprise' | null
           subscription_status?: string | null
           current_period_end?: string | null
           created_at?: string | null
@@ -32,7 +32,7 @@ export interface Database {
           industry?: string
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
-          plan?: 'starter' | 'pro' | 'business' | null
+          plan?: 'individual' | 'team' | 'shop' | 'enterprise' | null
           subscription_status?: string | null
           current_period_end?: string | null
           created_at?: string | null
