@@ -1,8 +1,9 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
 
-import { getBillingAccessErrorMessage, getOrganizationBillingAccess } from '@/features/billing'
+import { requireActiveBillingAccess } from '@/features/billing'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import {
   buildClassifiedImageData,
@@ -228,6 +229,37 @@ function logCaptureFailure(details: SafeFailureDetails) {
   console.error('Capture batch upload failed', details)
 }
 
+
+export async function validateCaptureBillingAccess(
+  sessionId: string,
+): Promise<CaptureActionFailure | CaptureActionSuccess> {
+  const trimmedSessionId = sessionId.trim()
+
+  if (!trimmedSessionId) {
+    return captureError('Missing documentation session.')
+  }
+
+  const { supabase, profile } = await requireSessionWorkspace()
+  const billingAccess = requireActiveBillingAccess(profile)
+
+  if (!billingAccess.ok) {
+    return captureError(billingAccess.message, trimmedSessionId)
+  }
+
+  const { data: session, error: sessionError } = await supabase
+    .from('documentation_sessions')
+    .select('id')
+    .eq('id', trimmedSessionId)
+    .eq('organization_id', profile.organization_id)
+    .single()
+
+  if (sessionError || !session) {
+    return captureError('Documentation session not found.', trimmedSessionId)
+  }
+
+  return { ok: true, sessionId: session.id }
+}
+
 export type CreateUploadedCaptureRecordInput = {
   sessionId: string
   storagePath: string
@@ -387,10 +419,10 @@ export async function createCaptureRecordFromUploadedFile(
   }
 
   const { supabase, profile } = await requireSessionWorkspace()
-  const billingAccess = getOrganizationBillingAccess(profile.organization)
+  const billingAccess = requireActiveBillingAccess(profile)
 
-  if (!billingAccess.hasAccess) {
-    return captureError(getBillingAccessErrorMessage(billingAccess), sessionId)
+  if (!billingAccess.ok) {
+    return captureError(billingAccess.message, sessionId)
   }
 
   const { data: session, error: sessionError } = await supabase
@@ -669,10 +701,10 @@ export async function classifyPendingCaptures(
   }
 
   const { supabase, profile } = await requireSessionWorkspace()
-  const billingAccess = getOrganizationBillingAccess(profile.organization)
+  const billingAccess = requireActiveBillingAccess(profile)
 
-  if (!billingAccess.hasAccess) {
-    return { ok: false, message: getBillingAccessErrorMessage(billingAccess) }
+  if (!billingAccess.ok) {
+    return { ok: false, message: billingAccess.message }
   }
 
   const { data: session, error: sessionError } = await supabase
@@ -1219,10 +1251,10 @@ export async function extractCaptureDetails(
   }
 
   const { supabase, profile } = await requireSessionWorkspace()
-  const billingAccess = getOrganizationBillingAccess(profile.organization)
+  const billingAccess = requireActiveBillingAccess(profile)
 
-  if (!billingAccess.hasAccess) {
-    return { ok: false, message: getBillingAccessErrorMessage(billingAccess) }
+  if (!billingAccess.ok) {
+    return { ok: false, message: billingAccess.message }
   }
 
   const { data: session, error: sessionError } = await supabase
@@ -1416,6 +1448,11 @@ export async function updateCaptureReview(
   }
 
   const { supabase, profile, capture } = await getAuthorizedCapture(captureId)
+  const billingAccess = requireActiveBillingAccess(profile)
+
+  if (!billingAccess.ok) {
+    return { ok: false, message: billingAccess.message }
+  }
 
   if (!capture) {
     return { ok: false, message: 'Capture not found.' }
@@ -1460,9 +1497,16 @@ export async function removeCaptureItem(formData: FormData) {
   }
 
   const { supabase, profile, capture } = await getAuthorizedCapture(captureId)
+  const billingAccess = requireActiveBillingAccess(profile)
 
   if (!capture) {
     return
+  }
+
+  if (!billingAccess.ok) {
+    redirect(
+      `/dashboard/sessions/${capture.documentation_session_id}?error=${encodeURIComponent(billingAccess.message)}`,
+    )
   }
 
   await supabase

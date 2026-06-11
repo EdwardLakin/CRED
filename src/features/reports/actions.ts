@@ -4,7 +4,7 @@ import { randomBytes } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
-import { getBillingAccessErrorMessage, getOrganizationBillingAccess } from '@/features/billing'
+import { requireActiveBillingAccess } from '@/features/billing'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { ReportEmailError, sendReportEmail, validateReportEmailRecipients } from '@/lib/email/reports'
 import type { Json } from '@/lib/supabase/database.types'
@@ -119,9 +119,9 @@ export async function emailReport(sessionId: string, formData: FormData) {
   }
 
   const { supabase, profile, session } = await requireOwnedSession(sessionId)
-  const billingAccess = getOrganizationBillingAccess(profile.organization)
-  if (!billingAccess.hasAccess) {
-    redirect(getReportRedirectPath(session.id, { error: getBillingAccessErrorMessage(billingAccess) }))
+  const billingAccess = requireActiveBillingAccess(profile)
+  if (!billingAccess.ok) {
+    redirect(getReportRedirectPath(session.id, { error: billingAccess.message }))
   }
 
   const subject = `Inspection Report - ${session.title}`
@@ -176,6 +176,11 @@ export async function emailReport(sessionId: string, formData: FormData) {
 export async function createReportShareLink(sessionId: string, formData: FormData) {
   const expiresAt = getString(formData, 'expires_at') || null
   const { supabase, profile, session } = await requireOwnedSession(sessionId)
+  const billingAccess = requireActiveBillingAccess(profile)
+  if (!billingAccess.ok) {
+    redirect(getReportRedirectPath(session.id, { error: billingAccess.message }))
+  }
+
   const token = randomBytes(24).toString('hex')
   const { error } = await supabase.from('report_share_tokens').insert({
     documentation_session_id: session.id,
@@ -199,6 +204,11 @@ export async function disableReportShareLink(sessionId: string, tokenId: string)
 
 export async function saveReport(sessionId: string) {
   const { supabase, profile, session } = await requireOwnedSession(sessionId)
+  const billingAccess = requireActiveBillingAccess(profile)
+  if (!billingAccess.ok) {
+    redirect(getReportRedirectPath(session.id, { error: billingAccess.message }))
+  }
+
   const { error } = await supabase.from('exports').insert({
     documentation_session_id: session.id,
     organization_id: profile.organization_id,

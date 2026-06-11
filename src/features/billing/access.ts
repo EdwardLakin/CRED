@@ -1,7 +1,7 @@
 import type { Database } from '@/lib/supabase/database.types'
 import { normalizeBillingPlan, type OrganizationPlan } from '@/lib/stripe'
 
-type OrganizationBillingFields = Pick<
+export type OrganizationBillingFields = Pick<
   Database['public']['Tables']['organizations']['Row'],
   'plan' | 'subscription_status' | 'trial_ends_at'
 >
@@ -37,7 +37,7 @@ export function getOrganizationBillingAccess(
   const isActive = status === 'active'
   const isTrialing = status === 'trialing'
   const trialExpired = getTrialExpired(organization.trial_ends_at, now)
-  const hasValidTrial = !trialExpired
+  const hasValidTrial = isTrialing && !trialExpired
   const plan = normalizeBillingPlan(organization.plan)
 
   if (isActive) {
@@ -72,10 +72,28 @@ export function getOrganizationBillingAccess(
   }
 }
 
-export function getBillingAccessErrorMessage(access: OrganizationBillingAccess) {
-  if (access.trialExpired) {
-    return 'Your trial has ended. Subscribe to continue.'
-  }
+function getBillingOrganization(
+  profileOrOrganization: OrganizationBillingFields | { organization: OrganizationBillingFields },
+) {
+  return 'organization' in profileOrOrganization
+    ? profileOrOrganization.organization
+    : profileOrOrganization
+}
 
-  return 'Subscribe to continue using this feature.'
+export function requireActiveBillingAccess(
+  profileOrOrganization: OrganizationBillingFields | { organization: OrganizationBillingFields },
+  now = new Date(),
+) {
+  const access = getOrganizationBillingAccess(
+    getBillingOrganization(profileOrOrganization),
+    now,
+  )
+
+  return access.hasAccess
+    ? { ok: true as const, access }
+    : { ok: false as const, access, message: getBillingAccessErrorMessage() }
+}
+
+export function getBillingAccessErrorMessage() {
+  return 'Your trial has ended. Subscribe to continue.'
 }

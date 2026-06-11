@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
+import { requireActiveBillingAccess } from '@/features/billing'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { analyzeTemplateUpload } from './analyzer'
 import { SYSTEM_TEMPLATES, toJson, type EvidenceRequirement } from './types'
@@ -48,6 +49,12 @@ export async function importTemplate(formData: FormData) {
   }
 
   const { supabase, profile } = await requireSessionWorkspace()
+  const billingAccess = requireActiveBillingAccess(profile)
+
+  if (!billingAccess.ok) {
+    redirect(`/dashboard/settings/templates?error=${encodeURIComponent(billingAccess.message)}`)
+  }
+
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(0, 160)
   const storagePath = `organizations/${profile.organization_id}/templates/${Date.now()}-${safeName}`
   const { error: uploadError } = await supabase.storage.from(TEMPLATE_BUCKET).upload(storagePath, file, { contentType: mimeType, upsert: false })
@@ -107,6 +114,11 @@ export async function saveTemplate(templateId: string, formData: FormData) {
   const optionalEvidence = parseLines(getString(formData, 'recommended_evidence')).map((label) => buildRequirement(label, false))
   const signatureRequirements = parseLines(getString(formData, 'signature_requirements')).map((label) => buildRequirement(label, !label.toLowerCase().includes('optional')))
   const { supabase, profile } = await requireSessionWorkspace()
+  const billingAccess = requireActiveBillingAccess(profile)
+
+  if (!billingAccess.ok) {
+    redirect(`/dashboard/settings/templates?error=${encodeURIComponent(billingAccess.message)}`)
+  }
 
   const { error } = await supabase.from('documentation_workflow_templates').update({
     name,
@@ -128,6 +140,12 @@ export async function duplicateSystemTemplate(index: number) {
   const draft = SYSTEM_TEMPLATES[index]
   if (!draft) redirect('/dashboard/settings/templates?error=System%20template%20not%20found.')
   const { supabase, profile } = await requireSessionWorkspace()
+  const billingAccess = requireActiveBillingAccess(profile)
+
+  if (!billingAccess.ok) {
+    redirect(`/dashboard/settings/templates?error=${encodeURIComponent(billingAccess.message)}`)
+  }
+
   const { error } = await supabase.from('documentation_workflow_templates').insert({
     organization_id: profile.organization_id,
     name: `${draft.name} Copy`,
@@ -148,6 +166,12 @@ export async function duplicateSystemTemplate(index: number) {
 
 export async function duplicateOrganizationTemplate(templateId: string) {
   const { supabase, profile } = await requireSessionWorkspace()
+  const billingAccess = requireActiveBillingAccess(profile)
+
+  if (!billingAccess.ok) {
+    redirect(`/dashboard/settings/templates?error=${encodeURIComponent(billingAccess.message)}`)
+  }
+
   const { data: template, error: loadError } = await supabase.from('documentation_workflow_templates').select('*').eq('id', templateId).eq('organization_id', profile.organization_id).single()
   if (loadError || !template) redirect('/dashboard/settings/templates?error=Template%20not%20found.')
   const { error } = await supabase.from('documentation_workflow_templates').insert({
@@ -171,6 +195,12 @@ export async function duplicateOrganizationTemplate(templateId: string) {
 
 export async function archiveTemplate(templateId: string) {
   const { supabase, profile } = await requireSessionWorkspace()
+  const billingAccess = requireActiveBillingAccess(profile)
+
+  if (!billingAccess.ok) {
+    redirect(`/dashboard/settings/templates?error=${encodeURIComponent(billingAccess.message)}`)
+  }
+
   const { error } = await supabase.from('documentation_workflow_templates').update({ status: 'archived', updated_at: new Date().toISOString() }).eq('id', templateId).eq('organization_id', profile.organization_id)
   if (error) redirect(`/dashboard/settings/templates?error=${encodeURIComponent(error.message)}`)
   revalidatePath('/dashboard/settings/templates')
@@ -179,6 +209,12 @@ export async function archiveTemplate(templateId: string) {
 
 export async function deleteTemplate(templateId: string) {
   const { supabase, profile } = await requireSessionWorkspace()
+  const billingAccess = requireActiveBillingAccess(profile)
+
+  if (!billingAccess.ok) {
+    redirect(`/dashboard/settings/templates?error=${encodeURIComponent(billingAccess.message)}`)
+  }
+
   const { error } = await supabase.from('documentation_workflow_templates').delete().eq('id', templateId).eq('organization_id', profile.organization_id)
   if (error) redirect(`/dashboard/settings/templates?error=${encodeURIComponent(error.message)}`)
   revalidatePath('/dashboard/settings/templates')

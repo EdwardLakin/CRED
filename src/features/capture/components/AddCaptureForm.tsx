@@ -5,7 +5,10 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { Button } from '@/components/ui'
-import { createCaptureRecordFromUploadedFile } from '@/features/capture/actions'
+import {
+  createCaptureRecordFromUploadedFile,
+  validateCaptureBillingAccess,
+} from '@/features/capture/actions'
 import {
   MANUAL_CAPTURE_TYPES,
   type CaptureIntent,
@@ -399,6 +402,12 @@ export function AddCaptureForm({
     const uploadedPaths: string[] = []
 
     try {
+      const accessResult = await validateCaptureBillingAccess(sessionId)
+
+      if (!accessResult.ok) {
+        throw new Error(accessResult.error)
+      }
+
       for (const file of files) {
         const storagePath = `organizations/${organizationId}/sessions/${sessionId}/captures/${buildStorageFilename(file)}`
         const { error: uploadError } = await supabase.storage

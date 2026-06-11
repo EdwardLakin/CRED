@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
+import { requireActiveBillingAccess } from '@/features/billing'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
 const SIGNATURE_BUCKET = 'documentation-signatures'
@@ -34,6 +35,12 @@ export async function saveSignature(sessionId: string, formData: FormData) {
   }
 
   const { supabase, profile } = await requireSessionWorkspace()
+  const billingAccess = requireActiveBillingAccess(profile)
+
+  if (!billingAccess.ok) {
+    redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent(billingAccess.message)}`)
+  }
+
   const { data: session, error: sessionError } = await supabase.from('documentation_sessions').select('id').eq('id', sessionId).eq('organization_id', profile.organization_id).single()
   if (sessionError || !session) redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent('Documentation session not found.')}`)
 

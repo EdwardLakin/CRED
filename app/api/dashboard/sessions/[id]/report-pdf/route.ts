@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { notFound, redirect } from 'next/navigation'
 
-import { getBillingAccessErrorMessage, getOrganizationBillingAccess } from '@/features/billing'
+import { requireActiveBillingAccess } from '@/features/billing'
 import {
   FIELD_SERVICE_FIELD_LABELS,
   FIELD_SERVICE_SECTIONS,
@@ -235,10 +235,10 @@ export async function GET(_request: Request, { params }: RouteContext) {
     organizationId = workspace.profile.organization_id
     createdBy = workspace.profile.id
 
-    const billingAccess = getOrganizationBillingAccess(workspace.profile.organization)
+    const billingAccess = requireActiveBillingAccess(workspace.profile)
 
-    if (!billingAccess.hasAccess) {
-      redirect(`/dashboard?error=${encodeURIComponent(getBillingAccessErrorMessage(billingAccess))}`)
+    if (!billingAccess.ok) {
+      redirect(`/dashboard/sessions/${id}/report?error=${encodeURIComponent(billingAccess.message)}`)
     }
 
     const { data: ownedSession, error: sessionError } = await supabase
