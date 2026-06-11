@@ -2206,8 +2206,13 @@ a:focus-visible {
   padding: 0 0 8px;
 }
 
-.pricing-action-stack {
+.pricing-action-stack,
+.billing-checkout-action-stack {
   margin-top: auto;
+}
+
+.billing-checkout-action-stack {
+  width: 100%;
 }
 
 .pricing-button,
@@ -2215,7 +2220,8 @@ a:focus-visible {
   width: 100%;
 }
 
-.pricing-error {
+.pricing-error,
+.billing-checkout-error {
   margin-bottom: 0;
 }
 

@@ -4,7 +4,7 @@ import { signOut } from './actions'
 import { ThemeToggle } from '@/components/theme'
 import { Button, Card } from '@/components/ui'
 import { getOrganizationBillingAccess, getPlanDisplayName, parseBillingPlan } from '@/features/billing'
-import { DashboardCheckoutLauncher } from '@/features/billing/components/DashboardCheckoutLauncher'
+import { BillingCheckoutButton } from '@/features/billing/components/BillingCheckoutButton'
 import { EmptyState, SessionCard } from '@/features/sessions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
@@ -30,6 +30,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   const recentSessions = sessions ?? []
   const billingAccess = getOrganizationBillingAccess(profile.organization)
+  const billingPlan = parseBillingPlan(billingAccess.plan) ?? 'individual'
+  const selectedCheckoutPlan = checkoutPlan ?? billingPlan
   const currentPlan = getPlanDisplayName(profile.organization.plan) ?? 'Individual'
   const subscriptionStatus = profile.organization.subscription_status ?? 'not started'
   const dateFormatter = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -40,8 +42,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   return (
     <main className="page-shell dashboard-shell">
-      <DashboardCheckoutLauncher plan={checkoutPlan} />
       {billing === 'success' ? <div className="success">Billing checkout completed. Your subscription is being synced.</div> : null}
+      {billing === 'cancelled' ? <div className="success">Checkout was cancelled. You can start again when you are ready.</div> : null}
       {dashboardError ? <p className="error">{dashboardError}</p> : null}
       {checkoutPlan ? (
         <Card className="dashboard-card billing-checkout-callout">
@@ -50,9 +52,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               <strong>Ready to subscribe to {getPlanDisplayName(checkoutPlan)}?</strong>
               <p className="muted">Start checkout when you are ready. Your dashboard remains available during the trial.</p>
             </div>
-            <Link href={`/dashboard?checkout=${checkoutPlan}`} className="button button-primary">
+            <BillingCheckoutButton plan={checkoutPlan} className="button button-primary billing-manage-button">
               Start Checkout
-            </Link>
+            </BillingCheckoutButton>
           </div>
         </Card>
       ) : null}
@@ -112,12 +114,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             <p className="muted">{trialEndsAt}</p>
           </div>
           <div className="workspace-actions">
-            <Link
-              href={subscriptionStatus === 'active' ? '/dashboard' : `/dashboard?checkout=${billingAccess.plan ?? 'individual'}`}
-              className="button button-secondary billing-manage-button"
-            >
-              {billingButtonLabel}
-            </Link>
+            {subscriptionStatus === 'active' ? (
+              <button type="button" className="button button-secondary billing-manage-button" disabled>
+                {billingButtonLabel}
+              </button>
+            ) : (
+              <BillingCheckoutButton plan={selectedCheckoutPlan} className="button button-secondary billing-manage-button">
+                {billingButtonLabel}
+              </BillingCheckoutButton>
+            )}
           </div>
         </div>
       </Card>
