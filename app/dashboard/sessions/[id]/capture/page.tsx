@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
+import { getPlanLimits, parseBillingPlan } from '@/features/billing'
 import { AddCaptureForm, RecentCapturesList, WORKFLOW_LABELS, getRequiredEvidenceCompletion, getWorkflow } from '@/features/capture'
 import { formatDateTime } from '@/features/sessions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
@@ -56,6 +57,7 @@ export default async function GuidedCapturePage({
     : { data: null }
 
   const workflow = getWorkflow(session.session_type)
+  const planLimits = getPlanLimits(parseBillingPlan(profile.organization.plan))
   const requiredEvidence = getRequiredEvidenceCompletion(captureItems, session.session_type, workflowTemplate?.required_evidence ?? null)
 
   return (
@@ -115,6 +117,8 @@ export default async function GuidedCapturePage({
           commonCaptureText="Supported workflows: photo, video, voice note, and combined photo/video plus voice or typed context."
           showSuggestedCaptureText={false}
           stickyDoneHref={`/dashboard/sessions/${session.id}/report`}
+          maxCaptureFileSizeBytes={planLimits.maxCaptureFileSizeBytes}
+          maxVideoFileSizeBytes={planLimits.maxVideoFileSizeBytes}
         />
       </section>
 

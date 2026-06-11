@@ -3,8 +3,9 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
-import { requireActiveBillingAccess } from '@/features/billing'
+import { formatBytes, getPlanLimits, requireActiveBillingAccess } from '@/features/billing'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import {
   buildClassifiedImageData,
   classifyCaptureImage,
@@ -33,9 +34,6 @@ import {
 } from './types'
 
 const CAPTURE_BUCKET = 'documentation-captures'
-const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024
-const FILE_TOO_LARGE_MESSAGE =
-  'That file is too large. Please upload evidence under 100MB.'
 
 const ALLOWED_MIME_TYPES: Record<CaptureType, readonly string[]> = {
   photo: [
@@ -232,6 +230,7 @@ function logCaptureFailure(details: SafeFailureDetails) {
 
 export async function validateCaptureBillingAccess(
   sessionId: string,
+  files: { size: number; mimeType: string }[] = [],
 ): Promise<CaptureActionFailure | CaptureActionSuccess> {
   const trimmedSessionId = sessionId.trim()
 
@@ -255,6 +254,41 @@ export async function validateCaptureBillingAccess(
 
   if (sessionError || !session) {
     return captureError('Documentation session not found.', trimmedSessionId)
+  }
+
+  for (const file of files) {
+    const size = Number(file.size)
+    const mimeType = file.mimeType.trim().toLowerCase()
+    const isVideoUpload = mimeTypeIsVideo(mimeType)
+    const limits = getPlanLimits(billingAccess.access.plan)
+    const maxAllowedFileSize = isVideoUpload ? limits.maxVideoFileSizeBytes : limits.maxCaptureFileSizeBytes
+
+    if (!Number.isFinite(size) || size <= 0) {
+      return captureError('One selected file is empty. Choose another file.', session.id)
+    }
+
+    if (size > maxAllowedFileSize) {
+      return captureError(
+        `This file is larger than your plan allows. Maximum file size is ${formatBytes(maxAllowedFileSize)}.`,
+        session.id,
+      )
+    }
+  }
+
+  const totalUploadBytes = files.reduce((total, file) => total + Number(file.size || 0), 0)
+
+  if (totalUploadBytes > 0) {
+    const storageAllowance = await requireUsageAllowance({
+      supabase,
+      organizationId: profile.organization_id,
+      plan: billingAccess.access.plan,
+      eventType: 'storage_bytes_added',
+      quantity: totalUploadBytes,
+    })
+
+    if (!storageAllowance.ok) {
+      return captureError(storageAllowance.message, session.id)
+    }
   }
 
   return { ok: true, sessionId: session.id }
@@ -369,10 +403,6 @@ export async function createCaptureRecordFromUploadedFile(
     )
   }
 
-  if (size > MAX_FILE_SIZE_BYTES) {
-    return captureError(FILE_TOO_LARGE_MESSAGE, sessionId)
-  }
-
   if (!isCaptureIntent(rawCaptureIntent)) {
     return captureError('Choose a valid capture mode.', sessionId)
   }
@@ -434,6 +464,31 @@ export async function createCaptureRecordFromUploadedFile(
 
   if (sessionError || !session) {
     return captureError('Documentation session not found.', sessionId)
+  }
+
+  const limits = getPlanLimits(billingAccess.access.plan)
+  const isVideoUpload = mimeTypeIsVideo(mimeType) || captureType === 'video' || captureType === 'evidence_video'
+  const maxAllowedFileSize = isVideoUpload ? limits.maxVideoFileSizeBytes : limits.maxCaptureFileSizeBytes
+
+  if (size > maxAllowedFileSize) {
+    return captureError(
+      `This file is larger than your plan allows. Maximum file size is ${formatBytes(maxAllowedFileSize)}.`,
+      session.id,
+    )
+  }
+
+  const fileSizeAllowance = await requireUsageAllowance({
+    supabase,
+    organizationId: profile.organization_id,
+    plan: billingAccess.access.plan,
+    eventType: 'storage_bytes_added',
+    quantity: size,
+    fileSizeBytes: size,
+    isVideo: isVideoUpload,
+  })
+
+  if (!fileSizeAllowance.ok) {
+    return captureError(fileSizeAllowance.message, session.id)
   }
 
   if (
@@ -540,6 +595,30 @@ export async function createCaptureRecordFromUploadedFile(
       .eq('organization_id', profile.organization_id)
     await removeUploadedObject(supabase, storagePath)
     return captureError(timelineError.message, session.id)
+  }
+
+  try {
+    await recordUsageEvent({
+      supabase,
+      organizationId: profile.organization_id,
+      eventType: 'capture_uploaded',
+      metadata: { session_id: session.id, capture_id: captureItem.id, filename, mime_type: mimeType, size },
+      createdBy: profile.id,
+    })
+    await recordUsageEvent({
+      supabase,
+      organizationId: profile.organization_id,
+      eventType: 'storage_bytes_added',
+      quantity: size,
+      metadata: { session_id: session.id, capture_id: captureItem.id, filename, mime_type: mimeType },
+      createdBy: profile.id,
+    })
+  } catch (usageError) {
+    logCaptureFailure({
+      step: 'capture_usage_event_insert',
+      captureId: captureItem.id,
+      ...getSafeErrorDetails(usageError),
+    })
   }
 
   revalidatePath('/dashboard')
@@ -748,6 +827,18 @@ export async function classifyPendingCaptures(
     return { ok: true, message: classificationActionMessage(0, 0) }
   }
 
+  const aiAllowance = await requireUsageAllowance({
+    supabase,
+    organizationId: profile.organization_id,
+    plan: billingAccess.access.plan,
+    eventType: 'ai_classification',
+    quantity: pendingCaptures.length,
+  })
+
+  if (!aiAllowance.ok) {
+    return { ok: false, message: aiAllowance.message }
+  }
+
   let classifiedCount = 0
   let needsReviewCount = 0
 
@@ -821,6 +912,17 @@ export async function classifyPendingCaptures(
 
       needsReviewCount += 1
     }
+  }
+
+  if (classifiedCount + needsReviewCount > 0) {
+    await recordUsageEvent({
+      supabase,
+      organizationId: profile.organization_id,
+      eventType: 'ai_classification',
+      quantity: classifiedCount + needsReviewCount,
+      metadata: { session_id: session.id },
+      createdBy: profile.id,
+    })
   }
 
   revalidatePath(`/dashboard/sessions/${session.id}`)
@@ -1306,6 +1408,18 @@ export async function extractCaptureDetails(
     }
   }
 
+  const aiAllowance = await requireUsageAllowance({
+    supabase,
+    organizationId: profile.organization_id,
+    plan: billingAccess.access.plan,
+    eventType: 'ai_extraction',
+    quantity: extractableCaptures.length,
+  })
+
+  if (!aiAllowance.ok) {
+    return { ok: false, message: aiAllowance.message }
+  }
+
   let extractedCount = 0
   let suggestedDetails = isRecord(session.suggested_details)
     ? (session.suggested_details as Json)
@@ -1398,6 +1512,17 @@ export async function extractCaptureDetails(
       message:
         'Extracted capture details, but could not save session suggestions.',
     }
+  }
+
+  if (extractedCount > 0) {
+    await recordUsageEvent({
+      supabase,
+      organizationId: profile.organization_id,
+      eventType: 'ai_extraction',
+      quantity: extractedCount,
+      metadata: { session_id: session.id },
+      createdBy: profile.id,
+    })
   }
 
   revalidatePath(`/dashboard/sessions/${session.id}`)

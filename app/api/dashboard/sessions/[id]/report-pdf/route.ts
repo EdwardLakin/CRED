@@ -11,6 +11,7 @@ import {
   normalizeFieldServiceDetails,
 } from '@/features/field-service'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import { recordUsageEvent } from '@/features/usage'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { Database, Json } from '@/lib/supabase/database.types'
 
@@ -291,6 +292,13 @@ export async function GET(_request: Request, { params }: RouteContext) {
       status: 'opened',
       created_by: createdBy,
       metadata: { item_count: captureItems.length, format: 'printable_html' },
+    })
+    await recordUsageEvent({
+      supabase,
+      organizationId,
+      eventType: 'printable_report_opened',
+      metadata: { session_id: session.id, item_count: captureItems.length, format: 'printable_html' },
+      createdBy,
     })
   }
 

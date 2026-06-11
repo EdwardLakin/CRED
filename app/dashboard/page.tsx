@@ -7,6 +7,7 @@ import { getOrganizationBillingAccess, getPlanDisplayName, parseBillingPlan } fr
 import { BillingCheckoutButton } from '@/features/billing/components/BillingCheckoutButton'
 import { EmptyState, SessionCard } from '@/features/sessions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import { UsageSummaryCard } from '@/features/usage'
 
 interface DashboardPageProps {
   searchParams: Promise<{ billing?: string; checkout?: string; error?: string }>
@@ -98,6 +99,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       </Card>
 
 
+
+      <UsageSummaryCard organizationId={profile.organization_id} plan={billingPlan} supabase={supabase} />
 
       <Card className="dashboard-card workspace-card billing-state-card">
         <div className="dashboard-grid">

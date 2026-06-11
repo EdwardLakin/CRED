@@ -45,6 +45,51 @@ export interface Database {
         }
         Relationships: []
       }
+      organization_usage_events: {
+        Row: {
+          id: string
+          organization_id: string
+          event_type: string
+          quantity: number
+          metadata: Json
+          created_at: string
+          created_by: string | null
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          event_type: string
+          quantity?: number
+          metadata?: Json
+          created_at?: string
+          created_by?: string | null
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          event_type?: string
+          quantity?: number
+          metadata?: Json
+          created_at?: string
+          created_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'organization_usage_events_organization_id_fkey'
+            columns: ['organization_id']
+            isOneToOne: false
+            referencedRelation: 'organizations'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'organization_usage_events_created_by_fkey'
+            columns: ['created_by']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       profiles: {
         Row: {
           id: string

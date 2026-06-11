@@ -2449,3 +2449,25 @@ a:focus-visible {
 .report-delivery-card .field-grid {
   align-items: end;
 }
+
+.usage-summary-card {
+  display: grid;
+  gap: 18px;
+}
+
+.usage-summary-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.usage-metric {
+  display: grid;
+  gap: 8px;
+}
+
+@media (max-width: 760px) {
+  .usage-summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
