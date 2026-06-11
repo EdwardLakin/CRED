@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { notFound, redirect } from 'next/navigation'
 
 import { getBillingAccessErrorMessage, getOrganizationBillingAccess } from '@/features/billing'
@@ -10,6 +11,7 @@ import {
   normalizeFieldServiceDetails,
 } from '@/features/field-service'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import { createAdminClient } from '@/lib/supabase/admin'
 import type { Database, Json } from '@/lib/supabase/database.types'
 
 export const runtime = 'nodejs'
@@ -192,27 +194,69 @@ function getAiSummary(extractedData: Json | null, fallback: string | null) {
 
 export async function GET(_request: Request, { params }: RouteContext) {
   const { id } = await params
-  const { supabase, profile } = await requireSessionWorkspace()
-  const billingAccess = getOrganizationBillingAccess(profile.organization)
+  const requestUrl = new URL(_request.url)
+  const shareTokenValue = requestUrl.searchParams.get('share_token')
+  const sharedAccess = Boolean(shareTokenValue)
 
-  if (!billingAccess.hasAccess) {
-    redirect(`/dashboard?error=${encodeURIComponent(getBillingAccessErrorMessage(billingAccess))}`)
+  let supabase: SupabaseClient<Database>
+  let session: ReportSession
+  let organizationId: string
+  let createdBy: string | null = null
+
+  if (shareTokenValue) {
+    supabase = createAdminClient()
+    const { data: shareToken, error: shareError } = await supabase
+      .from('report_share_tokens')
+      .select('*, documentation_sessions(*, organizations(name))')
+      .eq('token', shareTokenValue)
+      .maybeSingle()
+
+    const sharedSession = Array.isArray(shareToken?.documentation_sessions)
+      ? shareToken.documentation_sessions[0]
+      : shareToken?.documentation_sessions
+
+    if (
+      shareError
+      || !shareToken
+      || !sharedSession
+      || shareToken.disabled_at
+      || sharedSession.id !== id
+      || sharedSession.organization_id !== shareToken.organization_id
+      || (shareToken.expires_at && new Date(shareToken.expires_at) < new Date())
+    ) {
+      notFound()
+    }
+
+    session = sharedSession as ReportSession
+    organizationId = shareToken.organization_id
+  } else {
+    const workspace = await requireSessionWorkspace()
+    supabase = workspace.supabase
+    organizationId = workspace.profile.organization_id
+    createdBy = workspace.profile.id
+
+    const billingAccess = getOrganizationBillingAccess(workspace.profile.organization)
+
+    if (!billingAccess.hasAccess) {
+      redirect(`/dashboard?error=${encodeURIComponent(getBillingAccessErrorMessage(billingAccess))}`)
+    }
+
+    const { data: ownedSession, error: sessionError } = await supabase
+      .from('documentation_sessions')
+      .select('*, organizations(name)')
+      .eq('id', id)
+      .eq('organization_id', organizationId)
+      .single()
+
+    if (sessionError || !ownedSession) notFound()
+    session = ownedSession
   }
-
-  const { data: session, error: sessionError } = await supabase
-    .from('documentation_sessions')
-    .select('*, organizations(name)')
-    .eq('id', id)
-    .eq('organization_id', profile.organization_id)
-    .single()
-
-  if (sessionError || !session) notFound()
 
   const { data: captures } = await supabase
     .from('capture_items')
     .select('*')
     .eq('documentation_session_id', session.id)
-    .eq('organization_id', profile.organization_id)
+    .eq('organization_id', organizationId)
     .eq('include_in_report', true)
     .is('deleted_at', null)
     .order('report_order', { ascending: true, nullsFirst: false })
@@ -229,7 +273,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     .from('signature_captures')
     .select('*')
     .eq('documentation_session_id', session.id)
-    .eq('organization_id', profile.organization_id)
+    .eq('organization_id', organizationId)
     .order('signed_at', { ascending: true })
 
   const reportSignatures = signatures ?? []
@@ -239,14 +283,16 @@ export async function GET(_request: Request, { params }: RouteContext) {
     if (data?.signedUrl) signatureUrls[signature.id] = data.signedUrl
   }))
 
-  await supabase.from('exports').insert({
-    documentation_session_id: session.id,
-    organization_id: profile.organization_id,
-    export_type: 'pdf',
-    status: 'generated',
-    created_by: profile.id,
-    metadata: { item_count: captureItems.length, format: 'print_ready_html' },
-  })
+  if (!sharedAccess) {
+    await supabase.from('exports').insert({
+      documentation_session_id: session.id,
+      organization_id: organizationId,
+      export_type: 'pdf',
+      status: 'generated',
+      created_by: createdBy,
+      metadata: { item_count: captureItems.length, format: 'print_ready_html' },
+    })
+  }
 
   const organizationName = isRecord(session.organizations) && typeof session.organizations.name === 'string'
     ? session.organizations.name
