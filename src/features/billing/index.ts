@@ -11,5 +11,7 @@ export {
 export {
   getBillingAccessErrorMessage,
   getOrganizationBillingAccess,
+  requireActiveBillingAccess,
   type OrganizationBillingAccess,
+  type OrganizationBillingFields,
 } from './access'

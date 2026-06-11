@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
-import { getBillingAccessErrorMessage, getOrganizationBillingAccess } from '@/features/billing'
+import { requireActiveBillingAccess } from '@/features/billing'
 import {
   FIELD_SERVICE_FIELD_LABELS,
   FIELD_SERVICE_FIELD_NAMES,
@@ -65,10 +65,10 @@ export async function createDocumentationSession(formData: FormData) {
   }
 
   const { supabase, profile } = await requireSessionWorkspace()
-  const billingAccess = getOrganizationBillingAccess(profile.organization)
+  const billingAccess = requireActiveBillingAccess(profile)
 
-  if (!billingAccess.hasAccess) {
-    redirect(`/dashboard?error=${encodeURIComponent(getBillingAccessErrorMessage(billingAccess))}`)
+  if (!billingAccess.ok) {
+    redirect(`/dashboard?error=${encodeURIComponent(billingAccess.message)}`)
   }
 
   const { data: session, error } = await supabase
@@ -102,6 +102,12 @@ export async function updateDocumentationSession(sessionId: string, formData: Fo
   }
 
   const { supabase, profile } = await requireSessionWorkspace()
+  const billingAccess = requireActiveBillingAccess(profile)
+
+  if (!billingAccess.ok) {
+    redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent(billingAccess.message)}`)
+  }
+
   const { data: existingSession, error: existingSessionError } = await supabase
     .from('documentation_sessions')
     .select('field_service_details')
@@ -141,6 +147,11 @@ export async function updateDocumentationSession(sessionId: string, formData: Fo
 
 export async function archiveDocumentationSession(sessionId: string) {
   const { supabase, profile } = await requireSessionWorkspace()
+  const billingAccess = requireActiveBillingAccess(profile)
+
+  if (!billingAccess.ok) {
+    redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent(billingAccess.message)}`)
+  }
   const { error } = await supabase
     .from('documentation_sessions')
     .update({ status: 'archived', updated_at: new Date().toISOString() })
@@ -159,6 +170,11 @@ export async function archiveDocumentationSession(sessionId: string) {
 
 export async function restoreDocumentationSession(sessionId: string) {
   const { supabase, profile } = await requireSessionWorkspace()
+  const billingAccess = requireActiveBillingAccess(profile)
+
+  if (!billingAccess.ok) {
+    redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent(billingAccess.message)}`)
+  }
   const { error } = await supabase
     .from('documentation_sessions')
     .update({ status: 'draft', updated_at: new Date().toISOString() })
@@ -230,6 +246,12 @@ export async function applyExtractedEvidenceField(sessionId: string, formData: F
   }
 
   const { supabase, profile } = await requireSessionWorkspace()
+  const billingAccess = requireActiveBillingAccess(profile)
+
+  if (!billingAccess.ok) {
+    redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent(billingAccess.message)}`)
+  }
+
   const { data: session, error: sessionError } = await supabase
     .from('documentation_sessions')
     .select('id, organization_id, suggested_details, field_service_details')
@@ -305,6 +327,12 @@ export async function applySessionSuggestions(sessionId: string, formData: FormD
   }
 
   const { supabase, profile } = await requireSessionWorkspace()
+  const billingAccess = requireActiveBillingAccess(profile)
+
+  if (!billingAccess.ok) {
+    redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent(billingAccess.message)}`)
+  }
+
   const { data: session, error: sessionError } = await supabase
     .from('documentation_sessions')
     .select('id, organization_id, suggested_details, field_service_details')
