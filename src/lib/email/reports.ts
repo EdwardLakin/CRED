@@ -1,7 +1,7 @@
 import 'server-only'
 
 const MAX_REPORT_EMAIL_RECIPIENTS = 10
-const RESEND_EMAILS_ENDPOINT = 'https://api.resend.com/emails'
+const SENDGRID_MAIL_SEND_ENDPOINT = 'https://api.sendgrid.com/v3/mail/send'
 
 export class ReportEmailError extends Error {
   constructor(message: string, public readonly safeDetails?: Record<string, unknown>) {
@@ -69,20 +69,24 @@ function normalizeText(value: string) {
 }
 
 function buildTextEmail(input: SendReportEmailInput) {
+  const customMessage = normalizeText(input.message ?? '')
   const lines = [
     'A report has been shared with you.',
     '',
-    `Open Printable Report: ${input.reportUrl}`,
+    `Organization: ${input.organizationName}`,
+    `Session: ${input.sessionTitle}`,
     '',
-    'You can use your browser Print/Share menu to save as PDF.',
   ]
-  const customMessage = normalizeText(input.message ?? '')
 
   if (customMessage) {
-    lines.splice(2, 0, customMessage, '')
+    lines.push(customMessage, '')
   }
 
-  lines.push('', `Shared by ${input.organizationName}`)
+  lines.push(
+    `Secure printable report link: ${input.reportUrl}`,
+    '',
+    'Use your browser Print or Share menu to save as PDF.',
+  )
 
   return lines.join('\n')
 }
@@ -96,51 +100,75 @@ function buildHtmlEmail(input: SendReportEmailInput) {
   return `
     <div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.5;">
       <p>A report has been shared with you.</p>
+      <dl>
+        <dt style="font-weight: 700;">Organization</dt>
+        <dd style="margin: 0 0 12px;">${escapeHtml(input.organizationName)}</dd>
+        <dt style="font-weight: 700;">Session</dt>
+        <dd style="margin: 0 0 12px;">${escapeHtml(input.sessionTitle)}</dd>
+      </dl>
       ${customMessageHtml}
       <p><a href="${escapeHtml(input.reportUrl)}" style="display: inline-block; padding: 10px 14px; border-radius: 8px; background: #111827; color: #ffffff; text-decoration: none;">Open Printable Report</a></p>
-      <p>You can use your browser Print/Share menu to save as PDF.</p>
-      <p style="color: #6b7280; font-size: 14px;">Shared by ${escapeHtml(input.organizationName)}</p>
+      <p>Use your browser Print or Share menu to save as PDF.</p>
+      <p style="color: #6b7280; font-size: 14px;">Secure printable report link: <a href="${escapeHtml(input.reportUrl)}">${escapeHtml(input.reportUrl)}</a></p>
     </div>
   `
 }
 
+async function parseSendGridError(response: Response) {
+  const body = await response.json().catch(() => null) as { errors?: Array<{ message?: string; field?: string; help?: string }> } | null
+
+  return body?.errors?.map((error) => ({
+    message: error.message,
+    field: error.field,
+    help: error.help,
+  })) ?? []
+}
+
 export async function sendReportEmail(input: SendReportEmailInput): Promise<SendReportEmailResult> {
-  const apiKey = process.env.RESEND_API_KEY?.trim()
+  const apiKey = process.env.SENDGRID_API_KEY?.trim()
   const from = process.env.REPORT_EMAIL_FROM?.trim()
   const recipients = validateReportEmailRecipients(input.to)
 
   if (!apiKey || !from) {
     console.error('Report email delivery is not configured.', {
-      hasResendApiKey: Boolean(apiKey),
+      hasSendGridApiKey: Boolean(apiKey),
       hasReportEmailFrom: Boolean(from),
     })
     throw new ReportEmailError('Email delivery is not configured.')
   }
 
-  const response = await fetch(RESEND_EMAILS_ENDPOINT, {
+  const response = await fetch(SENDGRID_MAIL_SEND_ENDPOINT, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from,
-      to: recipients,
-      subject: input.subject,
-      html: buildHtmlEmail(input),
-      text: buildTextEmail(input),
+      personalizations: [
+        {
+          to: recipients.map((email) => ({ email })),
+          subject: input.subject,
+        },
+      ],
+      from: { email: from },
+      content: [
+        { type: 'text/plain', value: buildTextEmail(input) },
+        { type: 'text/html', value: buildHtmlEmail(input) },
+      ],
     }),
   })
 
-  const responseBody = await response.json().catch(() => null) as { id?: string; message?: string; name?: string } | null
+  const messageId = response.headers.get('x-message-id')
 
-  if (!response.ok || !responseBody?.id) {
+  if (!response.ok || !messageId) {
+    const providerErrors = await parseSendGridError(response)
     console.error('Report email provider rejected delivery.', {
+      provider: 'sendgrid',
       status: response.status,
-      providerError: responseBody?.name ?? responseBody?.message ?? 'unknown_error',
+      errors: providerErrors,
     })
     throw new ReportEmailError('Email could not be sent. Please try again.')
   }
 
-  return { id: responseBody.id, recipients }
+  return { id: messageId, recipients }
 }
