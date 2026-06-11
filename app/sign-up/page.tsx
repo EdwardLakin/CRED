@@ -6,11 +6,11 @@ import { Button, Card, Input, Label } from '@/components/ui'
 import { signUp } from './actions'
 
 interface SignUpPageProps {
-  searchParams: Promise<{ error?: string }>
+  searchParams: Promise<{ error?: string; plan?: string }>
 }
 
 export default async function SignUpPage({ searchParams }: SignUpPageProps) {
-  const { error } = await searchParams
+  const { error, plan } = await searchParams
 
   return (
     <main className="centered-page">
@@ -25,6 +25,7 @@ export default async function SignUpPage({ searchParams }: SignUpPageProps) {
           </div>
           {error ? <p className="error">{error}</p> : null}
           <form action={signUp} className="form-stack">
+            {plan ? <input type="hidden" name="plan" value={plan} /> : null}
             <div className="field-stack">
               <Label htmlFor="email">Email</Label>
               <Input id="email" name="email" type="email" autoComplete="email" required />
@@ -36,7 +37,7 @@ export default async function SignUpPage({ searchParams }: SignUpPageProps) {
             <Button type="submit">Create account</Button>
           </form>
           <p className="muted">
-            Already have an account? <Link href="/sign-in">Sign in</Link>.
+            Already have an account? <Link href={plan ? `/sign-in?plan=${plan}` : '/sign-in'}>Sign in</Link>.
           </p>
         </div>
       </Card>

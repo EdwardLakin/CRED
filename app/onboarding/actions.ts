@@ -2,6 +2,7 @@
 
 import { redirect } from 'next/navigation'
 
+import { isBillingPlan } from '@/features/billing'
 import { createClient } from '@/lib/supabase/server'
 type SafeOnboardingError = {
   code?: string
@@ -48,6 +49,8 @@ export async function completeOnboarding(formData: FormData) {
   const fullName = String(formData.get('fullName') ?? '').trim()
   const companyName = String(formData.get('companyName') ?? '').trim()
   const industryValue = String(formData.get('industry') ?? '')
+  const planValue = String(formData.get('plan') ?? '')
+  const planQuery = isBillingPlan(planValue) ? `?checkout=${planValue}` : ''
 
   if (!fullName || !companyName || !INDUSTRIES.has(industryValue)) {
     redirect('/onboarding?error=Please%20complete%20all%20onboarding%20fields.')
@@ -83,5 +86,5 @@ export async function completeOnboarding(formData: FormData) {
     redirectWithOnboardingError('workspace', workspaceError, hasUser)
   }
 
-  redirect('/dashboard')
+  redirect(`/dashboard${planQuery}`)
 }

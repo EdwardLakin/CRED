@@ -6,11 +6,11 @@ import { Button, Card, Input, Label } from '@/components/ui'
 import { signIn } from './actions'
 
 interface SignInPageProps {
-  searchParams: Promise<{ error?: string; message?: string }>
+  searchParams: Promise<{ error?: string; message?: string; plan?: string }>
 }
 
 export default async function SignInPage({ searchParams }: SignInPageProps) {
-  const { error, message } = await searchParams
+  const { error, message, plan } = await searchParams
 
   return (
     <main className="centered-page">
@@ -26,6 +26,7 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
           {message ? <p className="muted">{message}</p> : null}
           {error ? <p className="error">{error}</p> : null}
           <form action={signIn} className="form-stack">
+            {plan ? <input type="hidden" name="plan" value={plan} /> : null}
             <div className="field-stack">
               <Label htmlFor="email">Email</Label>
               <Input id="email" name="email" type="email" autoComplete="email" required />
@@ -37,7 +38,7 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
             <Button type="submit">Sign in</Button>
           </form>
           <p className="muted">
-            New to CRED? <Link href="/sign-up">Create an account</Link>.
+            New to CRED? <Link href={plan ? `/sign-up?plan=${plan}` : '/sign-up'}>Create an account</Link>.
           </p>
         </div>
       </Card>
