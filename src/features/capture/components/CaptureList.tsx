@@ -111,7 +111,7 @@ function SaveButton() {
   return <button className="button button-primary touch-target" disabled={pending}>{pending ? 'Saving…' : 'Save review'}</button>
 }
 
-function MediaPreview({ note, capture, signedUrl, onEditNote }: { note: string; capture: CaptureItem; signedUrl?: string; onEditNote: () => void }) {
+function MediaPreview({ note, capture, signedUrl }: { note: string; capture: CaptureItem; signedUrl?: string }) {
   const mediaKind = capture.media_kind || (capture.type === 'video' ? 'video' : capture.type === 'voice_note' ? 'audio' : capture.type === 'document' ? 'document' : 'image')
 
   return (
@@ -129,7 +129,6 @@ function MediaPreview({ note, capture, signedUrl, onEditNote }: { note: string; 
       <div className="evidence-note-overlay" aria-label="Read-only note shown on report">
         <div className="evidence-note-overlay-header">
           <strong>Note shown on report</strong>
-          <button type="button" className="evidence-note-edit-link" onClick={onEditNote}>Edit note</button>
         </div>
         <span>{note}</span>
       </div>
@@ -141,14 +140,19 @@ function EvidenceCard({ capture, signedUrl }: { capture: CaptureItem; signedUrl?
   const [state, formAction] = useActionState(updateCaptureReview, {})
   const initialNote = capture.technician_note ?? capture.transcript ?? ''
   const [note, setNote] = useState(initialNote)
+  const [isEditing, setIsEditing] = useState(false)
   const noteTextareaRef = useRef<HTMLTextAreaElement>(null)
   const overlayNote = note.trim() || (capture.transcript_status === 'pending' ? 'Transcribing…' : 'Add note before finalizing')
   const focusNoteTextarea = () => {
-    noteTextareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    noteTextareaRef.current?.focus({ preventScroll: true })
+    setIsEditing(true)
+    window.setTimeout(() => {
+      noteTextareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      noteTextareaRef.current?.focus({ preventScroll: true })
+    }, 0)
   }
   const label = CAPTURE_TYPE_LABELS[capture.type as CaptureType] ?? capture.type
   const classification = getClassificationSummary(capture.extracted_data)
+  const reportOrder = capture.report_order ? `Report order ${capture.report_order}` : 'Report order not set'
 
   return (
     <article className="capture-list-item evidence-preview-card">
@@ -162,45 +166,64 @@ function EvidenceCard({ capture, signedUrl }: { capture: CaptureItem; signedUrl?
         </span>
       </div>
 
-      <MediaPreview note={overlayNote} capture={capture} signedUrl={signedUrl} onEditNote={focusNoteTextarea} />
+      <MediaPreview note={overlayNote} capture={capture} signedUrl={signedUrl} />
 
       <div className="capture-classification-row">
         <span className={capture.ai_status === 'needs_review' ? 'classification-pill needs-review' : classification.detectedType ? 'classification-pill' : 'classification-pill pending'}>{classification.label}</span>
         <span className="classification-pill pending">{capture.include_in_report ? 'Included in report' : 'Excluded from report'}</span>
+        <span className="classification-pill pending">{reportOrder}</span>
       </div>
       <p className="capture-summary">{formatExtractedDataSummary(capture.type, capture.extracted_data)}</p>
 
-      <form action={formAction} className="capture-review-form form-stack">
-        <input type="hidden" name="capture_id" value={capture.id} />
-        <div className="field-stack report-note-editor">
-          <label htmlFor={`technician-note-${capture.id}`} className="label">Edit note shown on report</label>
-          <textarea
-            ref={noteTextareaRef}
-            id={`technician-note-${capture.id}`}
-            name="technician_note"
-            className="input note-textarea prominent-note-textarea"
-            value={note}
-            placeholder={capture.transcript_status === 'pending' ? 'Transcribing…' : 'Type the technician note for this evidence'}
-            onChange={(event) => setNote(event.target.value)}
-            rows={4}
-          />
-          <p className="muted note-helper-text">Changes update the note overlay and exported PDF.</p>
-        </div>
-        <div className="capture-review-controls">
-          <label className="checkbox-row"><input type="checkbox" name="include_in_report" defaultChecked={capture.include_in_report} /> Include in report</label>
-          <label className="report-order-field">Order <input type="number" name="report_order" className="input" min={1} defaultValue={capture.report_order ?? ''} /></label>
-        </div>
-        <div className="capture-card-actions">
-          <SaveButton />
-          {state.message ? <span className={state.ok ? 'success' : 'error'}>{state.message}</span> : null}
-        </div>
-      </form>
+      <div className="capture-compact-actions">
+        <button
+          type="button"
+          className="secondary-link"
+          onClick={() => {
+            if (isEditing) {
+              setIsEditing(false)
+              return
+            }
 
-      <form action={removeCaptureItem}>
-        <input type="hidden" name="capture_id" value={capture.id} />
-        <button className="secondary-link danger-link" type="submit">Remove evidence</button>
-      </form>
-      {signedUrl ? <a href={signedUrl} target="_blank" rel="noreferrer" className="secondary-link capture-file-link touch-target">Open saved file</a> : null}
+            focusNoteTextarea()
+          }}
+        >
+          {isEditing ? 'Hide edit' : 'Edit'}
+        </button>
+        <form action={removeCaptureItem}>
+          <input type="hidden" name="capture_id" value={capture.id} />
+          <button className="secondary-link danger-link" type="submit">Remove</button>
+        </form>
+        {signedUrl ? <a href={signedUrl} target="_blank" rel="noreferrer" className="secondary-link capture-file-link touch-target">Open file</a> : null}
+      </div>
+
+      {isEditing ? (
+        <form action={formAction} className="capture-review-form form-stack">
+          <input type="hidden" name="capture_id" value={capture.id} />
+          <div className="field-stack report-note-editor">
+            <label htmlFor={`technician-note-${capture.id}`} className="label">Edit note shown on report</label>
+            <textarea
+              ref={noteTextareaRef}
+              id={`technician-note-${capture.id}`}
+              name="technician_note"
+              className="input note-textarea prominent-note-textarea"
+              value={note}
+              placeholder={capture.transcript_status === 'pending' ? 'Transcribing…' : 'Type the technician note for this evidence'}
+              onChange={(event) => setNote(event.target.value)}
+              rows={4}
+            />
+            <p className="muted note-helper-text">Changes update the note overlay and exported PDF.</p>
+          </div>
+          <div className="capture-review-controls">
+            <label className="checkbox-row"><input type="checkbox" name="include_in_report" defaultChecked={capture.include_in_report} /> Include in report</label>
+            <label className="report-order-field">Order <input type="number" name="report_order" className="input" min={1} defaultValue={capture.report_order ?? ''} /></label>
+          </div>
+          <div className="capture-card-actions">
+            <SaveButton />
+            {state.message ? <span className={state.ok ? 'success' : 'error'}>{state.message}</span> : null}
+          </div>
+        </form>
+      ) : null}
     </article>
   )
 }
