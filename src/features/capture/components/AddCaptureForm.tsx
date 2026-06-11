@@ -16,9 +16,6 @@ import {
 } from '@/features/capture/types'
 import { createClient } from '@/lib/supabase/client'
 
-const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024
-const FILE_TOO_LARGE_MESSAGE =
-  'That file is too large. Please upload evidence under 100MB.'
 const MAX_BATCH_FILES = 10
 type SelectedEvidenceFile = {
   id: string
@@ -151,6 +148,11 @@ function fileHasAllowedType(file: File, captureType: CaptureType) {
   return ALLOWED_MIME_TYPES[captureType].includes(file.type.toLowerCase())
 }
 
+function formatFileSize(bytes: number) {
+  const megabytes = bytes / (1024 * 1024)
+  return `${Number.isInteger(megabytes) ? megabytes.toFixed(0) : megabytes.toFixed(1)}MB`
+}
+
 function SubmitButton({
   hasFiles,
   pending,
@@ -200,6 +202,9 @@ export function AddCaptureForm({
   commonCaptureText = 'Common captures: registration, VIN plate, unit number, licence plate, inspection sheet, work order, odometer, info/data plate, defects.',
   showSuggestedCaptureText = true,
   stickyDoneHref,
+  maxCaptureFileSizeBytes,
+  maxVideoFileSizeBytes,
+  maxFileSizeLabel,
 }: {
   sessionId: string
   organizationId: string
@@ -213,6 +218,9 @@ export function AddCaptureForm({
   commonCaptureText?: string
   showSuggestedCaptureText?: boolean
   stickyDoneHref?: string
+  maxCaptureFileSizeBytes: number
+  maxVideoFileSizeBytes: number
+  maxFileSizeLabel?: string
 }) {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -249,6 +257,16 @@ export function AddCaptureForm({
   const fileInputId = `capture-file-${guidanceKey}`
   const supportsMultipleFiles =
     captureIntent === 'auto_evidence' || captureIntent === 'auto_image'
+  const captureSizeLabel = maxFileSizeLabel ?? formatFileSize(maxCaptureFileSizeBytes)
+  const videoSizeLabel = formatFileSize(maxVideoFileSizeBytes)
+
+  function getMaxFileSizeForFile(file: File) {
+    return fileIsVideo(file) ? maxVideoFileSizeBytes : maxCaptureFileSizeBytes
+  }
+
+  function getFileTooLargeMessage(file: File) {
+    return `This file is larger than your plan allows. ${fileIsVideo(file) ? 'Video' : 'Capture'} files can be up to ${formatFileSize(getMaxFileSizeForFile(file))}.`
+  }
 
   useEffect(() => {
     return () => {
@@ -298,8 +316,10 @@ export function AddCaptureForm({
       return
     }
 
-    if (files.some((file) => file.size > MAX_FILE_SIZE_BYTES)) {
-      setClientError(FILE_TOO_LARGE_MESSAGE)
+    const oversizedFile = files.find((file) => file.size > getMaxFileSizeForFile(file))
+
+    if (oversizedFile) {
+      setClientError(getFileTooLargeMessage(oversizedFile))
       resetFileSelection()
       return
     }
@@ -373,8 +393,10 @@ export function AddCaptureForm({
       return
     }
 
-    if (files.some((file) => file.size > MAX_FILE_SIZE_BYTES)) {
-      setClientError(FILE_TOO_LARGE_MESSAGE)
+    const oversizedFile = files.find((file) => file.size > getMaxFileSizeForFile(file))
+
+    if (oversizedFile) {
+      setClientError(getFileTooLargeMessage(oversizedFile))
       return
     }
 
@@ -402,7 +424,10 @@ export function AddCaptureForm({
     const uploadedPaths: string[] = []
 
     try {
-      const accessResult = await validateCaptureBillingAccess(sessionId)
+      const accessResult = await validateCaptureBillingAccess(
+        sessionId,
+        files.map((file) => ({ size: file.size, mimeType: file.type })),
+      )
 
       if (!accessResult.ok) {
         throw new Error(accessResult.error)
@@ -676,8 +701,7 @@ export function AddCaptureForm({
           </div>
         ) : null}
         <p className="muted capture-upload-hint">
-          Maximum file size is 100MB per file. Photos and videos are queued for
-          AI review.
+          Maximum file size is {captureSizeLabel} per capture file and {videoSizeLabel} per video. Photos and videos are queued for AI review.
         </p>
       </div>
 

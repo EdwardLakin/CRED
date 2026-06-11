@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 
 import { requireActiveBillingAccess } from '@/features/billing'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import { analyzeTemplateUpload } from './analyzer'
 import { SYSTEM_TEMPLATES, toJson, type EvidenceRequirement } from './types'
 
@@ -55,6 +56,19 @@ export async function importTemplate(formData: FormData) {
     redirect(`/dashboard/settings/templates?error=${encodeURIComponent(billingAccess.message)}`)
   }
 
+  const storageAllowance = await requireUsageAllowance({
+    supabase,
+    organizationId: profile.organization_id,
+    plan: billingAccess.access.plan,
+    eventType: 'storage_bytes_added',
+    quantity: file.size,
+    fileSizeBytes: file.size,
+  })
+
+  if (!storageAllowance.ok) {
+    redirect(`/dashboard/settings/templates?error=${encodeURIComponent(storageAllowance.message)}`)
+  }
+
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(0, 160)
   const storagePath = `organizations/${profile.organization_id}/templates/${Date.now()}-${safeName}`
   const { error: uploadError } = await supabase.storage.from(TEMPLATE_BUCKET).upload(storagePath, file, { contentType: mimeType, upsert: false })
@@ -99,6 +113,22 @@ export async function importTemplate(formData: FormData) {
   if (templateError) {
     redirect(`/dashboard/settings/templates?error=${encodeURIComponent(templateError.message)}`)
   }
+
+  await recordUsageEvent({
+    supabase,
+    organizationId: profile.organization_id,
+    eventType: 'template_imported',
+    metadata: { template_import_id: templateImport.id, filename: file.name, mime_type: mimeType, size: file.size },
+    createdBy: profile.id,
+  })
+  await recordUsageEvent({
+    supabase,
+    organizationId: profile.organization_id,
+    eventType: 'storage_bytes_added',
+    quantity: file.size,
+    metadata: { source: 'template_import', template_import_id: templateImport.id, filename: file.name, mime_type: mimeType },
+    createdBy: profile.id,
+  })
 
   revalidatePath('/dashboard/settings/templates')
   redirect('/dashboard/settings/templates?imported=1')

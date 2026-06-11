@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 
 import { requireActiveBillingAccess } from '@/features/billing'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 
 const SIGNATURE_BUCKET = 'documentation-signatures'
 const SIGNATURE_TYPES = new Set(['Technician Signature', 'Customer Signature', 'Inspector Signature', 'Supervisor Signature'])
@@ -41,6 +42,19 @@ export async function saveSignature(sessionId: string, formData: FormData) {
     redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent(billingAccess.message)}`)
   }
 
+  const storageAllowance = await requireUsageAllowance({
+    supabase,
+    organizationId: profile.organization_id,
+    plan: billingAccess.access.plan,
+    eventType: 'storage_bytes_added',
+    quantity: decoded.bytes.byteLength,
+    fileSizeBytes: decoded.bytes.byteLength,
+  })
+
+  if (!storageAllowance.ok) {
+    redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent(storageAllowance.message)}`)
+  }
+
   const { data: session, error: sessionError } = await supabase.from('documentation_sessions').select('id').eq('id', sessionId).eq('organization_id', profile.organization_id).single()
   if (sessionError || !session) redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent('Documentation session not found.')}`)
 
@@ -58,6 +72,21 @@ export async function saveSignature(sessionId: string, formData: FormData) {
   })
 
   if (error) redirect(`/dashboard/sessions/${session.id}?error=${encodeURIComponent(error.message)}`)
+  await recordUsageEvent({
+    supabase,
+    organizationId: profile.organization_id,
+    eventType: 'signature_captured',
+    metadata: { session_id: session.id, signature_type: signatureType, size: decoded.bytes.byteLength },
+    createdBy: profile.id,
+  })
+  await recordUsageEvent({
+    supabase,
+    organizationId: profile.organization_id,
+    eventType: 'storage_bytes_added',
+    quantity: decoded.bytes.byteLength,
+    metadata: { source: 'signature', session_id: session.id, signature_type: signatureType },
+    createdBy: profile.id,
+  })
   revalidatePath(`/dashboard/sessions/${session.id}`)
   revalidatePath(`/dashboard/sessions/${session.id}/report`)
   redirect(`/dashboard/sessions/${session.id}?saved=signature`)

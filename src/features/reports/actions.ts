@@ -6,7 +6,9 @@ import { redirect } from 'next/navigation'
 
 import { requireActiveBillingAccess } from '@/features/billing'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import { ReportEmailError, sendReportEmail, validateReportEmailRecipients } from '@/lib/email/reports'
+import type { OrganizationPlan } from '@/lib/stripe'
 import type { Json } from '@/lib/supabase/database.types'
 
 const REPORT_SHARE_EXPIRATION_DAYS = 30
@@ -61,11 +63,13 @@ async function getOrCreateActiveShareToken({
   organizationId,
   sessionId,
   supabase,
+  plan,
 }: {
   createdBy: string
   organizationId: string
   sessionId: string
   supabase: Awaited<ReturnType<typeof requireSessionWorkspace>>['supabase']
+  plan: OrganizationPlan | null
 }) {
   const now = new Date()
   const { data: existingTokens, error: existingTokenError } = await supabase
@@ -83,6 +87,17 @@ async function getOrCreateActiveShareToken({
   const activeToken = existingTokens?.find((shareToken) => !shareToken.expires_at || new Date(shareToken.expires_at) > now)
   if (activeToken) {
     return activeToken.token
+  }
+
+  const shareAllowance = await requireUsageAllowance({
+    supabase,
+    organizationId,
+    plan,
+    eventType: 'share_link_created',
+  })
+
+  if (!shareAllowance.ok) {
+    throw new ReportEmailError(shareAllowance.message)
   }
 
   const expiresAt = new Date(now)
@@ -104,6 +119,14 @@ async function getOrCreateActiveShareToken({
     throw new ReportEmailError(createTokenError?.message ?? 'Could not create secure report link.')
   }
 
+  await recordUsageEvent({
+    supabase,
+    organizationId,
+    eventType: 'share_link_created',
+    metadata: { session_id: sessionId, delivery: 'email_report' },
+    createdBy,
+  })
+
   return createdToken.token
 }
 
@@ -124,6 +147,17 @@ export async function emailReport(sessionId: string, formData: FormData) {
     redirect(getReportRedirectPath(session.id, { error: billingAccess.message }))
   }
 
+  const emailAllowance = await requireUsageAllowance({
+    supabase,
+    organizationId: profile.organization_id,
+    plan: billingAccess.access.plan,
+    eventType: 'email_report_sent',
+  })
+
+  if (!emailAllowance.ok) {
+    redirect(getReportRedirectPath(session.id, { error: emailAllowance.message }))
+  }
+
   const subject = `Inspection Report - ${session.title}`
   let providerMessageId: string
 
@@ -133,6 +167,7 @@ export async function emailReport(sessionId: string, formData: FormData) {
       organizationId: profile.organization_id,
       sessionId: session.id,
       supabase,
+      plan: billingAccess.access.plan,
     })
     const reportUrl = `${getPublicAppUrl()}/reports/share/${token}`
     const result = await sendReportEmail({
@@ -168,6 +203,13 @@ export async function emailReport(sessionId: string, formData: FormData) {
     metadata,
   })
   if (error) redirect(getReportRedirectPath(session.id, { error: error.message }))
+  await recordUsageEvent({
+    supabase,
+    organizationId: profile.organization_id,
+    eventType: 'email_report_sent',
+    metadata: { session_id: session.id, recipient_count: recipients.length },
+    createdBy: profile.id,
+  })
   revalidatePath(`/dashboard/sessions/${session.id}`)
   revalidatePath(`/dashboard/sessions/${session.id}/report`)
   redirect(getReportRedirectPath(session.id, { emailed: 1 }))
@@ -181,6 +223,17 @@ export async function createReportShareLink(sessionId: string, formData: FormDat
     redirect(getReportRedirectPath(session.id, { error: billingAccess.message }))
   }
 
+  const shareAllowance = await requireUsageAllowance({
+    supabase,
+    organizationId: profile.organization_id,
+    plan: billingAccess.access.plan,
+    eventType: 'share_link_created',
+  })
+
+  if (!shareAllowance.ok) {
+    redirect(getReportRedirectPath(session.id, { error: shareAllowance.message }))
+  }
+
   const token = randomBytes(24).toString('hex')
   const { error } = await supabase.from('report_share_tokens').insert({
     documentation_session_id: session.id,
@@ -190,6 +243,13 @@ export async function createReportShareLink(sessionId: string, formData: FormDat
     created_by: profile.id,
   })
   if (error) redirect(getReportRedirectPath(session.id, { error: error.message }))
+  await recordUsageEvent({
+    supabase,
+    organizationId: profile.organization_id,
+    eventType: 'share_link_created',
+    metadata: { session_id: session.id, expires_at: expiresAt },
+    createdBy: profile.id,
+  })
   revalidatePath(`/dashboard/sessions/${session.id}/report`)
   redirect(getReportRedirectPath(session.id, { shared: 1 }))
 }
