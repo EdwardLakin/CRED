@@ -1,3 +1,4 @@
+import { applyExtractedEvidenceField } from '@/features/sessions/actions'
 import type { Json } from '@/lib/supabase/database.types'
 
 import type { CaptureItem } from '../types'
@@ -46,7 +47,12 @@ const DETECTED_TYPE_LABELS: Record<string, string> = {
   unknown: 'Unknown',
 }
 
-const APPLIABLE_SESSION_FIELDS = new Set(['asset_label', 'vin', 'odometer', 'unit_number', 'customer_name'])
+const APPLIABLE_SESSION_FIELDS = ['asset_label', 'vin', 'odometer', 'unit_number', 'customer_name'] as const
+const APPLIABLE_SESSION_FIELD_SET = new Set<string>(APPLIABLE_SESSION_FIELDS)
+
+type AppliableSessionField = (typeof APPLIABLE_SESSION_FIELDS)[number]
+
+type SessionEvidenceValues = Record<AppliableSessionField, string | null>
 
 type EvidenceFieldRow = {
   field: string
@@ -196,7 +202,7 @@ function getEvidenceCapture(capture: CaptureItem, signedUrl: string | undefined)
         field,
         label: getFieldLabel(field),
         value: formattedValue,
-        canApply: APPLIABLE_SESSION_FIELDS.has(field),
+        canApply: APPLIABLE_SESSION_FIELD_SET.has(field),
       }
     })
     .filter((row): row is EvidenceFieldRow => Boolean(row))
@@ -220,9 +226,13 @@ function getEvidenceCapture(capture: CaptureItem, signedUrl: string | undefined)
 
 export function ExtractedEvidencePanel({
   captures,
+  sessionId,
+  sessionValues,
   signedUrls,
 }: {
   captures: CaptureItem[]
+  sessionId: string
+  sessionValues: SessionEvidenceValues
   signedUrls: Record<string, string>
 }) {
   const evidenceCaptures = captures
@@ -233,7 +243,7 @@ export function ExtractedEvidencePanel({
     <section className="card detail-card extracted-evidence-card form-stack">
       <div>
         <h2>Extracted Evidence</h2>
-        <p className="muted">Extracted Evidence is for review. Apply trusted values to Session Details below.</p>
+        <p className="muted">Extracted Evidence is for review. Apply trusted values directly to Session Details.</p>
       </div>
 
       {evidenceCaptures.length === 0 ? (
@@ -256,13 +266,33 @@ export function ExtractedEvidencePanel({
               {capture.summary ? <p className="capture-summary evidence-summary">{capture.summary}</p> : null}
 
               <div className="evidence-field-list">
-                {capture.fields.map((field) => (
-                  <div key={field.field} className="evidence-field-row">
-                    <span className="evidence-field-label">{field.label}</span>
-                    <span className="evidence-field-value">{field.value}</span>
-                    {field.canApply ? <span className="can-apply-badge">Can apply to Session Details</span> : null}
-                  </div>
-                ))}
+                {capture.fields.map((field) => {
+                  const applied =
+                    field.canApply &&
+                    sessionValues[field.field as AppliableSessionField]?.trim().toLowerCase() === field.value.trim().toLowerCase()
+                  const applyAction = applyExtractedEvidenceField.bind(null, sessionId)
+
+                  return (
+                    <div key={field.field} className="evidence-field-row">
+                      <span className="evidence-field-label">{field.label}</span>
+                      <span className="evidence-field-value">{field.value}</span>
+                      {field.canApply ? (
+                        applied ? (
+                          <span className="applied-badge">Applied</span>
+                        ) : (
+                          <form action={applyAction} className="evidence-apply-form">
+                            <input type="hidden" name="capture_id" value={capture.id} />
+                            <input type="hidden" name="field" value={field.field} />
+                            <input type="hidden" name="value" value={field.value} />
+                            <button className="secondary-link evidence-apply-button" type="submit">
+                              Apply
+                            </button>
+                          </form>
+                        )
+                      ) : null}
+                    </div>
+                  )
+                })}
               </div>
 
               {capture.notes.length > 0 ? (

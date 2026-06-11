@@ -155,6 +155,81 @@ function getSelectedSuggestionFields(formData: FormData) {
     .filter(isApplySuggestionField)
 }
 
+function getSingleFormString(formData: FormData, field: string) {
+  const value = formData.get(field)
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function getApplyFieldLabel(field: ApplySuggestionField) {
+  return field.replace(/_/g, ' ')
+}
+
+export async function applyExtractedEvidenceField(sessionId: string, formData: FormData) {
+  const field = getSingleFormString(formData, 'field')
+  const value = getSingleFormString(formData, 'value')
+  const captureId = getSingleFormString(formData, 'capture_id')
+
+  if (!isApplySuggestionField(field) || !value || !captureId) {
+    redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent('Choose a supported extracted value to apply.')}`)
+  }
+
+  const { supabase, profile } = await requireSessionWorkspace()
+  const { data: session, error: sessionError } = await supabase
+    .from('documentation_sessions')
+    .select('id, organization_id, suggested_details')
+    .eq('id', sessionId)
+    .eq('organization_id', profile.organization_id)
+    .single()
+
+  if (sessionError || !session) {
+    redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent('Documentation session not found.')}`)
+  }
+
+  const { data: capture, error: captureError } = await supabase
+    .from('capture_items')
+    .select('id')
+    .eq('id', captureId)
+    .eq('documentation_session_id', session.id)
+    .eq('organization_id', profile.organization_id)
+    .is('deleted_at', null)
+    .single()
+
+  if (captureError || !capture) {
+    redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent('Evidence capture not found.')}`)
+  }
+
+  const suggestedDetails: Record<string, Json> = isRecord(session.suggested_details) ? { ...(session.suggested_details as Record<string, Json>) } : {}
+  const existingSuggestion = isRecord(suggestedDetails[field]) ? (suggestedDetails[field] as SessionSuggestion) : {}
+  suggestedDetails[field] = {
+    ...existingSuggestion,
+    value,
+    source_capture_id: capture.id,
+    source_type: 'extracted_evidence',
+    applied: true,
+  } as Json
+
+  const updates: Partial<Record<ApplySuggestionField, string>> & { updated_at: string; suggested_details: Json } = {
+    [field]: value,
+    updated_at: new Date().toISOString(),
+    suggested_details: suggestedDetails,
+  }
+
+  const { error } = await supabase
+    .from('documentation_sessions')
+    .update(updates)
+    .eq('id', session.id)
+    .eq('organization_id', profile.organization_id)
+
+  if (error) {
+    redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent(error.message)}`)
+  }
+
+  revalidatePath('/dashboard')
+  revalidatePath('/dashboard/sessions')
+  revalidatePath(`/dashboard/sessions/${sessionId}`)
+  redirect(`/dashboard/sessions/${sessionId}?saved=1&appliedField=${encodeURIComponent(getApplyFieldLabel(field))}#extracted-evidence`)
+}
+
 export async function applySessionSuggestions(sessionId: string, formData: FormData) {
   const selectedFields = Array.from(new Set(getSelectedSuggestionFields(formData)))
 

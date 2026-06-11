@@ -11,131 +11,11 @@ import {
 import { ThemeToggle } from '@/components/theme'
 import { SESSION_STATUSES, SessionStatusBadge, formatDateTime } from '@/features/sessions'
 import {
-  applySessionSuggestions,
   archiveDocumentationSession,
   restoreDocumentationSession,
   updateDocumentationSession,
 } from '@/features/sessions/actions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
-
-
-const SUGGESTION_FIELD_LABELS: Record<string, string> = {
-  asset_label: 'Asset Label',
-  vin: 'VIN',
-  odometer: 'Odometer',
-  unit_number: 'Unit Number',
-  customer_name: 'Customer',
-}
-
-const SUPPORTED_APPLY_FIELDS = ['asset_label', 'vin', 'odometer', 'unit_number', 'customer_name']
-
-const SUGGESTION_SOURCE_LABELS: Record<string, string> = {
-  registration: 'Registration',
-  vin_plate: 'VIN Plate',
-  license_plate: 'License Plate',
-  unit_number: 'Unit Number',
-  inspection_sheet: 'Inspection Sheet',
-  work_order: 'Work Order',
-  odometer: 'Odometer',
-  hour_meter: 'Hour Meter',
-  info_plate: 'Info Plate',
-  other_document: 'Other Document',
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function formatConfidence(value: unknown) {
-  const confidence = typeof value === 'number' ? value : Number(value)
-
-  if (!Number.isFinite(confidence)) {
-    return '—'
-  }
-
-  return `${Math.round(Math.min(1, Math.max(0, confidence)) * 100)}%`
-}
-
-function formatSuggestionSource(value: unknown) {
-  return typeof value === 'string' && value ? SUGGESTION_SOURCE_LABELS[value] ?? value.replace(/_/g, ' ') : 'capture'
-}
-
-function getSuggestionRows(suggestedDetails: unknown) {
-  if (!isRecord(suggestedDetails)) {
-    return []
-  }
-
-  return Object.entries(suggestedDetails)
-    .filter(([field]) => SUPPORTED_APPLY_FIELDS.includes(field))
-    .map(([field, suggestion]) => {
-      if (!isRecord(suggestion) || typeof suggestion.value !== 'string' || !suggestion.value.trim()) {
-        return null
-      }
-
-      return {
-        field,
-        label: SUGGESTION_FIELD_LABELS[field] ?? field.replace(/_/g, ' '),
-        value: suggestion.value.trim(),
-        source: formatSuggestionSource(suggestion.source_type),
-        confidence: formatConfidence(suggestion.confidence),
-        applied: suggestion.applied === true,
-      }
-    })
-    .filter((row): row is NonNullable<typeof row> => Boolean(row))
-    .sort((a, b) => a.label.localeCompare(b.label))
-}
-
-function SuggestedSessionDetailsCard({ sessionId, suggestedDetails }: { sessionId: string; suggestedDetails: unknown }) {
-  const suggestions = getSuggestionRows(suggestedDetails)
-  const applyAction = applySessionSuggestions.bind(null, sessionId)
-  const hasSupportedSuggestions = suggestions.length > 0
-
-  return (
-    <section className="card detail-card suggested-details-card form-stack">
-      <div>
-        <h2>Suggested Session Details</h2>
-        <p className="muted">
-          Review extracted values before applying them. CRED will not overwrite Session Details until you choose what to apply.
-        </p>
-      </div>
-
-      {suggestions.length === 0 ? (
-        <div className="empty-state suggestions-empty-state">
-          No suggestions yet. Classify captures, then extract details from captures to prepare session updates.
-        </div>
-      ) : (
-        <form action={applyAction} className="form-stack">
-          <div className="suggestion-list">
-            {suggestions.map((suggestion) => (
-              <label key={suggestion.field} className="suggestion-row">
-                <span className="suggestion-select">
-                  <input
-                    type="checkbox"
-                    name="selected_fields"
-                    value={suggestion.field}
-                    defaultChecked={!suggestion.applied}
-                  />
-                </span>
-                <span className="suggestion-main">
-                  <strong>{suggestion.label}</strong>
-                  <span>{suggestion.value}</span>
-                  <small>
-                    from {suggestion.source}, {suggestion.confidence}{suggestion.applied ? ' · applied' : ''}
-                  </small>
-                </span>
-              </label>
-            ))}
-          </div>
-          <div className="form-actions suggestion-actions">
-            <button className="button button-primary touch-target" disabled={!hasSupportedSuggestions}>
-              Apply selected suggestions
-            </button>
-          </div>
-        </form>
-      )}
-    </section>
-  )
-}
 
 function DetailField({
   id,
@@ -163,10 +43,10 @@ export default async function SessionDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ captureError?: string; captureSaved?: string; error?: string; saved?: string; suggestionsApplied?: string }>
+  searchParams: Promise<{ appliedField?: string; captureError?: string; captureSaved?: string; error?: string; saved?: string }>
 }) {
   const { id } = await params
-  const { captureError, captureSaved, error, saved, suggestionsApplied } = await searchParams
+  const { appliedField, captureError, captureSaved, error, saved } = await searchParams
   const { supabase, profile } = await requireSessionWorkspace()
   const { data: session, error: sessionError } = await supabase
     .from('documentation_sessions')
@@ -237,81 +117,8 @@ export default async function SessionDetailPage({
 
       {error ? <p className="error">{error}</p> : null}
       {captureError ? <p className="error">{captureError}</p> : null}
-      {saved ? <p className="success">{suggestionsApplied ? `Applied ${suggestionsApplied} session suggestion${suggestionsApplied === '1' ? '' : 's'}.` : 'Session saved.'}</p> : null}
+      {saved ? <p className="success">{appliedField ? `Applied ${appliedField.replace(/_/g, ' ')} to Session Details.` : 'Session saved.'}</p> : null}
       {captureSaved ? <p className="success">Capture added.</p> : null}
-
-      <section className="card detail-card findings-summary-card">
-        <div>
-          <h2>Findings Summary</h2>
-          <p className="muted">Session-level evidence status for report readiness.</p>
-        </div>
-        <div className="findings-summary-grid">
-          <div>
-            <strong>{visibleCaptures.length}</strong>
-            <span>Saved captures</span>
-          </div>
-          <div>
-            <strong>{includedCaptureCount}</strong>
-            <span>Included in report</span>
-          </div>
-          <div>
-            <strong>{needsReviewCount}</strong>
-            <span>Need AI review</span>
-          </div>
-          <div>
-            <strong>{extractedCaptureCount}</strong>
-            <span>AI completed</span>
-          </div>
-        </div>
-      </section>
-
-      <section className="card detail-card field-mode-cta-card">
-        <div>
-          <p className="eyebrow guided-eyebrow">Field mode</p>
-          <h2>Capture Evidence</h2>
-          <p className="muted">Open a focused technician workspace for photos, videos, voice notes, and draft previews.</p>
-        </div>
-        <Link href={`/dashboard/sessions/${session.id}/capture`} className="button button-primary touch-target">
-          Capture Evidence
-        </Link>
-      </section>
-
-      <section className="card detail-card capture-card form-stack">
-        <div className="captures-section-header">
-          <div>
-            <h2>Evidence Gallery</h2>
-            <p className="muted">Review saved captures, notes, AI results, report inclusion, and PDF ordering for this session.</p>
-            <p className="next-ai-step">
-              AI actions are managed here so Session Details remains the source of truth for review and reporting.
-            </p>
-          </div>
-          <div className="capture-ai-actions">
-            <ClassifyPendingCapturesButton sessionId={session.id} />
-            <ExtractCaptureDetailsButton sessionId={session.id} />
-          </div>
-        </div>
-        <CaptureList captures={visibleCaptures} signedUrls={signedUrls} />
-      </section>
-
-      <div id="extracted-evidence">
-        <ExtractedEvidencePanel captures={visibleCaptures} signedUrls={signedUrls} />
-      </div>
-
-      <SuggestedSessionDetailsCard sessionId={session.id} suggestedDetails={session.suggested_details} />
-
-      <EvidenceChecklistSummary captures={visibleCaptures} sessionType={session.session_type} />
-
-      <section className="card detail-card final-report-review-card">
-        <div>
-          <h2>Final Report Review</h2>
-          <p className="muted">
-            Confirm Session Details, evidence notes, included captures, and report ordering before exporting the final PDF.
-          </p>
-        </div>
-        <Link href={`/api/dashboard/sessions/${session.id}/report-pdf`} className="button button-primary touch-target" target="_blank">
-          Export PDF
-        </Link>
-      </section>
 
       <form action={saveAction} className="card detail-card form-stack">
         <section className="form-stack">
@@ -387,6 +194,57 @@ export default async function SessionDetailPage({
           <button className="button button-primary touch-target">Save Changes</button>
         </div>
       </form>
+
+      <EvidenceChecklistSummary captures={visibleCaptures} sessionType={session.session_type} />
+
+      <section className="card detail-card capture-card form-stack">
+        <div className="captures-section-header">
+          <div>
+            <h2>Evidence Gallery</h2>
+            <p className="muted">
+              {visibleCaptures.length} saved captures · {includedCaptureCount} included · {needsReviewCount} need AI review · {extractedCaptureCount} AI completed
+            </p>
+            <p className="next-ai-step">
+              AI actions are managed here so Session Details remains the source of truth for review and reporting.
+            </p>
+          </div>
+          <div className="capture-ai-actions">
+            <Link href={`/dashboard/sessions/${session.id}/capture`} className="button button-primary touch-target">
+              Capture Evidence
+            </Link>
+            <ClassifyPendingCapturesButton sessionId={session.id} />
+            <ExtractCaptureDetailsButton sessionId={session.id} />
+          </div>
+        </div>
+        <CaptureList captures={visibleCaptures} signedUrls={signedUrls} />
+      </section>
+
+      <div id="extracted-evidence">
+        <ExtractedEvidencePanel
+          captures={visibleCaptures}
+          sessionId={session.id}
+          sessionValues={{
+            asset_label: session.asset_label,
+            vin: session.vin,
+            odometer: session.odometer,
+            unit_number: session.unit_number,
+            customer_name: session.customer_name,
+          }}
+          signedUrls={signedUrls}
+        />
+      </div>
+
+      <section className="card detail-card final-report-review-card">
+        <div>
+          <h2>Final Report Review</h2>
+          <p className="muted">
+            Confirm Session Details, evidence notes, included captures, and report ordering before exporting the final PDF.
+          </p>
+        </div>
+        <Link href={`/api/dashboard/sessions/${session.id}/report-pdf`} className="button button-primary touch-target" target="_blank">
+          Export PDF
+        </Link>
+      </section>
     </main>
   )
 }

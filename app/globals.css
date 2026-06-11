@@ -944,6 +944,7 @@ a {
 }
 
 .evidence-confidence,
+.applied-badge,
 .can-apply-badge {
   border-radius: 999px;
   flex: 0 0 auto;
@@ -993,10 +994,23 @@ a {
   overflow-wrap: anywhere;
 }
 
+.applied-badge,
 .can-apply-badge {
   background: var(--success-soft);
   color: var(--success);
   padding: 5px 8px;
+}
+
+.evidence-apply-form {
+  margin: 0;
+}
+
+.evidence-apply-button {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
 }
 
 .evidence-notes {
@@ -1025,6 +1039,7 @@ a {
   }
 
   .evidence-confidence,
+  .applied-badge,
   .can-apply-badge {
     justify-self: flex-start;
     white-space: normal;
@@ -1462,11 +1477,25 @@ a:focus-visible {
 
 .capture-note-actions,
 .capture-card-actions,
+.capture-compact-actions,
 .capture-review-controls {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.capture-compact-actions {
+  border-top: 1px solid var(--border);
+  padding-top: 4px;
+}
+
+.capture-compact-actions .secondary-link {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
 }
 
 .evidence-feed {
