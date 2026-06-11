@@ -134,7 +134,7 @@ export default async function SessionDetailPage({
         <div className="page-actions">
           <ThemeToggle />
           <Link href={`/api/dashboard/sessions/${session.id}/report-pdf`} className="button button-primary touch-target" target="_blank">
-            Export PDF
+            Open Printable Report
           </Link>
           <form action={isArchived ? restoreAction : archiveAction}>
             <button className="button button-secondary touch-target">
@@ -235,7 +235,7 @@ export default async function SessionDetailPage({
         <div>
           <p className="eyebrow">Digital Signatures</p>
           <h2>Signature Capture</h2>
-          <p className="muted">Capture reusable technician, customer, inspector, or supervisor signatures with mouse, touch, or stylus. Signatures render inside the report PDF output.</p>
+          <p className="muted">Capture reusable technician, customer, inspector, or supervisor signatures with mouse, touch, or stylus. Signatures render inside the printable report output.</p>
         </div>
         <SignatureCaptureForm sessionId={session.id} />
         <div className="signature-list">
@@ -290,7 +290,7 @@ export default async function SessionDetailPage({
       <section className="card detail-card form-stack">
         <div>
           <h2>Reports</h2>
-          <p className="muted">Generated, sent, downloaded, shared, and saved report actions for this session.</p>
+          <p className="muted">Opened, emailed, shared, and saved report actions for this session.</p>
         </div>
         <div className="signature-list">
           {(reportEvents ?? []).length > 0 ? (reportEvents ?? []).map((event) => (
@@ -307,7 +307,7 @@ export default async function SessionDetailPage({
         <div>
           <h2>Final Report Review</h2>
           <p className="muted">
-            Confirm Session Details, evidence notes, included captures, and report ordering before exporting the final PDF.
+            Confirm Session Details, evidence notes, included captures, and report ordering before opening the final printable report.
           </p>
         </div>
         <Link href={`/dashboard/sessions/${session.id}/report`} className="button button-primary touch-target">
