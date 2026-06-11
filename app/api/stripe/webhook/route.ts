@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 
 import {
   getStripeId,
-  isBillingPlan,
+  parseBillingPlan,
   type StripeCheckoutSession,
   type StripeInvoice,
   type StripeSubscription,
@@ -40,25 +40,25 @@ async function updateSubscription(input: {
 }
 
 async function handleCheckoutCompleted(session: StripeCheckoutSession) {
-  const plan = session.metadata?.plan
+  const plan = parseBillingPlan(session.metadata?.plan)
 
   await updateSubscription({
     organizationId: session.metadata?.organization_id,
     customerId: getStripeId(session.customer),
     subscriptionId: getStripeId(session.subscription),
-    plan: isBillingPlan(plan) ? plan : null,
+    plan,
     status: 'checkout_completed',
   })
 }
 
 async function handleSubscription(subscription: StripeSubscription) {
-  const plan = subscription.metadata?.plan
+  const plan = parseBillingPlan(subscription.metadata?.plan)
 
   await updateSubscription({
     organizationId: subscription.metadata?.organization_id,
     customerId: getStripeId(subscription.customer),
     subscriptionId: subscription.id,
-    plan: isBillingPlan(plan) ? plan : null,
+    plan,
     status: subscription.status,
     currentPeriodEnd: unixToIso(subscription.current_period_end),
   })

@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 
-import type { BillingPlan } from '@/features/billing'
+import { getPlanDisplayName, type BillingPlan } from '@/features/billing'
 
 interface DashboardCheckoutLauncherProps {
   plan?: BillingPlan
@@ -50,7 +50,7 @@ export function DashboardCheckoutLauncher({ plan }: DashboardCheckoutLauncherPro
 
   return (
     <div className="success billing-launcher" role="status">
-      {error ?? `Preparing ${plan} checkout…`}
+      {error ?? `Preparing ${getPlanDisplayName(plan) ?? plan} checkout…`}
     </div>
   )
 }

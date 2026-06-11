@@ -4,7 +4,7 @@ import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 import { getCurrentProfile } from '@/features/auth/server'
-import { isBillingPlan } from '@/features/billing'
+import { parseBillingPlan } from '@/features/billing'
 import { createClient } from '@/lib/supabase/server'
 
 export async function signUp(formData: FormData) {
@@ -12,7 +12,8 @@ export async function signUp(formData: FormData) {
   const password = String(formData.get('password') ?? '')
   const origin = (await headers()).get('origin')
   const planValue = String(formData.get('plan') ?? '')
-  const planQuery = isBillingPlan(planValue) ? `?plan=${planValue}` : ''
+  const plan = parseBillingPlan(planValue)
+  const planQuery = plan ? `?plan=${plan}` : ''
 
   const supabase = await createClient()
   const { data, error } = await supabase.auth.signUp({
@@ -28,9 +29,9 @@ export async function signUp(formData: FormData) {
   }
 
   if (!data.session) {
-    redirect(`/sign-in?message=Check%20your%20email%20to%20confirm%20your%20account%2C%20then%20sign%20in.${planQuery ? `&plan=${planValue}` : ''}`)
+    redirect(`/sign-in?message=Check%20your%20email%20to%20confirm%20your%20account%2C%20then%20sign%20in.${plan ? `&plan=${plan}` : ''}`)
   }
 
   const profile = await getCurrentProfile()
-  redirect(profile ? `/dashboard${planQuery ? `?checkout=${planValue}` : ''}` : `/onboarding${planQuery}`)
+  redirect(profile ? `/dashboard${plan ? `?checkout=${plan}` : ''}` : `/onboarding${planQuery}`)
 }

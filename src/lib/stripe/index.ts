@@ -1,14 +1,23 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 
-export type BillingPlan = 'starter' | 'pro' | 'business'
+export type BillingPlan = 'individual' | 'team' | 'shop'
+export type OrganizationPlan = BillingPlan | 'enterprise'
+type LegacyBillingPlan = 'starter' | 'pro' | 'business'
+type StripePriceEnvKey = 'STRIPE_PRICE_INDIVIDUAL' | 'STRIPE_PRICE_TEAM' | 'STRIPE_PRICE_SHOP'
 
 export const BILLING_PLANS: Record<
   BillingPlan,
-  { name: string; price: string; envKey: 'STRIPE_PRICE_STARTER' | 'STRIPE_PRICE_PRO' | 'STRIPE_PRICE_BUSINESS' }
+  { name: string; price: string; envKey: StripePriceEnvKey }
 > = {
-  starter: { name: 'Starter', price: '$49/month', envKey: 'STRIPE_PRICE_STARTER' },
-  pro: { name: 'Pro', price: '$99/month', envKey: 'STRIPE_PRICE_PRO' },
-  business: { name: 'Business', price: '$199/month', envKey: 'STRIPE_PRICE_BUSINESS' },
+  individual: { name: 'Individual', price: '$39/month', envKey: 'STRIPE_PRICE_INDIVIDUAL' },
+  team: { name: 'Team', price: '$99/month', envKey: 'STRIPE_PRICE_TEAM' },
+  shop: { name: 'Shop', price: '$199/month', envKey: 'STRIPE_PRICE_SHOP' },
+}
+
+const LEGACY_PLAN_MAP: Record<LegacyBillingPlan, BillingPlan> = {
+  starter: 'individual',
+  pro: 'team',
+  business: 'shop',
 }
 
 interface StripeCustomer {
@@ -44,8 +53,35 @@ export interface StripeEvent {
   }
 }
 
+export function normalizeBillingPlan(value: unknown): OrganizationPlan | null {
+  if (value === 'individual' || value === 'team' || value === 'shop' || value === 'enterprise') {
+    return value
+  }
+
+  if (value === 'starter' || value === 'pro' || value === 'business') {
+    return LEGACY_PLAN_MAP[value]
+  }
+
+  return null
+}
+
+export function parseBillingPlan(value: unknown): BillingPlan | null {
+  const plan = normalizeBillingPlan(value)
+  return plan === 'individual' || plan === 'team' || plan === 'shop' ? plan : null
+}
+
 export function isBillingPlan(value: unknown): value is BillingPlan {
-  return value === 'starter' || value === 'pro' || value === 'business'
+  return value === 'individual' || value === 'team' || value === 'shop'
+}
+
+export function getPlanDisplayName(value: unknown) {
+  const plan = normalizeBillingPlan(value)
+
+  if (!plan) {
+    return null
+  }
+
+  return plan === 'enterprise' ? 'Enterprise' : BILLING_PLANS[plan].name
 }
 
 export function getStripeSecretKey() {

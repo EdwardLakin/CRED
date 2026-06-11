@@ -4,7 +4,7 @@ import { getCurrentProfile, getCurrentUser } from '@/features/auth/server'
 import {
   createStripeCustomer,
   createSubscriptionCheckoutSession,
-  isBillingPlan,
+  parseBillingPlan,
 } from '@/lib/stripe'
 import { createClient } from '@/lib/supabase/server'
 
@@ -23,7 +23,9 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => null)) as { plan?: unknown } | null
 
-  if (!isBillingPlan(body?.plan)) {
+  const plan = parseBillingPlan(body?.plan)
+
+  if (!plan) {
     return NextResponse.json({ error: 'Invalid billing plan.' }, { status: 400 })
   }
 
@@ -53,7 +55,7 @@ export async function POST(request: Request) {
     const session = await createSubscriptionCheckoutSession({
       customerId,
       organizationId: profile.organization_id,
-      plan: body.plan,
+      plan,
       successUrl: `${origin}/dashboard?billing=success`,
       cancelUrl: `${origin}/?billing=cancelled`,
     })
