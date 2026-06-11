@@ -8,18 +8,33 @@ export interface Database {
           id: string
           name: string
           industry: string
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          plan: 'starter' | 'pro' | 'business' | null
+          subscription_status: string | null
+          current_period_end: string | null
           created_at: string | null
         }
         Insert: {
           id?: string
           name: string
           industry: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          plan?: 'starter' | 'pro' | 'business' | null
+          subscription_status?: string | null
+          current_period_end?: string | null
           created_at?: string | null
         }
         Update: {
           id?: string
           name?: string
           industry?: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          plan?: 'starter' | 'pro' | 'business' | null
+          subscription_status?: string | null
+          current_period_end?: string | null
           created_at?: string | null
         }
         Relationships: []
@@ -364,6 +379,24 @@ export interface Database {
           p_industry: string
         }
         Returns: string
+      }
+      set_organization_stripe_customer: {
+        Args: {
+          p_organization_id: string
+          p_stripe_customer_id: string
+        }
+        Returns: void
+      }
+      sync_organization_subscription: {
+        Args: {
+          p_organization_id?: string | null
+          p_stripe_customer_id?: string | null
+          p_stripe_subscription_id?: string | null
+          p_plan?: string | null
+          p_subscription_status?: string | null
+          p_current_period_end?: string | null
+        }
+        Returns: void
       }
     }
     Enums: Record<string, never>

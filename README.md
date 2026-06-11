@@ -13,3 +13,68 @@ If your Supabase project was provisioned manually or migrations were not applied
 
 Apple touch PNG icons should be generated manually from public/icons/cred-icon.svg before production launch.
 
+
+## Stripe subscription billing setup
+
+CRED uses Stripe Checkout for hosted subscription checkout and Stripe webhooks to keep organization billing state in sync.
+
+### Environment variables
+
+Add these variables to your local `.env.local` and production environment. Keep secret values server-only and never expose them in client code.
+
+```bash
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...
+STRIPE_PRICE_STARTER=price_...
+STRIPE_PRICE_PRO=price_...
+STRIPE_PRICE_BUSINESS=price_...
+```
+
+The app reads the three `STRIPE_PRICE_*` values when creating subscription Checkout Sessions, so price IDs must be created in Stripe Dashboard first and should not be hardcoded in source.
+
+### Database migration
+
+Apply the Supabase migration `supabase/migrations/20260611144500_stripe_subscription_billing.sql`. It adds these organization billing columns:
+
+- `stripe_customer_id`
+- `stripe_subscription_id`
+- `plan`
+- `subscription_status`
+- `current_period_end`
+
+The migration also creates RPC helpers used by the authenticated checkout route and verified webhook route while preserving organization-scoped RLS for normal app access.
+
+### Webhook endpoint
+
+Configure a Stripe webhook endpoint that points to:
+
+```text
+https://YOUR_DOMAIN.com/api/stripe/webhook
+```
+
+Subscribe the endpoint to these events:
+
+- `checkout.session.completed`
+- `customer.subscription.created`
+- `customer.subscription.updated`
+- `customer.subscription.deleted`
+- `invoice.payment_failed`
+
+Copy the endpoint signing secret into `STRIPE_WEBHOOK_SECRET`.
+
+### Local testing
+
+Use the Stripe CLI to forward events to your local app:
+
+```bash
+stripe listen --forward-to localhost:3000/api/stripe/webhook
+```
+
+Then copy the `whsec_...` value printed by the CLI into `.env.local`, start the app, sign in, and choose a plan from the landing page pricing section.
+
+```bash
+npm run dev
+```
+
+Logged-out pricing buttons route to `/sign-up?plan=starter`, `/sign-up?plan=pro`, or `/sign-up?plan=business`. After signup and onboarding, CRED redirects to `/dashboard?checkout=<plan>` and starts Checkout for the preserved plan.

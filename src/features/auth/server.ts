@@ -8,7 +8,17 @@ type OrganizationRow = Database['public']['Tables']['organizations']['Row']
 type CompanyProfileRow = Database['public']['Tables']['company_profiles']['Row']
 
 export interface CurrentProfile extends ProfileRow {
-  organization: Pick<OrganizationRow, 'id' | 'name' | 'industry'>
+  organization: Pick<
+    OrganizationRow,
+    | 'id'
+    | 'name'
+    | 'industry'
+    | 'stripe_customer_id'
+    | 'stripe_subscription_id'
+    | 'plan'
+    | 'subscription_status'
+    | 'current_period_end'
+  >
   company_profile: Pick<CompanyProfileRow, 'company_name'> | null
 }
 
@@ -41,7 +51,7 @@ export async function getCurrentProfile(): Promise<CurrentProfile | null> {
 
   const { data: organization, error: organizationError } = await supabase
     .from('organizations')
-    .select('id, name, industry')
+    .select('id, name, industry, stripe_customer_id, stripe_subscription_id, plan, subscription_status, current_period_end')
     .eq('id', profile.organization_id)
     .single()
 

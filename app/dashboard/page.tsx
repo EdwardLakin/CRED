@@ -3,10 +3,18 @@ import Link from 'next/link'
 import { signOut } from './actions'
 import { ThemeToggle } from '@/components/theme'
 import { Button, Card } from '@/components/ui'
+import { isBillingPlan } from '@/features/billing'
+import { DashboardCheckoutLauncher } from '@/features/billing/components/DashboardCheckoutLauncher'
 import { EmptyState, SessionCard } from '@/features/sessions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
-export default async function DashboardPage() {
+interface DashboardPageProps {
+  searchParams: Promise<{ billing?: string; checkout?: string }>
+}
+
+export default async function DashboardPage({ searchParams }: DashboardPageProps) {
+  const { billing, checkout } = await searchParams
+  const checkoutPlan = isBillingPlan(checkout) ? checkout : undefined
   const { supabase, profile } = await requireSessionWorkspace()
   const industry = profile.organization.industry || 'Not set'
   const { data: sessions, error } = await supabase
@@ -21,9 +29,18 @@ export default async function DashboardPage() {
   }
 
   const recentSessions = sessions ?? []
+  const currentPlan = profile.organization.plan ?? 'Free trial'
+  const subscriptionStatus = profile.organization.subscription_status ?? 'not started'
+  const periodEnd = profile.organization.current_period_end
+    ? new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(
+        new Date(profile.organization.current_period_end),
+      )
+    : null
 
   return (
     <main className="page-shell dashboard-shell">
+      <DashboardCheckoutLauncher plan={checkoutPlan} />
+      {billing === 'success' ? <div className="success">Billing checkout completed. Your subscription is being synced.</div> : null}
       <section className="hero-card">
         <div>
           <p className="eyebrow">Documentation workflow</p>
@@ -59,6 +76,30 @@ export default async function DashboardPage() {
                 Sign out
               </Button>
             </form>
+          </div>
+        </div>
+      </Card>
+
+
+
+      <Card className="dashboard-card workspace-card billing-state-card">
+        <div className="dashboard-grid">
+          <div>
+            <strong>Current plan</strong>
+            <p className="muted plan-name">{currentPlan}</p>
+          </div>
+          <div>
+            <strong>Billing status</strong>
+            <p className="muted">{subscriptionStatus}</p>
+          </div>
+          <div>
+            <strong>Renews through</strong>
+            <p className="muted">{periodEnd ?? 'Pending checkout'}</p>
+          </div>
+          <div className="workspace-actions">
+            <Link href="/#pricing" className="button button-secondary billing-manage-button">
+              Upgrade / Manage Billing
+            </Link>
           </div>
         </div>
       </Card>

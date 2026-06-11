@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { ThemeToggle } from '@/components/theme'
 import { Button, Card, Input, Label } from '@/components/ui'
 import { getCurrentProfile, requireUser } from '@/features/auth/server'
+import { isBillingPlan } from '@/features/billing'
 import { completeOnboarding } from './actions'
 
 const industries = [
@@ -19,18 +20,19 @@ const industries = [
 ] as const
 
 interface OnboardingPageProps {
-  searchParams: Promise<{ error?: string }>
+  searchParams: Promise<{ error?: string; plan?: string }>
 }
 
 export default async function OnboardingPage({ searchParams }: OnboardingPageProps) {
+  const { error, plan: planValue } = await searchParams
+  const plan = isBillingPlan(planValue) ? planValue : null
+
   await requireUser()
   const profile = await getCurrentProfile()
 
   if (profile) {
-    redirect('/dashboard')
+    redirect(plan ? `/dashboard?checkout=${plan}` : '/dashboard')
   }
-
-  const { error } = await searchParams
 
   return (
     <main className="centered-page">
@@ -45,6 +47,7 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
           </div>
           {error ? <p className="error">{error}</p> : null}
           <form action={completeOnboarding} className="form-stack">
+            {plan ? <input type="hidden" name="plan" value={plan} /> : null}
             <div className="field-stack">
               <Label htmlFor="fullName">Full name</Label>
               <Input id="fullName" name="fullName" autoComplete="name" required />
