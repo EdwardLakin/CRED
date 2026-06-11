@@ -58,12 +58,12 @@ export default async function GuidedCapturePage({
             {session.title} · {WORKFLOW_LABELS[workflow]} · Updated {formatDateTime(session.updated_at ?? session.created_at)}
           </p>
         </div>
-        <Link href={`/dashboard/sessions/${session.id}`} className="button button-secondary touch-target">
-          Done Capturing
+        <Link href={`/dashboard/sessions/${session.id}/report`} className="button button-secondary touch-target">
+          Done
         </Link>
       </div>
 
-      {captureSaved ? <p className="success">Capture saved. Continue gathering evidence or tap Done Capturing.</p> : null}
+      {captureSaved ? <p className="success">Capture saved. Continue gathering evidence or tap Done.</p> : null}
 
       <section className="card detail-card focused-capture-card" id="main-capture-card">
         <div>
@@ -83,6 +83,7 @@ export default async function GuidedCapturePage({
           helperText="Take a photo/video or select evidence, add a quick voice or typed note, then save."
           commonCaptureText="Supported workflows: photo, video, voice note, and combined photo/video plus voice or typed context."
           showSuggestedCaptureText={false}
+          stickyDoneHref={`/dashboard/sessions/${session.id}/report`}
         />
       </section>
 
@@ -97,14 +98,6 @@ export default async function GuidedCapturePage({
         <RecentCapturesList captures={captureItems} signedUrls={signedUrls} />
       </section>
 
-      <div className="guided-sticky-actions focused-capture-done-actions">
-        <Link href="#main-capture-card" className="button button-primary touch-target">
-          Capture More
-        </Link>
-        <Link href={`/dashboard/sessions/${session.id}`} className="button button-secondary touch-target">
-          Done Capturing
-        </Link>
-      </div>
     </main>
   )
 }

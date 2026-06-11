@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 
@@ -195,6 +196,7 @@ export function AddCaptureForm({
   helperText = 'Take or select photos/videos, add a quick voice or typed note, then tap Done.',
   commonCaptureText = 'Common captures: registration, VIN plate, unit number, licence plate, inspection sheet, work order, odometer, info/data plate, defects.',
   showSuggestedCaptureText = true,
+  stickyDoneHref,
 }: {
   sessionId: string
   organizationId: string
@@ -207,6 +209,7 @@ export function AddCaptureForm({
   helperText?: string
   commonCaptureText?: string
   showSuggestedCaptureText?: boolean
+  stickyDoneHref?: string
 }) {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -716,6 +719,21 @@ export function AddCaptureForm({
       </div>
 
       <SubmitButton hasFiles={selectedFiles.length > 0} pending={isSaving} />
+
+      {stickyDoneHref ? (
+        <div className="guided-sticky-actions focused-capture-done-actions">
+          <button
+            type="button"
+            className="button button-primary touch-target"
+            onClick={openEvidencePicker}
+          >
+            Capture
+          </button>
+          <Link href={stickyDoneHref} className="button button-secondary touch-target">
+            Done
+          </Link>
+        </div>
+      ) : null}
 
       <details className="advanced-capture-options">
         <summary>Advanced upload options</summary>

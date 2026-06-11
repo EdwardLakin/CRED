@@ -1794,3 +1794,36 @@ a:focus-visible {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+.report-preview-shell {
+  gap: 20px;
+}
+
+.report-preview-header {
+  align-items: flex-start;
+}
+
+.report-preview-actions {
+  justify-content: flex-end;
+}
+
+.report-preview-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.report-preview-frame {
+  border: 0;
+  display: block;
+  min-height: 78vh;
+  width: 100%;
+}
+
+@media (max-width: 760px) {
+  .report-preview-header,
+  .report-preview-actions {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+  }
+}
