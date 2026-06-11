@@ -12,6 +12,25 @@ const FIELD_LABELS: Record<string, string> = {
   plate_number: 'Licence Plate',
   work_order_number: 'Work Order #',
   customer_name: 'Customer',
+  purchase_order_number: 'PO #',
+  licence_number: 'Licence #',
+  complaint: 'Complaint',
+  cause_of_failure: 'Cause of Failure',
+  correction: 'Correction',
+  technician_notes: 'Technician Notes',
+  recommendations: 'Recommendations',
+  equipment_make: 'Equipment Make',
+  equipment_model: 'Equipment Model',
+  equipment_serial_number: 'Equipment Serial #',
+  engine_make: 'Engine Make',
+  engine_model: 'Engine Model',
+  engine_serial_number: 'Engine Serial #',
+  generator_make: 'Generator Make',
+  generator_model: 'Generator Model',
+  generator_serial_number: 'Generator Serial #',
+  transmission_make: 'Transmission Make',
+  transmission_model: 'Transmission Model',
+  transmission_serial_number: 'Transmission Serial #',
   registration_number: 'Registration #',
   registered_owner: 'Registered Owner',
   manufacturer: 'Manufacturer',
@@ -47,12 +66,37 @@ const DETECTED_TYPE_LABELS: Record<string, string> = {
   unknown: 'Unknown',
 }
 
-const APPLIABLE_SESSION_FIELDS = ['asset_label', 'vin', 'odometer', 'unit_number', 'customer_name'] as const
+const APPLIABLE_SESSION_FIELDS = [
+  'asset_label',
+  'vin',
+  'odometer',
+  'unit_number',
+  'customer_name',
+  'purchase_order_number',
+  'work_order_number',
+  'licence_number',
+  'complaint',
+  'cause_of_failure',
+  'correction',
+  'technician_notes',
+  'equipment_make',
+  'equipment_model',
+  'equipment_serial_number',
+  'engine_make',
+  'engine_model',
+  'engine_serial_number',
+  'generator_make',
+  'generator_model',
+  'generator_serial_number',
+  'transmission_make',
+  'transmission_model',
+  'transmission_serial_number',
+] as const
 const APPLIABLE_SESSION_FIELD_SET = new Set<string>(APPLIABLE_SESSION_FIELDS)
 
 type AppliableSessionField = (typeof APPLIABLE_SESSION_FIELDS)[number]
 
-type SessionEvidenceValues = Record<AppliableSessionField, string | null>
+type SessionEvidenceValues = Partial<Record<AppliableSessionField, string | null>>
 
 type EvidenceFieldRow = {
   field: string

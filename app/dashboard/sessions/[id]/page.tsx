@@ -9,7 +9,8 @@ import {
   ExtractedEvidencePanel,
 } from '@/features/capture'
 import { ThemeToggle } from '@/components/theme'
-import { SESSION_STATUSES, SessionStatusBadge, formatDateTime } from '@/features/sessions'
+import { FieldServiceDetailsCard, isFieldServiceSessionType } from '@/features/field-service'
+import { SESSION_STATUSES, SessionStatusBadge, formatDateTime, getSessionTypeLabel } from '@/features/sessions'
 import {
   archiveDocumentationSession,
   restoreDocumentationSession,
@@ -98,7 +99,7 @@ export default async function SessionDetailPage({
             <SessionStatusBadge status={session.status} />
           </div>
           <p className="muted">
-            Unit {session.unit_number || session.asset_label || 'Unassigned'} · Customer {session.customer_name || 'Not set'} · {session.session_type} · Created {formatDateTime(session.created_at)}
+            Unit {session.unit_number || session.asset_label || 'Unassigned'} · Customer {session.customer_name || 'Not set'} · {getSessionTypeLabel(session.session_type)} · Created {formatDateTime(session.created_at)}
           </p>
           <p className="muted">Updated {formatDateTime(session.updated_at ?? session.created_at)}</p>
         </div>
@@ -141,7 +142,7 @@ export default async function SessionDetailPage({
               <label htmlFor="session_type_display" className="label">
                 Session Type
               </label>
-              <input id="session_type_display" value={session.session_type} readOnly className="input readonly-input" />
+              <input id="session_type_display" value={getSessionTypeLabel(session.session_type)} readOnly className="input readonly-input" />
             </div>
 
             <div className="field-stack">
@@ -186,6 +187,10 @@ export default async function SessionDetailPage({
             </div>
           </div>
         </section>
+
+        {isFieldServiceSessionType(session.session_type) ? (
+          <FieldServiceDetailsCard details={session.field_service_details} />
+        ) : null}
 
         <div className="form-actions">
           <Link href="/dashboard/sessions" className="button button-secondary touch-target">

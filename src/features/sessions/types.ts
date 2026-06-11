@@ -13,12 +13,19 @@ export const SESSION_STATUSES: Array<{ value: SessionStatus; label: string }> = 
 ]
 
 export const SESSION_TYPES = [
-  'Inspection',
-  'Diagnostic',
-  'Condition Report',
-  'Investigation',
-  'General Documentation',
+  { value: 'Inspection', label: 'Inspection' },
+  { value: 'Diagnostic', label: 'Diagnostic' },
+  { value: 'Condition Report', label: 'Condition Report' },
+  { value: 'Investigation', label: 'Investigation' },
+  { value: 'General Documentation', label: 'General Documentation' },
+  { value: 'field_service_report', label: 'New Field Service Report' },
 ] as const
+
+export type SessionType = (typeof SESSION_TYPES)[number]['value']
+
+export function getSessionTypeLabel(sessionType: string) {
+  return SESSION_TYPES.find((type) => type.value === sessionType)?.label ?? sessionType
+}
 
 export function getSessionStatusLabel(status: string) {
   return SESSION_STATUSES.find((sessionStatus) => sessionStatus.value === status)?.label ?? status

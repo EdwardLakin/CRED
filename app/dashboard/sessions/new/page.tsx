@@ -48,8 +48,8 @@ export default async function NewSessionPage({ searchParams }: { searchParams: P
           </label>
           <select id="session_type" name="session_type" required defaultValue="Inspection" className="select">
             {SESSION_TYPES.map((sessionType) => (
-              <option key={sessionType} value={sessionType}>
-                {sessionType}
+              <option key={sessionType.value} value={sessionType.value}>
+                {sessionType.label}
               </option>
             ))}
           </select>

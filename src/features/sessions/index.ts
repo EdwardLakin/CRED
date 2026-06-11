@@ -1,6 +1,6 @@
 export { EmptyState } from './components/EmptyState'
 export { SessionCard } from './components/SessionCard'
 export { SessionStatusBadge } from './components/SessionStatusBadge'
-export { SESSION_STATUSES, SESSION_TYPES, getSessionStatusLabel } from './types'
+export { SESSION_STATUSES, SESSION_TYPES, getSessionStatusLabel, getSessionTypeLabel } from './types'
 export type { DocumentationSession, SessionStatus } from './types'
 export { formatDate, formatDateTime } from './utils'

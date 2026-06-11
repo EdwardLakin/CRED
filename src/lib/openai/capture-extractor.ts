@@ -18,7 +18,26 @@ export const CAPTURE_EXTRACTION_FIELDS = [
   'hour_meter',
   'plate_number',
   'work_order_number',
+  'purchase_order_number',
   'customer_name',
+  'licence_number',
+  'complaint',
+  'cause_of_failure',
+  'correction',
+  'technician_notes',
+  'recommendations',
+  'equipment_make',
+  'equipment_model',
+  'equipment_serial_number',
+  'engine_make',
+  'engine_model',
+  'engine_serial_number',
+  'generator_make',
+  'generator_model',
+  'generator_serial_number',
+  'transmission_make',
+  'transmission_model',
+  'transmission_serial_number',
   'registration_number',
   'registered_owner',
   'manufacturer',
@@ -48,13 +67,13 @@ const MAX_NOTES = 6
 
 const EMPTY_FIELDS = Object.fromEntries(CAPTURE_EXTRACTION_FIELDS.map((field) => [field, null])) as CaptureExtractionFields
 
-const EXTRACTION_SYSTEM_PROMPT = `You extract cautious structured text from CRED classified captures for commercial vehicle/equipment documentation.
+const EXTRACTION_SYSTEM_PROMPT = `You extract cautious structured text from CRED classified captures for commercial vehicle/equipment documentation and field service reports.
 Return JSON only, no markdown.
 Use null for any field that is not visible, unclear, or supported by technician context. Technician note/transcript is high-value context for location, component, measurement, condition, recommendation, and severity, but do not blindly override image evidence.
 Do not invent values. Preserve exact VIN, plate, unit, serial, and reference strings as shown.
 VIN values must be exactly 17 characters after removing spaces. If a possible VIN is not exactly 17 characters or is uncertain, put it in notes instead of vin.
 For unit number, extract fleet/unit decals or obvious unit identifiers.
-For work orders, extract work order number and customer/unit/VIN only if clearly visible.
+For field order photos, work order screenshots, data plates, odometer photos, handwritten/typed notes, and voice transcript context, extract service-report details when clearly visible or directly stated: complaint, cause of failure, correction, work order number, purchase order number, customer name, unit number, licence number, equipment serial/VIN, hours/kms, odometer, technician findings, and recommendations. For work orders, extract work order number and customer/unit/VIN only if clearly visible.
 For hour meters, put the hour reading in hour_meter; the app may suggest it to the odometer/session reading if no hour field exists.
 Keep summary brief and human readable. For brake_measurement, always populate component, location, measurement, condition, recommendation, and severity when visible or supported by technician context. Example note 'left front brake pads at wear limit of 2mm' should extract component brake pads, location left front, measurement 2mm, condition at wear limit, severity red, recommendation replace front brake pads when visually plausible.`
 
@@ -63,7 +82,7 @@ const TARGET_INSTRUCTIONS: Partial<Record<CaptureClassificationType, string>> = 
   vin_plate: 'Focus on VIN labels, stamped VINs, and vehicle certification labels. Return vin only when exactly 17 characters and clearly readable.',
   info_plate:
     'Focus on manufacturer/data/compliance plate values including possible VIN, manufacturer, model, serial number, GVWR, GAWR, tire size, tire pressure/loading, and compliance text. Put long compliance/tire-loading text in notes if it does not fit a field.',
-  work_order: 'Focus on work order/repair order number, customer name, unit number, and VIN if clearly visible.',
+  work_order: 'Focus on work order/repair order number, PO number, customer name, complaint, unit number, licence number, VIN/serial, hours/kms, odometer, and typed or handwritten service notes if clearly visible.',
   registration: 'Focus on VIN, plate number, registered owner/customer, and registration number. Return registered_owner when the registration owner is clearly visible, and customer_name only when a customer/account name is clearly indicated.',
   license_plate: 'Focus on the exact license plate number only.',
   odometer: 'Focus on the mileage/odometer reading exactly as displayed.',
@@ -261,7 +280,7 @@ export async function extractCaptureImageDetails(
           },
         },
       },
-      max_output_tokens: 900,
+      max_output_tokens: 1400,
     }),
   })
 

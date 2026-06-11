@@ -123,6 +123,7 @@ export interface Database {
           unit_number: string | null
           customer_name: string | null
           suggested_details: Json
+          field_service_details: Json
           created_at: string | null
           updated_at: string | null
         }
@@ -139,6 +140,7 @@ export interface Database {
           unit_number?: string | null
           customer_name?: string | null
           suggested_details?: Json
+          field_service_details?: Json
           created_at?: string | null
           updated_at?: string | null
         }
@@ -155,6 +157,7 @@ export interface Database {
           unit_number?: string | null
           customer_name?: string | null
           suggested_details?: Json
+          field_service_details?: Json
           created_at?: string | null
           updated_at?: string | null
         }

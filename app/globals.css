@@ -2315,3 +2315,50 @@ a:focus-visible {
     transform: none;
   }
 }
+
+.field-service-details-card {
+  border-top: 1px solid var(--border);
+  padding-top: 1.5rem;
+}
+
+.field-service-section {
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  margin: 0;
+  padding: 1rem;
+}
+
+.field-service-section legend {
+  font-weight: 800;
+  padding: 0 0.5rem;
+}
+
+.field-service-section-description,
+.gps-workflow-message {
+  margin-top: 0.25rem;
+}
+
+.gps-workflow-panel {
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  padding: 1rem;
+}
+
+.gps-workflow-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.field-service-checkbox {
+  align-items: center;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  display: flex;
+  font-weight: 700;
+  gap: 0.65rem;
+  min-height: 3rem;
+  padding: 0.85rem 1rem;
+}

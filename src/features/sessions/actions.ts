@@ -4,7 +4,15 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
 import { getBillingAccessErrorMessage, getOrganizationBillingAccess } from '@/features/billing'
-import type { Json } from '@/lib/supabase/database.types'
+import {
+  FIELD_SERVICE_FIELD_LABELS,
+  FIELD_SERVICE_FIELD_NAMES,
+  getFieldServiceBoolean,
+  isCheckboxField,
+  isFieldServiceFieldName,
+  isRecord as isFieldServiceRecord,
+} from '@/features/field-service'
+import type { Database, Json } from '@/lib/supabase/database.types'
 
 import { requireSessionWorkspace } from './data'
 import { SESSION_STATUSES, SESSION_TYPES, type SessionStatus } from './types'
@@ -24,7 +32,27 @@ function isAllowedStatus(status: string): status is SessionStatus {
 }
 
 function isAllowedSessionType(sessionType: string) {
-  return SESSION_TYPES.includes(sessionType as (typeof SESSION_TYPES)[number])
+  return SESSION_TYPES.some((type) => type.value === sessionType)
+}
+
+function buildFieldServiceDetails(formData: FormData, existingDetails: Json | null | undefined): Json {
+  const details: Record<string, Json> = isFieldServiceRecord(existingDetails) ? { ...(existingDetails as Record<string, Json>) } : {}
+
+  for (const fieldName of FIELD_SERVICE_FIELD_NAMES) {
+    if (isCheckboxField(fieldName)) {
+      details[fieldName] = formData.get(fieldName) === 'on'
+      continue
+    }
+
+    const value = getNullableValue(formData, fieldName)
+    if (value === null) {
+      delete details[fieldName]
+    } else {
+      details[fieldName] = value
+    }
+  }
+
+  return details
 }
 
 export async function createDocumentationSession(formData: FormData) {
@@ -72,6 +100,17 @@ export async function updateDocumentationSession(sessionId: string, formData: Fo
   }
 
   const { supabase, profile } = await requireSessionWorkspace()
+  const { data: existingSession, error: existingSessionError } = await supabase
+    .from('documentation_sessions')
+    .select('field_service_details')
+    .eq('id', sessionId)
+    .eq('organization_id', profile.organization_id)
+    .single()
+
+  if (existingSessionError || !existingSession) {
+    redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent('Documentation session not found.')}`)
+  }
+
   const { error } = await supabase
     .from('documentation_sessions')
     .update({
@@ -82,6 +121,7 @@ export async function updateDocumentationSession(sessionId: string, formData: Fo
       odometer: getNullableValue(formData, 'odometer'),
       unit_number: getNullableValue(formData, 'unit_number'),
       customer_name: getNullableValue(formData, 'customer_name'),
+      field_service_details: buildFieldServiceDetails(formData, existingSession.field_service_details),
       updated_at: new Date().toISOString(),
     })
     .eq('id', sessionId)
@@ -133,9 +173,12 @@ export async function restoreDocumentationSession(sessionId: string) {
   redirect(`/dashboard/sessions/${sessionId}?saved=1`)
 }
 
-const APPLY_SUGGESTION_FIELDS = ['asset_label', 'vin', 'odometer', 'unit_number', 'customer_name'] as const
+const BASE_APPLY_SUGGESTION_FIELDS = ['asset_label', 'vin', 'odometer', 'unit_number', 'customer_name'] as const
+const APPLY_SUGGESTION_FIELDS = [...BASE_APPLY_SUGGESTION_FIELDS, ...FIELD_SERVICE_FIELD_NAMES] as const
 
+type BaseApplySuggestionField = (typeof BASE_APPLY_SUGGESTION_FIELDS)[number]
 type ApplySuggestionField = (typeof APPLY_SUGGESTION_FIELDS)[number]
+type DocumentationSessionUpdate = Database['public']['Tables']['documentation_sessions']['Update']
 
 type SessionSuggestion = {
   value?: Json
@@ -149,6 +192,10 @@ type SessionSuggestion = {
 
 function isApplySuggestionField(value: string): value is ApplySuggestionField {
   return APPLY_SUGGESTION_FIELDS.includes(value as ApplySuggestionField)
+}
+
+function isBaseApplySuggestionField(value: string): value is BaseApplySuggestionField {
+  return BASE_APPLY_SUGGESTION_FIELDS.includes(value as BaseApplySuggestionField)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -168,7 +215,7 @@ function getSingleFormString(formData: FormData, field: string) {
 }
 
 function getApplyFieldLabel(field: ApplySuggestionField) {
-  return field.replace(/_/g, ' ')
+  return FIELD_SERVICE_FIELD_LABELS[field] ?? field.replace(/_/g, ' ')
 }
 
 export async function applyExtractedEvidenceField(sessionId: string, formData: FormData) {
@@ -183,7 +230,7 @@ export async function applyExtractedEvidenceField(sessionId: string, formData: F
   const { supabase, profile } = await requireSessionWorkspace()
   const { data: session, error: sessionError } = await supabase
     .from('documentation_sessions')
-    .select('id, organization_id, suggested_details')
+    .select('id, organization_id, suggested_details, field_service_details')
     .eq('id', sessionId)
     .eq('organization_id', profile.organization_id)
     .single()
@@ -215,10 +262,21 @@ export async function applyExtractedEvidenceField(sessionId: string, formData: F
     applied: true,
   } as Json
 
-  const updates: Partial<Record<ApplySuggestionField, string>> & { updated_at: string; suggested_details: Json } = {
-    [field]: value,
+  const fieldServiceDetails: Record<string, Json> = isFieldServiceFieldName(field) && isFieldServiceRecord(session.field_service_details)
+    ? { ...(session.field_service_details as Record<string, Json>) }
+    : {}
+  const updates: DocumentationSessionUpdate = {
     updated_at: new Date().toISOString(),
     suggested_details: suggestedDetails,
+  }
+
+  if (isBaseApplySuggestionField(field)) {
+    updates[field] = value
+  }
+
+  if (isFieldServiceFieldName(field)) {
+    fieldServiceDetails[field] = isCheckboxField(field) ? getFieldServiceBoolean({ [field]: value }, field) : value
+    updates.field_service_details = fieldServiceDetails
   }
 
   const { error } = await supabase
@@ -247,7 +305,7 @@ export async function applySessionSuggestions(sessionId: string, formData: FormD
   const { supabase, profile } = await requireSessionWorkspace()
   const { data: session, error: sessionError } = await supabase
     .from('documentation_sessions')
-    .select('id, organization_id, suggested_details')
+    .select('id, organization_id, suggested_details, field_service_details')
     .eq('id', sessionId)
     .eq('organization_id', profile.organization_id)
     .single()
@@ -257,9 +315,12 @@ export async function applySessionSuggestions(sessionId: string, formData: FormD
   }
 
   const suggestedDetails: Record<string, Json> = isRecord(session.suggested_details) ? { ...(session.suggested_details as Record<string, Json>) } : {}
-  const updates: Partial<Record<ApplySuggestionField, string>> & { updated_at: string; suggested_details?: Json } = {
+  const fieldServiceDetails: Record<string, Json> = isFieldServiceRecord(session.field_service_details) ? { ...(session.field_service_details as Record<string, Json>) } : {}
+  const updates: DocumentationSessionUpdate = {
     updated_at: new Date().toISOString(),
   }
+
+  let appliedCount = 0
 
   for (const field of selectedFields) {
     const suggestion = isRecord(suggestedDetails[field]) ? (suggestedDetails[field] as SessionSuggestion) : null
@@ -269,11 +330,17 @@ export async function applySessionSuggestions(sessionId: string, formData: FormD
       continue
     }
 
-    updates[field] = value
-    suggestedDetails[field] = { ...suggestion, value, applied: true } as Json
-  }
+    if (isBaseApplySuggestionField(field)) {
+      updates[field] = value
+    }
 
-  const appliedCount = Object.keys(updates).filter((field) => field !== 'updated_at' && field !== 'suggested_details').length
+    if (isFieldServiceFieldName(field)) {
+      fieldServiceDetails[field] = isCheckboxField(field) ? getFieldServiceBoolean({ [field]: value }, field) : value
+      updates.field_service_details = fieldServiceDetails
+    }
+    suggestedDetails[field] = { ...suggestion, value, applied: true } as Json
+    appliedCount += 1
+  }
 
   if (appliedCount === 0) {
     redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent('Selected suggestions no longer have values to apply.')}`)
