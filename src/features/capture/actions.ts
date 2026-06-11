@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 
+import { getBillingAccessErrorMessage, getOrganizationBillingAccess } from '@/features/billing'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import {
   buildClassifiedImageData,
@@ -386,6 +387,12 @@ export async function createCaptureRecordFromUploadedFile(
   }
 
   const { supabase, profile } = await requireSessionWorkspace()
+  const billingAccess = getOrganizationBillingAccess(profile.organization)
+
+  if (!billingAccess.hasAccess) {
+    return captureError(getBillingAccessErrorMessage(billingAccess), sessionId)
+  }
+
   const { data: session, error: sessionError } = await supabase
     .from('documentation_sessions')
     .select('id, organization_id')
@@ -662,6 +669,12 @@ export async function classifyPendingCaptures(
   }
 
   const { supabase, profile } = await requireSessionWorkspace()
+  const billingAccess = getOrganizationBillingAccess(profile.organization)
+
+  if (!billingAccess.hasAccess) {
+    return { ok: false, message: getBillingAccessErrorMessage(billingAccess) }
+  }
+
   const { data: session, error: sessionError } = await supabase
     .from('documentation_sessions')
     .select('id, organization_id')
@@ -1206,6 +1219,12 @@ export async function extractCaptureDetails(
   }
 
   const { supabase, profile } = await requireSessionWorkspace()
+  const billingAccess = getOrganizationBillingAccess(profile.organization)
+
+  if (!billingAccess.hasAccess) {
+    return { ok: false, message: getBillingAccessErrorMessage(billingAccess) }
+  }
+
   const { data: session, error: sessionError } = await supabase
     .from('documentation_sessions')
     .select('id, organization_id, suggested_details')

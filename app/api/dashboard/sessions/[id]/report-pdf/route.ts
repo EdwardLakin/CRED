@@ -1,5 +1,6 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 
+import { getBillingAccessErrorMessage, getOrganizationBillingAccess } from '@/features/billing'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import type { Json } from '@/lib/supabase/database.types'
 
@@ -68,6 +69,11 @@ function getAiSummary(extractedData: Json | null, fallback: string | null) {
 export async function GET(_request: Request, { params }: RouteContext) {
   const { id } = await params
   const { supabase, profile } = await requireSessionWorkspace()
+  const billingAccess = getOrganizationBillingAccess(profile.organization)
+
+  if (!billingAccess.hasAccess) {
+    redirect(`/dashboard?error=${encodeURIComponent(getBillingAccessErrorMessage(billingAccess))}`)
+  }
 
   const { data: session, error: sessionError } = await supabase
     .from('documentation_sessions')

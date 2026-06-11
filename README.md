@@ -38,13 +38,17 @@ The app reads `STRIPE_PRICE_INDIVIDUAL`, `STRIPE_PRICE_TEAM`, and `STRIPE_PRICE_
 
 ### Database migration
 
-Apply the Supabase billing migrations, including `supabase/migrations/20260611144500_stripe_subscription_billing.sql` and `supabase/migrations/20260611170000_billing_plan_rename_individual_team_shop.sql`. They add these organization billing columns:
+Apply the Supabase billing migrations, including `supabase/migrations/20260611144500_stripe_subscription_billing.sql`, `supabase/migrations/20260611170000_billing_plan_rename_individual_team_shop.sql`, and `supabase/migrations/20260611190000_app_controlled_billing_trial.sql`. They add these organization billing columns:
 
 - `stripe_customer_id`
 - `stripe_subscription_id`
 - `plan`
 - `subscription_status`
 - `current_period_end`
+- `trial_ends_at`
+- `billing_started_at`
+
+CRED uses a 7-day app-controlled free trial for new organizations. Stripe trial configuration is not required. Onboarding creates the organization with the selected Individual, Team, or Shop plan, sets `subscription_status` to `trialing`, and sets `trial_ends_at` to seven days after workspace creation. Users can access the dashboard and paid app actions during that app-controlled trial without completing Stripe Checkout. Stripe Checkout starts paid billing only after the user clicks Subscribe Now or starts checkout from a selected plan.
 
 The migrations also create RPC helpers used by the authenticated checkout route and verified webhook route while preserving organization-scoped RLS for normal app access.
 
@@ -80,4 +84,4 @@ Then copy the `whsec_...` value printed by the CLI into `.env.local`, start the 
 npm run dev
 ```
 
-Logged-out pricing buttons route to `/sign-up?plan=individual`, `/sign-up?plan=team`, or `/sign-up?plan=shop`. After signup and onboarding, CRED redirects to `/dashboard?checkout=<plan>` and starts Checkout for the preserved Individual, Team, or Shop plan.
+Logged-out pricing buttons route to `/sign-up?plan=individual`, `/sign-up?plan=team`, or `/sign-up?plan=shop`. After signup and onboarding, CRED preserves the selected plan on the organization and redirects to the dashboard for the 7-day app-controlled trial. Users can click Subscribe Now, or visit `/dashboard?checkout=individual`, `/dashboard?checkout=team`, or `/dashboard?checkout=shop`, to start hosted Stripe Checkout for the preserved plan.
