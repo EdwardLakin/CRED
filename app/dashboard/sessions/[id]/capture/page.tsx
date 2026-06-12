@@ -114,7 +114,7 @@ export default async function GuidedCapturePage({
               <h2>{requiredEvidence.completedCount} / {requiredEvidence.totalCount} coverage suggestions resolved</h2>
               <p className="muted">{workflowTemplate?.name ? `Form Profile: ${workflowTemplate.name}` : 'No Form Profile / Evidence Package'} · Suggestions are reminders only. Capture evidence in the order that matches your work.</p>
             </div>
-            <span className="ai-status-pill">Report readiness {requiredEvidence.completedCount} / {requiredEvidence.totalCount}</span>
+            <span className="ai-status-pill info">Report readiness {requiredEvidence.completedCount} / {requiredEvidence.totalCount}</span>
           </div>
           <div className="required-evidence-grid">
             <div>
@@ -137,7 +137,7 @@ export default async function GuidedCapturePage({
           </div>
           <div className="capture-card-actions">
             <Link href={`/dashboard/sessions/${session.id}/capture`} className="secondary-link touch-target">Refresh status</Link>
-            <span className="ai-status-pill">{captureItems.length} saved</span>
+            <span className="ai-status-pill neutral">{captureItems.length} saved</span>
           </div>
         </div>
         <RecentCapturesList captures={captureItems} signedUrls={signedUrls} />

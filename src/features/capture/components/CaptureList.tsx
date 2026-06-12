@@ -91,6 +91,15 @@ function getClassificationSummary(extractedData: Json | null) {
   return { label: 'Needs classification', detectedType: null, status, confidence: null }
 }
 
+
+function getCaptureStatusVariant(status: string) {
+  if (status === 'failed' || status === 'blocked_by_limit') return 'danger'
+  if (status === 'needs_review') return 'attention'
+  if (status === 'processing' || status === 'ready_for_review') return 'info'
+  if (status === 'extracted') return 'success'
+  return 'neutral'
+}
+
 function formatExtractedDataSummary(type: string, extractedData: Json | null) {
   const classification = getClassificationSummary(extractedData)
   if (!extractedData || !isRecord(extractedData)) return `${classification.label} · Extraction not started`
@@ -166,7 +175,7 @@ function EvidenceCard({ capture, signedUrl }: { capture: CaptureItem; signedUrl?
           <h3>{label}</h3>
           <p className="muted">Captured {formatDateTime(capture.captured_at ?? capture.created_at)}</p>
         </div>
-        <span className={processingStatus === 'needs_review' || processingStatus === 'failed' ? 'ai-status-pill needs-review' : 'ai-status-pill'}>
+        <span className={`ai-status-pill ${getCaptureStatusVariant(processingStatus)}`}>
           {getCaptureProcessingLabel(processingStatus)}
         </span>
       </div>
@@ -179,7 +188,7 @@ function EvidenceCard({ capture, signedUrl }: { capture: CaptureItem; signedUrl?
             Source Document: {sourceDocument.label}
           </span>
         ) : null}
-        <span className={capture.ai_status === 'needs_review' ? 'classification-pill needs-review' : classification.detectedType ? 'classification-pill' : 'classification-pill pending'}>{classification.label}</span>
+        <span className={capture.ai_status === 'needs_review' ? 'classification-pill attention' : classification.detectedType ? 'classification-pill success' : 'classification-pill pending'}>{classification.label}</span>
         <span className="classification-pill pending">{capture.include_in_report ? 'Included in report' : 'Excluded from report'}</span>
         <span className="classification-pill pending">{reportOrder}</span>
       </div>

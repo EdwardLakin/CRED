@@ -8,6 +8,15 @@ function getCaptureLabel(capture: CaptureItem) {
   return note || sourceDocument?.label || CAPTURE_TYPE_LABELS[capture.type as CaptureType] || 'Captured evidence'
 }
 
+
+function getCaptureStatusVariant(status: string) {
+  if (status === 'failed' || status === 'blocked_by_limit') return 'danger'
+  if (status === 'needs_review') return 'attention'
+  if (status === 'processing' || status === 'ready_for_review') return 'info'
+  if (status === 'extracted') return 'success'
+  return 'neutral'
+}
+
 function getCaptureMeta(capture: CaptureItem) {
   const sourceDocument = getSourceDocumentMetadata(capture.extracted_data)
   const typeLabel = CAPTURE_TYPE_LABELS[capture.type as CaptureType] ?? capture.type
@@ -33,7 +42,7 @@ export function RecentCapturesList({ captures, signedUrls, limit = 6 }: { captur
             <p className="muted">{getCaptureMeta(capture)} · {formatDateTime(capture.captured_at ?? capture.created_at)}</p>
           </div>
           <div className="capture-card-actions">
-            <span className={getCaptureProcessingStatus(capture) === 'needs_review' || getCaptureProcessingStatus(capture) === 'failed' ? 'ai-status-pill needs-review' : 'ai-status-pill'}>
+            <span className={`ai-status-pill ${getCaptureStatusVariant(getCaptureProcessingStatus(capture))}`}>
               {getCaptureProcessingLabel(getCaptureProcessingStatus(capture))}
             </span>
             {signedUrls[capture.id] ? (

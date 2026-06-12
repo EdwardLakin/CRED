@@ -14,7 +14,7 @@ export function EvidenceChecklistSummary({ captures, sessionType }: { captures: 
             Compact report coverage for this evidence package. Suggestions are reminders only. Capture evidence in the order that matches your work.
           </p>
         </div>
-        <span className="ai-status-pill">{completeCount} of {summaries.length} groups</span>
+        <span className="ai-status-pill info">{completeCount} of {summaries.length} groups</span>
       </div>
 
       <div className="compact-checklist-grid" aria-label="Report coverage summary">
