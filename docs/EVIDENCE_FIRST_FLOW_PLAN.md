@@ -594,3 +594,13 @@ Phase 2 adds first-class, optional Source Document capture shortcuts to the evid
 - No new schema or source document table was added for this MVP phase.
 - Capture remains evidence-first and non-linear: technicians can capture source documents whenever it fits their workflow, skip them entirely, or continue ordinary evidence capture.
 - AI extraction is source-document aware and prioritizes report/session identity fields based on the selected Source Document tag while still using cautious `null` / needs-review behavior for unclear images.
+
+
+## Phase 3 implemented: AI Report Drafts
+
+Phase 3 adds the AI Draft layer without changing the existing printable report delivery system.
+
+- AI Report Draft schema added with `ai_report_drafts` and `ai_report_draft_sections`, including organization-scoped RLS and source capture references.
+- Draft generation uses the selected Form Profile as Report Context along with Source Documents, captures, technician notes/transcripts, signatures, classifications, and extracted details.
+- Human approval of an AI Draft sets the session review gate to `ready_for_delivery`, which unlocks the existing printable/email/share/save delivery actions.
+- Final immutable snapshots are intentionally deferred and the current printable report rendering remains in place.

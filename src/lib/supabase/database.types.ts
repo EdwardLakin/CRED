@@ -235,6 +235,177 @@ export interface Database {
           },
         ]
       }
+      ai_report_drafts: {
+        Row: {
+          id: string
+          documentation_session_id: string
+          organization_id: string
+          workflow_template_id: string | null
+          status: string
+          title: string | null
+          summary: string | null
+          header_fields: Json
+          measurements: Json
+          findings: Json
+          coverage: Json
+          unmapped_evidence: Json
+          confidence: number | null
+          model: string | null
+          prompt_version: string | null
+          generated_at: string | null
+          approved_at: string | null
+          approved_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          documentation_session_id: string
+          organization_id: string
+          workflow_template_id?: string | null
+          status?: string
+          title?: string | null
+          summary?: string | null
+          header_fields?: Json
+          measurements?: Json
+          findings?: Json
+          coverage?: Json
+          unmapped_evidence?: Json
+          confidence?: number | null
+          model?: string | null
+          prompt_version?: string | null
+          generated_at?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          documentation_session_id?: string
+          organization_id?: string
+          workflow_template_id?: string | null
+          status?: string
+          title?: string | null
+          summary?: string | null
+          header_fields?: Json
+          measurements?: Json
+          findings?: Json
+          coverage?: Json
+          unmapped_evidence?: Json
+          confidence?: number | null
+          model?: string | null
+          prompt_version?: string | null
+          generated_at?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'ai_report_drafts_documentation_session_id_fkey'
+            columns: ['documentation_session_id']
+            isOneToOne: false
+            referencedRelation: 'documentation_sessions'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'ai_report_drafts_organization_id_fkey'
+            columns: ['organization_id']
+            isOneToOne: false
+            referencedRelation: 'organizations'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'ai_report_drafts_workflow_template_id_fkey'
+            columns: ['workflow_template_id']
+            isOneToOne: false
+            referencedRelation: 'documentation_workflow_templates'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'ai_report_drafts_approved_by_fkey'
+            columns: ['approved_by']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      ai_report_draft_sections: {
+        Row: {
+          id: string
+          ai_report_draft_id: string
+          documentation_session_id: string
+          organization_id: string
+          section_key: string
+          title: string
+          body: string | null
+          status: string | null
+          confidence: number | null
+          source_capture_ids: string[]
+          sort_order: number
+          metadata: Json
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          ai_report_draft_id: string
+          documentation_session_id: string
+          organization_id: string
+          section_key: string
+          title: string
+          body?: string | null
+          status?: string | null
+          confidence?: number | null
+          source_capture_ids?: string[]
+          sort_order?: number
+          metadata?: Json
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          ai_report_draft_id?: string
+          documentation_session_id?: string
+          organization_id?: string
+          section_key?: string
+          title?: string
+          body?: string | null
+          status?: string | null
+          confidence?: number | null
+          source_capture_ids?: string[]
+          sort_order?: number
+          metadata?: Json
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'ai_report_draft_sections_ai_report_draft_id_fkey'
+            columns: ['ai_report_draft_id']
+            isOneToOne: false
+            referencedRelation: 'ai_report_drafts'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'ai_report_draft_sections_documentation_session_id_fkey'
+            columns: ['documentation_session_id']
+            isOneToOne: false
+            referencedRelation: 'documentation_sessions'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'ai_report_draft_sections_organization_id_fkey'
+            columns: ['organization_id']
+            isOneToOne: false
+            referencedRelation: 'organizations'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       capture_items: {
         Row: {
           id: string

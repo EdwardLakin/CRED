@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { getRequiredEvidenceCompletion } from '@/features/capture'
-import { createReportShareLink, disableReportShareLink, emailReport, markReportReviewed, saveReport } from '@/features/reports/actions'
+import { approveAiReportDraft, createReportShareLink, disableReportShareLink, emailReport, generateAiReportDraft, markReportReviewed, saveReport } from '@/features/reports/actions'
 import { formatDateTime } from '@/features/sessions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
@@ -22,7 +22,7 @@ export default async function SessionReportPreviewPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ disabled?: string; emailed?: string; error?: string; reviewed?: string; saved?: string; shared?: string }>
+  searchParams: Promise<{ approved_draft?: string; disabled?: string; draft?: string; emailed?: string; error?: string; reviewed?: string; saved?: string; shared?: string }>
 }) {
   const { id } = await params
   const status = await searchParams
@@ -77,6 +77,24 @@ export default async function SessionReportPreviewPage({
     .order('created_at', { ascending: false })
     .limit(10)
 
+  const { data: aiDrafts } = await supabase
+    .from('ai_report_drafts')
+    .select('*')
+    .eq('documentation_session_id', session.id)
+    .eq('organization_id', profile.organization_id)
+    .order('generated_at', { ascending: false })
+    .order('created_at', { ascending: false })
+
+  const currentAiDraft = (aiDrafts ?? []).find((draft) => draft.status === 'approved') ?? (aiDrafts ?? []).find((draft) => draft.status !== 'superseded') ?? aiDrafts?.[0] ?? null
+  const { data: aiDraftSections } = currentAiDraft
+    ? await supabase
+        .from('ai_report_draft_sections')
+        .select('*')
+        .eq('ai_report_draft_id', currentAiDraft.id)
+        .eq('organization_id', profile.organization_id)
+        .order('sort_order', { ascending: true })
+    : { data: [] }
+
   const reportPath = `/api/dashboard/sessions/${session.id}/report-pdf`
   const headersList = await headers()
   const origin = getReportOrigin(headersList)
@@ -87,6 +105,8 @@ export default async function SessionReportPreviewPage({
   const saveAction = saveReport.bind(null, session.id)
   const emailAction = emailReport.bind(null, session.id)
   const shareAction = createReportShareLink.bind(null, session.id)
+  const generateDraftAction = generateAiReportDraft.bind(null, session.id)
+  const approveDraftAction = currentAiDraft ? approveAiReportDraft.bind(null, currentAiDraft.id) : null
 
   return (
     <main className="page-shell dashboard-shell report-preview-shell">
@@ -94,7 +114,7 @@ export default async function SessionReportPreviewPage({
         <div>
           <p className="eyebrow guided-eyebrow">Report page</p>
           <h1>{session.title}</h1>
-          <p className="muted">CRED prepares a report draft from your evidence and selected Form Profile. Review before delivery. Form Profile: {template?.name ?? 'No Form Profile / Evidence Package'}.</p>
+          <p className="muted">CRED prepares a report draft from your Evidence and selected Form Profile. Review before delivery. Form Profile: {template?.name ?? 'No Form Profile / Evidence Package'}.</p>
         </div>
         <div className="page-actions report-preview-actions">
           {isReadyForDelivery ? (
@@ -112,8 +132,70 @@ export default async function SessionReportPreviewPage({
       {status.shared ? <p className="success">Secure share link generated.</p> : null}
       {status.saved ? <p className="success">Report saved indefinitely unless deleted.</p> : null}
       {status.reviewed ? <p className="success">Reviewed and ready to deliver.</p> : null}
+      {status.draft ? <p className="success">AI Draft generated. Human Review Required before delivery.</p> : null}
+      {status.approved_draft ? <p className="success">AI Draft approved and ready for delivery.</p> : null}
       {!isReadyForDelivery ? <p className="error">Review and approve this report draft before delivery.</p> : null}
       {status.disabled ? <p className="success">Share link disabled.</p> : null}
+
+      <section className="card detail-card report-delivery-card form-stack">
+        <div>
+          <p className="eyebrow">Review Draft</p>
+          <h2>AI Draft</h2>
+          <p className="muted">CRED will organize your captured evidence using the selected Form Profile as Report Context. Review before delivery.</p>
+          <p className="muted"><strong>Human Review Required:</strong> AI Drafts are prepared from captured evidence and notes. Review before delivery.</p>
+        </div>
+        {!currentAiDraft ? (
+          <form action={generateDraftAction} className="form-stack">
+            <div className="required-evidence-grid">
+              <p className="checkline complete">✓ Report Context: {template?.name ?? 'No Form Profile / Evidence Package'}</p>
+              <p className={(captures ?? []).length > 0 ? 'checkline complete' : 'checkline missing'}>{(captures ?? []).length > 0 ? '✓' : '○'} Evidence captures available</p>
+              <p className="checkline complete">✓ Source Documents and extracted details included when available</p>
+            </div>
+            <div className="form-actions">
+              <button className="button button-primary touch-target">Generate AI Draft</button>
+              <Link href={`/dashboard/sessions/${session.id}/capture`} className="button button-secondary touch-target">Capture More Evidence</Link>
+            </div>
+          </form>
+        ) : (
+          <div className="form-stack">
+            <div className="template-library-item">
+              <div>
+                <p className="eyebrow">Status: {currentAiDraft.status}</p>
+                <h3>{currentAiDraft.title ?? session.title}</h3>
+                {currentAiDraft.summary ? <p className="muted">{currentAiDraft.summary}</p> : null}
+                <p className="muted">Generated: {currentAiDraft.generated_at ? formatDateTime(currentAiDraft.generated_at) : 'Not recorded'} · Confidence: {typeof currentAiDraft.confidence === 'number' ? `${Math.round(currentAiDraft.confidence * 100)}%` : 'Not available'}</p>
+                {currentAiDraft.status === 'approved' ? <p className="success">This is the approved AI Draft used for delivery.</p> : null}
+              </div>
+            </div>
+            <div className="signature-list">
+              {(aiDraftSections ?? []).map((section) => (
+                <article key={section.id} className="signature-list-item">
+                  <div className="form-stack">
+                    <div>
+                      <strong>{section.title}</strong>
+                      {section.status ? <span className="status-badge">{section.status.replace('_', ' ')}</span> : null}
+                      {typeof section.confidence === 'number' ? <span className="muted"> Confidence: {Math.round(section.confidence * 100)}%</span> : null}
+                    </div>
+                    {section.body ? <p className="muted">{section.body}</p> : null}
+                    {section.source_capture_ids.length > 0 ? <p className="muted">Source capture references: {section.source_capture_ids.join(', ')}</p> : <p className="muted">Source capture references: none supplied; review before relying on this section.</p>}
+                  </div>
+                </article>
+              ))}
+            </div>
+            {Array.isArray(currentAiDraft.unmapped_evidence) && currentAiDraft.unmapped_evidence.length > 0 ? (
+              <div>
+                <h3>Unmapped Evidence</h3>
+                <pre className="muted">{JSON.stringify(currentAiDraft.unmapped_evidence, null, 2)}</pre>
+              </div>
+            ) : null}
+            <p className="muted">TODO: Add inline edit, move, merge, and source-reference controls for future AI Draft review.</p>
+            <div className="form-actions">
+              <form action={generateDraftAction}><button className="button button-secondary touch-target">Generate new draft</button></form>
+              {currentAiDraft.status !== 'approved' && approveDraftAction ? <form action={approveDraftAction}><button className="button button-primary touch-target">Approve Draft</button></form> : null}
+            </div>
+          </div>
+        )}
+      </section>
 
       {evidence.missing.length > 0 ? (
         <section className="card detail-card missing-evidence-warning">

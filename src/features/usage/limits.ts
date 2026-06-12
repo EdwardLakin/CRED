@@ -7,6 +7,7 @@ import type { Database, Json } from '@/lib/supabase/database.types'
 export type UsageEventType =
   | 'ai_classification'
   | 'ai_extraction'
+  | 'ai_report_draft_generation'
   | 'capture_uploaded'
   | 'storage_bytes_added'
   | 'email_report_sent'
@@ -88,7 +89,7 @@ export async function getCurrentUsage(
 
   const usage = (monthlyRows ?? []).reduce(
     (totals, row) => {
-      if (row.event_type === 'ai_classification' || row.event_type === 'ai_extraction') {
+      if (row.event_type === 'ai_classification' || row.event_type === 'ai_extraction' || row.event_type === 'ai_report_draft_generation') {
         totals.aiActionsThisMonth += numericQuantity(row.quantity)
       }
 
@@ -170,7 +171,7 @@ export async function requireUsageAllowance({
     return { ok: false as const, message: 'Storage limit reached for your plan.' }
   }
 
-  if ((eventType === 'ai_classification' || eventType === 'ai_extraction') && usage.aiActionsThisMonth + quantity > limits.aiActionsPerMonth) {
+  if ((eventType === 'ai_classification' || eventType === 'ai_extraction' || eventType === 'ai_report_draft_generation') && usage.aiActionsThisMonth + quantity > limits.aiActionsPerMonth) {
     return { ok: false as const, message: eventType === 'ai_classification' ? 'AI usage limit reached for this month.' : 'AI usage limit reached for this month.' }
   }
 

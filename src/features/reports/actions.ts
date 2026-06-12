@@ -8,6 +8,7 @@ import { requireActiveBillingAccess } from '@/features/billing'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import { ReportEmailError, sendReportEmail, validateReportEmailRecipients } from '@/lib/email/reports'
+import { AI_REPORT_DRAFT_MODEL, AI_REPORT_DRAFT_PROMPT_VERSION, generateReportDraft } from '@/lib/openai/report-draft-generator'
 import type { OrganizationPlan } from '@/lib/stripe'
 import type { Json } from '@/lib/supabase/database.types'
 
@@ -328,4 +329,272 @@ export async function saveReport(sessionId: string) {
   if (error) redirect(getReportRedirectPath(session.id, { error: error.message }))
   revalidatePath(`/dashboard/sessions/${session.id}`)
   redirect(getReportRedirectPath(session.id, { saved: 1 }))
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function safeJson(value: unknown): Json {
+  if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value
+  if (Array.isArray(value)) return value as Json
+  if (isRecord(value)) return value as Json
+  return null
+}
+
+function getDraftStatus(confidence: number, sectionCount: number): 'draft' | 'needs_review' {
+  return confidence >= 0.7 && sectionCount > 0 ? 'draft' : 'needs_review'
+}
+
+function getReportDraftErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message === 'OPENAI_API_KEY_MISSING') {
+    return 'AI Draft generation is not configured yet.'
+  }
+
+  return error instanceof Error && error.message ? error.message : 'AI Draft could not be generated. Please try again.'
+}
+
+export async function generateAiReportDraft(sessionId: string) {
+  const { supabase, profile, session } = await requireOwnedSession(sessionId)
+  const billingAccess = requireActiveBillingAccess(profile)
+  if (!billingAccess.ok) {
+    redirect(getReportRedirectPath(session.id, { error: billingAccess.message }))
+  }
+
+  const aiAllowance = await requireUsageAllowance({
+    supabase,
+    organizationId: profile.organization_id,
+    plan: billingAccess.access.plan,
+    eventType: 'ai_report_draft_generation',
+  })
+
+  if (!aiAllowance.ok) {
+    redirect(getReportRedirectPath(session.id, { error: aiAllowance.message }))
+  }
+
+  const { data: fullSession, error: fullSessionError } = await supabase
+    .from('documentation_sessions')
+    .select('id, title, session_type, asset_label, vin, odometer, unit_number, customer_name, suggested_details, field_service_details, workflow_template_id, organization_id')
+    .eq('id', session.id)
+    .eq('organization_id', profile.organization_id)
+    .single()
+
+  if (fullSessionError || !fullSession) {
+    redirect(getReportRedirectPath(session.id, { error: 'Documentation session not found.' }))
+  }
+
+  const { data: template } = fullSession.workflow_template_id
+    ? await supabase
+        .from('documentation_workflow_templates')
+        .select('id, name, description, template_type, sections, fields, required_evidence, recommended_evidence, signature_requirements')
+        .eq('id', fullSession.workflow_template_id)
+        .eq('organization_id', profile.organization_id)
+        .maybeSingle()
+    : { data: null }
+
+  const { data: captures, error: capturesError } = await supabase
+    .from('capture_items')
+    .select('id, type, media_kind, captured_at, ai_status, ai_summary, ocr_text, technician_note, transcript, extracted_data')
+    .eq('documentation_session_id', session.id)
+    .eq('organization_id', profile.organization_id)
+    .is('deleted_at', null)
+    .order('report_order', { ascending: true, nullsFirst: false })
+    .order('captured_at', { ascending: true })
+
+  if (capturesError) {
+    redirect(getReportRedirectPath(session.id, { error: capturesError.message }))
+  }
+
+  const { data: signatures } = await supabase
+    .from('signature_captures')
+    .select('id, signature_type, signer_name, signed_at')
+    .eq('documentation_session_id', session.id)
+    .eq('organization_id', profile.organization_id)
+    .order('signed_at', { ascending: true })
+
+  let draftOutput
+  try {
+    draftOutput = await generateReportDraft({
+      reportContext: template
+        ? {
+            name: template.name,
+            description: template.description,
+            template_type: template.template_type,
+            sections: template.sections,
+            fields: template.fields,
+            required_evidence: template.required_evidence,
+            recommended_evidence: template.recommended_evidence,
+            signature_requirements: template.signature_requirements,
+          }
+        : null,
+      session: {
+        id: fullSession.id,
+        title: fullSession.title,
+        session_type: fullSession.session_type,
+        asset_label: fullSession.asset_label,
+        vin: fullSession.vin,
+        odometer: fullSession.odometer,
+        unit_number: fullSession.unit_number,
+        customer_name: fullSession.customer_name,
+        suggested_details: fullSession.suggested_details,
+        field_service_details: fullSession.field_service_details,
+      },
+      captures: (captures ?? []).map((capture) => ({
+        id: capture.id,
+        type: capture.type,
+        media_kind: capture.media_kind,
+        captured_at: capture.captured_at,
+        ai_status: capture.ai_status,
+        ai_summary: capture.ai_summary,
+        ocr_text: capture.ocr_text,
+        technician_note: capture.technician_note,
+        transcript: capture.transcript,
+        extracted_data: capture.extracted_data,
+      })),
+      signatures: signatures ?? [],
+    })
+  } catch (error) {
+    redirect(getReportRedirectPath(session.id, { error: getReportDraftErrorMessage(error) }))
+  }
+
+  const now = new Date().toISOString()
+  const { data: draft, error: draftError } = await supabase
+    .from('ai_report_drafts')
+    .insert({
+      documentation_session_id: session.id,
+      organization_id: profile.organization_id,
+      workflow_template_id: fullSession.workflow_template_id,
+      status: getDraftStatus(draftOutput.confidence, draftOutput.sections.length),
+      title: draftOutput.title,
+      summary: draftOutput.summary,
+      header_fields: draftOutput.header_fields,
+      measurements: draftOutput.measurements,
+      findings: draftOutput.findings,
+      coverage: draftOutput.coverage,
+      unmapped_evidence: draftOutput.unmapped_evidence,
+      confidence: draftOutput.confidence,
+      model: AI_REPORT_DRAFT_MODEL,
+      prompt_version: AI_REPORT_DRAFT_PROMPT_VERSION,
+      generated_at: now,
+    })
+    .select('id')
+    .single()
+
+  if (draftError || !draft) {
+    redirect(getReportRedirectPath(session.id, { error: draftError?.message ?? 'Could not save AI Draft.' }))
+  }
+
+  if (draftOutput.sections.length > 0) {
+    const { error: sectionsError } = await supabase.from('ai_report_draft_sections').insert(
+      draftOutput.sections.map((section) => ({
+        ai_report_draft_id: draft.id,
+        documentation_session_id: session.id,
+        organization_id: profile.organization_id,
+        section_key: section.section_key,
+        title: section.title,
+        body: section.body,
+        status: section.status,
+        confidence: section.confidence,
+        source_capture_ids: section.source_capture_ids,
+        sort_order: section.sort_order,
+        metadata: safeJson(section.metadata) ?? {},
+      })),
+    )
+
+    if (sectionsError) {
+      await supabase.from('ai_report_drafts').delete().eq('id', draft.id).eq('organization_id', profile.organization_id)
+      redirect(getReportRedirectPath(session.id, { error: sectionsError.message }))
+    }
+  }
+
+  const { error: supersedeError } = await supabase
+    .from('ai_report_drafts')
+    .update({ status: 'superseded' })
+    .eq('documentation_session_id', session.id)
+    .eq('organization_id', profile.organization_id)
+    .neq('id', draft.id)
+    .not('status', 'in', '(approved,superseded)')
+
+  if (supersedeError) {
+    redirect(getReportRedirectPath(session.id, { error: supersedeError.message }))
+  }
+
+  await recordUsageEvent({
+    supabase,
+    organizationId: profile.organization_id,
+    eventType: 'ai_report_draft_generation',
+    metadata: { session_id: session.id, draft_id: draft.id, model: AI_REPORT_DRAFT_MODEL, prompt_version: AI_REPORT_DRAFT_PROMPT_VERSION },
+    createdBy: profile.id,
+  })
+
+  revalidatePath(`/dashboard/sessions/${session.id}`)
+  revalidatePath(`/dashboard/sessions/${session.id}/report`)
+  redirect(getReportRedirectPath(session.id, { draft: 1 }))
+}
+
+export async function approveAiReportDraft(draftId: string) {
+  const workspace = await requireSessionWorkspace()
+  const { supabase, profile } = workspace
+  const { data: draft, error: draftError } = await supabase
+    .from('ai_report_drafts')
+    .select('id, documentation_session_id, organization_id, status')
+    .eq('id', draftId)
+    .eq('organization_id', profile.organization_id)
+    .single()
+
+  if (draftError || !draft) {
+    redirect('/dashboard?error=AI Draft not found.')
+  }
+
+  const { data: session, error: sessionError } = await supabase
+    .from('documentation_sessions')
+    .select('id, organization_id')
+    .eq('id', draft.documentation_session_id)
+    .eq('organization_id', profile.organization_id)
+    .single()
+
+  if (sessionError || !session) {
+    redirect(getReportRedirectPath(draft.documentation_session_id, { error: 'Documentation session not found.' }))
+  }
+
+  const now = new Date().toISOString()
+  const { error: approveError } = await supabase
+    .from('ai_report_drafts')
+    .update({ status: 'approved', approved_at: now, approved_by: profile.id })
+    .eq('id', draft.id)
+    .eq('organization_id', profile.organization_id)
+
+  if (approveError) {
+    redirect(getReportRedirectPath(session.id, { error: approveError.message }))
+  }
+
+  const { error: sessionUpdateError } = await supabase
+    .from('documentation_sessions')
+    .update({
+      review_status: 'ready_for_delivery',
+      reviewed_at: now,
+      reviewed_by: profile.id,
+    })
+    .eq('id', session.id)
+    .eq('organization_id', profile.organization_id)
+
+  if (sessionUpdateError) {
+    redirect(getReportRedirectPath(session.id, { error: sessionUpdateError.message }))
+  }
+
+  const { error: supersedeError } = await supabase
+    .from('ai_report_drafts')
+    .update({ status: 'superseded' })
+    .eq('documentation_session_id', session.id)
+    .eq('organization_id', profile.organization_id)
+    .neq('id', draft.id)
+    .neq('status', 'approved')
+
+  if (supersedeError) {
+    redirect(getReportRedirectPath(session.id, { error: supersedeError.message }))
+  }
+
+  revalidatePath(`/dashboard/sessions/${session.id}`)
+  revalidatePath(`/dashboard/sessions/${session.id}/report`)
+  redirect(getReportRedirectPath(session.id, { approved_draft: 1 }))
 }
