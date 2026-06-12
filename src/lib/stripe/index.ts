@@ -173,6 +173,7 @@ export async function createSubscriptionCheckoutSession(input: {
     customer: input.customerId,
     'line_items[0][price]': getStripePriceId(input.plan),
     'line_items[0][quantity]': 1,
+    allow_promotion_codes: true,
     success_url: input.successUrl,
     cancel_url: input.cancelUrl,
     'metadata[organization_id]': input.organizationId,

@@ -36,6 +36,10 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 
 The app reads `STRIPE_PRICE_INDIVIDUAL`, `STRIPE_PRICE_TEAM`, and `STRIPE_PRICE_SHOP` when creating subscription Checkout Sessions. These values should match the Individual ($39/month), Team ($99/month), and Shop ($199/month) prices in Stripe Dashboard.
 
+### Coupons and promotion codes
+
+Stripe coupons and promotion codes are supported through hosted Checkout. Create and manage coupons and promotion codes in Stripe Dashboard; CRED does not implement custom coupon logic. When eligible promotion codes exist in Stripe, Checkout shows the promotion code field automatically during subscription checkout.
+
 ### Database migration
 
 Apply the Supabase billing migrations, including `supabase/migrations/20260611144500_stripe_subscription_billing.sql`, `supabase/migrations/20260611170000_billing_plan_rename_individual_team_shop.sql`, and `supabase/migrations/20260611190000_app_controlled_billing_trial.sql`. They add these organization billing columns:
