@@ -153,10 +153,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </div>
         ) : (
           <EmptyState
-            title="Start your first documentation session"
-            description="Create a session to capture asset details, observations, and status in one secure organization workspace."
-            actionHref="/dashboard/sessions/new"
-            actionLabel="New Documentation Session"
+            title="Import a template before creating your first documentation workflow."
+            description="Templates define the sections, fields, evidence requirements, and report structure for each workflow."
+            actionHref="/dashboard/templates"
+            actionLabel="Import Template"
           />
         )}
       </section>
