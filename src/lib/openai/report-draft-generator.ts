@@ -1,12 +1,62 @@
 import type { Json } from '@/lib/supabase/database.types'
 
 export const AI_REPORT_DRAFT_MODEL = 'gpt-4.1-mini'
-export const AI_REPORT_DRAFT_PROMPT_VERSION = 'ai-report-draft-v1'
+export const AI_REPORT_DRAFT_PROMPT_VERSION = 'ai-report-draft-v2'
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const MAX_SECTIONS = 24
 const MAX_ARRAY_ITEMS = 60
 const SECTION_STATUSES = ['pass', 'fail', 'recommended', 'na', 'needs_review', 'informational'] as const
+
+const SOURCE_DOCUMENT_IDENTITY_FIELDS = new Set([
+  'vin',
+  'unit_number',
+  'asset_label',
+  'odometer',
+  'hour_meter',
+  'plate_number',
+  'work_order_number',
+  'purchase_order_number',
+  'job_number',
+  'customer_name',
+  'licence_number',
+  'year',
+  'make',
+  'equipment_make',
+  'equipment_model',
+  'equipment_serial_number',
+  'engine_make',
+  'engine_model',
+  'engine_serial_number',
+  'generator_make',
+  'generator_model',
+  'generator_serial_number',
+  'transmission_make',
+  'transmission_model',
+  'transmission_serial_number',
+  'registration_number',
+  'registered_owner',
+  'manufacturer',
+  'model',
+  'serial_number',
+  'gvwr',
+  'jurisdiction',
+  'ratings_capacity',
+  'date',
+  'gawr_front',
+  'gawr_rear',
+  'tire_size',
+  'tire_pressure',
+  'document_type',
+  'inspection_date',
+])
+
+const SOURCE_DOCUMENT_INCLUDE_PATTERNS = [
+  /\buse\s+(this|document|line|item|note|comment)\s+as\s+(a\s+)?finding\b/i,
+  /\binclude\s+(this|document|line|item|note|comment|finding|recommendation|complaint|correction)\b/i,
+  /\badd\s+(this|document|line|item|note|comment)\s+to\s+(the\s+)?(report|findings|recommendations)\b/i,
+  /\btreat\s+(this|document|line|item|note|comment)\s+as\s+(a\s+)?finding\b/i,
+]
 
 type SectionStatus = (typeof SECTION_STATUSES)[number]
 
@@ -80,13 +130,15 @@ export type GeneratedReportDraft = {
 
 const REPORT_DRAFT_SYSTEM_PROMPT = `You generate editable AI Drafts for CRED evidence-first reports.
 Return JSON only, no markdown.
-Use the selected Form Profile as report context, not as a forced checklist.
-Technicians capture evidence naturally; organize source documents, evidence, notes, transcripts, and extracted details into a human-reviewable draft.
+Use the selected Form Profile as report context, not as a forced checklist. Use its terminology and sections where reasonable, but do not force empty sections to appear if there is no evidence.
+Technicians capture evidence naturally; synthesize technician-captured evidence into a professional, human-reviewable draft instead of dumping captures.
 Do not invent unsupported facts.
-Every finding or section based on evidence must reference source_capture_ids from the supplied captures.
+Prioritize draft inputs in this order: 1) technician notes on evidence captures, 2) evidence photos/videos, 3) extracted measurements/findings from evidence captures, 4) source document identity fields, 5) selected Form Profile/report context.
+Source documents are used for identity/header context. Do not convert work order line descriptions or prior comments into findings unless the technician note explicitly asks to include them.
+Source documents may populate header_fields, Vehicle / Asset Information, customer/work order fields, and Source Documents Reviewed. Source documents must not populate final Findings, Recommendations, or Repairs Performed unless the technician intentionally notes that source document content should be included.
+Every finding or section based on evidence must reference source_capture_ids from supplied non-source evidence captures or explicitly requested source-document captures.
 Use needs_review when uncertain or when evidence is incomplete.
-If Form Profile sections exist, organize around those sections where reasonable.
-If no Form Profile exists, group by evidence type, component, system, or source document.
+Organize around sections such as Report Summary, Vehicle / Asset Information, Source Documents Reviewed, Findings, Measurements, Recommendations, Supporting Evidence, and Signatures. Omit sections with no supporting evidence unless needed for context.
 Do not claim official CVIP/compliance completion, automatic compliance, or final inspection approval.
 If unmentioned items are assumed pass, clearly mark them as assumptions requiring review.
 Prefer technician notes/transcripts over visual guesswork for location, component, measurement, and recommendation.
@@ -144,6 +196,55 @@ function extractOutputText(response: unknown) {
   return textParts.length > 0 ? textParts.join('\n') : null
 }
 
+function technicianExplicitlyIncludesSourceFinding(note?: string | null) {
+  if (!note) return false
+  return SOURCE_DOCUMENT_INCLUDE_PATTERNS.some((pattern) => pattern.test(note))
+}
+
+function getExtractionFields(capture: ReportDraftCaptureContext) {
+  const extractedData = isRecord(capture.extracted_data) ? capture.extracted_data : {}
+  const extraction = isRecord(extractedData.extraction) ? extractedData.extraction : {}
+  return isRecord(extraction.fields) ? extraction.fields : {}
+}
+
+function getSourceDocumentContext(capture: ReportDraftCaptureContext) {
+  const extractedData = isRecord(capture.extracted_data) ? capture.extracted_data : {}
+  return isRecord(extractedData.source_document) ? extractedData.source_document : null
+}
+
+function buildSourceDocumentDraftContext(capture: ReportDraftCaptureContext) {
+  const fields = getExtractionFields(capture)
+  const identityFields = Object.fromEntries(
+    Object.entries(fields).filter(([key, value]) => SOURCE_DOCUMENT_IDENTITY_FIELDS.has(key) && value),
+  )
+  const sourceDocument = getSourceDocumentContext(capture)
+
+  return {
+    capture_id: capture.id,
+    type: capture.type,
+    media_kind: capture.media_kind,
+    captured_at: capture.captured_at,
+    source_document: sourceDocument,
+    technician_note: capture.technician_note,
+    identity_fields: identityFields,
+  }
+}
+
+function buildEvidenceDraftContext(capture: ReportDraftCaptureContext) {
+  return {
+    id: capture.id,
+    type: capture.type,
+    media_kind: capture.media_kind,
+    captured_at: capture.captured_at,
+    ai_status: capture.ai_status,
+    ai_summary: capture.ai_summary,
+    ocr_text: capture.ocr_text,
+    technician_note: capture.technician_note,
+    transcript: capture.transcript,
+    extracted_data: capture.extracted_data,
+  }
+}
+
 function sanitizeStatus(value: unknown): SectionStatus | null {
   return typeof value === 'string' && SECTION_STATUSES.includes(value as SectionStatus)
     ? (value as SectionStatus)
@@ -191,12 +292,19 @@ export function validateGeneratedReportDraft(value: unknown, allowedCaptureIds =
 }
 
 function buildDraftContext(input: GenerateReportDraftInput) {
+  const sourceDocuments = input.captures.filter((capture) => getSourceDocumentContext(capture))
+  const evidenceCaptures = input.captures.filter(
+    (capture) => !getSourceDocumentContext(capture) || technicianExplicitlyIncludesSourceFinding(capture.technician_note),
+  )
+
   return {
+    source_document_policy:
+      'Source documents provide identity/header context only. Work order line descriptions, complaints, corrections, prior notes, labour/parts lines, and recommendations are not findings unless the technician note explicitly asks to include them.',
     report_context: input.reportContext,
     session: input.session,
-    source_documents: input.captures.filter((capture) => isRecord(capture.extracted_data) && isRecord(capture.extracted_data.source_document)),
-    evidence: input.captures,
-    notes_and_transcripts: input.captures
+    source_documents: sourceDocuments.map(buildSourceDocumentDraftContext),
+    evidence: evidenceCaptures.map(buildEvidenceDraftContext),
+    notes_and_transcripts: evidenceCaptures
       .filter((capture) => capture.technician_note || capture.transcript)
       .map((capture) => ({
         capture_id: capture.id,
@@ -234,7 +342,7 @@ export async function generateReportDraft(input: GenerateReportDraftInput): Prom
           content: [
             {
               type: 'input_text',
-              text: `Create an editable AI Draft from this report context, Source Documents, Evidence, technician notes/transcripts, and extracted details. Return the strict JSON shape only.\n${JSON.stringify(buildDraftContext(input)).slice(0, 70000)}`,
+              text: `Create an editable AI Draft from this report context, source document identity fields, evidence captures, technician notes/transcripts, and extracted details. Follow the source document policy exactly. Return the strict JSON shape only.\n${JSON.stringify(buildDraftContext(input)).slice(0, 70000)}`,
             },
           ],
         },
