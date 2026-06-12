@@ -1,7 +1,14 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react'
 import { useRouter } from 'next/navigation'
 
 import { Button } from '@/components/ui'
@@ -19,6 +26,8 @@ import {
 import { createClient } from '@/lib/supabase/client'
 
 const MAX_BATCH_FILES = 10
+const VOICE_NOTE_TIMEOUT_MS = 60_000
+
 type UploadStatus = 'queued' | 'uploading' | 'saved' | 'failed'
 
 type SelectedEvidenceFile = {
@@ -32,17 +41,34 @@ type SelectedEvidenceFile = {
   error?: string
 }
 
-type SpeechRecognitionConstructor = new () => {
+type SpeechRecognitionResultLike = {
+  0?: { transcript?: string }
+}
+
+type SpeechRecognitionInstance = {
   continuous: boolean
   interimResults: boolean
   lang: string
   onresult:
-    | ((event: { results: ArrayLike<{ 0: { transcript: string } }> }) => void)
+    | ((event: { results: ArrayLike<SpeechRecognitionResultLike> }) => void)
     | null
   onend: (() => void) | null
+  onerror: ((event: { error?: string }) => void) | null
   start: () => void
   stop: () => void
+  abort?: () => void
 }
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionInstance
+
+type VoiceNoteStatus =
+  | 'idle'
+  | 'listening'
+  | 'stopped'
+  | 'cancelled'
+  | 'unsupported'
+  | 'denied'
+  | 'error'
 
 type SpeechWindow = Window & {
   SpeechRecognition?: SpeechRecognitionConstructor
@@ -265,8 +291,11 @@ export function AddCaptureForm({
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const noteTextareaRef = useRef<HTMLTextAreaElement>(null)
-  const recognitionRef =
-    useRef<InstanceType<SpeechRecognitionConstructor> | null>(null)
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null)
+  const voiceNoteTimeoutRef = useRef<number | null>(
+    null,
+  )
+  const voiceNoteBaseRef = useRef('')
   const selectedFilesRef = useRef<SelectedEvidenceFile[]>([])
   const isSavingRef = useRef(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -289,6 +318,9 @@ export function AddCaptureForm({
   const [transcriptStatus, setTranscriptStatus] = useState<
     'not_started' | 'pending' | 'completed' | 'unavailable'
   >('not_started')
+  const [voiceNoteStatus, setVoiceNoteStatus] =
+    useState<VoiceNoteStatus>('idle')
+  const [isVoiceSupported, setIsVoiceSupported] = useState<boolean | null>(null)
   const activeType =
     captureIntent === 'auto_evidence' || captureIntent === 'auto_image'
       ? 'auto_evidence'
@@ -538,6 +570,12 @@ export function AddCaptureForm({
       return
     }
 
+    if (voiceNoteStatus === 'listening') {
+      stopVoiceNote('Voice note stopped.')
+      setClientError('Voice note stopped. Review your note, then save evidence.')
+      return
+    }
+
     const filesToUpload = uploadableFiles
 
     if (filesToUpload.length === 0) {
@@ -597,6 +635,7 @@ export function AddCaptureForm({
       const result = await uploadSelectedFiles(filesToUpload)
 
       if (result.savedCount > 0) {
+        cleanupRecognition()
         setSaveMessage('Saved. AI is processing in the background.')
         triggerBackgroundProcessing()
         router.refresh()
@@ -616,6 +655,7 @@ export function AddCaptureForm({
         setNote('')
         setNoteSource('manual')
         setTranscriptStatus('not_started')
+        setVoiceNoteStatus(isVoiceSupported === false ? 'unsupported' : 'idle')
         setSourceDocumentType(null)
       }, 900)
 
@@ -632,18 +672,107 @@ export function AddCaptureForm({
     }
   }
 
+  const clearVoiceNoteTimeout = useCallback(() => {
+    if (voiceNoteTimeoutRef.current) {
+      window.clearTimeout(voiceNoteTimeoutRef.current)
+      voiceNoteTimeoutRef.current = null
+    }
+  }, [])
+
+  const cleanupRecognition = useCallback(() => {
+    clearVoiceNoteTimeout()
+
+    const recognition = recognitionRef.current
+    if (!recognition) {
+      return
+    }
+
+    recognition.onresult = null
+    recognition.onerror = null
+    recognition.onend = null
+
+    try {
+      if (recognition.abort) {
+        recognition.abort()
+      } else {
+        recognition.stop()
+      }
+    } catch (error) {
+      console.warn('Voice note cleanup failed', error)
+    } finally {
+      recognitionRef.current = null
+    }
+  }, [clearVoiceNoteTimeout])
+
+  const stopVoiceNote = useCallback((message = 'Voice note stopped.') => {
+    clearVoiceNoteTimeout()
+
+    const recognition = recognitionRef.current
+    if (recognition) {
+      recognitionRef.current = null
+      recognition.onresult = null
+      recognition.onerror = null
+      recognition.onend = null
+
+      try {
+        recognition.stop()
+      } catch (error) {
+        console.warn('Voice note stop failed', error)
+      }
+    }
+
+    setTranscriptStatus((current) =>
+      current === 'pending' ? 'completed' : current,
+    )
+    setVoiceNoteStatus('stopped')
+    setSaveMessage(message)
+  }, [clearVoiceNoteTimeout])
+
+  function cancelVoiceNote() {
+    cleanupRecognition()
+    setNote(voiceNoteBaseRef.current)
+    setNoteSource('manual')
+    setTranscriptStatus('not_started')
+    setVoiceNoteStatus('cancelled')
+    setSaveMessage(null)
+    setClientError(null)
+  }
+
+  function clearNote() {
+    if (voiceNoteStatus === 'listening') {
+      cleanupRecognition()
+    }
+
+    voiceNoteBaseRef.current = ''
+    setNote('')
+    setNoteSource('manual')
+    setTranscriptStatus('not_started')
+    setVoiceNoteStatus('idle')
+    setSaveMessage(null)
+    setClientError(null)
+  }
+
   function startVoiceNote() {
+    if (voiceNoteStatus === 'listening') {
+      return
+    }
+
     const speechWindow = window as SpeechWindow
     const Recognition =
       speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition
 
     if (!Recognition) {
+      setIsVoiceSupported(false)
       setTranscriptStatus('unavailable')
+      setVoiceNoteStatus('unsupported')
       setClientError(
-        'Microphone transcription is unavailable on this device. Type the note instead.',
+        'Voice notes are not supported in this browser. Type your note instead.',
       )
       return
     }
+
+    cleanupRecognition()
+    voiceNoteBaseRef.current = note.trim()
 
     const recognition = new Recognition()
     recognition.continuous = false
@@ -651,20 +780,95 @@ export function AddCaptureForm({
     recognition.lang = 'en-US'
     recognition.onresult = (event) => {
       const transcript = Array.from(event.results)
-        .map((result) => result[0].transcript)
+        .map((result) => result[0]?.transcript?.trim() ?? '')
+        .filter(Boolean)
         .join(' ')
-      setNote(transcript)
+        .trim()
+
+      if (!transcript) {
+        return
+      }
+
+      const baseNote = voiceNoteBaseRef.current
+      setNote(baseNote ? `${baseNote} ${transcript}` : transcript)
       setNoteSource('voice')
     }
-    recognition.onend = () =>
+    recognition.onerror = (event) => {
+      cleanupRecognition()
+      setTranscriptStatus('not_started')
+
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        setVoiceNoteStatus('denied')
+        setClientError(
+          'Microphone permission was denied. Type your note instead.',
+        )
+        return
+      }
+
+      setVoiceNoteStatus('error')
+      setClientError('Voice note stopped. Type your note instead.')
+    }
+    recognition.onend = () => {
+      clearVoiceNoteTimeout()
+      recognitionRef.current = null
       setTranscriptStatus((current) =>
         current === 'pending' ? 'completed' : current,
       )
+      setVoiceNoteStatus((current) =>
+        current === 'listening' ? 'stopped' : current,
+      )
+    }
+
     recognitionRef.current = recognition
     setTranscriptStatus('pending')
+    setVoiceNoteStatus('listening')
     setClientError(null)
-    recognition.start()
+    setSaveMessage(null)
+
+    voiceNoteTimeoutRef.current = window.setTimeout(() => {
+      stopVoiceNote('Voice note stopped.')
+    }, VOICE_NOTE_TIMEOUT_MS)
+
+    try {
+      recognition.start()
+    } catch {
+      cleanupRecognition()
+      setTranscriptStatus('not_started')
+      setVoiceNoteStatus('error')
+      setClientError('Voice note stopped. Type your note instead.')
+    }
   }
+
+  useEffect(() => {
+    const supportCheckId = window.setTimeout(() => {
+      const speechWindow = window as SpeechWindow
+      const Recognition =
+        speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition
+
+      setIsVoiceSupported(Boolean(Recognition))
+      if (!Recognition) {
+        setTranscriptStatus('unavailable')
+        setVoiceNoteStatus('unsupported')
+      }
+    }, 0)
+
+    return () => window.clearTimeout(supportCheckId)
+  }, [])
+
+  useEffect(() => {
+    function stopOnPageExit() {
+      cleanupRecognition()
+    }
+
+    window.addEventListener('pagehide', stopOnPageExit)
+    window.addEventListener('beforeunload', stopOnPageExit)
+
+    return () => {
+      window.removeEventListener('pagehide', stopOnPageExit)
+      window.removeEventListener('beforeunload', stopOnPageExit)
+      cleanupRecognition()
+    }
+  }, [cleanupRecognition])
 
   return (
     <form onSubmit={handleSubmit} className="capture-form form-stack">
@@ -865,10 +1069,7 @@ export function AddCaptureForm({
                       </button>
                     </div>
                     <span>
-                      {note.trim() ||
-                        (transcriptStatus === 'pending'
-                          ? 'Transcribing…'
-                          : 'Add note before saving')}
+                      {note.trim() || 'Add note before saving'}
                     </span>
                   </div>
                 </div>
@@ -925,40 +1126,71 @@ export function AddCaptureForm({
           name="technician_note"
           className="input note-textarea prominent-note-textarea"
           value={note}
-          placeholder={
-            transcriptStatus === 'pending'
-              ? 'Transcribing…'
-              : 'Speak or type what matters: location, component, measurement, condition, recommendation.'
-          }
+          placeholder="Speak or type what matters: location, component, measurement, condition, recommendation."
           onChange={(event) => {
             setNote(event.target.value)
             setNoteSource(noteSource === 'voice' ? 'edited' : 'manual')
-            if (transcriptStatus === 'pending') {
-              recognitionRef.current?.stop()
-              setTranscriptStatus('completed')
+            if (voiceNoteStatus === 'listening') {
+              stopVoiceNote('Voice note stopped.')
             }
           }}
           rows={4}
         />
         <p className="muted note-helper-text">
-          Changes update the note overlay and printable report.
+          Changes update the note overlay and printable report. Manual typing works even if voice is unavailable.
         </p>
-        <div className="capture-note-actions">
-          <button
-            type="button"
-            className="button button-secondary touch-target"
-            onClick={startVoiceNote}
-          >
-            {transcriptStatus === 'pending' ? 'Listening…' : 'Add voice note'}
-          </button>
-          <span className="muted">
-            {transcriptStatus === 'pending'
-              ? 'Transcribing…'
-              : transcriptStatus === 'unavailable'
-                ? 'Mic unavailable — type note'
-                : 'Editable before and after saving'}
-          </span>
-        </div>
+        {isVoiceSupported === false ? (
+          <p className="muted capture-upload-hint" role="status">
+            Voice notes are not supported in this browser. Type your note instead.
+          </p>
+        ) : (
+          <div className="capture-note-actions" aria-label="Voice note controls">
+            <button
+              type="button"
+              className="button button-secondary touch-target"
+              onClick={startVoiceNote}
+              disabled={isSaving || hasActiveUploads || voiceNoteStatus === 'listening'}
+            >
+              Start Voice Note
+            </button>
+            <button
+              type="button"
+              className="button button-secondary touch-target"
+              onClick={() => stopVoiceNote('Voice note stopped.')}
+              disabled={isSaving || voiceNoteStatus !== 'listening'}
+              aria-label="Stop Voice Note"
+            >
+              Stop
+            </button>
+            <button
+              type="button"
+              className="button button-secondary touch-target"
+              onClick={cancelVoiceNote}
+              disabled={isSaving || voiceNoteStatus !== 'listening'}
+            >
+              Cancel Voice Note
+            </button>
+            <button
+              type="button"
+              className="button button-secondary touch-target"
+              onClick={clearNote}
+              disabled={isSaving || (!note && voiceNoteStatus !== 'listening')}
+            >
+              Clear Note
+            </button>
+            <span className="muted" role="status" aria-live="polite">
+              {voiceNoteStatus === 'listening'
+                ? 'Listening…'
+                : voiceNoteStatus === 'denied'
+                  ? 'Microphone permission was denied. Type your note instead.'
+                  : voiceNoteStatus === 'unsupported'
+                    ? 'Voice notes are not supported in this browser. Type your note instead.'
+                    : voiceNoteStatus === 'stopped'
+                      ? 'Voice note stopped.'
+                      : 'Editable before and after saving'}
+            </span>
+          </div>
+        )}
       </div>
 
       <SubmitButton
