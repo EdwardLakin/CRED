@@ -584,3 +584,13 @@ Target:
 6. **Draft generation server action:** Implement a first draft generator that groups existing captures into form-profile sections with confidence and source references.
 7. **Report page draft approval:** Replace missing-required-evidence review with AI Draft Review and approval status.
 8. **Printable snapshot support:** Add approved final report snapshots and update printable/share/email routes to read snapshots first.
+
+## Phase 2 implemented — Source Document Capture
+
+Phase 2 adds first-class, optional Source Document capture shortcuts to the evidence-first capture flow.
+
+- Source document capture shortcuts were added for Work Order, Registration, VIN Plate, Data Plate, Odometer, Licence Plate, Unit Number, and Other Source Document.
+- Source document metadata is stored in `capture_items.extracted_data.source_document` with `type`, `label`, and `pending_extraction` status.
+- No new schema or source document table was added for this MVP phase.
+- Capture remains evidence-first and non-linear: technicians can capture source documents whenever it fits their workflow, skip them entirely, or continue ordinary evidence capture.
+- AI extraction is source-document aware and prioritizes report/session identity fields based on the selected Source Document tag while still using cautious `null` / needs-review behavior for unclear images.

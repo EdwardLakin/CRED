@@ -4,6 +4,94 @@ export type CaptureItem = Database['public']['Tables']['capture_items']['Row']
 export type CaptureType = 'photo' | 'document' | 'vin_plate' | 'info_plate' | 'voice_note' | 'video' | 'evidence_video'
 export type CaptureIntent = 'auto_image' | 'auto_evidence' | 'manual'
 
+export type SourceDocumentType =
+  | 'work_order'
+  | 'registration'
+  | 'vin_plate'
+  | 'data_plate'
+  | 'odometer'
+  | 'licence_plate'
+  | 'unit_number'
+  | 'other'
+
+export type SourceDocumentMetadata = {
+  type: SourceDocumentType
+  label: string
+  status: 'pending_extraction' | 'extracted' | 'needs_review'
+}
+
+export const SOURCE_DOCUMENT_OPTIONS: Array<{ type: SourceDocumentType; label: string }> = [
+  { type: 'work_order', label: 'Work Order' },
+  { type: 'registration', label: 'Registration' },
+  { type: 'vin_plate', label: 'VIN Plate' },
+  { type: 'data_plate', label: 'Data Plate' },
+  { type: 'odometer', label: 'Odometer' },
+  { type: 'licence_plate', label: 'Licence Plate' },
+  { type: 'unit_number', label: 'Unit Number' },
+  { type: 'other', label: 'Other Source Document' },
+]
+
+export const SOURCE_DOCUMENT_LABELS: Record<SourceDocumentType, string> = Object.fromEntries(
+  SOURCE_DOCUMENT_OPTIONS.map((option) => [option.type, option.label]),
+) as Record<SourceDocumentType, string>
+
+export function isSourceDocumentType(value: string): value is SourceDocumentType {
+  return SOURCE_DOCUMENT_OPTIONS.some((option) => option.type === value)
+}
+
+export function getSourceDocumentOption(type: SourceDocumentType) {
+  return SOURCE_DOCUMENT_OPTIONS.find((option) => option.type === type) ?? {
+    type,
+    label: SOURCE_DOCUMENT_LABELS[type],
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+export function getSourceDocumentMetadata(extractedData: Json | null): SourceDocumentMetadata | null {
+  if (!isRecord(extractedData) || !isRecord(extractedData.source_document)) {
+    return null
+  }
+
+  const sourceDocument = extractedData.source_document
+  const type = typeof sourceDocument.type === 'string' && isSourceDocumentType(sourceDocument.type)
+    ? sourceDocument.type
+    : null
+
+  if (!type) {
+    return null
+  }
+
+  const label = typeof sourceDocument.label === 'string' && sourceDocument.label.trim()
+    ? sourceDocument.label.trim()
+    : SOURCE_DOCUMENT_LABELS[type]
+  const status =
+    sourceDocument.status === 'extracted' || sourceDocument.status === 'needs_review'
+      ? sourceDocument.status
+      : 'pending_extraction'
+
+  return { type, label, status }
+}
+
+export function addSourceDocumentMetadata(
+  extractedData: Json,
+  sourceDocument: { type: SourceDocumentType; label?: string },
+): Json {
+  const existingObject = isRecord(extractedData) ? extractedData : {}
+  const label = sourceDocument.label?.trim() || SOURCE_DOCUMENT_LABELS[sourceDocument.type]
+
+  return {
+    ...existingObject,
+    source_document: {
+      type: sourceDocument.type,
+      label,
+      status: 'pending_extraction',
+    },
+  }
+}
+
 export const CAPTURE_TYPES: Array<{ value: CaptureType; label: string; helper: string }> = [
   { value: 'photo', label: 'Field Photo', helper: 'General image or damage photo' },
   { value: 'document', label: 'Document', helper: 'PDF, document scan, or image' },

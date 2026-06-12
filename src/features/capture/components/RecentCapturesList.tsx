@@ -1,10 +1,20 @@
 import type { CaptureItem } from '../types'
-import { CAPTURE_TYPE_LABELS, type CaptureType } from '../types'
+import { CAPTURE_TYPE_LABELS, getSourceDocumentMetadata, type CaptureType } from '../types'
 import { formatDateTime } from '@/features/sessions'
 
 function getCaptureLabel(capture: CaptureItem) {
+  const sourceDocument = getSourceDocumentMetadata(capture.extracted_data)
   const note = capture.technician_note?.trim() || capture.transcript?.trim()
-  return note || CAPTURE_TYPE_LABELS[capture.type as CaptureType] || 'Captured evidence'
+  return note || sourceDocument?.label || CAPTURE_TYPE_LABELS[capture.type as CaptureType] || 'Captured evidence'
+}
+
+function getCaptureMeta(capture: CaptureItem) {
+  const sourceDocument = getSourceDocumentMetadata(capture.extracted_data)
+  const typeLabel = CAPTURE_TYPE_LABELS[capture.type as CaptureType] ?? capture.type
+
+  return sourceDocument
+    ? `Source Document: ${sourceDocument.label} · ${typeLabel}`
+    : typeLabel
 }
 
 export function RecentCapturesList({ captures, signedUrls, limit = 6 }: { captures: CaptureItem[]; signedUrls: Record<string, string>; limit?: number }) {
@@ -20,7 +30,7 @@ export function RecentCapturesList({ captures, signedUrls, limit = 6 }: { captur
         <article key={capture.id} className="recent-capture-card">
           <div>
             <h3>{getCaptureLabel(capture)}</h3>
-            <p className="muted">{CAPTURE_TYPE_LABELS[capture.type as CaptureType] ?? capture.type} · {formatDateTime(capture.captured_at ?? capture.created_at)}</p>
+            <p className="muted">{getCaptureMeta(capture)} · {formatDateTime(capture.captured_at ?? capture.created_at)}</p>
           </div>
           {signedUrls[capture.id] ? (
             <a href={signedUrls[capture.id]} target="_blank" rel="noreferrer" className="secondary-link touch-target">

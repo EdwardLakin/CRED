@@ -1,7 +1,7 @@
 import { applyExtractedEvidenceField } from '@/features/sessions/actions'
 import type { Json } from '@/lib/supabase/database.types'
 
-import type { CaptureItem } from '../types'
+import { getSourceDocumentMetadata, type CaptureItem } from '../types'
 
 const FIELD_LABELS: Record<string, string> = {
   vin: 'VIN',
@@ -19,6 +19,9 @@ const FIELD_LABELS: Record<string, string> = {
   correction: 'Correction',
   technician_notes: 'Technician Notes',
   recommendations: 'Recommendations',
+  job_number: 'Job #',
+  year: 'Year',
+  make: 'Make',
   equipment_make: 'Equipment Make',
   equipment_model: 'Equipment Model',
   equipment_serial_number: 'Equipment Serial #',
@@ -37,6 +40,9 @@ const FIELD_LABELS: Record<string, string> = {
   model: 'Model',
   serial_number: 'Serial #',
   gvwr: 'GVWR',
+  jurisdiction: 'Jurisdiction',
+  ratings_capacity: 'Ratings / Capacity',
+  date: 'Date',
   gawr_front: 'GAWR Front',
   gawr_rear: 'GAWR Rear',
   tire_size: 'Tire Size',
@@ -156,6 +162,12 @@ function getFieldLabel(field: string) {
 }
 
 function getSourceLabel(extractedData: Json | null) {
+  const sourceDocument = getSourceDocumentMetadata(extractedData)
+
+  if (sourceDocument) {
+    return `Source Document: ${sourceDocument.label}`
+  }
+
   if (!isRecord(extractedData)) {
     return 'Capture'
   }
@@ -286,14 +298,14 @@ export function ExtractedEvidencePanel({
   return (
     <section className="card detail-card extracted-evidence-card form-stack">
       <div>
-        <h2>Extracted Evidence</h2>
-        <p className="muted">Extracted Evidence is for review. Apply trusted values directly to Session Details.</p>
+        <h2>Extracted Details</h2>
+        <p className="muted">Source Documents and evidence produce Report Details for review. Apply trusted values directly to Session Details.</p>
       </div>
 
       {evidenceCaptures.length === 0 ? (
         <div className="empty-state extracted-evidence-empty-state">
-          No extracted evidence yet. Classify captures, then extract details to review values from VIN plates,
-          registrations, work orders, and info tags.
+          No extracted details yet. Capture Source Documents whenever it fits your workflow, then extract details to review values from VIN plates,
+          registrations, work orders, and data plates.
         </div>
       ) : (
         <div className="extracted-evidence-list">
@@ -329,7 +341,7 @@ export function ExtractedEvidencePanel({
                             <input type="hidden" name="field" value={field.field} />
                             <input type="hidden" name="value" value={field.value} />
                             <button className="secondary-link evidence-apply-button" type="submit">
-                              Apply
+                              Apply to Session
                             </button>
                           </form>
                         )

@@ -6,7 +6,12 @@ import { useFormStatus } from 'react-dom'
 import { removeCaptureItem, updateCaptureReview } from '@/features/capture/actions'
 import type { Json } from '@/lib/supabase/database.types'
 
-import { CAPTURE_TYPE_LABELS, type CaptureItem, type CaptureType } from '../types'
+import {
+  CAPTURE_TYPE_LABELS,
+  getSourceDocumentMetadata,
+  type CaptureItem,
+  type CaptureType,
+} from '../types'
 
 function isRecord(value: Json | undefined): value is { [key: string]: Json | undefined } {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -60,8 +65,8 @@ function formatExtractedFields(fields: { [key: string]: Json | undefined }) {
     ['component', 'Component'], ['location', 'Location'], ['measurement', 'Measurement'], ['condition', 'Condition'],
     ['recommendation', 'Recommendation'], ['severity', 'Severity'], ['vin', 'VIN'], ['unit_number', 'Unit'],
     ['asset_label', 'Asset'], ['odometer', 'Odometer'], ['hour_meter', 'Hours'], ['plate_number', 'Plate'],
-    ['work_order_number', 'WO'], ['customer_name', 'Customer'], ['registration_number', 'Registration'],
-    ['manufacturer', 'Manufacturer'], ['model', 'Model'], ['serial_number', 'Serial'],
+    ['work_order_number', 'WO'], ['job_number', 'Job'], ['customer_name', 'Customer'], ['registration_number', 'Registration'],
+    ['manufacturer', 'Manufacturer'], ['model', 'Model'], ['serial_number', 'Serial'], ['jurisdiction', 'Jurisdiction'],
   ]
 
   return labels
@@ -150,7 +155,8 @@ function EvidenceCard({ capture, signedUrl }: { capture: CaptureItem; signedUrl?
       noteTextareaRef.current?.focus({ preventScroll: true })
     }, 0)
   }
-  const label = CAPTURE_TYPE_LABELS[capture.type as CaptureType] ?? capture.type
+  const sourceDocument = getSourceDocumentMetadata(capture.extracted_data)
+  const label = sourceDocument?.label ?? CAPTURE_TYPE_LABELS[capture.type as CaptureType] ?? capture.type
   const classification = getClassificationSummary(capture.extracted_data)
   const reportOrder = capture.report_order ? `Report order ${capture.report_order}` : 'Report order not set'
 
@@ -169,6 +175,11 @@ function EvidenceCard({ capture, signedUrl }: { capture: CaptureItem; signedUrl?
       <MediaPreview note={overlayNote} capture={capture} signedUrl={signedUrl} />
 
       <div className="capture-classification-row">
+        {sourceDocument ? (
+          <span className="classification-pill pending">
+            Source Document: {sourceDocument.label}
+          </span>
+        ) : null}
         <span className={capture.ai_status === 'needs_review' ? 'classification-pill needs-review' : classification.detectedType ? 'classification-pill' : 'classification-pill pending'}>{classification.label}</span>
         <span className="classification-pill pending">{capture.include_in_report ? 'Included in report' : 'Excluded from report'}</span>
         <span className="classification-pill pending">{reportOrder}</span>

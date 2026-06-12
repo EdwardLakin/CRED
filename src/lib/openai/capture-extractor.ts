@@ -2,6 +2,9 @@ import type { Json } from '@/lib/supabase/database.types'
 
 import { type CaptureClassificationType } from './capture-classifier'
 
+type ExtractionTargetType = CaptureClassificationType | 'other'
+type SourceDocumentContext = { type: string; label: string; status: string } | null
+
 export const CAPTURE_EXTRACTION_MODEL = 'gpt-4.1-mini'
 
 export const CAPTURE_EXTRACTION_FIELDS = [
@@ -19,6 +22,7 @@ export const CAPTURE_EXTRACTION_FIELDS = [
   'plate_number',
   'work_order_number',
   'purchase_order_number',
+  'job_number',
   'customer_name',
   'licence_number',
   'complaint',
@@ -26,6 +30,8 @@ export const CAPTURE_EXTRACTION_FIELDS = [
   'correction',
   'technician_notes',
   'recommendations',
+  'year',
+  'make',
   'equipment_make',
   'equipment_model',
   'equipment_serial_number',
@@ -44,6 +50,9 @@ export const CAPTURE_EXTRACTION_FIELDS = [
   'model',
   'serial_number',
   'gvwr',
+  'jurisdiction',
+  'ratings_capacity',
+  'date',
   'gawr_front',
   'gawr_rear',
   'tire_size',
@@ -77,15 +86,15 @@ For field order photos, work order screenshots, data plates, odometer photos, ha
 For hour meters, put the hour reading in hour_meter; the app may suggest it to the odometer/session reading if no hour field exists.
 Keep summary brief and human readable. For brake_measurement, always populate component, location, measurement, condition, recommendation, and severity when visible or supported by technician context. Example note 'left front brake pads at wear limit of 2mm' should extract component brake pads, location left front, measurement 2mm, condition at wear limit, severity red, recommendation replace front brake pads when visually plausible.`
 
-const TARGET_INSTRUCTIONS: Partial<Record<CaptureClassificationType, string>> = {
-  unit_number: 'Focus on fleet/unit number decals or labels. Return unit_number and asset_label when the same visible value identifies the asset.',
-  vin_plate: 'Focus on VIN labels, stamped VINs, and vehicle certification labels. Return vin only when exactly 17 characters and clearly readable.',
+const TARGET_INSTRUCTIONS: Partial<Record<ExtractionTargetType, string>> = {
+  unit_number: 'Source Document: Unit Number. Prioritize unit_number and asset_label from fleet/unit decals or labels.',
+  vin_plate: 'Source Document: VIN Plate. Prioritize vin, year, make/model when visible, manufacturer, GVWR, and GAWR. Return vin only when exactly 17 characters and clearly readable.',
   info_plate:
-    'Focus on manufacturer/data/compliance plate values including possible VIN, manufacturer, model, serial number, GVWR, GAWR, tire size, tire pressure/loading, and compliance text. Put long compliance/tire-loading text in notes if it does not fit a field.',
-  work_order: 'Focus on work order/repair order number, PO number, customer name, complaint, unit number, licence number, VIN/serial, hours/kms, odometer, and typed or handwritten service notes if clearly visible.',
-  registration: 'Focus on VIN, plate number, registered owner/customer, and registration number. Return registered_owner when the registration owner is clearly visible, and customer_name only when a customer/account name is clearly indicated.',
-  license_plate: 'Focus on the exact license plate number only.',
-  odometer: 'Focus on the mileage/odometer reading exactly as displayed.',
+    'Source Document: Data Plate. Prioritize manufacturer, model, serial_number, unit_number, ratings/capacity, possible VIN, GVWR, GAWR, tire size, tire pressure/loading, and compliance text. Put long compliance/tire-loading text in notes if it does not fit a field.',
+  work_order: 'Source Document: Work Order. Prioritize work_order_number, customer_name, unit_number, asset_label, complaint, job number, and date when clearly visible. Also capture VIN/serial, hours/kms, odometer, and typed or handwritten service notes when clear.',
+  registration: 'Source Document: Registration. Prioritize registered_owner, plate_number, vin, year/make/model if visible, registration_number, and GVWR if present. Return customer_name only when a customer/account name is clearly indicated.',
+  license_plate: 'Source Document: Licence Plate. Prioritize exact plate_number and jurisdiction if visible. Use null or notes for uncertain characters.',
+  odometer: 'Source Document: Odometer. Prioritize odometer and hour_meter if present. Extract the reading exactly as displayed.',
   hour_meter: 'Focus on the hour meter reading exactly as displayed.',
   inspection_sheet: 'Focus on inspection/checklist title, visible date, inspector, and form type. Put inspector/checklist title in notes if no direct field fits.',
   brake_measurement: 'Extract brake component, location, exact measurement, condition, recommendation, and severity. Use technician note/transcript as strong context for brake pad/rotor/lining/caliper/shoe/drum measurements when visually plausible.',
@@ -96,6 +105,7 @@ const TARGET_INSTRUCTIONS: Partial<Record<CaptureClassificationType, string>> = 
   defect_photo: 'Extract visible defect component, location, condition, recommendation, and severity.',
   general_evidence: 'Extract only useful inspection details that are visible or strongly supported by technician context.',
   supporting_photo: 'Extract only clearly useful context details; leave unsupported fields null.',
+  other: 'Source Document: Other. Extract any useful report/session fields cautiously. Use null for unclear values and needs_review language in notes for uncertainty.',
 }
 
 function getOpenAiApiKey() {
@@ -199,8 +209,16 @@ export function validateCaptureExtraction(value: unknown): CaptureExtractionResu
 export function buildExtractedCaptureData(existingData: Json | null, extraction: CaptureExtractionResult, status: 'extracted' | 'needs_review'): Json {
   const existingObject = isRecord(existingData) ? existingData : {}
 
+  const sourceDocument = isRecord(existingObject.source_document)
+    ? {
+        ...existingObject.source_document,
+        status: status === 'extracted' ? 'extracted' : 'needs_review',
+      }
+    : undefined
+
   return {
     ...existingObject,
+    ...(sourceDocument ? { source_document: sourceDocument } : {}),
     extraction: {
       status,
       fields: extraction.fields,
@@ -217,8 +235,9 @@ export function getCaptureExtractionSummary(extraction: CaptureExtractionResult)
 
 export async function extractCaptureImageDetails(
   signedImageUrl: string,
-  detectedType: CaptureClassificationType,
+  detectedType: ExtractionTargetType,
   note?: string | null,
+  sourceDocument?: SourceDocumentContext,
 ): Promise<CaptureExtractionResult> {
   const apiKey = getOpenAiApiKey()
 
@@ -227,6 +246,9 @@ export async function extractCaptureImageDetails(
   }
 
   const targetInstruction = TARGET_INSTRUCTIONS[detectedType] ?? 'Extract only clearly visible useful inspection, document, asset, or evidence details.'
+  const sourceDocumentContext = sourceDocument
+    ? `\nSource document tag selected by technician: ${sourceDocument.label} (${sourceDocument.type}). Prioritize identity/session fields for this source document, but do not force extraction if unclear. Use null for unsupported fields and notes for values that need review.`
+    : ''
 
   const response = await fetch(OPENAI_RESPONSES_URL, {
     method: 'POST',
@@ -246,7 +268,7 @@ export async function extractCaptureImageDetails(
           content: [
             {
               type: 'input_text',
-              text: `Classified capture type: ${detectedType}. ${targetInstruction}${note ? `\nTechnician note/transcript: "${note.slice(0, 1000)}". Use it as strong context while checking visual consistency.` : ''}\nReturn exactly the JSON schema fields.`,
+              text: `Classified capture type: ${detectedType}. ${targetInstruction}${sourceDocumentContext}${note ? `\nTechnician note/transcript: "${note.slice(0, 1000)}". Use it as strong context while checking visual consistency.` : ''}\nReturn exactly the JSON schema fields.`,
             },
             { type: 'input_image', image_url: signedImageUrl },
           ],

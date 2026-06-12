@@ -83,7 +83,7 @@ export default async function GuidedCapturePage({
           <p className="eyebrow guided-eyebrow">Photo · Video · Voice note</p>
           <h2>Capture Evidence</h2>
           <p className="muted">
-            Use the large capture control for photos, videos, documents, and voice notes as the work happens. Draft preview cards appear before saving, and recent captures stay below for quick confirmation.
+            Use source document shortcuts when helpful, or capture ordinary evidence as the work happens. Draft preview cards appear before saving, and recent captures stay below for quick confirmation.
           </p>
         </div>
         <AddCaptureForm
