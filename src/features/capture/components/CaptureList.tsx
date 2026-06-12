@@ -8,6 +8,8 @@ import type { Json } from '@/lib/supabase/database.types'
 
 import {
   CAPTURE_TYPE_LABELS,
+  getCaptureProcessingLabel,
+  getCaptureProcessingStatus,
   getSourceDocumentMetadata,
   type CaptureItem,
   type CaptureType,
@@ -20,10 +22,6 @@ function isRecord(value: Json | undefined): value is { [key: string]: Json | und
 function formatDateTime(value: string | null) {
   if (!value) return 'Not available'
   return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value))
-}
-
-function formatAiStatus(status: string | null) {
-  return status ? status.replace(/_/g, ' ') : 'not started'
 }
 
 const DETECTED_TYPE_LABELS: Record<string, string> = {
@@ -159,6 +157,7 @@ function EvidenceCard({ capture, signedUrl }: { capture: CaptureItem; signedUrl?
   const label = sourceDocument?.label ?? CAPTURE_TYPE_LABELS[capture.type as CaptureType] ?? capture.type
   const classification = getClassificationSummary(capture.extracted_data)
   const reportOrder = capture.report_order ? `Report order ${capture.report_order}` : 'Report order not set'
+  const processingStatus = getCaptureProcessingStatus(capture)
 
   return (
     <article className="capture-list-item evidence-preview-card">
@@ -167,8 +166,8 @@ function EvidenceCard({ capture, signedUrl }: { capture: CaptureItem; signedUrl?
           <h3>{label}</h3>
           <p className="muted">Captured {formatDateTime(capture.captured_at ?? capture.created_at)}</p>
         </div>
-        <span className={capture.ai_status === 'needs_review' ? 'ai-status-pill needs-review' : 'ai-status-pill'}>
-          {capture.ai_status === 'needs_review' ? 'Needs review' : `AI ${formatAiStatus(capture.ai_status)}`}
+        <span className={processingStatus === 'needs_review' || processingStatus === 'failed' ? 'ai-status-pill needs-review' : 'ai-status-pill'}>
+          {getCaptureProcessingLabel(processingStatus)}
         </span>
       </div>
 

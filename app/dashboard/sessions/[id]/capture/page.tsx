@@ -76,7 +76,7 @@ export default async function GuidedCapturePage({
         </Link>
       </div>
 
-      {captureSaved ? <p className="success">Capture saved. Continue gathering evidence or tap Done.</p> : null}
+      {captureSaved ? <p className="success">Saved. AI is processing in the background. Continue gathering evidence or tap Done.</p> : null}
 
       <section className="card detail-card focused-capture-card" id="main-capture-card">
         <div>
@@ -135,7 +135,10 @@ export default async function GuidedCapturePage({
             <h2>Recent Captures</h2>
             <p className="muted">Quick confirmation of the latest saved evidence. Full draft review, grouped findings, source field summaries, and delivery actions live on the Report page.</p>
           </div>
-          <span className="ai-status-pill">{captureItems.length} saved</span>
+          <div className="capture-card-actions">
+            <Link href={`/dashboard/sessions/${session.id}/capture`} className="secondary-link touch-target">Refresh status</Link>
+            <span className="ai-status-pill">{captureItems.length} saved</span>
+          </div>
         </div>
         <RecentCapturesList captures={captureItems} signedUrls={signedUrls} />
       </section>

@@ -2,7 +2,7 @@ import { headers } from 'next/headers'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
-import { getRequiredEvidenceCompletion } from '@/features/capture'
+import { ProcessPendingEvidenceButton, getCaptureProcessingStatus, getRequiredEvidenceCompletion } from '@/features/capture'
 import { approveAiReportDraft, createReportShareLink, disableReportShareLink, emailReport, generateAiReportDraft, markReportReviewed, saveReport } from '@/features/reports/actions'
 import { formatDateTime } from '@/features/sessions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
@@ -114,6 +114,18 @@ export default async function SessionReportPreviewPage({
   const headersList = await headers()
   const origin = getReportOrigin(headersList)
   const evidence = getRequiredEvidenceCompletion(captures ?? [], session.session_type, template?.required_evidence ?? null)
+  const visibleCaptures = captures ?? []
+  const processingCounts = visibleCaptures.reduce(
+    (counts, capture) => {
+      const captureStatus = getCaptureProcessingStatus(capture)
+      if (captureStatus === 'extracted') counts.ready += 1
+      if (captureStatus === 'processing' || captureStatus === 'pending' || captureStatus === 'ready_for_review') counts.processing += 1
+      if (captureStatus === 'needs_review' || captureStatus === 'failed' || captureStatus === 'blocked_by_limit') counts.needsReview += 1
+      return counts
+    },
+    { ready: 0, processing: 0, needsReview: 0 },
+  )
+  const hasPendingEvidence = processingCounts.processing > 0
   const isReadyForDelivery = session.review_status === 'ready_for_delivery'
   const reviewedLabel = session.reviewed_at ? formatDateTime(session.reviewed_at) : null
   const markReviewedAction = markReportReviewed.bind(null, session.id)
@@ -158,6 +170,23 @@ export default async function SessionReportPreviewPage({
 
       <section className="card detail-card report-delivery-card form-stack">
         <div>
+          <p className="eyebrow">Evidence Processing</p>
+          <h2>{hasPendingEvidence ? 'Some evidence is still processing' : 'Evidence processing status'}</h2>
+          <p className="muted">{hasPendingEvidence ? 'Some evidence is still processing. You can wait, refresh, or generate a draft with available evidence.' : 'Generate an AI Draft with currently available evidence, or retry processing for any needs-review items.'}</p>
+        </div>
+        <div className="required-evidence-grid">
+          <p className="checkline complete">Ready for review: {processingCounts.ready}</p>
+          <p className={processingCounts.processing > 0 ? 'checkline missing' : 'checkline complete'}>Processing or pending: {processingCounts.processing}</p>
+          <p className={processingCounts.needsReview > 0 ? 'checkline missing' : 'checkline complete'}>Needs review / retry: {processingCounts.needsReview}</p>
+        </div>
+        <div className="form-actions">
+          <Link href={`/dashboard/sessions/${session.id}/report`} className="button button-secondary touch-target">Refresh Processing Status</Link>
+          <ProcessPendingEvidenceButton sessionId={session.id} />
+        </div>
+      </section>
+
+      <section className="card detail-card report-delivery-card form-stack">
+        <div>
           <p className="eyebrow">Review Draft</p>
           <h2>AI Draft</h2>
           <p className="muted">CRED will organize your captured evidence using the selected Form Profile as Report Context. Review before delivery.</p>
@@ -171,7 +200,7 @@ export default async function SessionReportPreviewPage({
               <p className="checkline complete">✓ Source Documents and extracted details included when available</p>
             </div>
             <div className="form-actions">
-              <button className="button button-primary touch-target">Generate AI Draft</button>
+              <button className="button button-primary touch-target">{hasPendingEvidence ? 'Generate Draft with Available Evidence' : 'Generate AI Draft'}</button>
               <Link href={`/dashboard/sessions/${session.id}/capture`} className="button button-secondary touch-target">Capture More Evidence</Link>
             </div>
           </form>
@@ -228,7 +257,7 @@ export default async function SessionReportPreviewPage({
             ) : null}
             <p className="muted">TODO: Add inline edit, move, merge, and source-reference controls for future AI Draft review.</p>
             <div className="form-actions">
-              <form action={generateDraftAction}><button className="button button-secondary touch-target">Generate new draft</button></form>
+              <form action={generateDraftAction}><button className="button button-secondary touch-target">{hasPendingEvidence ? 'Generate new draft with available evidence' : 'Generate new draft'}</button></form>
               {currentAiDraft.status !== 'approved' && approveDraftAction ? <form action={approveDraftAction}><button className="button button-primary touch-target">Approve Draft</button></form> : null}
             </div>
           </div>

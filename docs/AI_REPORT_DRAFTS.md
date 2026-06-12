@@ -103,3 +103,15 @@ Source documents provide identity/header fields for the draft, such as customer/
 If a technician note on the source document explicitly says to use the document content as a finding (for example, “use this as finding” or “include line 3”), the draft generator may consider that source document content as draft context and must still keep source capture references for human review.
 
 The session page is intentionally a lightweight job folder. The report / AI Draft page is the review workspace for grouped findings, source field summary, unmapped evidence, draft approval, and delivery actions after approval.
+
+## Interaction with background capture processing
+
+AI Report Draft generation can use currently available evidence even when some captures are still pending. The Report page shows an evidence-processing summary and offers three recovery-oriented actions:
+
+- refresh processing status,
+- process pending evidence,
+- generate a draft with available evidence.
+
+The draft flow should not block completely unless there is no evidence. Source documents that have been processed contribute identity/header fields only; work-order lines, comments, complaints, corrections, and recommendations are not promoted to findings unless technician context explicitly asks for that behavior.
+
+See [Background Capture Processing](./BACKGROUND_CAPTURE_PROCESSING.md) for details.

@@ -816,6 +816,55 @@ function isMissingOpenAiKeyError(error: unknown) {
   return error instanceof Error && error.message === 'OPENAI_API_KEY_MISSING'
 }
 
+function mergeProcessingState(
+  extractedData: Json | null,
+  processing: Record<string, Json>,
+): Json {
+  const existingObject = isRecord(extractedData) ? extractedData : {}
+  return {
+    ...existingObject,
+    processing: {
+      ...(isRecord(existingObject.processing) ? existingObject.processing : {}),
+      ...processing,
+    },
+  }
+}
+
+async function updateCaptureProcessingState(
+  capture: PendingCaptureItem,
+  supabase: Awaited<ReturnType<typeof requireSessionWorkspace>>['supabase'],
+  status: 'pending' | 'processing' | 'extracted' | 'needs_review' | 'failed' | 'blocked_by_limit',
+  stage: string,
+  message?: string,
+) {
+  const now = new Date().toISOString()
+  const processing: Record<string, Json> = {
+    status,
+    stage,
+    ...(status === 'processing' ? { started_at: now } : { completed_at: now }),
+    ...(message ? { error_message: message } : {}),
+  }
+
+  const { error } = await supabase
+    .from('capture_items')
+    .update({
+      ai_status: status === 'pending' ? 'pending' : status,
+      extracted_data: mergeProcessingState(capture.extracted_data, processing),
+      updated_at: now,
+    })
+    .eq('id', capture.id)
+    .eq('documentation_session_id', capture.documentation_session_id)
+    .eq('organization_id', capture.organization_id)
+
+  if (error) {
+    logCaptureFailure({
+      step: 'capture_processing_state_update',
+      captureId: capture.id,
+      ...getSafeErrorDetails(error),
+    })
+  }
+}
+
 export async function classifyPendingCaptures(
   _previousState: CaptureClassificationActionState,
   formData: FormData,
@@ -1610,6 +1659,281 @@ export async function extractCaptureDetails(
     ok: true,
     message: extractionActionMessage(extractedCount, suggestionCount),
   }
+}
+
+
+export type BackgroundCaptureProcessingSummary = {
+  ok: boolean
+  message: string
+  processed: number
+  skipped: number
+  failed: number
+  pending: number
+  blockedByLimit: number
+}
+
+type ProcessableCaptureItem = ExtractionCaptureItem & { deleted_at: string | null }
+
+function captureAlreadyExtracted(capture: ProcessableCaptureItem) {
+  const extractedData = isRecord(capture.extracted_data) ? capture.extracted_data : null
+  const extraction = extractedData && isRecord(extractedData.extraction) ? extractedData.extraction : null
+  const extractionStatus = typeof extraction?.status === 'string' ? extraction.status : null
+  return capture.ai_status === 'extracted' || extractionStatus === 'extracted'
+}
+
+function captureHasImageFile(capture: ProcessableCaptureItem) {
+  return capture.media_kind === 'image' || IMAGE_STORAGE_PATH_PATTERN.test(capture.storage_path)
+}
+
+async function markCaptureUnsupportedForBackground(
+  capture: ProcessableCaptureItem,
+  supabase: Awaited<ReturnType<typeof requireSessionWorkspace>>['supabase'],
+  reason: string,
+) {
+  await updateCaptureProcessingState(capture, supabase, 'needs_review', 'unsupported', reason)
+}
+
+export async function processPendingCapturesForSession(sessionId: string): Promise<BackgroundCaptureProcessingSummary> {
+  const trimmedSessionId = sessionId.trim()
+  const summary: BackgroundCaptureProcessingSummary = {
+    ok: true,
+    message: 'No pending evidence needed processing.',
+    processed: 0,
+    skipped: 0,
+    failed: 0,
+    pending: 0,
+    blockedByLimit: 0,
+  }
+
+  if (!trimmedSessionId) {
+    return { ...summary, ok: false, message: 'Missing documentation session.' }
+  }
+
+  const { supabase, profile } = await requireSessionWorkspace()
+  const billingAccess = requireActiveBillingAccess(profile)
+
+  if (!billingAccess.ok) {
+    return { ...summary, ok: false, message: billingAccess.message }
+  }
+
+  const { data: session, error: sessionError } = await supabase
+    .from('documentation_sessions')
+    .select('id, organization_id, suggested_details')
+    .eq('id', trimmedSessionId)
+    .eq('organization_id', profile.organization_id)
+    .single()
+
+  if (sessionError || !session) {
+    return { ...summary, ok: false, message: 'Documentation session not found.' }
+  }
+
+  const { data: captures, error: capturesError } = await supabase
+    .from('capture_items')
+    .select('id, documentation_session_id, organization_id, type, storage_path, extracted_data, ai_status, technician_note, transcript, media_kind, deleted_at')
+    .eq('documentation_session_id', session.id)
+    .eq('organization_id', profile.organization_id)
+    .order('captured_at', { ascending: true })
+    .limit(100)
+
+  if (capturesError) {
+    logCaptureFailure({
+      step: 'background_capture_processing_query',
+      ...getSafeErrorDetails(capturesError),
+    })
+    return { ...summary, ok: false, message: 'Unable to load pending evidence.' }
+  }
+
+  const processableCaptures = (captures ?? [])
+    .filter((capture): capture is ProcessableCaptureItem => !capture.deleted_at && !captureAlreadyExtracted(capture as ProcessableCaptureItem))
+    .slice(0, MAX_CLASSIFICATION_BATCH_SIZE)
+
+  if (processableCaptures.length === 0) {
+    return summary
+  }
+
+  let suggestedDetails = isRecord(session.suggested_details) ? (session.suggested_details as Json) : {}
+
+  for (const capture of processableCaptures) {
+    const sourceDocument = getSourceDocumentMetadata(capture.extracted_data)
+
+    if (!EXTRACTABLE_CAPTURE_TYPES.includes(capture.type) || !captureHasImageFile(capture)) {
+      await markCaptureUnsupportedForBackground(
+        capture,
+        supabase,
+        capture.media_kind === 'video'
+          ? 'Video-only evidence is saved for report review and can be processed later when thumbnail extraction is available.'
+          : 'This evidence type is saved but is not supported by background extraction yet.',
+      )
+      summary.skipped += 1
+      continue
+    }
+
+    try {
+      await updateCaptureProcessingState(capture, supabase, 'processing', sourceDocument ? 'extraction' : 'classification')
+
+      let workingCapture: ProcessableCaptureItem = capture
+      if (!sourceDocument && captureNeedsClassification(capture)) {
+        const classificationAllowance = await requireUsageAllowance({
+          supabase,
+          organizationId: profile.organization_id,
+          plan: billingAccess.access.plan,
+          eventType: 'ai_classification',
+          quantity: 1,
+        })
+
+        if (!classificationAllowance.ok) {
+          await updateCaptureProcessingState(capture, supabase, 'blocked_by_limit', 'classification', classificationAllowance.message)
+          summary.blockedByLimit += 1
+          continue
+        }
+
+        const { data: signedData, error: signedUrlError } = await supabase.storage
+          .from(CAPTURE_BUCKET)
+          .createSignedUrl(capture.storage_path, SIGNED_CLASSIFICATION_URL_SECONDS)
+
+        if (signedUrlError || !signedData?.signedUrl) {
+          logCaptureFailure({
+            step: 'background_capture_classification_signed_url',
+            captureId: capture.id,
+            ...getSafeErrorDetails(signedUrlError),
+          })
+          await markCaptureNeedsReview(capture, supabase, 'Unable to prepare image for classification.')
+          summary.failed += 1
+          continue
+        }
+
+        const classification = await classifyCaptureImage(
+          signedData.signedUrl,
+          getGuidanceContext(capture.extracted_data),
+          capture.technician_note ?? capture.transcript ?? null,
+        )
+        await updateCaptureClassification(capture, classification, supabase)
+        await recordUsageEvent({
+          supabase,
+          organizationId: profile.organization_id,
+          eventType: 'ai_classification',
+          quantity: 1,
+          metadata: { session_id: session.id, capture_id: capture.id, background: true },
+          createdBy: profile.id,
+        })
+        workingCapture = {
+          ...capture,
+          ai_status: getClassificationStatus(classification),
+          extracted_data: buildClassifiedImageData(capture.extracted_data, classification, getClassificationStatus(classification)),
+        }
+      }
+
+      const detectedType = getDetectedType(workingCapture.extracted_data)
+
+      if (!detectedType || !captureNeedsExtraction(workingCapture)) {
+        summary.skipped += 1
+        continue
+      }
+
+      const extractionAllowance = await requireUsageAllowance({
+        supabase,
+        organizationId: profile.organization_id,
+        plan: billingAccess.access.plan,
+        eventType: 'ai_extraction',
+        quantity: 1,
+      })
+
+      if (!extractionAllowance.ok) {
+        await updateCaptureProcessingState(workingCapture, supabase, 'blocked_by_limit', 'extraction', extractionAllowance.message)
+        summary.blockedByLimit += 1
+        continue
+      }
+
+      await updateCaptureProcessingState(workingCapture, supabase, 'processing', 'extraction')
+
+      const { data: signedData, error: signedUrlError } = await supabase.storage
+        .from(CAPTURE_BUCKET)
+        .createSignedUrl(workingCapture.storage_path, SIGNED_EXTRACTION_URL_SECONDS)
+
+      if (signedUrlError || !signedData?.signedUrl) {
+        logCaptureFailure({
+          step: 'background_capture_extraction_signed_url',
+          captureId: workingCapture.id,
+          ...getSafeErrorDetails(signedUrlError),
+        })
+        await markCaptureExtractionFailed(workingCapture, supabase, 'Unable to prepare image for extraction.')
+        summary.failed += 1
+        continue
+      }
+
+      const extraction = await extractCaptureImageDetails(
+        signedData.signedUrl,
+        detectedType,
+        workingCapture.technician_note ?? workingCapture.transcript ?? null,
+        getSourceDocumentMetadata(workingCapture.extracted_data),
+      )
+      await updateCaptureExtraction(workingCapture, extraction, supabase)
+      suggestedDetails = mergeSessionSuggestions(suggestedDetails, workingCapture, detectedType, extraction)
+      await recordUsageEvent({
+        supabase,
+        organizationId: profile.organization_id,
+        eventType: 'ai_extraction',
+        quantity: 1,
+        metadata: { session_id: session.id, capture_id: workingCapture.id, background: true },
+        createdBy: profile.id,
+      })
+      summary.processed += 1
+    } catch (error) {
+      if (isMissingOpenAiKeyError(error)) {
+        await updateCaptureProcessingState(capture, supabase, 'failed', 'configuration', 'AI processing is not configured yet.')
+      } else {
+        logCaptureFailure({
+          step: 'background_capture_processing',
+          captureId: capture.id,
+          ...getSafeErrorDetails(error),
+        })
+        await updateCaptureProcessingState(capture, supabase, 'failed', 'processing', 'AI processing failed. Retry from the session or report page.')
+      }
+      summary.failed += 1
+    }
+  }
+
+  const { error: suggestionsError } = await supabase
+    .from('documentation_sessions')
+    .update({ suggested_details: suggestedDetails, updated_at: new Date().toISOString() })
+    .eq('id', session.id)
+    .eq('organization_id', profile.organization_id)
+
+  if (suggestionsError) {
+    logCaptureFailure({
+      step: 'background_session_suggestions_update',
+      ...getSafeErrorDetails(suggestionsError),
+    })
+  }
+
+  const { count: pendingCount } = await supabase
+    .from('capture_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('documentation_session_id', session.id)
+    .eq('organization_id', profile.organization_id)
+    .is('deleted_at', null)
+    .in('ai_status', ['pending', 'processing', 'blocked_by_limit'])
+
+  summary.pending = pendingCount ?? 0
+  summary.ok = summary.failed === 0
+  summary.message = summary.blockedByLimit > 0
+    ? 'AI usage limit reached. Evidence is saved and can be retried after allowance resets.'
+    : `Processed ${summary.processed} capture${summary.processed === 1 ? '' : 's'} in the background.`
+
+  revalidatePath(`/dashboard/sessions/${session.id}`)
+  revalidatePath(`/dashboard/sessions/${session.id}/capture`)
+  revalidatePath(`/dashboard/sessions/${session.id}/report`)
+
+  return summary
+}
+
+export async function processPendingCaptures(
+  _previousState: CaptureExtractionActionState,
+  formData: FormData,
+): Promise<CaptureExtractionActionState> {
+  const sessionId = getString(formData, 'session_id')
+  const summary = await processPendingCapturesForSession(sessionId)
+  return { ok: summary.ok, message: summary.message }
 }
 
 type CaptureReviewActionState = {

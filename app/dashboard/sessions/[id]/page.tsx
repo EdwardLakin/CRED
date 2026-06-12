@@ -7,7 +7,9 @@ import {
   EvidenceChecklistSummary,
   ExtractCaptureDetailsButton,
   ExtractedEvidencePanel,
+  ProcessPendingEvidenceButton,
   RecentCapturesList,
+  getCaptureProcessingStatus,
 } from '@/features/capture'
 import { ThemeToggle } from '@/components/theme'
 import { FieldServiceDetailsCard, isFieldServiceSessionType } from '@/features/field-service'
@@ -128,8 +130,18 @@ export default async function SessionDetailPage({
   const restoreAction = restoreDocumentationSession.bind(null, session.id)
   const isArchived = session.status === 'archived'
   const includedCaptureCount = visibleCaptures.filter((capture) => capture.include_in_report).length
-  const needsReviewCount = visibleCaptures.filter((capture) => capture.ai_status === 'needs_review').length
-  const extractedCaptureCount = visibleCaptures.filter((capture) => capture.ai_status === 'completed').length
+  const processingCounts = visibleCaptures.reduce(
+    (counts, capture) => {
+      const status = getCaptureProcessingStatus(capture)
+      if (status === 'extracted') counts.ready += 1
+      if (status === 'processing' || status === 'pending' || status === 'ready_for_review') counts.processing += 1
+      if (status === 'needs_review' || status === 'failed' || status === 'blocked_by_limit') counts.needsReview += 1
+      return counts
+    },
+    { ready: 0, processing: 0, needsReview: 0 },
+  )
+  const needsReviewCount = processingCounts.needsReview
+  const extractedCaptureCount = processingCounts.ready
   const sourceDocumentCount = visibleCaptures.filter(isSourceDocumentCapture).length
   const recentPreviewCaptures = visibleCaptures.slice(0, 4)
   const currentAiDraft = (aiDrafts ?? []).find((draft) => draft.status === 'approved') ?? (aiDrafts ?? []).find((draft) => draft.status !== 'superseded') ?? aiDrafts?.[0] ?? null
@@ -176,6 +188,7 @@ export default async function SessionDetailPage({
           <p className="checkline complete">Vehicle / Asset: {session.unit_number || session.asset_label || session.vin || 'Not set'}</p>
           <p className="checkline complete">Customer: {session.customer_name || 'Not set'}</p>
           <p className="checkline complete">Captures: {visibleCaptures.length}</p>
+          <p className={processingCounts.processing > 0 ? 'checkline missing' : 'checkline complete'}>Evidence processing: {processingCounts.ready} ready, {processingCounts.processing} processing, {processingCounts.needsReview} needs review</p>
           <p className="checkline complete">Source documents: {sourceDocumentCount}</p>
           <p className="checkline complete">AI draft: {aiDraftStatus}</p>
           <p className={session.review_status === 'ready_for_delivery' ? 'checkline complete' : 'checkline missing'}>Report delivery: {reportDeliveryStatus}</p>
@@ -344,6 +357,7 @@ export default async function SessionDetailPage({
                   </p>
                 </div>
                 <div className="capture-ai-actions">
+                  <ProcessPendingEvidenceButton sessionId={session.id} />
                   <ClassifyPendingCapturesButton sessionId={session.id} />
                   <ExtractCaptureDetailsButton sessionId={session.id} />
                 </div>
