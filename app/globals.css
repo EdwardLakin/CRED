@@ -15,8 +15,8 @@
   --accent: #4f46e5;
   --success: #166534;
   --success-soft: #dcfce7;
-  --warning: #92400e;
-  --warning-soft: #fef3c7;
+  --warning: #a16207;
+  --warning-soft: #fff7ed;
   --danger: #b42318;
   --danger-soft: #fee2e2;
   --muted: #5f6f89;
@@ -53,8 +53,8 @@
   --accent: #a5b4fc;
   --success: #86efac;
   --success-soft: #123522;
-  --warning: #fbbf24;
-  --warning-soft: #3f2d0d;
+  --warning: #fcd34d;
+  --warning-soft: #2f2614;
   --danger: #fca5a5;
   --danger-soft: #3c171b;
   --muted: #a7b4c8;
@@ -392,8 +392,8 @@ a {
 }
 
 .status-badge-review {
-  background: var(--warning-soft);
-  color: var(--warning);
+  background: var(--info-soft);
+  color: var(--info);
 }
 
 .status-badge-finalized {
@@ -477,6 +477,62 @@ a {
   color: var(--success);
   font-weight: 800;
   padding: 12px 14px;
+}
+
+.notice {
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  font-weight: 800;
+  padding: 12px 14px;
+}
+
+.notice.info {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.status-pill {
+  align-items: center;
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.88rem;
+  font-weight: 800;
+  margin: .35rem 0;
+  min-height: 34px;
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+
+.status-pill.compact {
+  font-size: 0.78rem;
+  margin-left: 8px;
+  min-height: 28px;
+  padding: 5px 9px;
+}
+
+.status-pill.neutral {
+  background: var(--surface-muted);
+  color: var(--muted-foreground);
+}
+
+.status-pill.info {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.status-pill.success {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.status-pill.attention {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.status-pill.danger {
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 @media (max-width: 760px) {
@@ -604,9 +660,9 @@ a {
 }
 
 .ai-status-pill {
-  background: var(--warning-soft);
+  background: var(--surface-muted);
   border-radius: 999px;
-  color: var(--warning);
+  color: var(--muted-foreground);
   font-size: 0.82rem;
   font-weight: 800;
   padding: 8px 12px;
@@ -786,8 +842,32 @@ a {
   text-align: right;
 }
 
-.ai-status-pill.needs-review,
-.classification-pill.needs-review {
+.ai-status-pill.neutral,
+.classification-pill.neutral {
+  background: var(--surface-muted);
+  color: var(--muted-foreground);
+}
+
+.ai-status-pill.info,
+.classification-pill.info {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.ai-status-pill.success,
+.classification-pill.success {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.ai-status-pill.attention,
+.classification-pill.attention {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.ai-status-pill.danger,
+.classification-pill.danger {
   background: var(--danger-soft);
   color: var(--danger);
 }
@@ -813,9 +893,9 @@ a {
 }
 
 .classification-pill {
-  background: var(--success-soft);
+  background: var(--surface-muted);
   border-radius: 999px;
-  color: var(--success);
+  color: var(--muted-foreground);
   font-size: 0.82rem;
   font-weight: 800;
   padding: 8px 12px;
@@ -823,8 +903,8 @@ a {
 }
 
 .classification-pill.pending {
-  background: var(--info-soft);
-  color: var(--info);
+  background: var(--surface-muted);
+  color: var(--muted-foreground);
 }
 
 .correct-type-placeholder {
@@ -1247,7 +1327,7 @@ a:focus-visible {
 }
 
 .guided-step-card-needs-review {
-  border-color: var(--danger);
+  border-color: var(--warning);
 }
 
 .guided-step-card-compact {
@@ -1307,8 +1387,8 @@ a:focus-visible {
 }
 
 .guided-status-needs-review {
-  background: var(--danger-soft);
-  color: var(--danger);
+  background: var(--warning-soft);
+  color: var(--warning);
 }
 
 .guided-status-extracted {
@@ -2416,15 +2496,32 @@ a:focus-visible {
   padding: .45rem .7rem;
 }
 
-.checkline.completed {
+.checkline.completed,
+.checkline.complete {
   background: rgba(34, 197, 94, .12);
   color: #166534;
 }
 
+.checkline.neutral {
+  background: var(--surface-muted);
+  color: var(--muted-foreground);
+}
+
+.checkline.info {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.checkline.attention,
 .checkline.missing,
 .missing-evidence-warning .checkline {
-  background: rgba(245, 158, 11, .14);
-  color: #92400e;
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.checkline.danger {
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .signature-pad-wrap {
@@ -2444,6 +2541,21 @@ a:focus-visible {
 .signature-list-item {
   flex-wrap: wrap;
   justify-content: flex-start;
+}
+
+.advisory-card {
+  border-color: var(--border-strong);
+  box-shadow: none;
+}
+
+.delivery-helper {
+  font-weight: 800;
+}
+
+.button:disabled,
+.button[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.68;
 }
 
 .report-delivery-card .field-grid {

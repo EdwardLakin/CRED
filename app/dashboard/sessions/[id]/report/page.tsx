@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 
 import { ProcessPendingEvidenceButton, getCaptureProcessingStatus, getRequiredEvidenceCompletion } from '@/features/capture'
 import { approveAiReportDraft, createReportShareLink, disableReportShareLink, emailReport, generateAiReportDraft, markReportReviewed, saveReport } from '@/features/reports/actions'
+import { formatReportEventLabel } from '@/features/reports/labels'
 import { formatDateTime } from '@/features/sessions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
@@ -30,6 +31,17 @@ function getDisplayEntries(value: unknown) {
 
 function getArrayCount(value: unknown) {
   return Array.isArray(value) ? value.length : 0
+}
+
+function formatWorkflowStatus(value: string) {
+  return value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function getAiDraftStatusVariant(status: string) {
+  if (status === 'approved') return 'success'
+  if (status === 'failed') return 'danger'
+  if (status === 'processing') return 'info'
+  return 'neutral'
 }
 
 export default async function SessionReportPreviewPage({
@@ -163,9 +175,9 @@ export default async function SessionReportPreviewPage({
       {status.shared ? <p className="success">Secure share link generated.</p> : null}
       {status.saved ? <p className="success">Report saved indefinitely unless deleted.</p> : null}
       {status.reviewed ? <p className="success">Reviewed and ready to deliver.</p> : null}
-      {status.draft ? <p className="success">AI Draft generated. Human Review Required before delivery.</p> : null}
+      {status.draft ? <p className="success">AI Draft generated and ready for review.</p> : null}
       {status.approved_draft ? <p className="success">AI Draft approved and ready for delivery.</p> : null}
-      {!isReadyForDelivery ? <p className="error">Review and approve this report draft before delivery.</p> : null}
+      {!isReadyForDelivery ? <p className="notice info">Approve the AI Draft to unlock delivery.</p> : null}
       {status.disabled ? <p className="success">Share link disabled.</p> : null}
 
       <section className="card detail-card report-delivery-card form-stack">
@@ -176,8 +188,8 @@ export default async function SessionReportPreviewPage({
         </div>
         <div className="required-evidence-grid">
           <p className="checkline complete">Ready for review: {processingCounts.ready}</p>
-          <p className={processingCounts.processing > 0 ? 'checkline missing' : 'checkline complete'}>Processing or pending: {processingCounts.processing}</p>
-          <p className={processingCounts.needsReview > 0 ? 'checkline missing' : 'checkline complete'}>Needs review / retry: {processingCounts.needsReview}</p>
+          <p className={processingCounts.processing > 0 ? 'checkline neutral' : 'checkline complete'}>Processing or pending: {processingCounts.processing}</p>
+          <p className={processingCounts.needsReview > 0 ? 'checkline attention' : 'checkline complete'}>Needs review / retry: {processingCounts.needsReview}</p>
         </div>
         <div className="form-actions">
           <Link href={`/dashboard/sessions/${session.id}/report`} className="button button-secondary touch-target">Refresh Processing Status</Link>
@@ -190,13 +202,13 @@ export default async function SessionReportPreviewPage({
           <p className="eyebrow">Review Draft</p>
           <h2>AI Draft</h2>
           <p className="muted">CRED will organize your captured evidence using the selected Form Profile as Report Context. Review before delivery.</p>
-          <p className="muted"><strong>Human Review Required:</strong> AI Drafts are prepared from captured evidence and notes. Review before delivery.</p>
+          <p className="muted"><strong>Review step:</strong> AI Drafts are prepared from captured evidence and notes. Approve the draft to unlock email, share, save, and printable report delivery.</p>
         </div>
         {!currentAiDraft ? (
           <form action={generateDraftAction} className="form-stack">
             <div className="required-evidence-grid">
               <p className="checkline complete">✓ Report Context: {template?.name ?? 'No Form Profile / Evidence Package'}</p>
-              <p className={(captures ?? []).length > 0 ? 'checkline complete' : 'checkline missing'}>{(captures ?? []).length > 0 ? '✓' : '○'} Evidence captures available</p>
+              <p className={(captures ?? []).length > 0 ? 'checkline complete' : 'checkline neutral'}>{(captures ?? []).length > 0 ? '✓' : '○'} Evidence captures available</p>
               <p className="checkline complete">✓ Source Documents and extracted details included when available</p>
             </div>
             <div className="form-actions">
@@ -208,7 +220,7 @@ export default async function SessionReportPreviewPage({
           <div className="form-stack">
             <div className="template-library-item">
               <div>
-                <p className="eyebrow">Status: {currentAiDraft.status}</p>
+                <p className={`status-pill ${getAiDraftStatusVariant(currentAiDraft.status)}`}>AI Draft: {formatWorkflowStatus(currentAiDraft.status)}</p>
                 <h3>{currentAiDraft.title ?? session.title}</h3>
                 {currentAiDraft.summary ? <p className="muted">{currentAiDraft.summary}</p> : null}
                 <p className="muted">Generated: {currentAiDraft.generated_at ? formatDateTime(currentAiDraft.generated_at) : 'Not recorded'} · Confidence: {typeof currentAiDraft.confidence === 'number' ? `${Math.round(currentAiDraft.confidence * 100)}%` : 'Not available'}</p>
@@ -219,7 +231,7 @@ export default async function SessionReportPreviewPage({
             <div className="required-evidence-grid">
               <p className="checkline complete">Grouped findings: {draftFindingCount}</p>
               <p className="checkline complete">Measurements: {draftMeasurementCount}</p>
-              <p className={unmappedEvidenceCount > 0 ? 'checkline missing' : 'checkline complete'}>Unmapped evidence: {unmappedEvidenceCount}</p>
+              <p className={unmappedEvidenceCount > 0 ? 'checkline attention' : 'checkline complete'}>Unmapped evidence: {unmappedEvidenceCount}</p>
             </div>
 
             <section className="form-stack">
@@ -240,7 +252,7 @@ export default async function SessionReportPreviewPage({
                   <div className="form-stack">
                     <div>
                       <strong>{section.title}</strong>
-                      {section.status ? <span className="status-badge">{section.status.replace('_', ' ')}</span> : null}
+                      {section.status ? <span className="status-pill neutral compact">{section.status.replace(/_/g, ' ')}</span> : null}
                       {typeof section.confidence === 'number' ? <span className="muted"> Confidence: {Math.round(section.confidence * 100)}%</span> : null}
                     </div>
                     {section.body ? <p className="muted">{section.body}</p> : null}
@@ -265,14 +277,14 @@ export default async function SessionReportPreviewPage({
       </section>
 
       {evidence.missing.length > 0 ? (
-        <section className="card detail-card missing-evidence-warning">
+        <section className="card detail-card advisory-card">
           <div>
-            <p className="eyebrow">Unresolved Coverage Suggestions</p>
-            <h2>This report has unresolved coverage suggestions.</h2>
-            <p className="muted">Approve with unresolved items or return to Capture to add more evidence. Suggestions are reminders only.</p>
+            <p className="eyebrow">Coverage Review</p>
+            <h2>Coverage suggestions available</h2>
+            <p className="muted">These suggestions are optional reminders. You can capture more evidence or approve the draft as-is.</p>
           </div>
           <div className="required-evidence-grid">
-            {evidence.missing.map((row) => <p key={row.rule.key} className="checkline missing">○ {row.rule.label}</p>)}
+            {evidence.missing.map((row) => <p key={row.rule.key} className="checkline attention">○ {row.rule.label}</p>)}
           </div>
           <div className="form-actions">
             <Link href={`/dashboard/sessions/${session.id}/capture`} className="button button-primary touch-target">Return to Capture</Link>
@@ -290,18 +302,18 @@ export default async function SessionReportPreviewPage({
           ) : null}
         </div>
         <div className="required-evidence-grid">
-          <p className={evidence.missing.length === 0 ? 'checkline complete' : 'checkline missing'}>{evidence.missing.length === 0 ? '✓' : '○'} Coverage suggestions reviewed</p>
+          <p className={evidence.missing.length === 0 ? 'checkline complete' : 'checkline attention'}>{evidence.missing.length === 0 ? '✓' : '○'} Coverage suggestions reviewed</p>
           <p className="checkline complete">✓ AI extracted details reviewed</p>
-          <p className={(captures ?? []).length > 0 ? 'checkline complete' : 'checkline missing'}>{(captures ?? []).length > 0 ? '✓' : '○'} Included captures reviewed</p>
-          <p className={(signatures ?? []).length > 0 ? 'checkline complete' : 'checkline missing'}>{(signatures ?? []).length > 0 ? '✓' : '○'} Signatures reviewed if required</p>
+          <p className={(captures ?? []).length > 0 ? 'checkline complete' : 'checkline neutral'}>{(captures ?? []).length > 0 ? '✓' : '○'} Included captures reviewed</p>
+          <p className={(signatures ?? []).length > 0 ? 'checkline complete' : 'checkline neutral'}>{(signatures ?? []).length > 0 ? '✓' : '○'} Signatures reviewed if required</p>
         </div>
         {!isReadyForDelivery ? (
           <form action={markReviewedAction} className="form-stack">
             <input type="hidden" name="missing_evidence_count" value={evidence.missing.length} />
             {evidence.missing.length > 0 ? (
-              <label className="checkline missing">
+              <label className="checkline attention">
                 <input type="checkbox" name="missing_evidence_acknowledged" required />
-                I acknowledge this report has unresolved coverage suggestions and approve with unresolved items.
+                I reviewed the optional coverage suggestions and approve this draft as-is.
               </label>
             ) : null}
             <div className="form-actions">
@@ -318,7 +330,7 @@ export default async function SessionReportPreviewPage({
           <p className="eyebrow">Report Delivery</p>
           <h2>Email Printable Report</h2>
           <p className="muted">Recipients receive a secure link to the printable report.</p>
-          {!isReadyForDelivery ? <p className="error">Review and approve this report draft before delivery.</p> : null}
+          {!isReadyForDelivery ? <p className="muted delivery-helper">Available after draft approval.</p> : null}
         </div>
         <form action={emailAction} className="field-grid">
           <div className="field-stack"><label htmlFor="recipients" className="label">Customer email / recipients</label><input id="recipients" name="recipients" className="input" placeholder="customer@example.com, manager@example.com" required /></div>
@@ -331,7 +343,7 @@ export default async function SessionReportPreviewPage({
         <div>
           <h2>Share Link</h2>
           <p className="muted">Generate secure report links with expiration, disable access, and view tracking.</p>
-          {!isReadyForDelivery ? <p className="error">Review and approve this report draft before delivery.</p> : null}
+          {!isReadyForDelivery ? <p className="muted delivery-helper">Available after draft approval.</p> : null}
         </div>
         <form action={shareAction} className="field-grid">
           <div className="field-stack"><label htmlFor="expires_at" className="label">Expiration date</label><input id="expires_at" name="expires_at" className="input" type="datetime-local" /></div>
@@ -357,11 +369,11 @@ export default async function SessionReportPreviewPage({
         <div>
           <h2>Save Report</h2>
           <p className="muted">Saved reports remain accessible indefinitely unless deleted.</p>
-          {!isReadyForDelivery ? <p className="error">Review and approve this report draft before delivery.</p> : null}
+          {!isReadyForDelivery ? <p className="muted delivery-helper">Available after draft approval.</p> : null}
         </div>
         <form action={saveAction}><button className="button button-primary touch-target" disabled={!isReadyForDelivery}>Save Report</button></form>
         <div className="signature-list">
-          {(reportEvents ?? []).map((event) => <article key={event.id} className="signature-list-item"><strong>{event.export_type}</strong><span>{event.status}</span><span className="muted">{formatDateTime(event.created_at)}</span></article>)}
+          {(reportEvents ?? []).map((event) => <article key={event.id} className="signature-list-item"><strong>{formatReportEventLabel(event.export_type, event.status)}</strong><span>{event.status}</span><span className="muted">{formatDateTime(event.created_at)}</span></article>)}
         </div>
       </section>
 

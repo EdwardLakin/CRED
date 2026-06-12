@@ -21,6 +21,7 @@ import {
 } from '@/features/sessions/actions'
 import { SignatureCaptureForm } from '@/features/signatures'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import { formatReportEventLabel } from '@/features/reports/labels'
 
 function DetailField({
   id,
@@ -49,6 +50,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isSourceDocumentCapture(capture: { extracted_data: unknown }) {
   return isRecord(capture.extracted_data) && isRecord(capture.extracted_data.source_document)
+}
+
+function formatWorkflowStatus(value: string) {
+  return value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function formatAiDraftStatus(status: string | null) {
+  if (!status) return 'Not started'
+  if (status === 'approved') return 'Approved'
+  return formatWorkflowStatus(status)
 }
 
 export default async function SessionDetailPage({
@@ -145,8 +156,8 @@ export default async function SessionDetailPage({
   const sourceDocumentCount = visibleCaptures.filter(isSourceDocumentCapture).length
   const recentPreviewCaptures = visibleCaptures.slice(0, 4)
   const currentAiDraft = (aiDrafts ?? []).find((draft) => draft.status === 'approved') ?? (aiDrafts ?? []).find((draft) => draft.status !== 'superseded') ?? aiDrafts?.[0] ?? null
-  const aiDraftStatus = currentAiDraft ? currentAiDraft.status.replace(/_/g, ' ') : 'Not generated'
-  const reportDeliveryStatus = session.review_status === 'ready_for_delivery' ? 'Ready for delivery' : 'Needs report review'
+  const aiDraftStatus = formatAiDraftStatus(currentAiDraft?.status ?? null)
+  const reportStatus = session.review_status === 'ready_for_delivery' ? 'Ready' : currentAiDraft ? 'Awaiting review' : 'Draft'
 
   return (
     <main className="page-shell dashboard-shell">
@@ -183,15 +194,15 @@ export default async function SessionDetailPage({
           <p className="muted">This page is the lightweight job folder. Capture work happens on the Capture page, and draft review/delivery happens on the Report page.</p>
         </div>
         <div className="required-evidence-grid">
-          <p className="checkline complete">Status: {session.status.replace(/_/g, ' ')}</p>
-          <p className="checkline complete">Form Profile: {workflowTemplate?.name ?? 'No Form Profile / Evidence Package'}</p>
-          <p className="checkline complete">Vehicle / Asset: {session.unit_number || session.asset_label || session.vin || 'Not set'}</p>
-          <p className="checkline complete">Customer: {session.customer_name || 'Not set'}</p>
-          <p className="checkline complete">Captures: {visibleCaptures.length}</p>
-          <p className={processingCounts.processing > 0 ? 'checkline missing' : 'checkline complete'}>Evidence processing: {processingCounts.ready} ready, {processingCounts.processing} processing, {processingCounts.needsReview} needs review</p>
-          <p className="checkline complete">Source documents: {sourceDocumentCount}</p>
-          <p className="checkline complete">AI draft: {aiDraftStatus}</p>
-          <p className={session.review_status === 'ready_for_delivery' ? 'checkline complete' : 'checkline missing'}>Report delivery: {reportDeliveryStatus}</p>
+          <p className="status-pill neutral">Status: {formatWorkflowStatus(session.status)}</p>
+          <p className="status-pill neutral">Form Profile: {workflowTemplate?.name ?? 'No Form Profile / Evidence Package'}</p>
+          <p className="status-pill neutral">Vehicle / Asset: {session.unit_number || session.asset_label || session.vin || 'Not set'}</p>
+          <p className="status-pill neutral">Customer: {session.customer_name || 'Not set'}</p>
+          <p className="status-pill info">Evidence: {processingCounts.ready} ready</p>
+          <p className={processingCounts.needsReview > 0 ? 'status-pill attention' : 'status-pill neutral'}>Evidence processing: {processingCounts.ready} ready, {processingCounts.processing} processing, {processingCounts.needsReview} needs review</p>
+          <p className="status-pill neutral">Source documents: {sourceDocumentCount}</p>
+          <p className="status-pill info">AI Draft: {aiDraftStatus}</p>
+          <p className={session.review_status === 'ready_for_delivery' ? 'status-pill success' : 'status-pill neutral'}>Report: {reportStatus}</p>
         </div>
       </section>
 
@@ -230,9 +241,9 @@ export default async function SessionDetailPage({
           </p>
         </div>
         <div className="required-evidence-grid">
-          <p className={(visibleCaptures.length > 0) ? 'checkline complete' : 'checkline missing'}>{visibleCaptures.length > 0 ? '✓' : '○'} Evidence captured</p>
-          <p className={currentAiDraft ? 'checkline complete' : 'checkline missing'}>{currentAiDraft ? '✓' : '○'} AI draft {aiDraftStatus}</p>
-          <p className={session.review_status === 'ready_for_delivery' ? 'checkline complete' : 'checkline missing'}>{session.review_status === 'ready_for_delivery' ? '✓' : '○'} {reportDeliveryStatus}</p>
+          <p className={(visibleCaptures.length > 0) ? 'checkline complete' : 'checkline neutral'}>{visibleCaptures.length > 0 ? '✓' : '○'} Evidence captured</p>
+          <p className={currentAiDraft ? 'checkline complete' : 'checkline neutral'}>{currentAiDraft ? '✓' : '○'} AI Draft {currentAiDraft ? aiDraftStatus.toLowerCase() : 'not started'}</p>
+          <p className={session.review_status === 'ready_for_delivery' ? 'checkline complete' : 'checkline neutral'}>{session.review_status === 'ready_for_delivery' ? '✓' : '○'} Report {reportStatus.toLowerCase()}</p>
         </div>
       </section>
 
@@ -388,7 +399,7 @@ export default async function SessionDetailPage({
               <div className="signature-list">
                 {(reportEvents ?? []).length > 0 ? (reportEvents ?? []).map((event) => (
                   <article key={event.id} className="signature-list-item">
-                    <strong>{event.export_type}</strong>
+                    <strong>{formatReportEventLabel(event.export_type, event.status)}</strong>
                     <span>{event.status}</span>
                     <span className="muted">{formatDateTime(event.created_at)}</span>
                   </article>
