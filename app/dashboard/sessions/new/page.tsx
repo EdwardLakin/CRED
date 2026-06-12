@@ -28,8 +28,7 @@ export default async function NewSessionPage({ searchParams }: { searchParams: P
       <div>
         <h1>New Documentation Session</h1>
         <p className="muted">
-          Create the workflow container for field documentation. Evidence capture, uploads, voice notes, reports,
-          billing, and AI are intentionally not part of this foundation.
+          Create an evidence package for field documentation. Capture evidence naturally, add context, and let CRED organize the report draft later.
         </p>
       </div>
 
@@ -65,17 +64,17 @@ export default async function NewSessionPage({ searchParams }: { searchParams: P
 
         <div className="field-stack">
           <label htmlFor="workflow_template_id" className="label">
-            Template
+            Form Profile
           </label>
           <select id="workflow_template_id" name="workflow_template_id" defaultValue="" className="select">
-            <option value="">No template / standard workflow</option>
+            <option value="">No Form Profile / Evidence Package</option>
             {workflowTemplates.map((template) => (
               <option key={template.id} value={template.id}>
                 {template.name} ({template.template_type})
               </option>
             ))}
           </select>
-          <p className="muted">Templates define required evidence, signatures, and report structure.</p>
+          <p className="muted">A Form Profile helps CRED organize the final report. It does not control the order of your inspection. You can still capture evidence without a profile.</p>
         </div>
 
         <button className="button button-primary touch-target">Create Session</button>

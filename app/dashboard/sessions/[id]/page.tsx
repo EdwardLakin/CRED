@@ -129,7 +129,7 @@ export default async function SessionDetailPage({
             Unit {session.unit_number || session.asset_label || 'Unassigned'} · Customer {session.customer_name || 'Not set'} · {getSessionTypeLabel(session.session_type)} · Created {formatDateTime(session.created_at)}
           </p>
           <p className="muted">Updated {formatDateTime(session.updated_at ?? session.created_at)}</p>
-          <p className="muted">Template: {workflowTemplate?.name ?? 'Standard workflow'}</p>
+          <p className="muted">Form Profile: {workflowTemplate?.name ?? 'No Form Profile / Evidence Package'}</p>
         </div>
         <div className="page-actions">
           <ThemeToggle />
@@ -154,7 +154,7 @@ export default async function SessionDetailPage({
           <div>
             <h2>Session Details</h2>
             <p className="muted">
-              Rename the session, update its workflow status, and maintain asset and customer reference details.
+              Rename the session, update its documentation status, and maintain asset and customer reference details.
             </p>
           </div>
 
@@ -307,7 +307,7 @@ export default async function SessionDetailPage({
         <div>
           <h2>Final Report Review</h2>
           <p className="muted">
-            Confirm Session Details, evidence notes, included captures, and report ordering before opening the final printable report.
+            Confirm Session Details, evidence notes, included captures, and report organization before opening the final printable report.
           </p>
         </div>
         <Link href={`/dashboard/sessions/${session.id}/report`} className="button button-primary touch-target">

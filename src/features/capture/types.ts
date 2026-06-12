@@ -8,7 +8,7 @@ export const CAPTURE_TYPES: Array<{ value: CaptureType; label: string; helper: s
   { value: 'photo', label: 'Field Photo', helper: 'General image or damage photo' },
   { value: 'document', label: 'Document', helper: 'PDF, document scan, or image' },
   { value: 'vin_plate', label: 'VIN Plate', helper: 'Vehicle VIN label or plate' },
-  { value: 'info_plate', label: 'Info/Data Plate', helper: 'Manufacturer, compliance, or data tag' },
+  { value: 'info_plate', label: 'Info/Data Plate', helper: 'Manufacturer, rating, or data tag' },
   { value: 'voice_note', label: 'Voice Note', helper: 'Audio note for later transcription' },
   { value: 'video', label: 'Video', helper: 'Short evidence video with note' },
 ]

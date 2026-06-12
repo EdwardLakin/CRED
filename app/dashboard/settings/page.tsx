@@ -17,7 +17,7 @@ export default async function SettingsPage() {
         <div>
           <p className="eyebrow">Settings</p>
           <h1>Workspace settings</h1>
-          <p className="muted">Manage organization defaults, templates, billing, and your workspace experience.</p>
+          <p className="muted">Manage organization defaults, form profiles, billing, and your workspace experience.</p>
         </div>
         <div className="page-actions">
           <ThemeToggle />
@@ -47,9 +47,9 @@ export default async function SettingsPage() {
 
       <section className="settings-link-grid" aria-label="Settings areas">
         <Link href="/dashboard/templates" className="card settings-link-card touch-target">
-          <span className="eyebrow">Templates</span>
-          <h2>Template management</h2>
-          <p className="muted">Import, edit, duplicate, archive, and delete reusable documentation workflow templates.</p>
+          <span className="eyebrow">Form Profiles</span>
+          <h2>Form Profile management</h2>
+          <p className="muted">Import, edit, duplicate, archive, and delete reusable form profiles for report context.</p>
         </Link>
         <Link href="/dashboard/billing" className="card settings-link-card touch-target">
           <span className="eyebrow">Billing</span>

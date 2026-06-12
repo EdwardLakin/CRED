@@ -94,7 +94,7 @@ export default async function SessionReportPreviewPage({
         <div>
           <p className="eyebrow guided-eyebrow">Report page</p>
           <h1>{session.title}</h1>
-          <p className="muted">Preview, Open, Email, Share, Save, and Finish. Template: {template?.name ?? 'Standard workflow'}.</p>
+          <p className="muted">CRED prepares a report draft from your evidence and selected Form Profile. Review before delivery. Form Profile: {template?.name ?? 'No Form Profile / Evidence Package'}.</p>
         </div>
         <div className="page-actions report-preview-actions">
           {isReadyForDelivery ? (
@@ -112,15 +112,15 @@ export default async function SessionReportPreviewPage({
       {status.shared ? <p className="success">Secure share link generated.</p> : null}
       {status.saved ? <p className="success">Report saved indefinitely unless deleted.</p> : null}
       {status.reviewed ? <p className="success">Reviewed and ready to deliver.</p> : null}
-      {!isReadyForDelivery ? <p className="error">Review and mark this report ready before delivery.</p> : null}
+      {!isReadyForDelivery ? <p className="error">Review and approve this report draft before delivery.</p> : null}
       {status.disabled ? <p className="success">Share link disabled.</p> : null}
 
       {evidence.missing.length > 0 ? (
         <section className="card detail-card missing-evidence-warning">
           <div>
-            <p className="eyebrow">Missing Evidence Warning</p>
-            <h2>This report is missing required evidence.</h2>
-            <p className="muted">Generate Anyway or return to Capture to complete the missing items.</p>
+            <p className="eyebrow">Unresolved Coverage Suggestions</p>
+            <h2>This report has unresolved coverage suggestions.</h2>
+            <p className="muted">Approve with unresolved items or return to Capture to add more evidence. Suggestions are reminders only.</p>
           </div>
           <div className="required-evidence-grid">
             {evidence.missing.map((row) => <p key={row.rule.key} className="checkline missing">○ {row.rule.label}</p>)}
@@ -129,19 +129,19 @@ export default async function SessionReportPreviewPage({
             <Link href={`/dashboard/sessions/${session.id}/capture`} className="button button-primary touch-target">Return to Capture</Link>
           </div>
         </section>
-      ) : <p className="success">All required evidence is complete.</p>}
+      ) : <p className="success">All coverage suggestions are resolved.</p>}
 
       <section className="card detail-card report-delivery-card form-stack">
         <div>
           <p className="eyebrow">Human Review Gate</p>
           <h2>{isReadyForDelivery ? 'Reviewed and ready to deliver' : 'Review before delivery'}</h2>
-          <p className="muted">Confirm the report is complete before emailing, sharing, saving, or opening the final printable report.</p>
+          <p className="muted">Confirm the draft report is ready before emailing, sharing, saving, or opening the final printable report.</p>
           {reviewedLabel ? (
             <p className="success">Reviewed {reviewedLabel}{reviewer?.full_name ? ` by ${reviewer.full_name}` : session.reviewed_by ? ` by ${session.reviewed_by}` : ''}.</p>
           ) : null}
         </div>
         <div className="required-evidence-grid">
-          <p className={evidence.missing.length === 0 ? 'checkline complete' : 'checkline missing'}>{evidence.missing.length === 0 ? '✓' : '○'} Required evidence reviewed</p>
+          <p className={evidence.missing.length === 0 ? 'checkline complete' : 'checkline missing'}>{evidence.missing.length === 0 ? '✓' : '○'} Coverage suggestions reviewed</p>
           <p className="checkline complete">✓ AI extracted details reviewed</p>
           <p className={(captures ?? []).length > 0 ? 'checkline complete' : 'checkline missing'}>{(captures ?? []).length > 0 ? '✓' : '○'} Included captures reviewed</p>
           <p className={(signatures ?? []).length > 0 ? 'checkline complete' : 'checkline missing'}>{(signatures ?? []).length > 0 ? '✓' : '○'} Signatures reviewed if required</p>
@@ -152,11 +152,11 @@ export default async function SessionReportPreviewPage({
             {evidence.missing.length > 0 ? (
               <label className="checkline missing">
                 <input type="checkbox" name="missing_evidence_acknowledged" required />
-                I acknowledge this report is missing required evidence and want to Generate Anyway.
+                I acknowledge this report has unresolved coverage suggestions and approve with unresolved items.
               </label>
             ) : null}
             <div className="form-actions">
-              <button className="button button-primary touch-target">Mark Report Reviewed</button>
+              <button className="button button-primary touch-target">{evidence.missing.length > 0 ? 'Approve with unresolved items' : 'Approve Report Draft'}</button>
               <Link href={`/dashboard/sessions/${session.id}/capture`} className="button button-secondary touch-target">Capture More Evidence</Link>
               <Link href={`/dashboard/sessions/${session.id}`} className="button button-secondary touch-target">Edit Details</Link>
             </div>
@@ -169,7 +169,7 @@ export default async function SessionReportPreviewPage({
           <p className="eyebrow">Report Delivery</p>
           <h2>Email Printable Report</h2>
           <p className="muted">Recipients receive a secure link to the printable report.</p>
-          {!isReadyForDelivery ? <p className="error">Review and mark this report ready before delivery.</p> : null}
+          {!isReadyForDelivery ? <p className="error">Review and approve this report draft before delivery.</p> : null}
         </div>
         <form action={emailAction} className="field-grid">
           <div className="field-stack"><label htmlFor="recipients" className="label">Customer email / recipients</label><input id="recipients" name="recipients" className="input" placeholder="customer@example.com, manager@example.com" required /></div>
@@ -182,7 +182,7 @@ export default async function SessionReportPreviewPage({
         <div>
           <h2>Share Link</h2>
           <p className="muted">Generate secure report links with expiration, disable access, and view tracking.</p>
-          {!isReadyForDelivery ? <p className="error">Review and mark this report ready before delivery.</p> : null}
+          {!isReadyForDelivery ? <p className="error">Review and approve this report draft before delivery.</p> : null}
         </div>
         <form action={shareAction} className="field-grid">
           <div className="field-stack"><label htmlFor="expires_at" className="label">Expiration date</label><input id="expires_at" name="expires_at" className="input" type="datetime-local" /></div>
@@ -208,7 +208,7 @@ export default async function SessionReportPreviewPage({
         <div>
           <h2>Save Report</h2>
           <p className="muted">Saved reports remain accessible indefinitely unless deleted.</p>
-          {!isReadyForDelivery ? <p className="error">Review and mark this report ready before delivery.</p> : null}
+          {!isReadyForDelivery ? <p className="error">Review and approve this report draft before delivery.</p> : null}
         </div>
         <form action={saveAction}><button className="button button-primary touch-target" disabled={!isReadyForDelivery}>Save Report</button></form>
         <div className="signature-list">

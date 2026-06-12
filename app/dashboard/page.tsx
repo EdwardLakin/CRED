@@ -61,11 +61,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       ) : null}
       <section className="hero-card">
         <div>
-          <p className="eyebrow">Documentation workflow</p>
+          <p className="eyebrow">Evidence documentation</p>
           <h1>Capture evidence and establish the timeline.</h1>
           <p className="hero-copy">
-            Welcome back, {profile.full_name}. Start a documentation session, record field details, and keep
-            work organized by status.
+            Welcome back, {profile.full_name}. Start an evidence package, record field details, and keep work organized by status.
           </p>
         </div>
         <Link href="/dashboard/sessions/new" className="button button-primary touch-target hero-action">
@@ -153,10 +152,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </div>
         ) : (
           <EmptyState
-            title="Import a template before creating your first documentation workflow."
-            description="Templates define the sections, fields, evidence requirements, and report structure for each workflow."
+            title="Import a Form Profile when you want reusable report context, or start an evidence package without one."
+            description="Form Profiles save uploaded forms for reuse and provide report sections, fields, measurements, signature areas, and coverage suggestions after evidence is captured."
             actionHref="/dashboard/templates"
-            actionLabel="Import Template"
+            actionLabel="Import Form Profile"
           />
         )}
       </section>

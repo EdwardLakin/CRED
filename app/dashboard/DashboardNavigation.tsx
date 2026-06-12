@@ -11,12 +11,12 @@ type DashboardNavigationItem = {
 
 const primaryItems: DashboardNavigationItem[] = [
   { href: '/dashboard', label: 'Dashboard', description: 'Workspace overview' },
-  { href: '/dashboard/sessions', label: 'Sessions', description: 'Documentation workflows' },
+  { href: '/dashboard/sessions', label: 'Sessions', description: 'Evidence documentation' },
 ]
 
 const managementItems: DashboardNavigationItem[] = [
   { href: '/dashboard/settings', label: 'Settings', description: 'Workspace controls' },
-  { href: '/dashboard/templates', label: 'Templates', description: 'Import and manage workflows' },
+  { href: '/dashboard/templates', label: 'Form Profiles', description: 'Report context library' },
   { href: '/dashboard/billing', label: 'Billing', description: 'Plan and subscription' },
 ]
 

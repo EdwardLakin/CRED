@@ -34,7 +34,7 @@ const screenshots = [
   {
     title: 'Printable Report',
     detail: 'Open professional printable documentation with reviewed evidence and a clear timeline.',
-    rows: ['Executive summary', 'Evidence checklist', 'Findings with media references'],
+    rows: ['Executive summary', 'Report coverage', 'Findings with media references'],
   },
 ] as const
 
@@ -56,7 +56,7 @@ const plans: Array<{
       'AI classification',
       'AI extraction',
       'Printable reports',
-      'Mobile capture workflow',
+      'Mobile evidence capture',
     ],
   },
   {
@@ -81,7 +81,7 @@ const plans: Array<{
     features: [
       'Up to 25 users',
       'Everything in Team',
-      'Shared inspection library',
+      'Shared evidence package library',
       'Team-wide evidence management',
       'AI-powered findings extraction',
       'Customer-ready printable reports',
@@ -95,8 +95,8 @@ const plans: Array<{
 const faqs = [
   ['Who is CRED built for?', 'CRED is built for technicians, inspectors, fleet teams, mechanical shops, property teams, and service organizations that need defensible field documentation.'],
   ['What does the AI do?', 'AI helps classify captures, extract field details, summarize context, and prepare documentation for human review before sharing or printing.'],
-  ['Can I use CRED for CVIP and fleet inspections?', 'Yes. CRED is positioned for CVIP, fleet, mechanical, and warranty workflows where photo/video evidence and clean reporting matter.'],
-  ['Can I save reports as PDF?', 'Yes. CRED opens polished printable reports that you can save as PDF from your browser’s Print or Share menu for customers, claims, compliance, and internal records.'],
+  ['Can I use CRED for CVIP and fleet inspections?', 'CRED helps document evidence and prepare a report package. It does not replace regulated inspection forms or procedures.'],
+  ['Can I save reports as PDF?', 'Yes. CRED opens polished printable reports that you can save as PDF from your browser’s Print or Share menu for customers, claims, regulated documentation packages, and internal records.'],
 ] as const
 
 export default async function HomePage() {
@@ -188,7 +188,7 @@ export default async function HomePage() {
 
       <section className="landing-section">
         <div className="section-kicker">Product preview</div>
-        <h2>Capture, review, and export in one workflow.</h2>
+        <h2>Capture, review, and export evidence-first reports.</h2>
         <div className="screenshot-grid">
           {screenshots.map((screenshot) => (
             <article className="screenshot-card" key={screenshot.title}>
