@@ -17,6 +17,21 @@ function getReportOrigin(headersList: Headers) {
   return host ? `${protocol}://${host}` : ''
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function getDisplayEntries(value: unknown) {
+  if (!isRecord(value)) return []
+  return Object.entries(value)
+    .filter(([, entryValue]) => entryValue !== null && entryValue !== undefined && entryValue !== '')
+    .slice(0, 16)
+}
+
+function getArrayCount(value: unknown) {
+  return Array.isArray(value) ? value.length : 0
+}
+
 export default async function SessionReportPreviewPage({
   params,
   searchParams,
@@ -107,6 +122,10 @@ export default async function SessionReportPreviewPage({
   const shareAction = createReportShareLink.bind(null, session.id)
   const generateDraftAction = generateAiReportDraft.bind(null, session.id)
   const approveDraftAction = currentAiDraft ? approveAiReportDraft.bind(null, currentAiDraft.id) : null
+  const sourceFieldEntries = getDisplayEntries(currentAiDraft?.header_fields)
+  const draftFindingCount = getArrayCount(currentAiDraft?.findings)
+  const draftMeasurementCount = getArrayCount(currentAiDraft?.measurements)
+  const unmappedEvidenceCount = getArrayCount(currentAiDraft?.unmapped_evidence)
 
   return (
     <main className="page-shell dashboard-shell report-preview-shell">
@@ -167,6 +186,25 @@ export default async function SessionReportPreviewPage({
                 {currentAiDraft.status === 'approved' ? <p className="success">This is the approved AI Draft used for delivery.</p> : null}
               </div>
             </div>
+
+            <div className="required-evidence-grid">
+              <p className="checkline complete">Grouped findings: {draftFindingCount}</p>
+              <p className="checkline complete">Measurements: {draftMeasurementCount}</p>
+              <p className={unmappedEvidenceCount > 0 ? 'checkline missing' : 'checkline complete'}>Unmapped evidence: {unmappedEvidenceCount}</p>
+            </div>
+
+            <section className="form-stack">
+              <div>
+                <h3>Source Field Summary</h3>
+                <p className="muted">Source documents provide identity/header fields for review. Work order line descriptions are not findings unless a technician note asks to include them.</p>
+              </div>
+              <div className="required-evidence-grid">
+                {sourceFieldEntries.length > 0 ? sourceFieldEntries.map(([key, value]) => (
+                  <p key={key} className="checkline complete">{key.replace(/_/g, ' ')}: {String(value)}</p>
+                )) : <p className="muted">No source/header fields extracted yet.</p>}
+              </div>
+            </section>
+
             <div className="signature-list">
               {(aiDraftSections ?? []).map((section) => (
                 <article key={section.id} className="signature-list-item">

@@ -70,7 +70,7 @@ CRED already has a strong foundation for an evidence-first documentation engine:
 ### AI classification/extraction
 
 - `src/lib/openai/capture-classifier.ts`: OpenAI Responses API classifier using `gpt-4.1-mini`; returns one detected type, confidence, label, reason, and CVIP relevance. It includes note-based contextual overrides for brakes, tire tread, and battery evidence.
-- `src/lib/openai/capture-extractor.ts`: OpenAI Responses API extractor using `gpt-4.1-mini`; extracts cautious structured fields such as VIN, unit, odometer, work order number, customer, complaint/cause/correction, manufacturer/model/serial, GVWR/GAWR, tire values, measurement/condition/recommendation/severity, and inspection date.
+- `src/lib/openai/capture-extractor.ts`: OpenAI Responses API extractor using `gpt-4.1-mini`; extracts cautious structured fields such as VIN, unit, odometer, work order number, customer, manufacturer/model/serial, GVWR/GAWR, tire values, measurement/condition/recommendation/severity for evidence captures, and inspection date. Source document captures are constrained to identity/header context unless a technician note explicitly asks to include document content as a finding.
 
 ### Template import/library/workflow templates
 
@@ -604,3 +604,12 @@ Phase 3 adds the AI Draft layer without changing the existing printable report d
 - Draft generation uses the selected Form Profile as Report Context along with Source Documents, captures, technician notes/transcripts, signatures, classifications, and extracted details.
 - Human approval of an AI Draft sets the session review gate to `ready_for_delivery`, which unlocks the existing printable/email/share/save delivery actions.
 - Final immutable snapshots are intentionally deferred and the current printable report rendering remains in place.
+
+## June 12, 2026 refinement: source documents and page roles
+
+- Source documents now provide identity/header context first: customer or account name, VIN, unit number, asset identifiers, licence plate, odometer/hours, work order / purchase order numbers, date, year/make/model, manufacturer, serial number, GVWR/GAWR, registered owner, and jurisdiction.
+- Work order line descriptions, complaints, corrections, parts/labour lines, historic notes, and prior recommendations are not report findings by default.
+- Technician evidence notes remain the primary source for report findings, recommendations, and repairs performed. A source document line can be used as finding context only when the technician note explicitly asks to include it.
+- The session detail page is the job folder / command page: summary, status, counts, primary actions, recent evidence preview, and collapsed Advanced Details.
+- The capture page remains the technician workspace for natural evidence capture, source document chips, notes/voice notes, retry-friendly uploads, and recent captures.
+- The report / AI Draft page is the review and delivery workspace for draft sections, grouped findings, source field summary, unmapped evidence, approval, and post-approval delivery actions.

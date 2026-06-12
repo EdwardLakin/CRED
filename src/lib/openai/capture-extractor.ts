@@ -78,11 +78,13 @@ const EMPTY_FIELDS = Object.fromEntries(CAPTURE_EXTRACTION_FIELDS.map((field) =>
 
 const EXTRACTION_SYSTEM_PROMPT = `You extract cautious structured text from CRED classified captures for commercial vehicle/equipment documentation and field service reports.
 Return JSON only, no markdown.
-Use null for any field that is not visible, unclear, or supported by technician context. Technician note/transcript is high-value context for location, component, measurement, condition, recommendation, and severity, but do not blindly override image evidence.
+Use null for any field that is not visible, unclear, or supported by technician context. Technician note/transcript is high-value context for evidence captures, but do not blindly override image evidence.
 Do not invent values. Preserve exact VIN, plate, unit, serial, and reference strings as shown.
 VIN values must be exactly 17 characters after removing spaces. If a possible VIN is not exactly 17 characters or is uncertain, put it in notes instead of vin.
 For unit number, extract fleet/unit decals or obvious unit identifiers.
-For field order photos, work order screenshots, data plates, odometer photos, handwritten/typed notes, and voice transcript context, extract service-report details when clearly visible or directly stated: complaint, cause of failure, correction, work order number, purchase order number, customer name, unit number, licence number, equipment serial/VIN, hours/kms, odometer, technician findings, and recommendations. For work orders, extract work order number and customer/unit/VIN only if clearly visible.
+Source documents are used for identity/header context. Do not convert work order line descriptions or prior comments into findings unless the technician note explicitly asks to include them.
+For source document captures such as work_order, registration, VIN plate, data plate, odometer, licence plate, and unit number, extract only identity/context fields when visible: customer/account name, VIN, unit number, asset id/label, licence plate, odometer, hours, work order number, purchase order number, job number, date, year, make, model, manufacturer, serial number, GVWR/GAWR, registered owner, and jurisdiction/province.
+For source documents, do not extract complaint, cause of failure, correction, job line descriptions, labour operations, parts lines, historic notes, prior recommendations, unrelated comments, or report findings into condition/recommendation/technician note fields unless the technician note explicitly says to use the document content as a finding (for example “use this as finding” or “include line 3”).
 For hour meters, put the hour reading in hour_meter; the app may suggest it to the odometer/session reading if no hour field exists.
 Keep summary brief and human readable. For brake_measurement, always populate component, location, measurement, condition, recommendation, and severity when visible or supported by technician context. Example note 'left front brake pads at wear limit of 2mm' should extract component brake pads, location left front, measurement 2mm, condition at wear limit, severity red, recommendation replace front brake pads when visually plausible.`
 
@@ -91,7 +93,7 @@ const TARGET_INSTRUCTIONS: Partial<Record<ExtractionTargetType, string>> = {
   vin_plate: 'Source Document: VIN Plate. Prioritize vin, year, make/model when visible, manufacturer, GVWR, and GAWR. Return vin only when exactly 17 characters and clearly readable.',
   info_plate:
     'Source Document: Data Plate. Prioritize manufacturer, model, serial_number, unit_number, ratings/capacity, possible VIN, GVWR, GAWR, tire size, tire pressure/loading, and compliance text. Put long compliance/tire-loading text in notes if it does not fit a field.',
-  work_order: 'Source Document: Work Order. Prioritize work_order_number, customer_name, unit_number, asset_label, complaint, job number, and date when clearly visible. Also capture VIN/serial, hours/kms, odometer, and typed or handwritten service notes when clear.',
+  work_order: 'Source Document: Work Order. Prioritize identity/header fields only: work_order_number, purchase_order_number, job_number, customer_name, unit_number, asset_label, VIN/serial, hours/kms, odometer, and date when clearly visible. Do not extract complaints, corrections, line descriptions, labour/parts lines, prior notes, or recommendations as findings unless the technician note explicitly asks to include them.',
   registration: 'Source Document: Registration. Prioritize registered_owner, plate_number, vin, year/make/model if visible, registration_number, and GVWR if present. Return customer_name only when a customer/account name is clearly indicated.',
   license_plate: 'Source Document: Licence Plate. Prioritize exact plate_number and jurisdiction if visible. Use null or notes for uncertain characters.',
   odometer: 'Source Document: Odometer. Prioritize odometer and hour_meter if present. Extract the reading exactly as displayed.',
@@ -105,7 +107,75 @@ const TARGET_INSTRUCTIONS: Partial<Record<ExtractionTargetType, string>> = {
   defect_photo: 'Extract visible defect component, location, condition, recommendation, and severity.',
   general_evidence: 'Extract only useful inspection details that are visible or strongly supported by technician context.',
   supporting_photo: 'Extract only clearly useful context details; leave unsupported fields null.',
-  other: 'Source Document: Other. Extract any useful report/session fields cautiously. Use null for unclear values and needs_review language in notes for uncertainty.',
+  other: 'Source Document: Other. Extract identity/header fields cautiously. Do not extract source document comments as report findings unless the technician note explicitly asks to include them. Use null for unclear values and needs_review language in notes for uncertainty.',
+}
+
+const SOURCE_DOCUMENT_CAPTURE_TYPES = new Set<ExtractionTargetType>([
+  'unit_number',
+  'vin_plate',
+  'info_plate',
+  'work_order',
+  'registration',
+  'license_plate',
+  'odometer',
+])
+
+const SOURCE_DOCUMENT_FINDING_FIELDS: CaptureExtractionField[] = [
+  'location',
+  'component',
+  'measurement',
+  'condition',
+  'recommendation',
+  'severity',
+  'complaint',
+  'cause_of_failure',
+  'correction',
+  'technician_notes',
+  'recommendations',
+]
+
+const SOURCE_DOCUMENT_INCLUDE_PATTERNS = [
+  /\buse\s+(this|document|line|item|note|comment)\s+as\s+(a\s+)?finding\b/i,
+  /\binclude\s+(this|document|line|item|note|comment|finding|recommendation|complaint|correction)\b/i,
+  /\badd\s+(this|document|line|item|note|comment)\s+to\s+(the\s+)?(report|findings|recommendations)\b/i,
+  /\btreat\s+(this|document|line|item|note|comment)\s+as\s+(a\s+)?finding\b/i,
+]
+
+function technicianExplicitlyIncludesSourceFinding(note?: string | null) {
+  if (!note) {
+    return false
+  }
+
+  return SOURCE_DOCUMENT_INCLUDE_PATTERNS.some((pattern) => pattern.test(note))
+}
+
+function isSourceDocumentExtraction(detectedType: ExtractionTargetType, sourceDocument?: SourceDocumentContext) {
+  return Boolean(sourceDocument) || SOURCE_DOCUMENT_CAPTURE_TYPES.has(detectedType)
+}
+
+function constrainSourceDocumentExtraction(
+  extraction: CaptureExtractionResult,
+  detectedType: ExtractionTargetType,
+  note?: string | null,
+  sourceDocument?: SourceDocumentContext,
+): CaptureExtractionResult {
+  if (!isSourceDocumentExtraction(detectedType, sourceDocument) || technicianExplicitlyIncludesSourceFinding(note)) {
+    return extraction
+  }
+
+  const fields = { ...extraction.fields }
+  for (const field of SOURCE_DOCUMENT_FINDING_FIELDS) {
+    fields[field] = null
+  }
+
+  return {
+    ...extraction,
+    fields,
+    notes: [
+      'Source document extraction limited to identity/header context. Work order lines, prior comments, complaints, corrections, and recommendations were not promoted to findings.',
+      ...extraction.notes,
+    ].slice(0, MAX_NOTES),
+  }
 }
 
 function getOpenAiApiKey() {
@@ -247,7 +317,7 @@ export async function extractCaptureImageDetails(
 
   const targetInstruction = TARGET_INSTRUCTIONS[detectedType] ?? 'Extract only clearly visible useful inspection, document, asset, or evidence details.'
   const sourceDocumentContext = sourceDocument
-    ? `\nSource document tag selected by technician: ${sourceDocument.label} (${sourceDocument.type}). Prioritize identity/session fields for this source document, but do not force extraction if unclear. Use null for unsupported fields and notes for values that need review.`
+    ? `\nSource document tag selected by technician: ${sourceDocument.label} (${sourceDocument.type}). Prioritize identity/session/header fields only for this source document, but do not force extraction if unclear. Do not convert work order line descriptions, complaints, corrections, prior recommendations, labour/parts lines, or historic comments into findings unless the technician note explicitly asks to include them. Use null for unsupported fields and notes for values that need review.`
     : ''
 
   const response = await fetch(OPENAI_RESPONSES_URL, {
@@ -268,7 +338,7 @@ export async function extractCaptureImageDetails(
           content: [
             {
               type: 'input_text',
-              text: `Classified capture type: ${detectedType}. ${targetInstruction}${sourceDocumentContext}${note ? `\nTechnician note/transcript: "${note.slice(0, 1000)}". Use it as strong context while checking visual consistency.` : ''}\nReturn exactly the JSON schema fields.`,
+              text: `Classified capture type: ${detectedType}. ${targetInstruction}${sourceDocumentContext}${note ? `\nTechnician note/transcript: "${note.slice(0, 1000)}". Use it as strong context while checking visual consistency. For source documents, only use document content as findings if this note explicitly asks to include it.` : ''}\nReturn exactly the JSON schema fields.`,
             },
             { type: 'input_image', image_url: signedImageUrl },
           ],
@@ -327,7 +397,7 @@ export async function extractCaptureImageDetails(
   }
 
   try {
-    return validateCaptureExtraction(JSON.parse(outputText))
+    return constrainSourceDocumentExtraction(validateCaptureExtraction(JSON.parse(outputText)), detectedType, note, sourceDocument)
   } catch {
     return validateCaptureExtraction(null)
   }

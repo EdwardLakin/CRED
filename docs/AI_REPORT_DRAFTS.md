@@ -39,7 +39,7 @@ Generation loads:
 - documentation session fields
 - selected Form Profile / workflow template when present
 - non-deleted captures
-- source document metadata from `extracted_data.source_document`
+- source document metadata and identity/header fields from `extracted_data.source_document` / extraction fields
 - capture classifications and extraction fields from `extracted_data`
 - technician notes and transcripts
 - signatures when available
@@ -87,3 +87,19 @@ Planned review controls include:
 - source capture add/remove controls
 - finding-to-section reassignment
 - immutable delivery snapshots after approval
+
+## Evidence priority and source document policy
+
+AI Draft generation prioritizes inputs in this order:
+
+1. technician notes on evidence captures
+2. evidence photos/videos
+3. extracted measurements/findings from evidence captures
+4. source document identity fields
+5. selected Form Profile/report context
+
+Source documents provide identity/header fields for the draft, such as customer/work order fields and vehicle or unit information. Work order line descriptions, complaints, corrections, parts/labour lines, prior notes, and prior recommendations are not Findings, Recommendations, or Repairs Performed by default.
+
+If a technician note on the source document explicitly says to use the document content as a finding (for example, “use this as finding” or “include line 3”), the draft generator may consider that source document content as draft context and must still keep source capture references for human review.
+
+The session page is intentionally a lightweight job folder. The report / AI Draft page is the review workspace for grouped findings, source field summary, unmapped evidence, draft approval, and delivery actions after approval.

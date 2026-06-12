@@ -69,7 +69,7 @@ export default async function GuidedCapturePage({
           <p className="muted">
             {session.title} · {WORKFLOW_LABELS[workflow]} · Updated {formatDateTime(session.updated_at ?? session.created_at)}
           </p>
-          <p className="muted">Capture evidence naturally in any order. Add notes and context; CRED organizes it later for the report. A Form Profile is report context only.</p>
+          <p className="muted">Capture evidence in the order that matches your work. CRED organizes it into a draft later. A Form Profile is report context only.</p>
         </div>
         <Link href={`/dashboard/sessions/${session.id}/report`} className="button button-secondary touch-target">
           Done
@@ -93,7 +93,7 @@ export default async function GuidedCapturePage({
           workflow={workflow}
           returnPath={`/dashboard/sessions/${session.id}/capture#main-capture-card`}
           captureButtonLabel="Capture Evidence"
-          helperText="Take a photo/video or select evidence, add voice or typed context, then save. Capture in the order that matches your work."
+          helperText="Take a photo/video or select evidence, add voice or typed context, then save. Capture evidence in the order that matches your work. CRED organizes it into a draft later."
           commonCaptureText="Supported capture types: photo, video, voice note, and combined photo/video plus voice or typed context."
           showSuggestedCaptureText={false}
           stickyDoneHref={`/dashboard/sessions/${session.id}/report`}
@@ -133,7 +133,7 @@ export default async function GuidedCapturePage({
         <div className="captures-section-header">
           <div>
             <h2>Recent Captures</h2>
-            <p className="muted">Quick confirmation of the latest saved evidence. Full review, AI actions, report coverage, and report preparation live on Session Details.</p>
+            <p className="muted">Quick confirmation of the latest saved evidence. Full draft review, grouped findings, source field summaries, and delivery actions live on the Report page.</p>
           </div>
           <span className="ai-status-pill">{captureItems.length} saved</span>
         </div>
