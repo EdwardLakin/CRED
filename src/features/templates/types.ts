@@ -23,7 +23,7 @@ export type TemplateDraft = {
 export const SYSTEM_TEMPLATES: TemplateDraft[] = [
   {
     name: 'CVIP Inspection',
-    description: 'Commercial vehicle inspection workflow with VIN, registration, odometer, brake, and tire evidence rules.',
+    description: 'Commercial vehicle report profile with VIN, registration, odometer, brake, and tire coverage suggestions.',
     templateType: 'system',
     sections: ['Customer Information', 'Equipment Information', 'Findings', 'Recommendations', 'Signatures'],
     fields: ['VIN', 'Unit Number', 'Odometer', 'Customer Name', 'Work Order Number'],
@@ -41,7 +41,7 @@ export const SYSTEM_TEMPLATES: TemplateDraft[] = [
   },
   {
     name: 'Field Service Report',
-    description: 'Field service documentation workflow with complaint, cause, correction, equipment, repair evidence, and signatures.',
+    description: 'Field service report profile with complaint, cause, correction, equipment, repair evidence, and signatures.',
     templateType: 'system',
     sections: ['Customer Information', 'Equipment Information', 'Travel', 'Complaint', 'Cause', 'Correction', 'Signatures'],
     fields: ['Unit Number', 'Serial Number', 'Customer Name', 'Work Order Number', 'PO Number'],
@@ -71,7 +71,7 @@ export const SYSTEM_TEMPLATES: TemplateDraft[] = [
   },
   {
     name: 'Inspection Report',
-    description: 'General inspection workflow for findings, recommendations, and supporting evidence.',
+    description: 'General inspection report profile for findings, recommendations, and supporting evidence.',
     templateType: 'system',
     sections: ['Customer Information', 'Equipment Information', 'Findings', 'Recommendations'],
     fields: ['Customer Name', 'Asset ID', 'Odometer', 'Findings'],

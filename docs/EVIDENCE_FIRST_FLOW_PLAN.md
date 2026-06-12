@@ -1,5 +1,13 @@
 # CRED Evidence-First Flow Transition Plan
 
+## Phase 1 implemented (June 12, 2026)
+
+- User-facing language has been reframed from templates/checklists/workflows toward Form Profiles, Report Context, Evidence Capture, Report Coverage, and Report Readiness.
+- Schema is unchanged. No new tables, columns, migrations, or database renames were added in this phase.
+- Form Profiles are still internally stored in the existing `documentation_workflow_templates`, `template_imports`, and related template fields for compatibility.
+- Required-evidence functionality remains in place temporarily, but the UI now presents it as advisory Coverage Suggestions / Report Readiness rather than a required technician route.
+
+
 ## 1. Executive Summary
 
 CRED already has a strong foundation for an evidence-first documentation engine: sessions, upload/capture storage, retry-friendly capture UX, AI classification/extraction primitives, editable evidence notes, extracted-value review, printable reports, share/email/archive delivery, signatures, billing gates, and usage accounting are all present. The major product gap is that current language, data names, and multiple screens still treat uploaded forms as **workflow templates** that define required evidence and progress rather than **Form Profiles** that provide report output context.

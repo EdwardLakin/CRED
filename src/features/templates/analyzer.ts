@@ -13,7 +13,7 @@ function requirement(label: string, required = true): EvidenceRequirement {
 
 export function analyzeTemplateUpload(filename: string, mimeType: string): TemplateDraft {
   const normalized = `${filename} ${mimeType}`.toLowerCase()
-  const baseName = filename.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim() || 'Imported Template'
+  const baseName = filename.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim() || 'Imported Form Profile'
   const matchedSystem = SYSTEM_TEMPLATES.find((template) => normalized.includes(template.name.toLowerCase().split(' ')[0]))
 
   if (matchedSystem) {
@@ -34,7 +34,7 @@ export function analyzeTemplateUpload(filename: string, mimeType: string): Templ
 
   return {
     name: `${baseName} Draft`,
-    description: 'AI Template Draft generated from the uploaded form. Review sections, fields, evidence rules, signatures, and report structure before saving.',
+    description: 'AI Form Profile Draft generated from the uploaded form. Review sections, fields, coverage suggestions, signatures, and report structure before saving.',
     templateType: 'organization',
     sections: COMMON_SECTIONS,
     fields: COMMON_FIELDS,

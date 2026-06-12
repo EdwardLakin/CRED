@@ -67,7 +67,7 @@ function requireReportReadyForDelivery(sessionId: string, session: { review_stat
   if (!reportIsReadyForDelivery(session)) {
     redirect(
       getReportRedirectPath(sessionId, {
-        error: 'Review and mark this report ready before delivery.',
+        error: 'Review and approve this report draft before delivery.',
       }),
     )
   }
@@ -81,7 +81,7 @@ export async function markReportReviewed(sessionId: string, formData: FormData) 
   if (missingEvidenceCount > 0 && !missingEvidenceAcknowledged) {
     redirect(
       getReportRedirectPath(session.id, {
-        error: 'Acknowledge the missing required evidence before marking this report reviewed.',
+        error: 'Acknowledge unresolved coverage suggestions before approving this report draft.',
       }),
     )
   }
