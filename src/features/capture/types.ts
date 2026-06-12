@@ -186,3 +186,41 @@ export function getCaptureEventTitle(type: CaptureType, intent: CaptureIntent = 
       return 'Photo captured'
   }
 }
+
+export type CaptureProcessingStatus = 'pending' | 'processing' | 'extracted' | 'needs_review' | 'failed' | 'blocked_by_limit' | 'ready_for_review'
+
+export function getCaptureProcessingStatus(capture: CaptureItem): CaptureProcessingStatus {
+  const extractedData = isRecord(capture.extracted_data) ? capture.extracted_data : null
+  const processing = extractedData && isRecord(extractedData.processing) ? extractedData.processing : null
+  const processingStatus = typeof processing?.status === 'string' ? processing.status : null
+  const extraction = extractedData && isRecord(extractedData.extraction) ? extractedData.extraction : null
+  const extractionStatus = typeof extraction?.status === 'string' ? extraction.status : null
+
+  if (processingStatus === 'blocked_by_limit') return 'blocked_by_limit'
+  if (capture.ai_status === 'processing' || processingStatus === 'processing') return 'processing'
+  if (capture.ai_status === 'failed' || processingStatus === 'failed' || extractionStatus === 'failed') return 'failed'
+  if (capture.ai_status === 'needs_review' || extractionStatus === 'needs_review') return 'needs_review'
+  if (capture.ai_status === 'extracted' || extractionStatus === 'extracted') return 'extracted'
+  if (capture.ai_status === 'classified') return 'ready_for_review'
+  return 'pending'
+}
+
+export function getCaptureProcessingLabel(status: CaptureProcessingStatus) {
+  switch (status) {
+    case 'processing':
+      return 'Processing'
+    case 'extracted':
+      return 'Ready for review'
+    case 'needs_review':
+      return 'Needs review'
+    case 'failed':
+      return 'Failed / Retry processing'
+    case 'blocked_by_limit':
+      return 'AI limit reached'
+    case 'ready_for_review':
+      return 'Ready for extraction'
+    case 'pending':
+    default:
+      return 'Pending AI processing'
+  }
+}

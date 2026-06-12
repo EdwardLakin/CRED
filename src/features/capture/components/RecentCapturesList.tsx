@@ -1,5 +1,5 @@
 import type { CaptureItem } from '../types'
-import { CAPTURE_TYPE_LABELS, getSourceDocumentMetadata, type CaptureType } from '../types'
+import { CAPTURE_TYPE_LABELS, getCaptureProcessingLabel, getCaptureProcessingStatus, getSourceDocumentMetadata, type CaptureType } from '../types'
 import { formatDateTime } from '@/features/sessions'
 
 function getCaptureLabel(capture: CaptureItem) {
@@ -32,11 +32,16 @@ export function RecentCapturesList({ captures, signedUrls, limit = 6 }: { captur
             <h3>{getCaptureLabel(capture)}</h3>
             <p className="muted">{getCaptureMeta(capture)} · {formatDateTime(capture.captured_at ?? capture.created_at)}</p>
           </div>
-          {signedUrls[capture.id] ? (
-            <a href={signedUrls[capture.id]} target="_blank" rel="noreferrer" className="secondary-link touch-target">
-              Open
-            </a>
-          ) : null}
+          <div className="capture-card-actions">
+            <span className={getCaptureProcessingStatus(capture) === 'needs_review' || getCaptureProcessingStatus(capture) === 'failed' ? 'ai-status-pill needs-review' : 'ai-status-pill'}>
+              {getCaptureProcessingLabel(getCaptureProcessingStatus(capture))}
+            </span>
+            {signedUrls[capture.id] ? (
+              <a href={signedUrls[capture.id]} target="_blank" rel="noreferrer" className="secondary-link touch-target">
+                Open
+              </a>
+            ) : null}
+          </div>
         </article>
       ))}
     </div>

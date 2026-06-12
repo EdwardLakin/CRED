@@ -613,3 +613,11 @@ Phase 3 adds the AI Draft layer without changing the existing printable report d
 - The session detail page is the job folder / command page: summary, status, counts, primary actions, recent evidence preview, and collapsed Advanced Details.
 - The capture page remains the technician workspace for natural evidence capture, source document chips, notes/voice notes, retry-friendly uploads, and recent captures.
 - The report / AI Draft page is the review and delivery workspace for draft sections, grouped findings, source field summary, unmapped evidence, approval, and post-approval delivery actions.
+
+## Background capture processing MVP
+
+Capture save is intentionally separated from AI analysis. After Supabase Storage upload and `capture_items` creation, the capture UI triggers `POST /api/dashboard/sessions/[id]/captures/process` in a fire-and-forget request so technicians can keep inspecting immediately.
+
+Recent capture cards, session summaries, and report drafting now surface background status (`pending`, `processing`, `extracted`, `needs_review`, `failed`, or `blocked_by_limit`). Manual processing actions remain available as recovery actions, not required normal-flow steps.
+
+See [Background Capture Processing](./BACKGROUND_CAPTURE_PROCESSING.md) for the lifecycle, idempotency rules, usage-limit behavior, and future queue upgrade path.

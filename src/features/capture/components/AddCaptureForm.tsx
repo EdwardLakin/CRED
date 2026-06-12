@@ -270,6 +270,7 @@ export function AddCaptureForm({
   const selectedFilesRef = useRef<SelectedEvidenceFile[]>([])
   const isSavingRef = useRef(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [clientError, setClientError] = useState<string | null>(null)
   const [captureIntent, setCaptureIntent] =
@@ -431,11 +432,21 @@ export function AddCaptureForm({
 
     setClientError(null)
     setActionError(null)
+    setSaveMessage(null)
   }
 
   function openEvidencePicker() {
     setCaptureIntent('auto_evidence')
     window.setTimeout(() => fileInputRef.current?.click(), 0)
+  }
+
+  function triggerBackgroundProcessing() {
+    fetch(`/api/dashboard/sessions/${sessionId}/captures/process`, {
+      method: 'POST',
+      keepalive: true,
+    }).catch((error: unknown) => {
+      console.warn('Background capture processing trigger failed', error)
+    })
   }
 
   async function uploadSelectedFiles(filesToUpload: SelectedEvidenceFile[]) {
@@ -578,6 +589,7 @@ export function AddCaptureForm({
 
     setClientError(null)
     setActionError(null)
+    setSaveMessage(null)
     isSavingRef.current = true
     setIsSaving(true)
 
@@ -585,6 +597,8 @@ export function AddCaptureForm({
       const result = await uploadSelectedFiles(filesToUpload)
 
       if (result.savedCount > 0) {
+        setSaveMessage('Saved. AI is processing in the background.')
+        triggerBackgroundProcessing()
         router.refresh()
       }
 
@@ -681,6 +695,7 @@ export function AddCaptureForm({
       {clientError || actionError ? (
         <p className="error">{clientError ?? actionError}</p>
       ) : null}
+      {saveMessage ? <p className="success">{saveMessage}</p> : null}
 
       <div className="source-document-shortcuts field-stack">
         <div>
