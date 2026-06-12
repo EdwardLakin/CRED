@@ -24,13 +24,18 @@ import {
 import type { Json } from '@/lib/supabase/database.types'
 
 import {
+  SOURCE_DOCUMENT_LABELS,
+  addSourceDocumentMetadata,
   getAutoImageExtractedData,
   getCaptureEventTitle,
   getInitialExtractedData,
+  getSourceDocumentMetadata,
   isCaptureIntent,
   isCaptureType,
+  isSourceDocumentType,
   type CaptureIntent,
   type CaptureType,
+  type SourceDocumentType,
 } from './types'
 
 const CAPTURE_BUCKET = 'documentation-captures'
@@ -187,13 +192,16 @@ function mergeGuidance(
 function getCaptureMetadata(
   captureIntent: CaptureIntent,
   manualCaptureType: CaptureType | null,
+  sourceDocument: { type: SourceDocumentType; label: string } | null = null,
 ) {
   if (captureIntent === 'auto_image' || captureIntent === 'auto_evidence') {
     return {
       type: 'photo' as CaptureType,
       extractedData: getAutoImageExtractedData(),
       timelineTitle: getCaptureEventTitle('photo', 'auto_image'),
-      timelineDescription: 'Evidence captured for AI classification.',
+      timelineDescription: sourceDocument
+        ? `${sourceDocument.label} source document captured for report detail extraction.`
+        : 'Evidence captured for AI classification.',
     }
   }
 
@@ -204,8 +212,12 @@ function getCaptureMetadata(
   return {
     type: manualCaptureType,
     extractedData: getInitialExtractedData(manualCaptureType),
-    timelineTitle: getCaptureEventTitle(manualCaptureType, 'manual'),
-    timelineDescription: 'Capture uploaded manually.',
+    timelineTitle: sourceDocument
+      ? `${sourceDocument.label} captured`
+      : getCaptureEventTitle(manualCaptureType, 'manual'),
+    timelineDescription: sourceDocument
+      ? `${sourceDocument.label} source document captured for report detail extraction.`
+      : 'Capture uploaded manually.',
   }
 }
 
@@ -315,6 +327,10 @@ export type CreateUploadedCaptureRecordInput = {
   noteSource?: 'manual' | 'voice' | 'edited'
   reportOrder?: number | null
   includeInReport?: boolean
+  sourceDocumentType?: SourceDocumentType | null
+  sourceDocumentLabel?: string | null
+  source_document_type?: string | null
+  source_document_label?: string | null
 }
 
 export type CreateUploadedCaptureRecordResult =
@@ -387,6 +403,20 @@ export async function createCaptureRecordFromUploadedFile(
     input.noteSource && ['voice', 'manual', 'edited'].includes(input.noteSource)
       ? input.noteSource
       : 'manual'
+  const rawSourceDocumentType =
+    input.sourceDocumentType?.trim() ?? input.source_document_type?.trim() ?? ''
+  const sourceDocumentType = rawSourceDocumentType
+    ? isSourceDocumentType(rawSourceDocumentType)
+      ? rawSourceDocumentType
+      : null
+    : null
+  const sourceDocumentLabel = sourceDocumentType
+    ? (
+        input.sourceDocumentLabel?.trim() ||
+        input.source_document_label?.trim() ||
+        SOURCE_DOCUMENT_LABELS[sourceDocumentType]
+      ).slice(0, 80)
+    : null
 
   if (!sessionId) {
     return captureError('Missing documentation session.')
@@ -407,6 +437,14 @@ export async function createCaptureRecordFromUploadedFile(
     return captureError('Choose a valid capture mode.', sessionId)
   }
 
+  if (rawSourceDocumentType && !sourceDocumentType) {
+    return captureError('Choose a valid source document type.', sessionId)
+  }
+
+  const sourceDocument = sourceDocumentType && sourceDocumentLabel
+    ? { type: sourceDocumentType, label: sourceDocumentLabel }
+    : null
+
   const manualCaptureType =
     input.manualType && isCaptureType(input.manualType)
       ? input.manualType
@@ -414,6 +452,7 @@ export async function createCaptureRecordFromUploadedFile(
   const captureMetadata = getCaptureMetadata(
     rawCaptureIntent,
     manualCaptureType,
+    sourceDocument,
   )
 
   if (!captureMetadata) {
@@ -514,8 +553,12 @@ export async function createCaptureRecordFromUploadedFile(
     itemMediaKind === 'video'
       ? getInitialExtractedData('video')
       : captureMetadata.extractedData
+  const uploadExtractedData = getUploadFileMetadata(baseExtractedData, { filename, mimeType, size })
+  const sourceExtractedData = sourceDocument
+    ? addSourceDocumentMetadata(uploadExtractedData, sourceDocument)
+    : uploadExtractedData
   const itemExtractedData = mergeGuidance(
-    getUploadFileMetadata(baseExtractedData, { filename, mimeType, size }),
+    sourceExtractedData,
     guidance,
   )
 
@@ -539,7 +582,7 @@ export async function createCaptureRecordFromUploadedFile(
       type: itemCaptureType,
       storage_path: storagePath,
       captured_at: capturedAt,
-      ai_status: itemMediaKind === 'video' ? 'needs_review' : 'pending',
+      ai_status: sourceDocument || itemMediaKind !== 'video' ? 'pending' : 'needs_review',
       extracted_data: itemExtractedData,
       technician_note: technicianNote || null,
       transcript:
@@ -577,8 +620,12 @@ export async function createCaptureRecordFromUploadedFile(
       documentation_session_id: session.id,
       organization_id: profile.organization_id,
       capture_item_id: captureItem.id,
-      title: captureMetadata.timelineTitle,
-      description: captureMetadata.timelineDescription,
+      title: sourceDocument
+        ? `${sourceDocument.label} captured`
+        : captureMetadata.timelineTitle,
+      description: sourceDocument
+        ? `${sourceDocument.label} source document captured. CRED will use it for report details when extracted.`
+        : captureMetadata.timelineDescription,
       event_time: capturedAt,
       event_type: 'capture',
     })
@@ -1087,11 +1134,41 @@ function extractionActionMessage(
   return `Extracted details from ${extractedCount} ${captureWord}. ${suggestionCount} session ${suggestionWord} ready.`
 }
 
+function getSourceDocumentDetectedType(
+  extractedData: Json | null,
+): CaptureClassificationType | 'other' | null {
+  const sourceDocument = getSourceDocumentMetadata(extractedData)
+
+  if (!sourceDocument) {
+    return null
+  }
+
+  if (sourceDocument.type === 'licence_plate') {
+    return 'license_plate'
+  }
+
+  if (sourceDocument.type === 'data_plate') {
+    return 'info_plate'
+  }
+
+  if (sourceDocument.type === 'other') {
+    return 'other'
+  }
+
+  return sourceDocument.type
+}
+
 function getDetectedType(
   extractedData: Json | null,
-): CaptureClassificationType | null {
+): CaptureClassificationType | 'other' | null {
   if (!isRecord(extractedData)) {
     return null
+  }
+
+  const sourceDocumentType = getSourceDocumentDetectedType(extractedData)
+
+  if (sourceDocumentType) {
+    return sourceDocumentType
   }
 
   const classification = isRecord(extractedData.classification)
@@ -1112,7 +1189,8 @@ function getDetectedType(
 function captureNeedsExtraction(capture: ExtractionCaptureItem) {
   if (
     !EXTRACTABLE_CAPTURE_TYPES.includes(capture.type) ||
-    !['classified', 'needs_review'].includes(capture.ai_status ?? '')
+    (!getSourceDocumentMetadata(capture.extracted_data) &&
+      !['classified', 'needs_review'].includes(capture.ai_status ?? ''))
   ) {
     return false
   }
@@ -1235,7 +1313,7 @@ function mergeSuggestion(
 function mergeSessionSuggestions(
   existingSuggestions: Json | null,
   capture: ExtractionCaptureItem,
-  detectedType: CaptureClassificationType,
+  detectedType: string,
   extraction: CaptureExtractionResult,
 ): SuggestedDetails {
   const merged: SuggestedDetails = isRecord(existingSuggestions)
@@ -1378,7 +1456,6 @@ export async function extractCaptureDetails(
     .eq('documentation_session_id', session.id)
     .eq('organization_id', profile.organization_id)
     .in('type', EXTRACTABLE_CAPTURE_TYPES)
-    .in('ai_status', ['classified', 'needs_review'])
     .order('captured_at', { ascending: true })
     .limit(100)
 
@@ -1455,6 +1532,7 @@ export async function extractCaptureDetails(
         signedData.signedUrl,
         detectedType,
         capture.technician_note ?? capture.transcript ?? null,
+        getSourceDocumentMetadata(capture.extracted_data),
       )
       const status = await updateCaptureExtraction(
         capture,

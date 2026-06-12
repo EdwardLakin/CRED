@@ -11,8 +11,10 @@ import {
 } from '@/features/capture/actions'
 import {
   MANUAL_CAPTURE_TYPES,
+  SOURCE_DOCUMENT_OPTIONS,
   type CaptureIntent,
   type CaptureType,
+  type SourceDocumentType,
 } from '@/features/capture/types'
 import { createClient } from '@/lib/supabase/client'
 
@@ -273,6 +275,11 @@ export function AddCaptureForm({
   const [captureIntent, setCaptureIntent] =
     useState<CaptureIntent>('auto_evidence')
   const [manualType, setManualType] = useState<CaptureType>('document')
+  const [sourceDocumentType, setSourceDocumentType] =
+    useState<SourceDocumentType | null>(null)
+  const selectedSourceDocument = SOURCE_DOCUMENT_OPTIONS.find(
+    (option) => option.type === sourceDocumentType,
+  )
   const [selectedFiles, setSelectedFiles] = useState<SelectedEvidenceFile[]>([])
   const [note, setNote] = useState('')
   const [noteSource, setNoteSource] = useState<'manual' | 'voice' | 'edited'>(
@@ -488,6 +495,8 @@ export function AddCaptureForm({
           noteSource,
           reportOrder: null,
           includeInReport: true,
+          sourceDocumentType: selectedSourceDocument?.type ?? null,
+          sourceDocumentLabel: selectedSourceDocument?.label ?? null,
         })
 
         if (!result.ok) {
@@ -593,6 +602,7 @@ export function AddCaptureForm({
         setNote('')
         setNoteSource('manual')
         setTranscriptStatus('not_started')
+        setSourceDocumentType(null)
       }, 900)
 
       if (returnPath) {
@@ -649,6 +659,12 @@ export function AddCaptureForm({
       <input type="hidden" name="manual_type" value={manualType} />
       <input type="hidden" name="transcript_status" value={transcriptStatus} />
       <input type="hidden" name="note_source" value={noteSource} />
+      {selectedSourceDocument ? (
+        <>
+          <input type="hidden" name="source_document_type" value={selectedSourceDocument.type} />
+          <input type="hidden" name="source_document_label" value={selectedSourceDocument.label} />
+        </>
+      ) : null}
       {guidedStep ? (
         <input type="hidden" name="guided_step" value={guidedStep} />
       ) : null}
@@ -665,6 +681,53 @@ export function AddCaptureForm({
       {clientError || actionError ? (
         <p className="error">{clientError ?? actionError}</p>
       ) : null}
+
+      <div className="source-document-shortcuts field-stack">
+        <div>
+          <p className="eyebrow">Source Document</p>
+          <p className="muted capture-upload-hint">
+            Source documents help CRED fill in report details. Capture them whenever it fits your workflow.
+          </p>
+          <p className="muted capture-upload-hint">CRED organizes it later.</p>
+        </div>
+        <div className="source-document-chip-row" aria-label="Source document shortcuts">
+          {SOURCE_DOCUMENT_OPTIONS.map((option) => {
+            const selected = selectedSourceDocument?.type === option.type
+
+            return (
+              <button
+                key={option.type}
+                type="button"
+                className={selected ? 'source-document-chip active' : 'source-document-chip'}
+                aria-pressed={selected}
+                onClick={() =>
+                  setSourceDocumentType((current) =>
+                    current === option.type ? null : option.type,
+                  )
+                }
+                disabled={isSaving || hasActiveUploads}
+              >
+                {option.label}
+              </button>
+            )
+          })}
+        </div>
+        {selectedSourceDocument ? (
+          <div className="selected-source-document-row">
+            <span className="classification-pill pending">
+              Source Document: {selectedSourceDocument.label}
+            </span>
+            <button
+              type="button"
+              className="secondary-link"
+              onClick={() => setSourceDocumentType(null)}
+              disabled={isSaving || hasActiveUploads}
+            >
+              Clear
+            </button>
+          </div>
+        ) : null}
+      </div>
 
       <div className="camera-first-panel">
         <button
@@ -733,6 +796,11 @@ export function AddCaptureForm({
                   <div>
                     <h3>{file.name}</h3>
                     <p className="muted">Draft evidence preview</p>
+                    {selectedSourceDocument ? (
+                      <p className="muted">
+                        Source Document: {selectedSourceDocument.label}
+                      </p>
+                    ) : null}
                   </div>
                   <span className="ai-status-pill draft-status-pill">
                     {getUploadStatusLabel(file.status, file.error)}
