@@ -83,6 +83,7 @@ const ALLOWED_MIME_TYPES: Record<CaptureType, readonly string[]> = {
     'audio/aac',
     'audio/x-m4a',
   ],
+  text_note: [],
   video: [
     'video/mp4',
     'video/webm',
@@ -153,7 +154,7 @@ function mimeTypeIsVideo(mimeType: string) {
 function getMediaKind(
   mimeType: string,
   captureType: CaptureType,
-): 'image' | 'video' | 'audio' | 'document' {
+): 'image' | 'video' | 'audio' | 'document' | 'note' {
   if (
     mimeTypeIsVideo(mimeType) ||
     captureType === 'video' ||
@@ -164,6 +165,10 @@ function getMediaKind(
 
   if (captureType === 'voice_note') {
     return 'audio'
+  }
+
+  if (captureType === 'text_note') {
+    return 'note'
   }
 
   if (captureType === 'document' && !mimeTypeIsImage(mimeType)) {
@@ -306,6 +311,17 @@ export async function validateCaptureBillingAccess(
   return { ok: true, sessionId: session.id }
 }
 
+export type CreateTextNoteCaptureRecordInput = {
+  sessionId: string
+  guidedStep?: string
+  guidedLabel?: string
+  workflow?: string
+  technicianNote: string
+  noteSource?: 'manual' | 'voice' | 'edited'
+  reportOrder?: number | null
+  includeInReport?: boolean
+}
+
 export type CreateUploadedCaptureRecordInput = {
   sessionId: string
   storagePath: string
@@ -336,6 +352,26 @@ export type CreateUploadedCaptureRecordInput = {
 export type CreateUploadedCaptureRecordResult =
   | CaptureActionFailure
   | (CaptureActionSuccess & { captureItemId: string })
+
+export type CreateTextNoteCaptureRecordResult =
+  | CaptureActionFailure
+  | (CaptureActionSuccess & { captureItemId: string })
+
+function getTextNoteExtractedData(noteLength: number, guidance: { workflow: string; step: string; label: string } | null): Json {
+  const baseData = getInitialExtractedData('text_note')
+  const baseObject = isRecord(baseData) ? baseData : {}
+
+  return mergeGuidance(
+    {
+      ...baseObject,
+      note: {
+        length: noteLength,
+        saved_without_media: true,
+      },
+    },
+    guidance,
+  )
+}
 
 function uploadedStoragePathIsScoped(
   storagePath: string,
@@ -377,6 +413,148 @@ async function removeUploadedObject(
       ...getSafeErrorDetails(error),
     })
   }
+}
+
+
+export async function createTextNoteCaptureRecord(
+  input: CreateTextNoteCaptureRecordInput,
+): Promise<CreateTextNoteCaptureRecordResult> {
+  const sessionId = input.sessionId.trim()
+  const guidedStep = getSafeToken(input.guidedStep ?? '')
+  const guidedLabel = getSafeToken(input.guidedLabel ?? '', 120)
+  const sessionWorkflow = getSafeToken(input.workflow ?? '')
+  const technicianNote = input.technicianNote.trim().slice(0, 2000)
+  const noteSource =
+    input.noteSource && ['voice', 'manual', 'edited'].includes(input.noteSource)
+      ? input.noteSource
+      : 'manual'
+  const guidance =
+    guidedStep && guidedLabel && sessionWorkflow
+      ? { workflow: sessionWorkflow, step: guidedStep, label: guidedLabel }
+      : null
+
+  if (!sessionId) {
+    return captureError('Missing documentation session.')
+  }
+
+  if (!technicianNote) {
+    return captureError('Type a note before saving text evidence.', sessionId)
+  }
+
+  const { supabase, profile } = await requireSessionWorkspace()
+  const billingAccess = requireActiveBillingAccess(profile)
+
+  if (!billingAccess.ok) {
+    return captureError(billingAccess.message, sessionId)
+  }
+
+  const { data: session, error: sessionError } = await supabase
+    .from('documentation_sessions')
+    .select('id, organization_id')
+    .eq('id', sessionId)
+    .eq('organization_id', profile.organization_id)
+    .single()
+
+  if (sessionError || !session) {
+    return captureError('Documentation session not found.', sessionId)
+  }
+
+  const { count: existingCaptureCount } = await supabase
+    .from('capture_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('documentation_session_id', session.id)
+    .eq('organization_id', profile.organization_id)
+
+  const reportOrder =
+    input.reportOrder &&
+    Number.isInteger(input.reportOrder) &&
+    input.reportOrder > 0
+      ? input.reportOrder
+      : (existingCaptureCount ?? 0) + 1
+  const capturedAt = new Date().toISOString()
+  const extractedData = getTextNoteExtractedData(technicianNote.length, guidance)
+
+  const { data: captureItem, error: captureErrorResult } = await supabase
+    .from('capture_items')
+    .insert({
+      documentation_session_id: session.id,
+      organization_id: profile.organization_id,
+      type: 'text_note',
+      storage_path: null,
+      captured_at: capturedAt,
+      ai_status: 'extracted',
+      ai_summary: 'Text note saved as evidence.',
+      extracted_data: extractedData,
+      technician_note: technicianNote,
+      transcript: noteSource === 'voice' || noteSource === 'edited' ? technicianNote : null,
+      transcript_status: 'completed',
+      note_source: noteSource,
+      media_kind: 'note',
+      report_order: reportOrder,
+      include_in_report: input.includeInReport ?? true,
+    })
+    .select('id')
+    .single()
+
+  if (captureErrorResult || !captureItem) {
+    logCaptureFailure({
+      step: 'text_note_capture_item_insert',
+      ...getSafeErrorDetails(captureErrorResult),
+    })
+    return captureError(
+      captureErrorResult?.message ?? 'Unable to save text note evidence.',
+      session.id,
+    )
+  }
+
+  const { error: timelineError } = await supabase
+    .from('timeline_events')
+    .insert({
+      documentation_session_id: session.id,
+      organization_id: profile.organization_id,
+      capture_item_id: captureItem.id,
+      title: 'Text note captured',
+      description: 'Text note saved as evidence without a media upload.',
+      event_time: capturedAt,
+      event_type: 'capture',
+    })
+
+  if (timelineError) {
+    logCaptureFailure({
+      step: 'text_note_timeline_event_insert',
+      ...getSafeErrorDetails(timelineError),
+    })
+    await supabase
+      .from('capture_items')
+      .delete()
+      .eq('id', captureItem.id)
+      .eq('organization_id', profile.organization_id)
+    return captureError(timelineError.message, session.id)
+  }
+
+  try {
+    await recordUsageEvent({
+      supabase,
+      organizationId: profile.organization_id,
+      eventType: 'capture_uploaded',
+      metadata: { session_id: session.id, capture_id: captureItem.id, capture_type: 'text_note' },
+      createdBy: profile.id,
+    })
+  } catch (usageError) {
+    logCaptureFailure({
+      step: 'text_note_capture_usage_event_insert',
+      captureId: captureItem.id,
+      ...getSafeErrorDetails(usageError),
+    })
+  }
+
+  revalidatePath('/dashboard')
+  revalidatePath('/dashboard/sessions')
+  revalidatePath(`/dashboard/sessions/${session.id}`)
+  revalidatePath(`/dashboard/sessions/${session.id}/capture`)
+  revalidatePath(`/dashboard/sessions/${session.id}/report`)
+
+  return { ok: true, sessionId: session.id, captureItemId: captureItem.id }
 }
 
 export async function createCaptureRecordFromUploadedFile(
@@ -685,7 +863,7 @@ type PendingCaptureItem = {
   id: string
   documentation_session_id: string
   organization_id: string
-  storage_path: string
+  storage_path: string | null
   extracted_data: Json
   technician_note: string | null
   transcript: string | null
@@ -794,7 +972,8 @@ function getGuidanceContext(extractedData: Json | null) {
 
 function captureNeedsClassification(
   capture: PendingCaptureItem & { ai_status: string | null },
-) {
+): capture is PendingCaptureItem & { ai_status: string | null; storage_path: string } {
+  if (!capture.storage_path) return false
   const extractedData = isRecord(capture.extracted_data)
     ? capture.extracted_data
     : null
@@ -1246,7 +1425,7 @@ function captureNeedsExtraction(capture: ExtractionCaptureItem) {
 
   if (
     (capture.type === 'document' || capture.media_kind === 'video') &&
-    !IMAGE_STORAGE_PATH_PATTERN.test(capture.storage_path)
+    (!capture.storage_path || !IMAGE_STORAGE_PATH_PATTERN.test(capture.storage_path))
   ) {
     return false
   }
@@ -1521,7 +1700,8 @@ export async function extractCaptureDetails(
 
   const extractableCaptures = (capturesForExtraction ?? [])
     .filter(
-      (capture): capture is ExtractionCaptureItem =>
+      (capture): capture is ExtractionCaptureItem & { storage_path: string } =>
+        Boolean(capture.storage_path) &&
         Boolean(getDetectedType(capture.extracted_data)) &&
         captureNeedsExtraction(capture),
     )
@@ -1682,7 +1862,7 @@ function captureAlreadyExtracted(capture: ProcessableCaptureItem) {
 }
 
 function captureHasImageFile(capture: ProcessableCaptureItem) {
-  return capture.media_kind === 'image' || IMAGE_STORAGE_PATH_PATTERN.test(capture.storage_path)
+  return capture.media_kind === 'image' || Boolean(capture.storage_path && IMAGE_STORAGE_PATH_PATTERN.test(capture.storage_path))
 }
 
 async function markCaptureUnsupportedForBackground(
@@ -1841,6 +2021,12 @@ export async function processPendingCapturesForSession(sessionId: string): Promi
       if (!extractionAllowance.ok) {
         await updateCaptureProcessingState(workingCapture, supabase, 'blocked_by_limit', 'extraction', extractionAllowance.message)
         summary.blockedByLimit += 1
+        continue
+      }
+
+      if (!workingCapture.storage_path) {
+        await markCaptureExtractionFailed(workingCapture, supabase, 'No media file is available for extraction.')
+        summary.failed += 1
         continue
       }
 

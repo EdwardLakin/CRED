@@ -116,14 +116,16 @@ function buildEvidenceItemsHtml(captureItems: ReportCapture[], signedUrls: Recor
     const signedUrl = signedUrls[capture.id]
     const note = capture.technician_note || capture.transcript || (capture.transcript_status === 'pending' ? 'Transcribing…' : 'No technician note provided.')
     const fields = getFields(capture.extracted_data)
-    const mediaKind = capture.media_kind || (capture.type === 'video' ? 'video' : 'image')
-    const mediaHtml = signedUrl && mediaKind === 'image'
-      ? `<img src="${escapeHtml(signedUrl)}" alt="Evidence item ${index + 1}" />`
-      : signedUrl && mediaKind === 'video'
-        ? `<div class="video-still">Video reference</div><p class="video-link">Video file: <a href="${escapeHtml(signedUrl)}">${escapeHtml(capture.storage_path)}</a></p>`
-        : signedUrl
-          ? `<p><a href="${escapeHtml(signedUrl)}">Open saved ${escapeHtml(mediaKind)} file</a></p>`
-          : `<div class="video-still">Saved evidence file</div>`
+    const mediaKind = capture.media_kind || (capture.type === 'text_note' ? 'note' : capture.type === 'video' ? 'video' : 'image')
+    const mediaHtml = mediaKind === 'note'
+      ? '<div class="video-still">Text note evidence</div>'
+      : signedUrl && mediaKind === 'image'
+        ? `<img src="${escapeHtml(signedUrl)}" alt="Evidence item ${index + 1}" />`
+        : signedUrl && mediaKind === 'video'
+          ? `<div class="video-still">Video reference</div><p class="video-link">Video file: <a href="${escapeHtml(signedUrl)}">${escapeHtml(capture.storage_path ?? 'video evidence')}</a></p>`
+          : signedUrl
+            ? `<p><a href="${escapeHtml(signedUrl)}">Open saved ${escapeHtml(mediaKind)} file</a></p>`
+            : `<div class="video-still">Saved evidence file</div>`
 
     return `<article class="item">
       <h2>Item ${index + 1}</h2>
@@ -274,6 +276,8 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const captureItems = captures ?? []
   const signedUrls: Record<string, string> = {}
   await Promise.all(captureItems.map(async (capture) => {
+    if (!capture.storage_path) return
+
     const { data } = await supabase.storage.from('documentation-captures').createSignedUrl(capture.storage_path, 60 * 20)
     if (data?.signedUrl) signedUrls[capture.id] = data.signedUrl
   }))
@@ -326,14 +330,16 @@ export async function GET(_request: Request, { params }: RouteContext) {
     const signedUrl = signedUrls[capture.id]
     const note = capture.technician_note || capture.transcript || (capture.transcript_status === 'pending' ? 'Transcribing…' : 'No technician note provided.')
     const fields = getFields(capture.extracted_data)
-    const mediaKind = capture.media_kind || (capture.type === 'video' ? 'video' : 'image')
-    const mediaHtml = signedUrl && mediaKind === 'image'
-      ? `<img src="${escapeHtml(signedUrl)}" alt="Evidence item ${index + 1}" />`
-      : signedUrl && mediaKind === 'video'
-        ? `<div class="video-still">Video thumbnail/still</div><p class="video-link">Video file: <a href="${escapeHtml(signedUrl)}">${escapeHtml(capture.storage_path)}</a></p>`
-        : signedUrl
-          ? `<p><a href="${escapeHtml(signedUrl)}">Open saved ${escapeHtml(mediaKind)} file</a></p>`
-          : `<div class="video-still">Saved evidence file</div>`
+    const mediaKind = capture.media_kind || (capture.type === 'text_note' ? 'note' : capture.type === 'video' ? 'video' : 'image')
+    const mediaHtml = mediaKind === 'note'
+      ? '<div class="video-still">Text note evidence</div>'
+      : signedUrl && mediaKind === 'image'
+        ? `<img src="${escapeHtml(signedUrl)}" alt="Evidence item ${index + 1}" />`
+        : signedUrl && mediaKind === 'video'
+          ? `<div class="video-still">Video thumbnail/still</div><p class="video-link">Video file: <a href="${escapeHtml(signedUrl)}">${escapeHtml(capture.storage_path ?? 'video evidence')}</a></p>`
+          : signedUrl
+            ? `<p><a href="${escapeHtml(signedUrl)}">Open saved ${escapeHtml(mediaKind)} file</a></p>`
+            : `<div class="video-still">Saved evidence file</div>`
 
     return `<article class="item">
       <h2>Item ${index + 1}</h2>

@@ -14,6 +14,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui'
 import {
   createCaptureRecordFromUploadedFile,
+  createTextNoteCaptureRecord,
   validateCaptureBillingAccess,
 } from '@/features/capture/actions'
 import {
@@ -82,6 +83,7 @@ const FILE_INPUT_CONFIG: Record<
   info_plate: { accept: 'image/*', capture: 'environment' },
   document: { accept: 'application/pdf,image/*' },
   voice_note: { accept: 'audio/*' },
+  text_note: { accept: '' },
   video: { accept: 'video/*', capture: 'environment' },
   evidence_video: { accept: 'video/*', capture: 'environment' },
 }
@@ -129,6 +131,7 @@ const ALLOWED_MIME_TYPES: Record<CaptureType, readonly string[]> = {
     'audio/aac',
     'audio/x-m4a',
   ],
+  text_note: [],
   video: [
     'video/mp4',
     'video/webm',
@@ -184,12 +187,12 @@ function formatFileSize(bytes: number) {
 }
 
 function SubmitButton({
-  hasFiles,
+  hasEvidence,
   pending,
   hasActiveUploads,
   retryOnly,
 }: {
-  hasFiles: boolean
+  hasEvidence: boolean
   pending: boolean
   hasActiveUploads: boolean
   retryOnly: boolean
@@ -198,10 +201,10 @@ function SubmitButton({
     <Button
       type="submit"
       className="button button-primary touch-target"
-      disabled={pending || hasActiveUploads || !hasFiles}
+      disabled={pending || hasActiveUploads || !hasEvidence}
     >
       {pending || hasActiveUploads
-        ? 'Uploading…'
+        ? 'Saving…'
         : retryOnly
           ? 'Retry failed upload'
           : 'Done — save evidence'}
@@ -546,6 +549,29 @@ export function AddCaptureForm({
     return { savedCount, failedCount }
   }
 
+  async function saveTextNoteOnly() {
+    const result = await createTextNoteCaptureRecord({
+      sessionId,
+      guidedStep,
+      guidedLabel,
+      workflow,
+      technicianNote: note,
+      noteSource,
+      reportOrder: null,
+      includeInReport: true,
+    })
+
+    if (!result.ok) {
+      setActionError(result.error)
+      return false
+    }
+
+    cleanupRecognition()
+    setSaveMessage('Saved. Keep capturing or tap Done.')
+    router.refresh()
+    return true
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
@@ -560,9 +586,10 @@ export function AddCaptureForm({
     }
 
     const filesToUpload = uploadableFiles
+    const hasTextNote = note.trim().length > 0
 
-    if (filesToUpload.length === 0) {
-      setClientError('Choose at least one file to upload.')
+    if (filesToUpload.length === 0 && !hasTextNote) {
+      setClientError('Choose a file or type a text note to save evidence.')
       return
     }
 
@@ -615,13 +642,19 @@ export function AddCaptureForm({
     setIsSaving(true)
 
     try {
-      const result = await uploadSelectedFiles(filesToUpload)
+      const result = filesToUpload.length > 0
+        ? await uploadSelectedFiles(filesToUpload)
+        : { savedCount: (await saveTextNoteOnly()) ? 1 : 0, failedCount: 0 }
 
-      if (result.savedCount > 0) {
+      if (result.savedCount > 0 && filesToUpload.length > 0) {
         cleanupRecognition()
         setSaveMessage('Saved. Keep capturing or tap Done.')
         triggerBackgroundProcessing()
         router.refresh()
+      }
+
+      if (result.savedCount === 0 && filesToUpload.length === 0) {
+        return
       }
 
       if (result.failedCount > 0) {
@@ -937,7 +970,6 @@ export function AddCaptureForm({
           accept={fileConfig.accept}
           capture={fileConfig.capture}
           multiple={supportsMultipleFiles}
-          required
           className="input file-input camera-file-input"
           onChange={validateFileSelection}
           disabled={isSaving || hasActiveUploads}
@@ -1142,7 +1174,7 @@ export function AddCaptureForm({
       </div>
 
       <SubmitButton
-        hasFiles={uploadableFiles.length > 0}
+        hasEvidence={uploadableFiles.length > 0 || note.trim().length > 0}
         pending={isSaving}
         hasActiveUploads={hasActiveUploads}
         retryOnly={failedFiles.length > 0}

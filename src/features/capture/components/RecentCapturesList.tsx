@@ -21,16 +21,16 @@ function getCaptureMeta(capture: CaptureItem) {
   const sourceDocument = getSourceDocumentMetadata(capture.extracted_data)
   const typeLabel = CAPTURE_TYPE_LABELS[capture.type as CaptureType] ?? capture.type
 
-  return sourceDocument
-    ? `Source Document: ${sourceDocument.label} · ${typeLabel}`
-    : typeLabel
+  if (sourceDocument) return `Source Document: ${sourceDocument.label} · ${typeLabel}`
+  if (capture.media_kind === 'note' || capture.type === 'text_note') return 'Text Note · No file upload'
+  return typeLabel
 }
 
 export function RecentCapturesList({ captures, signedUrls, limit = 6 }: { captures: CaptureItem[]; signedUrls: Record<string, string>; limit?: number }) {
   const recentCaptures = captures.filter((capture) => !capture.deleted_at).slice(0, limit)
 
   if (recentCaptures.length === 0) {
-    return <div className="empty-state capture-empty-state">No captures yet. Use the large Capture Evidence button to add photos, videos, or voice-noted evidence.</div>
+    return <div className="empty-state capture-empty-state">No captures yet. Use Capture Evidence to add photos, videos, voice notes, or text notes.</div>
   }
 
   return (

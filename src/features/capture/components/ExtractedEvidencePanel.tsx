@@ -119,7 +119,7 @@ type EvidenceCapture = {
   summary: string | null
   notes: string[]
   sourceUrl: string | null
-  storagePath: string
+  storagePath: string | null
   fields: EvidenceFieldRow[]
 }
 

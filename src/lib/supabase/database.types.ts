@@ -412,7 +412,7 @@ export interface Database {
           documentation_session_id: string
           organization_id: string
           type: string
-          storage_path: string
+          storage_path: string | null
           thumbnail_path: string | null
           capture_group_id: string | null
           evidence_event_id: string | null
@@ -437,7 +437,7 @@ export interface Database {
           documentation_session_id: string
           organization_id: string
           type: string
-          storage_path: string
+          storage_path?: string | null
           thumbnail_path?: string | null
           capture_group_id?: string | null
           evidence_event_id?: string | null
@@ -462,7 +462,7 @@ export interface Database {
           documentation_session_id?: string
           organization_id?: string
           type?: string
-          storage_path?: string
+          storage_path?: string | null
           thumbnail_path?: string | null
           capture_group_id?: string | null
           evidence_event_id?: string | null
