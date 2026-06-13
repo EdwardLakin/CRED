@@ -228,7 +228,7 @@ export function getCaptureProcessingLabel(status: CaptureProcessingStatus) {
     case 'blocked_by_limit':
       return 'AI limit reached'
     case 'ready_for_review':
-      return 'Ready for extraction'
+      return 'Preparing report details'
     case 'pending':
     default:
       return 'Pending AI processing'

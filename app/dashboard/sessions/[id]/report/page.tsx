@@ -348,7 +348,6 @@ export default async function SessionReportPreviewPage({
             hasPendingEvidence={hasPendingEvidence}
             session={session}
             sourceFieldEntries={sourceFieldEntries}
-            templateName={template?.name}
             unmappedEvidenceCount={unmappedEvidenceCount}
             visibleCaptureCount={visibleCaptures.length}
           />
@@ -494,7 +493,6 @@ function AiDraftReview({
   hasPendingEvidence,
   session,
   sourceFieldEntries,
-  templateName,
   unmappedEvidenceCount,
   visibleCaptureCount,
 }: {
@@ -507,7 +505,6 @@ function AiDraftReview({
   hasPendingEvidence: boolean;
   session: Pick<DocumentationSession, "id" | "title">;
   sourceFieldEntries: [string, unknown][];
-  templateName?: string;
   unmappedEvidenceCount: number;
   visibleCaptureCount: number;
 }) {
@@ -535,8 +532,7 @@ function AiDraftReview({
         <form action={generateDraftAction} className="form-stack">
           <div className="required-evidence-grid compact-reminder-grid">
             <p className="checkline complete">
-              ✓ Report Context:{" "}
-              {templateName ?? "Evidence only"}
+              ✓ Evidence ready for report generation
             </p>
             <p
               className={

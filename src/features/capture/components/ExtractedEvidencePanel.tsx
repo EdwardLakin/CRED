@@ -304,7 +304,7 @@ export function ExtractedEvidencePanel({
 
       {evidenceCaptures.length === 0 ? (
         <div className="empty-state extracted-evidence-empty-state">
-          No extracted details yet. Capture Source Documents whenever it fits your workflow, then extract details to review values from VIN plates,
+          No extracted details yet. Capture Source Documents whenever it fits the job, then prepare report details to review values from VIN plates,
           registrations, work orders, and data plates.
         </div>
       ) : (
