@@ -1,14 +1,8 @@
 import Link from 'next/link'
 
-import { getSessionTypeLabel, type DocumentationSession } from '../types'
+import type { DocumentationSession } from '../types'
 import { formatDate, formatDateTime } from '../utils'
 import { SessionStatusBadge } from './SessionStatusBadge'
-
-function formatAiDraftStatus(status: string | undefined) {
-  if (!status) return 'Not started'
-  if (status === 'approved') return 'Approved'
-  return status.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
-}
 
 function getOperationalAction(session: DocumentationSession) {
   if (session.status === 'finalized') {
@@ -16,7 +10,7 @@ function getOperationalAction(session: DocumentationSession) {
   }
 
   if (session.status === 'review') {
-    return { href: `/dashboard/sessions/${session.id}/report`, label: 'Review Draft' }
+    return { href: `/dashboard/sessions/${session.id}/report`, label: 'Review Report' }
   }
 
   return { href: `/dashboard/sessions/${session.id}/capture`, label: 'Continue Capture' }
@@ -26,13 +20,11 @@ export function SessionCard({
   session,
   dateMode = 'updated',
   evidenceCount,
-  aiDraftStatus,
   showOperationalAction = false,
 }: {
   session: DocumentationSession
   dateMode?: 'created' | 'updated'
   evidenceCount?: number
-  aiDraftStatus?: string
   showOperationalAction?: boolean
 }) {
   const action = showOperationalAction ? getOperationalAction(session) : null
@@ -47,7 +39,7 @@ export function SessionCard({
       <div className="session-card-header">
         <div className="session-card-title-block">
           <h3>{session.title}</h3>
-          <p className="muted">{getSessionTypeLabel(session.session_type)}</p>
+          <p className="muted">{session.asset_label || session.unit_number || 'Evidence session'}</p>
         </div>
         <SessionStatusBadge status={session.status} />
       </div>
@@ -63,18 +55,14 @@ export function SessionCard({
               <dd>{evidenceLabel}</dd>
             </div>
             <div>
-              <dt>AI Draft</dt>
-              <dd>{formatAiDraftStatus(aiDraftStatus)}</dd>
-            </div>
-            <div>
               <dt>Action</dt>
               <dd className="session-card-action">{action?.label}</dd>
             </div>
           </>
         ) : (
           <div>
-            <dt>Asset</dt>
-            <dd>{session.asset_label || session.unit_number || 'Not assigned'}</dd>
+            <dt>Evidence</dt>
+            <dd>{evidenceLabel}</dd>
           </div>
         )}
       </dl>

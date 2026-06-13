@@ -10,23 +10,18 @@ type DashboardNavigationItem = {
 }
 
 const primaryItems: DashboardNavigationItem[] = [
-  { href: '/dashboard', label: 'Dashboard', description: 'Start and resume' },
-  { href: '/dashboard/sessions', label: 'Sessions', description: 'Session history' },
-  { href: '/dashboard/templates', label: 'Form Profiles', description: 'Report context library' },
+  { href: '/dashboard', label: 'Dashboard', description: 'Start or resume' },
+  { href: '/dashboard/sessions', label: 'Recent', description: 'Session history' },
 ]
 
 const managementItems: DashboardNavigationItem[] = [
-  { href: '/dashboard/settings', label: 'Settings', description: 'Workspace controls' },
+  { href: '/dashboard/settings', label: 'Settings', description: 'Workspace' },
   { href: '/dashboard/billing', label: 'Billing', description: 'Plan and subscription' },
 ]
 
 function isActive(pathname: string, href: string) {
   if (href === '/dashboard') {
     return pathname === href
-  }
-
-  if (href === '/dashboard/templates') {
-    return pathname === href || pathname.startsWith('/dashboard/settings/templates')
   }
 
   return pathname === href || pathname.startsWith(`${href}/`)

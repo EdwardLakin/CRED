@@ -2,8 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { getPlanLimits, parseBillingPlan } from '@/features/billing'
-import { AddCaptureForm, RecentCapturesList, WORKFLOW_LABELS, getRequiredEvidenceCompletion, getWorkflow } from '@/features/capture'
-import { formatDateTime } from '@/features/sessions'
+import { AddCaptureForm, RecentCapturesList } from '@/features/capture'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
 export default async function GuidedCapturePage({
@@ -47,54 +46,33 @@ export default async function GuidedCapturePage({
     }),
   )
 
-  const { data: workflowTemplate } = session.workflow_template_id
-    ? await supabase
-        .from('documentation_workflow_templates')
-        .select('name, required_evidence')
-        .eq('id', session.workflow_template_id)
-        .eq('organization_id', profile.organization_id)
-        .maybeSingle()
-    : { data: null }
-
-  const workflow = getWorkflow(session.session_type)
   const planLimits = getPlanLimits(parseBillingPlan(profile.organization.plan))
-  const requiredEvidence = getRequiredEvidenceCompletion(captureItems, session.session_type, workflowTemplate?.required_evidence ?? null)
 
   return (
     <main className="page-shell dashboard-shell focused-capture-shell">
       <div className="section-header page-header focused-capture-header">
         <div>
-          <p className="eyebrow guided-eyebrow">Technician workspace</p>
+          <p className="eyebrow guided-eyebrow">Capture anything. Generate everything.</p>
           <h1>Capture Evidence</h1>
-          <p className="muted">
-            {session.title} · {WORKFLOW_LABELS[workflow]} · Updated {formatDateTime(session.updated_at ?? session.created_at)}
-          </p>
-          <p className="muted">Capture evidence in the order that matches your work. CRED organizes it into a draft later. A Form Profile is report context only.</p>
+          <p className="muted">{session.title}</p>
+          <p className="muted">If you have a paper form, capture it first.</p>
         </div>
-        <Link href={`/dashboard/sessions/${session.id}/report`} className="button button-secondary touch-target">
+        <Link href={`/dashboard/sessions/${session.id}/report`} className="button button-primary touch-target">
           Done
         </Link>
       </div>
 
-      {captureSaved ? <p className="success">Saved. AI is processing in the background. Continue gathering evidence or tap Done.</p> : null}
+      {captureSaved ? <p className="success">Saved. Keep capturing or tap Done.</p> : null}
 
       <section className="card detail-card focused-capture-card" id="main-capture-card">
-        <div>
-          <p className="eyebrow guided-eyebrow">Photo · Video · Voice note</p>
-          <h2>Capture Evidence</h2>
-          <p className="muted">
-            Use source document shortcuts when helpful, or capture ordinary evidence as the work happens. Draft preview cards appear before saving, and recent captures stay below for quick confirmation.
-          </p>
-        </div>
         <AddCaptureForm
           sessionId={session.id}
           organizationId={session.organization_id}
           sessionType={session.session_type}
-          workflow={workflow}
           returnPath={`/dashboard/sessions/${session.id}/capture#main-capture-card`}
-          captureButtonLabel="Capture Evidence"
-          helperText="Take a photo/video or select evidence, add voice or typed context, then save. Capture evidence in the order that matches your work. CRED organizes it into a draft later."
-          commonCaptureText="Supported capture types: photo, video, voice note, and combined photo/video plus voice or typed context."
+          captureButtonLabel="Camera"
+          helperText="Capture photos, choose from gallery, add a voice note, or type a note. CRED builds the report in the background."
+          commonCaptureText=""
           showSuggestedCaptureText={false}
           stickyDoneHref={`/dashboard/sessions/${session.id}/report`}
           maxCaptureFileSizeBytes={planLimits.maxCaptureFileSizeBytes}
@@ -102,47 +80,16 @@ export default async function GuidedCapturePage({
         />
       </section>
 
-
-      <section className="card detail-card evidence-progress-card">
-        <details>
-          <summary className="secondary-link touch-target">
-            Coverage Suggestions · {requiredEvidence.completedCount} / {requiredEvidence.totalCount} resolved
-          </summary>
-          <div className="captures-section-header">
-            <div>
-              <p className="eyebrow">Report Readiness</p>
-              <h2>{requiredEvidence.completedCount} / {requiredEvidence.totalCount} coverage suggestions resolved</h2>
-              <p className="muted">{workflowTemplate?.name ? `Form Profile: ${workflowTemplate.name}` : 'No Form Profile / Evidence Package'} · Suggestions are reminders only. Capture evidence in the order that matches your work.</p>
-            </div>
-            <span className="ai-status-pill info">Report readiness {requiredEvidence.completedCount} / {requiredEvidence.totalCount}</span>
-          </div>
-          <div className="required-evidence-grid">
-            <div>
-              <h3>Resolved</h3>
-              {requiredEvidence.rows.filter((row) => row.completed).length > 0 ? requiredEvidence.rows.filter((row) => row.completed).map((row) => <p key={row.rule.key} className="checkline completed">✓ {row.rule.label}</p>) : <p className="muted">No coverage suggestions resolved yet.</p>}
-            </div>
-            <div>
-              <h3>Unresolved Coverage Suggestions</h3>
-              {requiredEvidence.missing.length > 0 ? requiredEvidence.missing.map((row) => <p key={row.rule.key} className="checkline missing">○ {row.rule.label}</p>) : <p className="success">All coverage suggestions are resolved.</p>}
-            </div>
-          </div>
-        </details>
-      </section>
-
       <section className="card detail-card recent-captures-card">
         <div className="captures-section-header">
           <div>
             <h2>Recent Captures</h2>
-            <p className="muted">Quick confirmation of the latest saved evidence. Full draft review, grouped findings, source field summaries, and delivery actions live on the Report page.</p>
+            <p className="muted">Your latest evidence is saved here. Continue capturing until the job is done.</p>
           </div>
-          <div className="capture-card-actions">
-            <Link href={`/dashboard/sessions/${session.id}/capture`} className="secondary-link touch-target">Refresh status</Link>
-            <span className="ai-status-pill neutral">{captureItems.length} saved</span>
-          </div>
+          <span className="status-pill neutral">{captureItems.length} saved</span>
         </div>
         <RecentCapturesList captures={captureItems} signedUrls={signedUrls} />
       </section>
-
     </main>
   )
 }

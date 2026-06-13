@@ -3,30 +3,11 @@ import { redirect } from 'next/navigation'
 
 import { Card } from '@/components/ui'
 import { SessionCard } from '@/features/sessions'
+import { createQuickCaptureSession } from '@/features/sessions/actions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
 interface DashboardPageProps {
   searchParams: Promise<{ billing?: string; checkout?: string; error?: string }>
-}
-
-const startOptions = [
-  { href: '/dashboard/sessions/new?type=inspection', label: 'New Inspection', description: 'Start from an inspection context.' },
-  { href: '/dashboard/sessions/new?type=field_service_report', label: 'New Service Report', description: 'Start from a service report context.' },
-  { href: '/dashboard/sessions/new', label: 'New Documentation Session', description: 'Start with general evidence documentation.' },
-]
-
-function getLatestDraftStatuses(
-  drafts: Array<{ documentation_session_id: string; status: string; updated_at: string }> | null,
-) {
-  const latestDraftStatusBySession = new Map<string, string>()
-
-  for (const draft of drafts ?? []) {
-    if (!latestDraftStatusBySession.has(draft.documentation_session_id)) {
-      latestDraftStatusBySession.set(draft.documentation_session_id, draft.status)
-    }
-  }
-
-  return latestDraftStatusBySession
 }
 
 function getCaptureCounts(captures: Array<{ documentation_session_id: string }> | null) {
@@ -40,6 +21,10 @@ function getCaptureCounts(captures: Array<{ documentation_session_id: string }> 
   }
 
   return captureCountBySession
+}
+
+function getContinueSession(sessions: Array<{ id: string; status: string }>) {
+  return sessions.find((session) => session.status !== 'archived' && session.status !== 'finalized') ?? sessions[0]
 }
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
@@ -58,33 +43,25 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     .select('*')
     .eq('organization_id', profile.organization_id)
     .order('updated_at', { ascending: false })
-    .limit(5)
+    .limit(6)
 
   if (error) {
     throw new Error(error.message)
   }
 
   const recentSessions = sessions ?? []
+  const continueSession = getContinueSession(recentSessions)
   const sessionIds = recentSessions.map((session) => session.id)
-  const [{ data: captures }, { data: drafts }] = sessionIds.length > 0
-    ? await Promise.all([
-        supabase
-          .from('capture_items')
-          .select('documentation_session_id')
-          .eq('organization_id', profile.organization_id)
-          .in('documentation_session_id', sessionIds)
-          .is('deleted_at', null),
-        supabase
-          .from('ai_report_drafts')
-          .select('documentation_session_id, status, updated_at')
-          .eq('organization_id', profile.organization_id)
-          .in('documentation_session_id', sessionIds)
-          .order('updated_at', { ascending: false }),
-      ])
-    : [{ data: null }, { data: null }]
+  const { data: captures } = sessionIds.length > 0
+    ? await supabase
+        .from('capture_items')
+        .select('documentation_session_id')
+        .eq('organization_id', profile.organization_id)
+        .in('documentation_session_id', sessionIds)
+        .is('deleted_at', null)
+    : { data: null }
 
   const captureCountBySession = getCaptureCounts(captures)
-  const latestDraftStatusBySession = getLatestDraftStatuses(drafts)
 
   return (
     <main className="page-shell dashboard-shell">
@@ -92,20 +69,25 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
       <section className="hero-card operational-hero">
         <div>
-          <p className="eyebrow">Evidence documentation</p>
-          <h1>Start documentation faster.</h1>
+          <p className="eyebrow">Capture anything. Generate everything.</p>
+          <h1>What do you want to work on?</h1>
           <p className="hero-copy">
-            Capture evidence, add notes, and let CRED organize the report draft after the work is done.
+            Start capturing evidence now. If you have a paper form, capture it first — CRED builds the professional report.
           </p>
-          <p className="hero-copy hero-copy-guardrail">Choose a starting point. You can still capture evidence in any order.</p>
         </div>
-        <div className="start-option-grid" aria-label="Start a documentation session">
-          {startOptions.map((option) => (
-            <Link key={option.href} href={option.href} className="start-option-card touch-target">
-              <strong>{option.label}</strong>
-              <span>{option.description}</span>
+        <div className="start-option-grid" aria-label="Start or continue work">
+          <form action={createQuickCaptureSession}>
+            <button className="start-option-card touch-target start-option-button">
+              <strong>New Session</strong>
+              <span>Open capture immediately.</span>
+            </button>
+          </form>
+          {continueSession ? (
+            <Link href={`/dashboard/sessions/${continueSession.id}/capture`} className="start-option-card touch-target">
+              <strong>Continue Session</strong>
+              <span>Keep adding evidence.</span>
             </Link>
-          ))}
+          ) : null}
         </div>
       </section>
 
@@ -113,7 +95,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         <div className="section-header">
           <div>
             <h2>Recent Sessions</h2>
-            <p className="muted">Resume capture work or review the latest report drafts for your organization.</p>
+            <p className="muted">Simple status only: Capturing, Review Required, Ready, or Archived.</p>
           </div>
           <Link href="/dashboard/sessions" className="secondary-link touch-target">
             View all
@@ -127,7 +109,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 key={session.id}
                 session={session}
                 evidenceCount={captureCountBySession.get(session.id)}
-                aiDraftStatus={latestDraftStatusBySession.get(session.id)}
                 showOperationalAction
               />
             ))}
@@ -136,21 +117,14 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           <Card className="dashboard-card dashboard-empty-card">
             <div className="empty-state session-empty-state">
               <div className="empty-icon" aria-hidden="true">
-                📋
+                📄
               </div>
-              <h2>Start your first documentation session.</h2>
-              <p className="muted">Choose a starting point now, then capture evidence naturally and add report context when it helps.</p>
+              <h2>Start your first session.</h2>
+              <p className="muted">Press New Session and begin capturing evidence. No setup required.</p>
             </div>
-            <div className="empty-start-actions" aria-label="Start your first documentation session">
-              {startOptions.map((option) => (
-                <Link key={option.href} href={option.href} className="button button-primary touch-target">
-                  {option.label}
-                </Link>
-              ))}
-            </div>
-            <Link href="/dashboard/templates" className="secondary-link touch-target empty-secondary-link">
-              Manage Form Profiles
-            </Link>
+            <form action={createQuickCaptureSession} className="empty-start-actions" aria-label="Start your first session">
+              <button className="button button-primary touch-target">New Session</button>
+            </form>
           </Card>
         )}
       </section>

@@ -3,7 +3,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import {
-  ProcessPendingEvidenceButton,
   getCaptureProcessingStatus,
   getRequiredEvidenceCompletion,
 } from "@/features/capture";
@@ -28,12 +27,11 @@ type AiReportDraftSection = Tables["ai_report_draft_sections"]["Row"];
 type ReportShareToken = Tables["report_share_tokens"]["Row"];
 type ReportEvent = Tables["exports"]["Row"];
 type ServerAction = (formData: FormData) => void | Promise<void>;
-type ProcessingCounts = {
+type EvidenceCounts = {
   ready: number;
   processing: number;
   needsReview: number;
 };
-type StatusVariant = "attention" | "info" | "success";
 type StatusItem = { label: string; complete: boolean };
 type CoverageReminder = ReturnType<
   typeof getRequiredEvidenceCompletion
@@ -70,17 +68,19 @@ function getArrayCount(value: unknown) {
   return Array.isArray(value) ? value.length : 0;
 }
 
-function formatWorkflowStatus(value: string) {
-  return value
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
 
-function getAiDraftStatusVariant(status: string) {
+function getReportStatusVariant(status: string) {
   if (status === "approved") return "success";
   if (status === "failed") return "danger";
   if (status === "processing") return "info";
   return "neutral";
+}
+
+function getReportStatusLabel(status: string) {
+  if (status === "approved") return "Approved";
+  if (status === "failed") return "Review Required";
+  if (status === "processing") return "Building Report";
+  return "Review Required";
 }
 
 export default async function SessionReportPreviewPage({
@@ -212,7 +212,7 @@ export default async function SessionReportPreviewPage({
     { ready: 0, processing: 0, needsReview: 0 },
   );
   const hasPendingEvidence = processingCounts.processing > 0;
-  const isReadyForDelivery = session.review_status === "ready_for_delivery";
+  const isReadyForExport = session.review_status === "ready_for_delivery";
   const reviewedLabel = session.reviewed_at
     ? formatDateTime(session.reviewed_at)
     : null;
@@ -232,29 +232,13 @@ export default async function SessionReportPreviewPage({
   );
 
   const reportStatusItems = [
-    { label: "Draft Generated", complete: Boolean(currentAiDraft) },
+    { label: "Report Generated", complete: Boolean(currentAiDraft) },
     {
-      label: "AI Draft Approved",
+      label: "Report Approved",
       complete: currentAiDraft?.status === "approved",
     },
-    { label: "Ready for Delivery", complete: isReadyForDelivery },
+    { label: "Ready", complete: isReadyForExport },
   ];
-  const hasNeedsReviewEvidence = processingCounts.needsReview > 0;
-  const processingSummaryVariant = hasPendingEvidence
-    ? "info"
-    : hasNeedsReviewEvidence
-      ? "attention"
-      : "success";
-  const processingSummaryTitle = hasPendingEvidence
-    ? "Evidence Processing"
-    : hasNeedsReviewEvidence
-      ? "Review / Retry Evidence"
-      : "✓ Evidence Processed";
-  const processingSummaryCopy = hasPendingEvidence
-    ? "Some captures are still processing. Refresh status or generate with available evidence."
-    : hasNeedsReviewEvidence
-      ? "Some evidence needs review or retry before you rely on the draft."
-      : `${processingCounts.ready} capture${processingCounts.ready === 1 ? "" : "s"} ready for report review.`;
   const sessionSummaryRows: SessionSummaryRow[] = [
     ["VIN", session.vin ?? "Not captured"],
     [
@@ -273,42 +257,40 @@ export default async function SessionReportPreviewPage({
     <main className="page-shell dashboard-shell report-preview-shell report-review-shell">
       <div className="section-header page-header report-preview-header report-review-header">
         <div>
-          <p className="eyebrow guided-eyebrow">Report review workspace</p>
+          <p className="eyebrow guided-eyebrow">Review</p>
           <h1>{session.title}</h1>
           <p className="muted">
-            Review the inspection report, confirm coverage, and deliver a
-            polished printable report. Form Profile:{" "}
-            {template?.name ?? "No Form Profile / Evidence Package"}.
+            Review the professional report CRED built from your evidence. Approve it, then export.
           </p>
         </div>
         <div className="page-actions report-preview-actions">
-          {isReadyForDelivery ? (
+          {isReadyForExport ? (
             <Link
               href={reportPath}
               className="button button-primary touch-target"
               target="_blank"
             >
-              Open Printable Report
+              Print / Save
             </Link>
           ) : (
             <span
               className="button button-primary touch-target disabled-action"
               aria-disabled="true"
             >
-              Open Printable Report
+              Print / Save
             </span>
           )}
           <Link
-            href={`/dashboard/sessions/${session.id}`}
+            href={`/dashboard/sessions/${session.id}/capture`}
             className="button button-secondary touch-target"
           >
-            Back to Session
+            Capture More
           </Link>
           <Link
             href="/dashboard"
             className="button button-secondary touch-target"
           >
-            Finish
+            Dashboard
           </Link>
         </div>
       </div>
@@ -316,30 +298,29 @@ export default async function SessionReportPreviewPage({
       <div className="report-alert-stack">
         {status.error ? <p className="error">{status.error}</p> : null}
         {status.emailed ? (
-          <p className="success">Printable report email sent.</p>
+          <p className="success">Report email sent.</p>
         ) : null}
         {status.shared ? (
           <p className="success">Secure share link generated.</p>
         ) : null}
         {status.saved ? (
-          <p className="success">Report saved indefinitely unless deleted.</p>
+          <p className="success">Report saved.</p>
         ) : null}
         {status.reviewed ? (
-          <p className="success">Reviewed and ready to deliver.</p>
+          <p className="success">Approved and ready to export.</p>
         ) : null}
         {status.draft ? (
-          <p className="success">AI Draft generated and ready for review.</p>
+          <p className="success">Report generated and ready for review.</p>
         ) : null}
         {status.approved_draft ? (
-          <p className="success">AI Draft approved and ready for delivery.</p>
+          <p className="success">Report approved and ready to export.</p>
         ) : null}
         {status.disabled ? (
           <p className="success">Share link disabled.</p>
         ) : null}
-        {!isReadyForDelivery ? (
+        {!isReadyForExport ? (
           <p className="notice info">
-            Approve the AI Draft and complete the ready-for-delivery checklist
-            to unlock delivery.
+            Review and approve the report to unlock export.
           </p>
         ) : null}
       </div>
@@ -352,7 +333,7 @@ export default async function SessionReportPreviewPage({
             visibleCaptureCount={visibleCaptures.length}
           />
           <PrintableReportPreview
-            isReadyForDelivery={isReadyForDelivery}
+            isReadyForExport={isReadyForExport}
             previewPath={previewPath}
             reportPath={reportPath}
             sessionTitle={session.title}
@@ -376,17 +357,12 @@ export default async function SessionReportPreviewPage({
 
         <ReportSidebar
           approveDraftAction={approveDraftAction}
-          coverageReminders={evidence.missing}
+          reminders={evidence.missing}
           currentAiDraft={currentAiDraft}
           generateDraftAction={generateDraftAction}
-          hasNeedsReviewEvidence={hasNeedsReviewEvidence}
-          hasPendingEvidence={hasPendingEvidence}
-          isReadyForDelivery={isReadyForDelivery}
+          isReadyForExport={isReadyForExport}
           markReviewedAction={markReviewedAction}
           missingEvidenceCount={evidence.missing.length}
-          processingSummaryCopy={processingSummaryCopy}
-          processingSummaryTitle={processingSummaryTitle}
-          processingSummaryVariant={processingSummaryVariant}
           reportPath={reportPath}
           reportStatusItems={reportStatusItems}
           reviewedBy={reviewer?.full_name ?? session.reviewed_by}
@@ -396,9 +372,9 @@ export default async function SessionReportPreviewPage({
           signatureCount={(signatures ?? []).length}
           visibleCaptureCount={visibleCaptures.length}
         >
-          <DeliveryCenter
+          <ExportCenter
             emailAction={emailAction}
-            isReadyForDelivery={isReadyForDelivery}
+            isReadyForExport={isReadyForExport}
             origin={origin}
             reportPath={reportPath}
             saveAction={saveAction}
@@ -408,7 +384,7 @@ export default async function SessionReportPreviewPage({
           />
           <ReportActivity
             currentAiDraft={currentAiDraft}
-            isReadyForDelivery={isReadyForDelivery}
+            isReadyForExport={isReadyForExport}
             reportEvents={reportEvents ?? []}
             shareTokenCount={(shareTokens ?? []).length}
           />
@@ -434,11 +410,9 @@ function ReportOverview({
     <section className="card detail-card report-command-card report-overview-card">
       <div>
         <p className="eyebrow">Report Preview</p>
-        <h2>Printable inspection report</h2>
+        <h2>Professional report</h2>
         <p className="muted">
-          The generated report is now the primary workspace. Use the draft
-          review and extracted details below to validate the final
-          customer-facing output.
+          CRED assembled this report from the evidence you captured.
         </p>
       </div>
       <div className="report-identity-grid">
@@ -466,12 +440,12 @@ function ReportOverview({
 }
 
 function PrintableReportPreview({
-  isReadyForDelivery,
+  isReadyForExport,
   previewPath,
   reportPath,
   sessionTitle,
 }: {
-  isReadyForDelivery: boolean;
+  isReadyForExport: boolean;
   previewPath: string;
   reportPath: string;
   sessionTitle: string;
@@ -489,7 +463,7 @@ function PrintableReportPreview({
             save a printable copy.
           </p>
         </div>
-        {isReadyForDelivery ? (
+        {isReadyForExport ? (
           <Link
             href={reportPath}
             className="button button-secondary touch-target"
@@ -541,21 +515,20 @@ function AiDraftReview({
     <section className="card detail-card report-command-card form-stack">
       <div className="report-section-heading">
         <div>
-          <p className="eyebrow">Draft Narrative</p>
-          <h2>AI Draft Review</h2>
+          <p className="eyebrow">Report</p>
+          <h2>Generated Report</h2>
           <p className="muted">
-            CRED organizes captured evidence using the selected Form Profile as
-            Report Context. Review before delivery.
+            Review the findings, recommendations, photos, notes, form fields, and report structure before export.
           </p>
         </div>
         {currentAiDraft ? (
           <p
-            className={`status-pill ${getAiDraftStatusVariant(currentAiDraft.status)}`}
+            className={`status-pill ${getReportStatusVariant(currentAiDraft.status)}`}
           >
-            AI Draft: {formatWorkflowStatus(currentAiDraft.status)}
+            Report: {getReportStatusLabel(currentAiDraft.status)}
           </p>
         ) : (
-          <p className="status-pill neutral">No draft yet</p>
+          <p className="status-pill neutral">No report yet</p>
         )}
       </div>
       {!currentAiDraft ? (
@@ -563,7 +536,7 @@ function AiDraftReview({
           <div className="required-evidence-grid compact-reminder-grid">
             <p className="checkline complete">
               ✓ Report Context:{" "}
-              {templateName ?? "No Form Profile / Evidence Package"}
+              {templateName ?? "Evidence only"}
             </p>
             <p
               className={
@@ -572,23 +545,21 @@ function AiDraftReview({
                   : "checkline neutral"
               }
             >
-              {visibleCaptureCount > 0 ? "✓" : "○"} Evidence captures available
+              {visibleCaptureCount > 0 ? "✓" : "○"} Photos and notes available
             </p>
             <p className="checkline complete">
-              ✓ Source Documents and extracted details included when available
+              ✓ Form fields included when available
             </p>
           </div>
           <div className="form-actions report-inline-actions">
             <button className="button button-primary touch-target">
-              {hasPendingEvidence
-                ? "Generate Draft with Available Evidence"
-                : "Generate AI Draft"}
+              Generate Report
             </button>
             <Link
               href={`/dashboard/sessions/${session.id}/capture`}
               className="button button-secondary touch-target"
             >
-              Capture More Evidence
+              Capture More
             </Link>
           </div>
         </form>
@@ -599,21 +570,17 @@ function AiDraftReview({
             {currentAiDraft.summary ? (
               <p>{currentAiDraft.summary}</p>
             ) : (
-              <p className="muted">No draft summary supplied.</p>
+              <p className="muted">No summary supplied yet.</p>
             )}
             <p className="muted">
-              Generated:{" "}
+              Created:{" "}
               {currentAiDraft.generated_at
                 ? formatDateTime(currentAiDraft.generated_at)
-                : "Not recorded"}{" "}
-              · Confidence:{" "}
-              {typeof currentAiDraft.confidence === "number"
-                ? `${Math.round(currentAiDraft.confidence * 100)}%`
-                : "Not available"}
+                : "Not recorded"}
             </p>
             {currentAiDraft.status === "approved" ? (
               <p className="success compact-success">
-                This is the approved AI Draft used for delivery.
+                This report is approved for export.
               </p>
             ) : null}
           </div>
@@ -632,7 +599,7 @@ function AiDraftReview({
                   : "checkline complete"
               }
             >
-              Unmapped evidence: {unmappedEvidenceCount}
+              Extra evidence: {unmappedEvidenceCount}
             </p>
           </div>
 
@@ -640,8 +607,7 @@ function AiDraftReview({
             <div>
               <h3>Findings & recommendations</h3>
               <p className="muted">
-                Draft sections are presented as the report narrative for quick
-                professional review.
+                Review the report narrative before export.
               </p>
             </div>
             <div className="signature-list report-section-list">
@@ -658,12 +624,7 @@ function AiDraftReview({
                           {section.status.replace(/_/g, " ")}
                         </span>
                       ) : null}
-                      {typeof section.confidence === "number" ? (
-                        <span className="muted">
-                          {" "}
-                          Confidence: {Math.round(section.confidence * 100)}%
-                        </span>
-                      ) : null}
+
                     </div>
                     {section.body ? (
                       <p className="muted">{section.body}</p>
@@ -675,7 +636,7 @@ function AiDraftReview({
                       </p>
                     ) : (
                       <p className="muted">
-                        Source capture references: none supplied; review before
+                        Evidence references: none supplied; review before
                         relying on this section.
                       </p>
                     )}
@@ -687,11 +648,9 @@ function AiDraftReview({
 
           <section className="report-subsection">
             <div>
-              <h3>Extracted details</h3>
+              <h3>Form Fields</h3>
               <p className="muted">
-                Source documents provide identity/header fields for review. Work
-                order line descriptions are not findings unless a technician
-                note asks to include them.
+                Review the fields CRED found from the captured evidence and paper forms.
               </p>
             </div>
             <div className="required-evidence-grid compact-reminder-grid">
@@ -702,36 +661,23 @@ function AiDraftReview({
                   </p>
                 ))
               ) : (
-                <p className="muted">No source/header fields extracted yet.</p>
+                <p className="muted">No form fields found yet.</p>
               )}
             </div>
           </section>
 
-          {Array.isArray(currentAiDraft.unmapped_evidence) &&
-          currentAiDraft.unmapped_evidence.length > 0 ? (
-            <details className="report-activity-details">
-              <summary>Unmapped Evidence</summary>
-              <pre className="muted">
-                {JSON.stringify(currentAiDraft.unmapped_evidence, null, 2)}
-              </pre>
-            </details>
-          ) : null}
-          <p className="muted">
-            TODO: Add inline edit, move, merge, and source-reference controls
-            for future AI Draft review.
-          </p>
           <div className="form-actions report-inline-actions">
             <form action={generateDraftAction}>
               <button className="button button-secondary touch-target">
                 {hasPendingEvidence
-                  ? "Generate new draft with available evidence"
-                  : "Generate new draft"}
+                  ? "Regenerate Report"
+                  : "Regenerate Report"}
               </button>
             </form>
             {currentAiDraft.status !== "approved" && approveDraftAction ? (
               <form action={approveDraftAction}>
                 <button className="button button-primary touch-target">
-                  Approve Draft
+                  Approve Report
                 </button>
               </form>
             ) : null}
@@ -745,21 +691,20 @@ function AiDraftReview({
 function IncludedCapturesSummary({
   processingCounts,
 }: {
-  processingCounts: ProcessingCounts;
+  processingCounts: EvidenceCounts;
 }) {
   return (
     <section className="card detail-card report-command-card form-stack">
       <div>
-        <p className="eyebrow">Photos & Evidence</p>
-        <h2>Included captures</h2>
+        <p className="eyebrow">Photos</p>
+        <h2>Photos and notes</h2>
         <p className="muted">
-          Evidence remains attached to the report. Processing state is
-          summarized without taking over the review workspace.
+          Evidence remains attached to the report for review.
         </p>
       </div>
       <div className="required-evidence-grid compact-reminder-grid">
         <p className="checkline complete">
-          Ready for review: {processingCounts.ready}
+          Included: {processingCounts.ready}
         </p>
         <p
           className={
@@ -768,7 +713,7 @@ function IncludedCapturesSummary({
               : "checkline complete"
           }
         >
-          Processing or pending: {processingCounts.processing}
+          Still being added: {processingCounts.processing}
         </p>
         <p
           className={
@@ -777,7 +722,7 @@ function IncludedCapturesSummary({
               : "checkline complete"
           }
         >
-          Needs review / retry: {processingCounts.needsReview}
+          Needs attention: {processingCounts.needsReview}
         </p>
       </div>
     </section>
@@ -787,17 +732,12 @@ function IncludedCapturesSummary({
 function ReportSidebar({
   approveDraftAction,
   children,
-  coverageReminders,
+  reminders,
   currentAiDraft,
   generateDraftAction,
-  hasNeedsReviewEvidence,
-  hasPendingEvidence,
-  isReadyForDelivery,
+  isReadyForExport,
   markReviewedAction,
   missingEvidenceCount,
-  processingSummaryCopy,
-  processingSummaryTitle,
-  processingSummaryVariant,
   reportPath,
   reportStatusItems,
   reviewedBy,
@@ -809,17 +749,12 @@ function ReportSidebar({
 }: {
   approveDraftAction: ServerAction | null;
   children: React.ReactNode;
-  coverageReminders: CoverageReminder[];
+  reminders: CoverageReminder[];
   currentAiDraft: AiReportDraft | null;
   generateDraftAction: ServerAction;
-  hasNeedsReviewEvidence: boolean;
-  hasPendingEvidence: boolean;
-  isReadyForDelivery: boolean;
+  isReadyForExport: boolean;
   markReviewedAction: ServerAction;
   missingEvidenceCount: number;
-  processingSummaryCopy: string;
-  processingSummaryTitle: string;
-  processingSummaryVariant: StatusVariant;
   reportPath: string;
   reportStatusItems: StatusItem[];
   reviewedBy: string | null;
@@ -833,13 +768,13 @@ function ReportSidebar({
     <aside className="report-sidebar" aria-label="Report review controls">
       <section className="card detail-card report-sidebar-card form-stack">
         <div>
-          <p className="eyebrow">Report Status</p>
+          <p className="eyebrow">Review</p>
           <h2>
-            {isReadyForDelivery
-              ? "Ready for Delivery"
+            {isReadyForExport
+              ? "Ready"
               : currentAiDraft
-                ? "Draft in Review"
-                : "Draft Needed"}
+                ? "Review Required"
+                : "Report Needed"}
           </h2>
         </div>
         <div className="report-status-list">
@@ -856,50 +791,29 @@ function ReportSidebar({
         </div>
       </section>
 
-      <section
-        className={`card detail-card report-sidebar-card compact-status-card ${processingSummaryVariant}`}
-      >
-        <div>
-          <p className="eyebrow">Processing</p>
-          <h2>{processingSummaryTitle}</h2>
-          <p className="muted">{processingSummaryCopy}</p>
-        </div>
-        {hasPendingEvidence || hasNeedsReviewEvidence ? (
-          <div className="form-actions report-inline-actions">
-            <Link
-              href={`/dashboard/sessions/${sessionId}/report`}
-              className="button button-secondary touch-target"
-            >
-              Refresh
-            </Link>
-            <ProcessPendingEvidenceButton sessionId={sessionId} />
-          </div>
-        ) : null}
-      </section>
-
       <section className="card detail-card report-sidebar-card form-stack">
         <div>
-          <p className="eyebrow">Coverage Reminders</p>
+          <p className="eyebrow">Optional Reminders</p>
           <h2>
-            {coverageReminders.length > 0
-              ? `${coverageReminders.length} suggested item${coverageReminders.length === 1 ? "" : "s"}`
-              : "Coverage complete"}
+            {reminders.length > 0
+              ? `${reminders.length} suggested item${reminders.length === 1 ? "" : "s"}`
+              : "All set"}
           </h2>
         </div>
         <div className="coverage-reminder-list">
-          {coverageReminders.length > 0 ? (
-            coverageReminders.map((row) => (
+          {reminders.length > 0 ? (
+            reminders.map((row) => (
               <p key={row.rule.key}>• {row.rule.label}</p>
             ))
           ) : (
-            <p>✓ All coverage suggestions are resolved.</p>
+            <p>✓ All reminders are resolved.</p>
           )}
         </div>
         <Link
           href={`/dashboard/sessions/${sessionId}/capture`}
           className="button button-secondary touch-target"
         >
-          Capture More Evidence
+          Capture More
         </Link>
       </section>
 
@@ -908,11 +822,11 @@ function ReportSidebar({
         className="card detail-card report-sidebar-card form-stack"
       >
         <div>
-          <p className="eyebrow">Ready for Delivery</p>
+          <p className="eyebrow">Ready</p>
           <h2>
-            {isReadyForDelivery
-              ? "Pre-flight complete"
-              : "Pre-flight checklist"}
+            {isReadyForExport
+              ? "Approved"
+              : "Approve Report"}
           </h2>
           {reviewedLabel ? (
             <p className="success compact-success">
@@ -928,7 +842,7 @@ function ReportSidebar({
               currentAiDraft ? "checkline complete" : "checkline neutral"
             }
           >
-            {currentAiDraft ? "✓" : "○"} AI findings reviewed
+            {currentAiDraft ? "✓" : "○"} Findings reviewed
           </p>
           <p
             className={
@@ -937,7 +851,7 @@ function ReportSidebar({
                 : "checkline neutral"
             }
           >
-            {visibleCaptureCount > 0 ? "✓" : "○"} Included captures reviewed
+            {visibleCaptureCount > 0 ? "✓" : "○"} Photos and notes reviewed
           </p>
           <p
             className={
@@ -953,11 +867,10 @@ function ReportSidebar({
                 : "checkline neutral"
             }
           >
-            {missingEvidenceCount === 0 ? "✓" : "○"} Coverage suggestions
-            acknowledged
+            {missingEvidenceCount === 0 ? "✓" : "○"} Optional reminders acknowledged
           </p>
         </div>
-        {!isReadyForDelivery ? (
+        {!isReadyForExport ? (
           <form action={markReviewedAction} className="form-stack">
             <input
               type="hidden"
@@ -971,15 +884,12 @@ function ReportSidebar({
                   name="missing_evidence_acknowledged"
                   required
                 />
-                I reviewed the optional coverage suggestions and approve this
-                draft as-is.
+                I reviewed the optional reminders and approve this report.
               </label>
             ) : null}
             <div className="form-actions report-inline-actions">
               <button className="button button-primary touch-target">
-                {missingEvidenceCount > 0
-                  ? "Approve with reminders"
-                  : "Approve Report"}
+                Approve Report
               </button>
             </div>
           </form>
@@ -989,7 +899,7 @@ function ReportSidebar({
       <section className="card detail-card report-sidebar-card form-stack">
         <div>
           <p className="eyebrow">Session Summary</p>
-          <h2>Inspection details</h2>
+          <h2>Session details</h2>
         </div>
         <dl className="report-summary-list">
           {sessionSummaryRows.map(([label, value]) => (
@@ -1004,12 +914,12 @@ function ReportSidebar({
       <section className="card detail-card report-sidebar-card form-stack">
         <div>
           <p className="eyebrow">Actions</p>
-          <h2>Report controls</h2>
+          <h2>Report actions</h2>
         </div>
         <div className="sidebar-action-stack">
           <form action={generateDraftAction}>
             <button className="button button-secondary touch-target">
-              {currentAiDraft ? "Regenerate Draft" : "Generate Draft"}
+              {currentAiDraft ? "Regenerate Report" : "Generate Report"}
             </button>
           </form>
           {currentAiDraft &&
@@ -1017,11 +927,11 @@ function ReportSidebar({
           approveDraftAction ? (
             <form action={approveDraftAction}>
               <button className="button button-primary touch-target">
-                Approve AI Draft
+                Approve Report
               </button>
             </form>
           ) : null}
-          {!isReadyForDelivery ? (
+          {!isReadyForExport ? (
             <Link
               href="#ready-for-delivery"
               className="button button-primary touch-target"
@@ -1033,22 +943,22 @@ function ReportSidebar({
             href={`/dashboard/sessions/${sessionId}/capture`}
             className="button button-secondary touch-target"
           >
-            Capture More Evidence
+            Capture More
           </Link>
-          {isReadyForDelivery ? (
+          {isReadyForExport ? (
             <Link
               href={reportPath}
               className="button button-secondary touch-target"
               target="_blank"
             >
-              Open Printable Report
+              Print / Save
             </Link>
           ) : (
             <span
               className="button button-secondary touch-target disabled-action"
               aria-disabled="true"
             >
-              Open Printable Report
+              Print / Save
             </span>
           )}
         </div>
@@ -1059,9 +969,9 @@ function ReportSidebar({
   );
 }
 
-function DeliveryCenter({
+function ExportCenter({
   emailAction,
-  isReadyForDelivery,
+  isReadyForExport,
   origin,
   reportPath,
   saveAction,
@@ -1070,7 +980,7 @@ function DeliveryCenter({
   shareTokens,
 }: {
   emailAction: ServerAction;
-  isReadyForDelivery: boolean;
+  isReadyForExport: boolean;
   origin: string;
   reportPath: string;
   saveAction: ServerAction;
@@ -1081,11 +991,11 @@ function DeliveryCenter({
   return (
     <section className="card detail-card report-sidebar-card report-delivery-tabs form-stack">
       <div>
-        <p className="eyebrow">Delivery</p>
-        <h2>Deliver Report</h2>
-        {!isReadyForDelivery ? (
+        <p className="eyebrow">Export</p>
+        <h2>Export Report</h2>
+        {!isReadyForExport ? (
           <p className="muted delivery-helper">
-            Available after draft approval and pre-flight review.
+            Available after report approval.
           </p>
         ) : null}
       </div>
@@ -1111,7 +1021,7 @@ function DeliveryCenter({
       <div
         className="delivery-tab-list"
         role="tablist"
-        aria-label="Delivery methods"
+        aria-label="Export methods"
       >
         <label htmlFor="delivery-email" role="tab">
           Email
@@ -1150,9 +1060,9 @@ function DeliveryCenter({
           </div>
           <button
             className="button button-primary touch-target"
-            disabled={!isReadyForDelivery}
+            disabled={!isReadyForExport}
           >
-            Email Printable Report
+            Email Report
           </button>
         </form>
       </div>
@@ -1171,9 +1081,9 @@ function DeliveryCenter({
           </div>
           <button
             className="button button-secondary touch-target"
-            disabled={!isReadyForDelivery}
+            disabled={!isReadyForExport}
           >
-            Create Share Link
+            Share Link
           </button>
         </form>
         <div className="compact-token-list">
@@ -1213,24 +1123,23 @@ function DeliveryCenter({
       </div>
       <div className="delivery-tab-panel delivery-panel-save">
         <p className="muted">
-          Saved reports remain accessible indefinitely unless deleted. Open the
-          printable report to use your browser’s print or share workflow.
+          Saved reports remain accessible indefinitely unless deleted. Open the report to print or save a copy.
         </p>
         <form action={saveAction}>
           <button
             className="button button-primary touch-target"
-            disabled={!isReadyForDelivery}
+            disabled={!isReadyForExport}
           >
             Save Report
           </button>
         </form>
-        {isReadyForDelivery ? (
+        {isReadyForExport ? (
           <Link
             href={reportPath}
             className="button button-secondary touch-target"
             target="_blank"
           >
-            Open Printable Report
+            Print / Save
           </Link>
         ) : null}
       </div>
@@ -1240,29 +1149,29 @@ function DeliveryCenter({
 
 function ReportActivity({
   currentAiDraft,
-  isReadyForDelivery,
+  isReadyForExport,
   reportEvents,
   shareTokenCount,
 }: {
   currentAiDraft: AiReportDraft | null;
-  isReadyForDelivery: boolean;
+  isReadyForExport: boolean;
   reportEvents: ReportEvent[];
   shareTokenCount: number;
 }) {
   return (
     <section className="card detail-card report-sidebar-card form-stack">
       <div>
-        <p className="eyebrow">Report Activity</p>
+        <p className="eyebrow">Export History</p>
         <h2>Recent events</h2>
       </div>
       <div className="report-activity-compact">
-        {currentAiDraft ? <p>✓ Draft generated</p> : <p>○ Draft pending</p>}
+        {currentAiDraft ? <p>✓ Report generated</p> : <p>○ Report pending</p>}
         {currentAiDraft?.status === "approved" ? (
-          <p>✓ AI draft approved</p>
+          <p>✓ Report approved</p>
         ) : (
-          <p>○ AI draft approval pending</p>
+          <p>○ Report approval pending</p>
         )}
-        {isReadyForDelivery ? (
+        {isReadyForExport ? (
           <p>✓ Report approved</p>
         ) : (
           <p>○ Report approval pending</p>
@@ -1287,7 +1196,7 @@ function ReportActivity({
             </article>
           ))}
           {reportEvents.length === 0 ? (
-            <p className="muted">No delivery events recorded yet.</p>
+            <p className="muted">No export history yet.</p>
           ) : null}
         </div>
       </details>
