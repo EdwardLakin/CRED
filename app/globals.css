@@ -2984,6 +2984,206 @@ a:focus-visible {
   gap: 10px;
 }
 
+
+.generated-report-card {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, white), var(--surface)),
+    var(--surface);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-hover);
+}
+
+.generated-report-heading h2 {
+  font-size: clamp(1.65rem, 3vw, 2.35rem);
+}
+
+.report-story-card,
+.empty-report-shell {
+  background: linear-gradient(135deg, var(--surface), var(--surface-muted));
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+}
+
+.report-story-card h3,
+.empty-report-shell h3 {
+  font-size: 1.35rem;
+  margin: 0;
+}
+
+.report-story-card p,
+.empty-report-shell p {
+  margin: 0;
+}
+
+.compact-report-notice {
+  margin-top: 4px;
+}
+
+.report-content-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.report-content-section {
+  align-content: start;
+  display: grid;
+  gap: 12px;
+}
+
+.report-content-section .report-section-item > div {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.report-section-title-row {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.report-supporting-section {
+  display: grid;
+  gap: 14px;
+}
+
+.evidence-gallery-shell {
+  display: grid;
+  gap: 18px;
+}
+
+.evidence-gallery-shell h4 {
+  margin: 0 0 10px;
+}
+
+.review-photo-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.review-photo-card,
+.review-note-card,
+.report-field-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.review-photo-card img,
+.review-evidence-placeholder {
+  aspect-ratio: 4 / 3;
+  background: #0f172a;
+  color: white;
+  display: flex;
+  font-weight: 900;
+  align-items: center;
+  justify-content: center;
+  object-fit: cover;
+  width: 100%;
+}
+
+.review-photo-card div,
+.review-note-card {
+  padding: 12px;
+}
+
+.review-photo-card p,
+.review-note-card p {
+  margin: 6px 0 0;
+}
+
+.review-note-list {
+  display: grid;
+  gap: 10px;
+}
+
+.review-note-card {
+  overflow-wrap: anywhere;
+}
+
+.report-field-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.report-field-card {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+}
+
+.report-field-card span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.report-field-card strong {
+  overflow-wrap: anywhere;
+}
+
+.report-structure-list {
+  display: grid;
+  gap: 8px;
+}
+
+.report-structure-list p {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  display: flex;
+  gap: 10px;
+  padding: 9px 12px;
+}
+
+.report-structure-list span {
+  align-items: center;
+  background: var(--primary);
+  border-radius: 999px;
+  color: white;
+  display: inline-flex;
+  font-size: 0.75rem;
+  font-weight: 900;
+  height: 24px;
+  justify-content: center;
+  width: 24px;
+}
+
+.report-proof-strip {
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 12px;
+}
+
+.report-proof-strip span {
+  background: var(--surface);
+  border-radius: 12px;
+  font-weight: 900;
+  padding: 10px;
+  text-align: center;
+}
+
+.report-primary-flow {
+  border-top: 1px solid var(--border);
+  padding-top: 4px;
+}
+
 .report-section-item,
 .compact-token-item {
   background: var(--surface);
@@ -3168,6 +3368,18 @@ a:focus-visible {
   .delivery-tab-list {
     border-radius: 18px;
     grid-template-columns: 1fr;
+  }
+
+  .report-content-grid,
+  .review-photo-grid,
+  .report-field-grid,
+  .report-proof-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .report-section-title-row {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 

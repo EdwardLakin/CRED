@@ -26,17 +26,20 @@ type AiReportDraft = Tables["ai_report_drafts"]["Row"];
 type AiReportDraftSection = Tables["ai_report_draft_sections"]["Row"];
 type ReportShareToken = Tables["report_share_tokens"]["Row"];
 type ReportEvent = Tables["exports"]["Row"];
+type CaptureItem = Tables["capture_items"]["Row"];
 type ServerAction = (formData: FormData) => void | Promise<void>;
-type EvidenceCounts = {
-  ready: number;
-  processing: number;
-  needsReview: number;
-};
 type StatusItem = { label: string; complete: boolean };
 type CoverageReminder = ReturnType<
   typeof getRequiredEvidenceCompletion
 >["missing"][number];
 type SessionSummaryRow = [label: string, value: string];
+type SupportingEvidenceItem = {
+  capture: CaptureItem;
+  signedUrl: string | null;
+  title: string;
+  note: string | null;
+  kind: "photo" | "video" | "audio" | "note" | "document" | "file";
+};
 
 function getReportOrigin(headersList: Headers) {
   const configuredUrl =
@@ -68,20 +71,43 @@ function getArrayCount(value: unknown) {
   return Array.isArray(value) ? value.length : 0;
 }
 
-
-function getReportStatusVariant(status: string) {
-  if (status === "approved") return "success";
-  if (status === "failed") return "danger";
-  if (status === "processing") return "info";
-  return "neutral";
+function getSectionTone(status: string | null) {
+  if (status === "pass") return "Complete";
+  if (status === "fail") return "Action needed";
+  if (status === "recommended") return "Recommended";
+  if (status === "na") return "Not applicable";
+  return null;
 }
 
-function getReportStatusLabel(status: string) {
-  if (status === "approved") return "Approved";
-  if (status === "failed") return "Review Required";
-  if (status === "processing") return "Building Report";
-  return "Review Required";
+function isPhotoCapture(capture: CaptureItem) {
+  return (
+    capture.media_kind === "image" ||
+    capture.type === "photo" ||
+    Boolean(capture.storage_path?.match(/\.(jpg|jpeg|png|webp|gif|heic)$/i))
+  );
 }
+
+function getEvidenceKind(capture: CaptureItem): SupportingEvidenceItem["kind"] {
+  if (capture.type === "text_note" || capture.media_kind === "note") return "note";
+  if (isPhotoCapture(capture)) return "photo";
+  if (capture.media_kind === "video" || capture.type === "video") return "video";
+  if (capture.media_kind === "audio" || capture.type === "voice_note") return "audio";
+  if (capture.media_kind === "document") return "document";
+  return "file";
+}
+
+function getEvidenceTitle(item: CaptureItem, index: number) {
+  if (item.type === "text_note" || item.media_kind === "note") return `Technician note ${index + 1}`;
+  if (isPhotoCapture(item)) return `Photo ${index + 1}`;
+  if (item.media_kind === "video" || item.type === "video") return `Video ${index + 1}`;
+  if (item.media_kind === "audio" || item.type === "voice_note") return `Voice note ${index + 1}`;
+  return `Evidence ${index + 1}`;
+}
+
+function getEvidenceNote(capture: CaptureItem) {
+  return capture.technician_note?.trim() || capture.transcript?.trim() || null;
+}
+
 
 export default async function SessionReportPreviewPage({
   params,
@@ -118,7 +144,9 @@ export default async function SessionReportPreviewPage({
     .select("*")
     .eq("documentation_session_id", session.id)
     .eq("organization_id", profile.organization_id)
-    .is("deleted_at", null);
+    .is("deleted_at", null)
+    .order("report_order", { ascending: true, nullsFirst: false })
+    .order("captured_at", { ascending: true });
 
   const { data: template } = session.workflow_template_id
     ? await supabase
@@ -167,16 +195,16 @@ export default async function SessionReportPreviewPage({
     .order("generated_at", { ascending: false })
     .order("created_at", { ascending: false });
 
-  const currentAiDraft =
+  const currentReport =
     (aiDrafts ?? []).find((draft) => draft.status === "approved") ??
     (aiDrafts ?? []).find((draft) => draft.status !== "superseded") ??
     aiDrafts?.[0] ??
     null;
-  const { data: aiDraftSections } = currentAiDraft
+  const { data: reportSections } = currentReport
     ? await supabase
         .from("ai_report_draft_sections")
         .select("*")
-        .eq("ai_report_draft_id", currentAiDraft.id)
+        .eq("ai_report_draft_id", currentReport.id)
         .eq("organization_id", profile.organization_id)
         .order("sort_order", { ascending: true })
     : { data: [] };
@@ -191,27 +219,39 @@ export default async function SessionReportPreviewPage({
     template?.required_evidence ?? null,
   );
   const visibleCaptures = captures ?? [];
-  const processingCounts = visibleCaptures.reduce(
-    (counts, capture) => {
-      const captureStatus = getCaptureProcessingStatus(capture);
-      if (captureStatus === "extracted") counts.ready += 1;
-      if (
-        captureStatus === "processing" ||
-        captureStatus === "pending" ||
-        captureStatus === "ready_for_review"
-      )
-        counts.processing += 1;
-      if (
-        captureStatus === "needs_review" ||
-        captureStatus === "failed" ||
-        captureStatus === "blocked_by_limit"
-      )
-        counts.needsReview += 1;
-      return counts;
-    },
-    { ready: 0, processing: 0, needsReview: 0 },
+  const signedEvidenceUrls: Record<string, string> = {};
+  await Promise.all(
+    visibleCaptures.map(async (capture) => {
+      const path = capture.thumbnail_path ?? capture.storage_path;
+      if (!path) return;
+      const { data } = await supabase.storage
+        .from("documentation-captures")
+        .createSignedUrl(path, 60 * 10);
+      if (data?.signedUrl) signedEvidenceUrls[capture.id] = data.signedUrl;
+    }),
   );
-  const hasPendingEvidence = processingCounts.processing > 0;
+  const supportingEvidence = visibleCaptures.map((capture, index) => ({
+    capture,
+    signedUrl: signedEvidenceUrls[capture.id] ?? null,
+    title: getEvidenceTitle(capture, index),
+    note: getEvidenceNote(capture),
+    kind: getEvidenceKind(capture),
+  }));
+  const photoEvidence = supportingEvidence.filter((item) => item.kind === "photo");
+  const noteEvidence = supportingEvidence.filter((item) =>
+    Boolean(item.note) || item.kind === "note" || item.kind === "audio",
+  );
+  const otherEvidence = supportingEvidence.filter(
+    (item) => item.kind !== "photo" && !noteEvidence.includes(item),
+  );
+  const hasPendingEvidence = visibleCaptures.some((capture) => {
+    const captureStatus = getCaptureProcessingStatus(capture);
+    return (
+      captureStatus === "processing" ||
+      captureStatus === "pending" ||
+      captureStatus === "ready_for_review"
+    );
+  });
   const isReadyForExport = session.review_status === "ready_for_delivery";
   const reviewedLabel = session.reviewed_at
     ? formatDateTime(session.reviewed_at)
@@ -220,22 +260,21 @@ export default async function SessionReportPreviewPage({
   const saveAction = saveReport.bind(null, session.id);
   const emailAction = emailReport.bind(null, session.id);
   const shareAction = createReportShareLink.bind(null, session.id);
-  const generateDraftAction = generateAiReportDraft.bind(null, session.id);
-  const approveDraftAction = currentAiDraft
-    ? approveAiReportDraft.bind(null, currentAiDraft.id)
+  const generateReportAction = generateAiReportDraft.bind(null, session.id);
+  const approveReportContentAction = currentReport
+    ? approveAiReportDraft.bind(null, currentReport.id)
     : null;
-  const sourceFieldEntries = getDisplayEntries(currentAiDraft?.header_fields);
-  const draftFindingCount = getArrayCount(currentAiDraft?.findings);
-  const draftMeasurementCount = getArrayCount(currentAiDraft?.measurements);
+  const sourceFieldEntries = getDisplayEntries(currentReport?.header_fields);
+  const findingCount = getArrayCount(currentReport?.findings);
+  const measurementCount = getArrayCount(currentReport?.measurements);
   const unmappedEvidenceCount = getArrayCount(
-    currentAiDraft?.unmapped_evidence,
+    currentReport?.unmapped_evidence,
   );
-
   const reportStatusItems = [
-    { label: "Report Generated", complete: Boolean(currentAiDraft) },
+    { label: "Report created", complete: Boolean(currentReport) },
     {
-      label: "Report Approved",
-      complete: currentAiDraft?.status === "approved",
+      label: "Report approved",
+      complete: currentReport?.status === "approved",
     },
     { label: "Ready", complete: isReadyForExport },
   ];
@@ -270,21 +309,21 @@ export default async function SessionReportPreviewPage({
               className="button button-primary touch-target"
               target="_blank"
             >
-              Print / Save
+              Export
             </Link>
           ) : (
             <span
               className="button button-primary touch-target disabled-action"
               aria-disabled="true"
             >
-              Print / Save
+              Export
             </span>
           )}
           <Link
             href={`/dashboard/sessions/${session.id}/capture`}
             className="button button-secondary touch-target"
           >
-            Capture More
+            Continue Capturing
           </Link>
           <Link
             href="/dashboard"
@@ -328,7 +367,7 @@ export default async function SessionReportPreviewPage({
       <div className="report-review-layout">
         <div className="report-workspace-column">
           <ReportOverview
-            draftFindingCount={draftFindingCount}
+            findingCount={findingCount}
             session={session}
             visibleCaptureCount={visibleCaptures.length}
           />
@@ -338,27 +377,28 @@ export default async function SessionReportPreviewPage({
             reportPath={reportPath}
             sessionTitle={session.title}
           />
-          <AiDraftReview
-            aiDraftSections={aiDraftSections ?? []}
-            approveDraftAction={approveDraftAction}
-            currentAiDraft={currentAiDraft}
-            draftFindingCount={draftFindingCount}
-            draftMeasurementCount={draftMeasurementCount}
-            generateDraftAction={generateDraftAction}
+          <GeneratedReportReview
+            reportSections={reportSections ?? []}
+            approveReportContentAction={approveReportContentAction}
+            currentReport={currentReport}
+            findingCount={findingCount}
+            measurementCount={measurementCount}
+            generateReportAction={generateReportAction}
             hasPendingEvidence={hasPendingEvidence}
+            noteEvidence={noteEvidence}
+            otherEvidence={otherEvidence}
+            photoEvidence={photoEvidence}
             session={session}
             sourceFieldEntries={sourceFieldEntries}
             unmappedEvidenceCount={unmappedEvidenceCount}
             visibleCaptureCount={visibleCaptures.length}
           />
-          <IncludedCapturesSummary processingCounts={processingCounts} />
         </div>
 
         <ReportSidebar
-          approveDraftAction={approveDraftAction}
+          approveReportContentAction={approveReportContentAction}
           reminders={evidence.missing}
-          currentAiDraft={currentAiDraft}
-          generateDraftAction={generateDraftAction}
+          currentReport={currentReport}
           isReadyForExport={isReadyForExport}
           markReviewedAction={markReviewedAction}
           missingEvidenceCount={evidence.missing.length}
@@ -382,7 +422,7 @@ export default async function SessionReportPreviewPage({
             shareTokens={shareTokens ?? []}
           />
           <ReportActivity
-            currentAiDraft={currentAiDraft}
+            currentReport={currentReport}
             isReadyForExport={isReadyForExport}
             reportEvents={reportEvents ?? []}
             shareTokenCount={(shareTokens ?? []).length}
@@ -394,11 +434,11 @@ export default async function SessionReportPreviewPage({
 }
 
 function ReportOverview({
-  draftFindingCount,
+  findingCount,
   session,
   visibleCaptureCount,
 }: {
-  draftFindingCount: number;
+  findingCount: number;
   session: Pick<
     DocumentationSession,
     "asset_label" | "title" | "unit_number" | "vin"
@@ -427,7 +467,7 @@ function ReportOverview({
         </div>
         <div>
           <span>Findings</span>
-          <strong>{draftFindingCount}</strong>
+          <strong>{findingCount}</strong>
         </div>
         <div>
           <span>Photos / Evidence</span>
@@ -456,7 +496,7 @@ function PrintableReportPreview({
     >
       <div className="report-preview-toolbar">
         <div>
-          <strong>Live printable preview</strong>
+          <strong>Printable report preview</strong>
           <p className="muted">
             Use your browser’s Print or Share menu from the printable report to
             save a printable copy.
@@ -468,10 +508,10 @@ function PrintableReportPreview({
             className="button button-secondary touch-target"
             target="_blank"
           >
-            Open full report
+            Open report
           </Link>
         ) : (
-          <span className="status-pill neutral">Available after approval</span>
+          <span className="status-pill neutral">Approve to export</span>
         )}
       </div>
       <iframe
@@ -483,254 +523,326 @@ function PrintableReportPreview({
   );
 }
 
-function AiDraftReview({
-  aiDraftSections,
-  approveDraftAction,
-  currentAiDraft,
-  draftFindingCount,
-  draftMeasurementCount,
-  generateDraftAction,
+function GeneratedReportReview({
+  reportSections,
+  approveReportContentAction,
+  currentReport,
+  findingCount,
+  measurementCount,
+  generateReportAction,
   hasPendingEvidence,
+  noteEvidence,
+  otherEvidence,
+  photoEvidence,
   session,
   sourceFieldEntries,
   unmappedEvidenceCount,
   visibleCaptureCount,
 }: {
-  aiDraftSections: AiReportDraftSection[];
-  approveDraftAction: ServerAction | null;
-  currentAiDraft: AiReportDraft | null;
-  draftFindingCount: number;
-  draftMeasurementCount: number;
-  generateDraftAction: ServerAction;
+  reportSections: AiReportDraftSection[];
+  approveReportContentAction: ServerAction | null;
+  currentReport: AiReportDraft | null;
+  findingCount: number;
+  measurementCount: number;
+  generateReportAction: ServerAction;
   hasPendingEvidence: boolean;
+  noteEvidence: SupportingEvidenceItem[];
+  otherEvidence: SupportingEvidenceItem[];
+  photoEvidence: SupportingEvidenceItem[];
   session: Pick<DocumentationSession, "id" | "title">;
   sourceFieldEntries: [string, unknown][];
   unmappedEvidenceCount: number;
   visibleCaptureCount: number;
 }) {
+  const findingsSections = reportSections.filter(
+    (section) => !/recommend/i.test(section.title),
+  );
+  const recommendationSections = reportSections.filter((section) =>
+    /recommend/i.test(`${section.title} ${section.body ?? ""}`),
+  );
+  const structureSections = currentReport
+    ? reportSections.map((section) => section.title)
+    : ["Report summary", "Findings", "Recommendations", "Supporting material", "Approval", "Export"];
+
   return (
-    <section className="card detail-card report-command-card form-stack">
-      <div className="report-section-heading">
+    <section className="card detail-card report-command-card form-stack generated-report-card">
+      <div className="report-section-heading generated-report-heading">
         <div>
-          <p className="eyebrow">Report</p>
-          <h2>Generated Report</h2>
+          <p className="eyebrow">Generated Report</p>
+          <h2>{currentReport?.title ?? session.title}</h2>
           <p className="muted">
-            Review the findings, recommendations, photos, notes, form fields, and report structure before export.
+            Review the finished report, supporting material, notes, and discovered form fields before export.
           </p>
         </div>
-        {currentAiDraft ? (
-          <p
-            className={`status-pill ${getReportStatusVariant(currentAiDraft.status)}`}
-          >
-            Report: {getReportStatusLabel(currentAiDraft.status)}
-          </p>
+        {currentReport?.status === "approved" ? (
+          <p className="status-pill success">Approved</p>
+        ) : currentReport ? (
+          <p className="status-pill neutral">Ready for your approval</p>
         ) : (
-          <p className="status-pill neutral">No report yet</p>
+          <p className="status-pill neutral">Report shell ready</p>
         )}
       </div>
-      {!currentAiDraft ? (
-        <form action={generateDraftAction} className="form-stack">
-          <div className="required-evidence-grid compact-reminder-grid">
-            <p className="checkline complete">
-              ✓ Evidence ready for report generation
-            </p>
-            <p
-              className={
-                visibleCaptureCount > 0
-                  ? "checkline complete"
-                  : "checkline neutral"
-              }
-            >
-              {visibleCaptureCount > 0 ? "✓" : "○"} Photos and notes available
-            </p>
-            <p className="checkline complete">
-              ✓ Form fields included when available
+
+      <div className="report-story-card">
+        <p className="eyebrow">Summary</p>
+        <h3>{currentReport?.title ?? session.title}</h3>
+        {currentReport?.summary ? (
+          <p>{currentReport.summary}</p>
+        ) : (
+          <p className="muted">
+            Capture more evidence to improve this report. CRED will place the title, summary, findings, recommendations, and supporting material here.
+          </p>
+        )}
+        {hasPendingEvidence ? (
+          <p className="notice info compact-report-notice">
+            New evidence is still being added. Refresh the report when you are ready.
+          </p>
+        ) : null}
+      </div>
+
+      {!currentReport ? (
+        <form action={generateReportAction} className="empty-report-shell">
+          <div>
+            <h3>Start with a clean report shell</h3>
+            <p className="muted">
+              {visibleCaptureCount > 0
+                ? "Create the report from the evidence captured so far, or continue capturing to add more detail."
+                : "No evidence has been added yet. Continue capturing to build the report."}
             </p>
           </div>
           <div className="form-actions report-inline-actions">
-            <button className="button button-primary touch-target">
-              Generate Report
-            </button>
             <Link
               href={`/dashboard/sessions/${session.id}/capture`}
-              className="button button-secondary touch-target"
+              className="button button-primary touch-target"
             >
-              Capture More
+              Continue Capturing
             </Link>
+            <button className="button button-secondary touch-target">
+              Generate Report
+            </button>
           </div>
         </form>
-      ) : (
-        <div className="form-stack">
-          <div className="report-draft-summary">
-            <h3>{currentAiDraft.title ?? session.title}</h3>
-            {currentAiDraft.summary ? (
-              <p>{currentAiDraft.summary}</p>
-            ) : (
-              <p className="muted">No summary supplied yet.</p>
-            )}
-            <p className="muted">
-              Created:{" "}
-              {currentAiDraft.generated_at
-                ? formatDateTime(currentAiDraft.generated_at)
-                : "Not recorded"}
-            </p>
-            {currentAiDraft.status === "approved" ? (
-              <p className="success compact-success">
-                This report is approved for export.
-              </p>
-            ) : null}
+      ) : null}
+
+      <div className="report-content-grid">
+        <ReportContentSection
+          title="Findings"
+          emptyText="No findings found yet. Capture more evidence to improve this report."
+          items={
+            findingsSections.length > 0
+              ? findingsSections.map((section) => ({
+                  id: section.id,
+                  title: section.title,
+                  body: section.body,
+                  badge: getSectionTone(section.status),
+                }))
+              : []
+          }
+        />
+        <ReportContentSection
+          title="Recommendations"
+          emptyText="No recommendations found yet."
+          items={recommendationSections.map((section, index) => ({
+            id: section.id,
+            title: section.title || `Recommendation ${index + 1}`,
+            body: section.body,
+            badge: getSectionTone(section.status),
+          }))}
+        />
+      </div>
+
+      <section className="report-subsection report-supporting-section">
+        <div className="report-section-title-row">
+          <div>
+            <h3>Supporting material</h3>
+            <p className="muted">Photos, notes, and saved files that support this report.</p>
           </div>
-
-          <div className="required-evidence-grid compact-reminder-grid">
-            <p className="checkline complete">
-              Grouped findings: {draftFindingCount}
-            </p>
-            <p className="checkline complete">
-              Measurements: {draftMeasurementCount}
-            </p>
-            <p
-              className={
-                unmappedEvidenceCount > 0
-                  ? "checkline attention"
-                  : "checkline complete"
-              }
-            >
-              Extra evidence: {unmappedEvidenceCount}
-            </p>
-          </div>
-
-          <section className="report-subsection">
-            <div>
-              <h3>Findings & recommendations</h3>
-              <p className="muted">
-                Review the report narrative before export.
-              </p>
-            </div>
-            <div className="signature-list report-section-list">
-              {aiDraftSections.map((section) => (
-                <article
-                  key={section.id}
-                  className="signature-list-item report-section-item"
-                >
-                  <div className="form-stack">
-                    <div>
-                      <strong>{section.title}</strong>
-                      {section.status ? (
-                        <span className="status-pill neutral compact">
-                          {section.status.replace(/_/g, " ")}
-                        </span>
-                      ) : null}
-
-                    </div>
-                    {section.body ? (
-                      <p className="muted">{section.body}</p>
-                    ) : null}
-                    {section.source_capture_ids.length > 0 ? (
-                      <p className="muted">
-                        Source capture references:{" "}
-                        {section.source_capture_ids.join(", ")}
-                      </p>
-                    ) : (
-                      <p className="muted">
-                        Evidence references: none supplied; review before
-                        relying on this section.
-                      </p>
-                    )}
-                  </div>
-                </article>
-              ))}
-            </div>
-          </section>
-
-          <section className="report-subsection">
-            <div>
-              <h3>Form Fields</h3>
-              <p className="muted">
-                Review the fields CRED found from the captured evidence and paper forms.
-              </p>
-            </div>
-            <div className="required-evidence-grid compact-reminder-grid">
-              {sourceFieldEntries.length > 0 ? (
-                sourceFieldEntries.map(([key, value]) => (
-                  <p key={key} className="checkline complete">
-                    {key.replace(/_/g, " ")}: {String(value)}
-                  </p>
-                ))
-              ) : (
-                <p className="muted">No form fields found yet.</p>
-              )}
-            </div>
-          </section>
-
-          <div className="form-actions report-inline-actions">
-            <form action={generateDraftAction}>
-              <button className="button button-secondary touch-target">
-                {hasPendingEvidence
-                  ? "Regenerate Report"
-                  : "Regenerate Report"}
-              </button>
-            </form>
-            {currentAiDraft.status !== "approved" && approveDraftAction ? (
-              <form action={approveDraftAction}>
-                <button className="button button-primary touch-target">
-                  Approve Report
-                </button>
-              </form>
-            ) : null}
-          </div>
+          <span className="status-pill neutral compact">{visibleCaptureCount} included</span>
         </div>
-      )}
+        <EvidenceGallery
+          noteEvidence={noteEvidence}
+          otherEvidence={otherEvidence}
+          photoEvidence={photoEvidence}
+        />
+      </section>
+
+      <section className="report-subsection">
+        <div>
+          <h3>Form fields</h3>
+          <p className="muted">Details discovered from captured forms and documents.</p>
+        </div>
+        <div className="report-field-grid">
+          {sourceFieldEntries.length > 0 ? (
+            sourceFieldEntries.map(([key, value]) => (
+              <div key={key} className="report-field-card">
+                <span>{key.replace(/_/g, " ")}</span>
+                <strong>{String(value)}</strong>
+              </div>
+            ))
+          ) : (
+            <p className="muted">No form fields detected yet.</p>
+          )}
+        </div>
+      </section>
+
+      <section className="report-subsection">
+        <div className="report-section-title-row">
+          <div>
+            <h3>Report structure</h3>
+            <p className="muted">The sections that will appear in the exported report.</p>
+          </div>
+          {currentReport ? (
+            <span className="status-pill neutral compact">{structureSections.length} sections</span>
+          ) : null}
+        </div>
+        <div className="report-structure-list">
+          {structureSections.map((title, index) => (
+            <p key={`${title}-${index}`}>
+              <span>{index + 1}</span> {title}
+            </p>
+          ))}
+        </div>
+      </section>
+
+      <div className="report-proof-strip">
+        <span>{findingCount} findings</span>
+        <span>{recommendationSections.length} recommendations</span>
+        <span>{measurementCount} measurements</span>
+        <span>{unmappedEvidenceCount} additional notes</span>
+      </div>
+
+      <div className="form-actions report-inline-actions report-primary-flow">
+        <Link
+          href={`/dashboard/sessions/${session.id}/capture`}
+          className="button button-secondary touch-target"
+        >
+          Continue Capturing
+        </Link>
+        {currentReport ? (
+          <form action={generateReportAction}>
+            <button className="button button-secondary touch-target">
+              Refresh Report
+            </button>
+          </form>
+        ) : null}
+        {currentReport?.status !== "approved" && approveReportContentAction ? (
+          <form action={approveReportContentAction}>
+            <button className="button button-primary touch-target">
+              Approve Report
+            </button>
+          </form>
+        ) : null}
+      </div>
     </section>
   );
 }
 
-function IncludedCapturesSummary({
-  processingCounts,
+function ReportContentSection({
+  emptyText,
+  items,
+  title,
 }: {
-  processingCounts: EvidenceCounts;
+  emptyText: string;
+  items: Array<{ id: string; title: string; body: string | null; badge?: string | null }>;
+  title: string;
 }) {
   return (
-    <section className="card detail-card report-command-card form-stack">
-      <div>
-        <p className="eyebrow">Photos</p>
-        <h2>Photos and notes</h2>
-        <p className="muted">
-          Evidence remains attached to the report for review.
-        </p>
-      </div>
-      <div className="required-evidence-grid compact-reminder-grid">
-        <p className="checkline complete">
-          Included: {processingCounts.ready}
-        </p>
-        <p
-          className={
-            processingCounts.processing > 0
-              ? "checkline neutral"
-              : "checkline complete"
-          }
-        >
-          Still being added: {processingCounts.processing}
-        </p>
-        <p
-          className={
-            processingCounts.needsReview > 0
-              ? "checkline attention"
-              : "checkline complete"
-          }
-        >
-          Needs attention: {processingCounts.needsReview}
-        </p>
+    <section className="report-subsection report-content-section">
+      <h3>{title}</h3>
+      <div className="signature-list report-section-list">
+        {items.length > 0 ? (
+          items.map((item) => (
+            <article key={item.id} className="signature-list-item report-section-item">
+              <div>
+                <strong>{item.title}</strong>
+                {item.badge ? (
+                  <span className="status-pill neutral compact">{item.badge}</span>
+                ) : null}
+              </div>
+              {item.body ? <p className="muted">{item.body}</p> : null}
+            </article>
+          ))
+        ) : (
+          <p className="muted">{emptyText}</p>
+        )}
       </div>
     </section>
+  );
+}
+
+function EvidenceGallery({
+  noteEvidence,
+  otherEvidence,
+  photoEvidence,
+}: {
+  noteEvidence: SupportingEvidenceItem[];
+  otherEvidence: SupportingEvidenceItem[];
+  photoEvidence: SupportingEvidenceItem[];
+}) {
+  return (
+    <div className="evidence-gallery-shell">
+      <div>
+        <h4>Photos</h4>
+        {photoEvidence.length > 0 ? (
+          <div className="review-photo-grid">
+            {photoEvidence.slice(0, 8).map((item) => (
+              <article key={item.capture.id} className="review-photo-card">
+                {item.signedUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured.
+                  <img src={item.signedUrl} alt={item.title} />
+                ) : (
+                  <div className="review-evidence-placeholder">Photo saved</div>
+                )}
+                <div>
+                  <strong>{item.title}</strong>
+                  <p className="muted">{item.note ?? "Supporting photo"}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="muted">No photos added yet.</p>
+        )}
+      </div>
+
+      <div>
+        <h4>Technician notes</h4>
+        {noteEvidence.length > 0 ? (
+          <div className="review-note-list">
+            {noteEvidence.slice(0, 8).map((item) => (
+              <article key={item.capture.id} className="review-note-card">
+                <strong>{item.title}</strong>
+                <p>{item.note ?? "Text note saved for this report."}</p>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="muted">No technician notes added yet.</p>
+        )}
+      </div>
+
+      {otherEvidence.length > 0 ? (
+        <div>
+          <h4>Additional files</h4>
+          <div className="review-note-list">
+            {otherEvidence.slice(0, 6).map((item) => (
+              <article key={item.capture.id} className="review-note-card">
+                <strong>{item.title}</strong>
+                <p className="muted">{item.note ?? "Saved with the report."}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
 function ReportSidebar({
-  approveDraftAction,
+  approveReportContentAction,
   children,
   reminders,
-  currentAiDraft,
-  generateDraftAction,
+  currentReport,
   isReadyForExport,
   markReviewedAction,
   missingEvidenceCount,
@@ -743,11 +855,10 @@ function ReportSidebar({
   signatureCount,
   visibleCaptureCount,
 }: {
-  approveDraftAction: ServerAction | null;
+  approveReportContentAction: ServerAction | null;
   children: React.ReactNode;
   reminders: CoverageReminder[];
-  currentAiDraft: AiReportDraft | null;
-  generateDraftAction: ServerAction;
+  currentReport: AiReportDraft | null;
   isReadyForExport: boolean;
   markReviewedAction: ServerAction;
   missingEvidenceCount: number;
@@ -768,9 +879,9 @@ function ReportSidebar({
           <h2>
             {isReadyForExport
               ? "Ready"
-              : currentAiDraft
-                ? "Review Required"
-                : "Report Needed"}
+              : currentReport
+                ? "Ready to review"
+                : "Create report"}
           </h2>
         </div>
         <div className="report-status-list">
@@ -789,10 +900,10 @@ function ReportSidebar({
 
       <section className="card detail-card report-sidebar-card form-stack">
         <div>
-          <p className="eyebrow">Optional Reminders</p>
+          <p className="eyebrow">Ways to improve</p>
           <h2>
             {reminders.length > 0
-              ? `${reminders.length} suggested item${reminders.length === 1 ? "" : "s"}`
+              ? `${reminders.length} suggestion${reminders.length === 1 ? "" : "s"}`
               : "All set"}
           </h2>
         </div>
@@ -802,14 +913,14 @@ function ReportSidebar({
               <p key={row.rule.key}>• {row.rule.label}</p>
             ))
           ) : (
-            <p>✓ All reminders are resolved.</p>
+            <p>✓ The report has the expected supporting material.</p>
           )}
         </div>
         <Link
           href={`/dashboard/sessions/${sessionId}/capture`}
           className="button button-secondary touch-target"
         >
-          Capture More
+          Continue Capturing
         </Link>
       </section>
 
@@ -835,10 +946,10 @@ function ReportSidebar({
           <p className="checkline complete">✓ Evidence reviewed</p>
           <p
             className={
-              currentAiDraft ? "checkline complete" : "checkline neutral"
+              currentReport ? "checkline complete" : "checkline neutral"
             }
           >
-            {currentAiDraft ? "✓" : "○"} Findings reviewed
+            {currentReport ? "✓" : "○"} Findings reviewed
           </p>
           <p
             className={
@@ -863,7 +974,7 @@ function ReportSidebar({
                 : "checkline neutral"
             }
           >
-            {missingEvidenceCount === 0 ? "✓" : "○"} Optional reminders acknowledged
+            {missingEvidenceCount === 0 ? "✓" : "○"} Suggested additions considered
           </p>
         </div>
         {!isReadyForExport ? (
@@ -880,7 +991,7 @@ function ReportSidebar({
                   name="missing_evidence_acknowledged"
                   required
                 />
-                I reviewed the optional reminders and approve this report.
+                I considered the suggestions and approve this report.
               </label>
             ) : null}
             <div className="form-actions report-inline-actions">
@@ -894,8 +1005,8 @@ function ReportSidebar({
 
       <section className="card detail-card report-sidebar-card form-stack">
         <div>
-          <p className="eyebrow">Session Summary</p>
-          <h2>Session details</h2>
+          <p className="eyebrow">Report Details</p>
+          <h2>Details</h2>
         </div>
         <dl className="report-summary-list">
           {sessionSummaryRows.map(([label, value]) => (
@@ -909,52 +1020,50 @@ function ReportSidebar({
 
       <section className="card detail-card report-sidebar-card form-stack">
         <div>
-          <p className="eyebrow">Actions</p>
-          <h2>Report actions</h2>
+          <p className="eyebrow">Next Steps</p>
+          <h2>Capture → Review → Export</h2>
         </div>
         <div className="sidebar-action-stack">
-          <form action={generateDraftAction}>
-            <button className="button button-secondary touch-target">
-              {currentAiDraft ? "Regenerate Report" : "Generate Report"}
-            </button>
-          </form>
-          {currentAiDraft &&
-          currentAiDraft.status !== "approved" &&
-          approveDraftAction ? (
-            <form action={approveDraftAction}>
-              <button className="button button-primary touch-target">
-                Approve Report
-              </button>
-            </form>
-          ) : null}
-          {!isReadyForExport ? (
-            <Link
-              href="#ready-for-delivery"
-              className="button button-primary touch-target"
-            >
-              Approve Report
-            </Link>
-          ) : null}
           <Link
             href={`/dashboard/sessions/${sessionId}/capture`}
             className="button button-secondary touch-target"
           >
-            Capture More
+            1. Continue Capturing
           </Link>
+          {currentReport &&
+          currentReport.status !== "approved" &&
+          approveReportContentAction ? (
+            <form action={approveReportContentAction}>
+              <button className="button button-primary touch-target">
+                2. Approve Report
+              </button>
+            </form>
+          ) : !isReadyForExport ? (
+            <Link
+              href="#ready-for-delivery"
+              className="button button-primary touch-target"
+            >
+              2. Approve Report
+            </Link>
+          ) : (
+            <span className="button button-primary touch-target disabled-action">
+              2. Approved
+            </span>
+          )}
           {isReadyForExport ? (
             <Link
               href={reportPath}
               className="button button-secondary touch-target"
               target="_blank"
             >
-              Print / Save
+              3. Export
             </Link>
           ) : (
             <span
               className="button button-secondary touch-target disabled-action"
               aria-disabled="true"
             >
-              Print / Save
+              3. Export
             </span>
           )}
         </div>
@@ -1135,7 +1244,7 @@ function ExportCenter({
             className="button button-secondary touch-target"
             target="_blank"
           >
-            Print / Save
+            Export
           </Link>
         ) : null}
       </div>
@@ -1144,12 +1253,12 @@ function ExportCenter({
 }
 
 function ReportActivity({
-  currentAiDraft,
+  currentReport,
   isReadyForExport,
   reportEvents,
   shareTokenCount,
 }: {
-  currentAiDraft: AiReportDraft | null;
+  currentReport: AiReportDraft | null;
   isReadyForExport: boolean;
   reportEvents: ReportEvent[];
   shareTokenCount: number;
@@ -1158,19 +1267,14 @@ function ReportActivity({
     <section className="card detail-card report-sidebar-card form-stack">
       <div>
         <p className="eyebrow">Export History</p>
-        <h2>Recent events</h2>
+        <h2>Recent exports</h2>
       </div>
       <div className="report-activity-compact">
-        {currentAiDraft ? <p>✓ Report generated</p> : <p>○ Report pending</p>}
-        {currentAiDraft?.status === "approved" ? (
+        {currentReport ? <p>✓ Report created</p> : <p>○ Add evidence to create the report</p>}
+        {isReadyForExport || currentReport?.status === "approved" ? (
           <p>✓ Report approved</p>
         ) : (
-          <p>○ Report approval pending</p>
-        )}
-        {isReadyForExport ? (
-          <p>✓ Report approved</p>
-        ) : (
-          <p>○ Report approval pending</p>
+          <p>○ Approval needed</p>
         )}
         {reportEvents.slice(0, 2).map((event) => (
           <p key={event.id}>
