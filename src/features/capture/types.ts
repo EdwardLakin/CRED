@@ -1,7 +1,7 @@
 import type { Database, Json } from '@/lib/supabase/database.types'
 
 export type CaptureItem = Database['public']['Tables']['capture_items']['Row']
-export type CaptureType = 'photo' | 'document' | 'vin_plate' | 'info_plate' | 'voice_note' | 'video' | 'evidence_video'
+export type CaptureType = 'photo' | 'document' | 'vin_plate' | 'info_plate' | 'voice_note' | 'text_note' | 'video' | 'evidence_video'
 export type CaptureIntent = 'auto_image' | 'auto_evidence' | 'manual'
 
 export type SourceDocumentType =
@@ -98,6 +98,7 @@ export const CAPTURE_TYPES: Array<{ value: CaptureType; label: string; helper: s
   { value: 'vin_plate', label: 'VIN Plate', helper: 'Vehicle VIN label or plate' },
   { value: 'info_plate', label: 'Info/Data Plate', helper: 'Manufacturer, rating, or data tag' },
   { value: 'voice_note', label: 'Voice Note', helper: 'Audio note for later transcription' },
+  { value: 'text_note', label: 'Text Note', helper: 'Typed evidence note without a file' },
   { value: 'video', label: 'Video', helper: 'Short evidence video with note' },
 ]
 
@@ -107,6 +108,7 @@ export const CAPTURE_TYPE_LABELS: Record<CaptureType, string> = {
   vin_plate: 'VIN Plate',
   info_plate: 'Info/Data Plate',
   voice_note: 'Voice Note',
+  text_note: 'Text Note',
   video: 'Video',
   evidence_video: 'Evidence Video',
 }
@@ -162,6 +164,12 @@ export function getInitialExtractedData(type: CaptureType): Json {
         classification: { status: 'manual_audio', detected_type: 'voice_note', confidence: null },
         extraction: { status: 'not_started' },
       }
+    case 'text_note':
+      return {
+        kind: 'text_note',
+        classification: { status: 'manual_text_note', detected_type: 'text_note', confidence: null },
+        extraction: { status: 'not_applicable' },
+      }
   }
 }
 
@@ -180,6 +188,8 @@ export function getCaptureEventTitle(type: CaptureType, intent: CaptureIntent = 
       return 'Video evidence captured'
     case 'voice_note':
       return 'Voice note captured'
+    case 'text_note':
+      return 'Text note captured'
     case 'document':
       return 'Document captured'
     case 'photo':
@@ -200,7 +210,7 @@ export function getCaptureProcessingStatus(capture: CaptureItem): CaptureProcess
   if (capture.ai_status === 'processing' || processingStatus === 'processing') return 'processing'
   if (capture.ai_status === 'failed' || processingStatus === 'failed' || extractionStatus === 'failed') return 'failed'
   if (capture.ai_status === 'needs_review' || extractionStatus === 'needs_review') return 'needs_review'
-  if (capture.ai_status === 'extracted' || extractionStatus === 'extracted') return 'extracted'
+  if (capture.ai_status === 'extracted' || extractionStatus === 'extracted' || extractionStatus === 'not_applicable') return 'extracted'
   if (capture.ai_status === 'classified') return 'ready_for_review'
   return 'pending'
 }

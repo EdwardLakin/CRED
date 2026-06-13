@@ -38,6 +38,8 @@ export default async function GuidedCapturePage({
   const signedUrls: Record<string, string> = {}
   await Promise.all(
     captureItems.map(async (capture) => {
+      if (!capture.storage_path) return
+
       const { data } = await supabase.storage.from('documentation-captures').createSignedUrl(capture.storage_path, 60 * 10)
 
       if (data?.signedUrl) {
