@@ -5,12 +5,14 @@ export type DocumentationSession = Database['public']['Tables']['documentation_s
 export type SessionStatus = 'draft' | 'capturing' | 'review' | 'finalized' | 'archived'
 
 export const SESSION_STATUSES: Array<{ value: SessionStatus; label: string }> = [
-  { value: 'draft', label: 'Draft' },
+  { value: 'draft', label: 'Capturing' },
   { value: 'capturing', label: 'Capturing' },
-  { value: 'review', label: 'Review' },
-  { value: 'finalized', label: 'Finalized' },
+  { value: 'review', label: 'Review Required' },
+  { value: 'finalized', label: 'Ready' },
   { value: 'archived', label: 'Archived' },
 ]
+
+export const DEFAULT_SESSION_TYPE = 'General Documentation'
 
 export const SESSION_TYPES = [
   { value: 'Inspection', label: 'Inspection' },

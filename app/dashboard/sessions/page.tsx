@@ -1,8 +1,21 @@
 import Link from 'next/link'
 
-import { ThemeToggle } from '@/components/theme'
 import { EmptyState, SessionCard } from '@/features/sessions'
+import { createQuickCaptureSession } from '@/features/sessions/actions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+
+function getCaptureCounts(captures: Array<{ documentation_session_id: string }> | null) {
+  const captureCountBySession = new Map<string, number>()
+
+  for (const capture of captures ?? []) {
+    captureCountBySession.set(
+      capture.documentation_session_id,
+      (captureCountBySession.get(capture.documentation_session_id) ?? 0) + 1,
+    )
+  }
+
+  return captureCountBySession
+}
 
 export default async function SessionsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const { q } = await searchParams
@@ -13,7 +26,7 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
     .from('documentation_sessions')
     .select('*')
     .eq('organization_id', profile.organization_id)
-    .order('created_at', { ascending: false })
+    .order('updated_at', { ascending: false })
 
   if (searchTerm) {
     query = query.ilike('title', `%${searchTerm}%`)
@@ -26,25 +39,37 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
   }
 
   const sessionResults = sessions ?? []
+  const sessionIds = sessionResults.map((session) => session.id)
+  const { data: captures } = sessionIds.length > 0
+    ? await supabase
+        .from('capture_items')
+        .select('documentation_session_id')
+        .eq('organization_id', profile.organization_id)
+        .in('documentation_session_id', sessionIds)
+        .is('deleted_at', null)
+    : { data: null }
+  const captureCountBySession = getCaptureCounts(captures)
 
   return (
     <main className="page-shell dashboard-shell">
       <div className="section-header page-header">
         <div>
-          <h1>Documentation Sessions</h1>
-          <p className="muted">Search and open every session for your organization.</p>
+          <h1>Recent Sessions</h1>
+          <p className="muted">Open a session and keep moving: capture, review, export.</p>
         </div>
         <div className="page-actions">
-          <ThemeToggle />
-          <Link href="/dashboard/sessions/new" className="button button-primary touch-target">
-            New Documentation Session
+          <form action={createQuickCaptureSession}>
+            <button className="button button-primary touch-target">New Session</button>
+          </form>
+          <Link href="/dashboard" className="button button-secondary touch-target">
+            Dashboard
           </Link>
         </div>
       </div>
 
       <form action="/dashboard/sessions" className="search-card">
         <label className="label" htmlFor="q">
-          Search by title
+          Find a session
         </label>
         <div className="search-row">
           <input id="q" name="q" type="search" defaultValue={searchTerm} placeholder="Search sessions" className="input" />
@@ -55,19 +80,20 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
       {sessionResults.length > 0 ? (
         <div className="session-list-grid">
           {sessionResults.map((session) => (
-            <SessionCard key={session.id} session={session} />
+            <SessionCard
+              key={session.id}
+              session={session}
+              evidenceCount={captureCountBySession.get(session.id)}
+              showOperationalAction
+            />
           ))}
         </div>
       ) : (
         <EmptyState
           title={searchTerm ? 'No matching sessions' : 'No sessions yet'}
-          description={
-            searchTerm
-              ? 'Try a different title search or start a new documentation session.'
-              : 'Create a documentation session to begin recording field details.'
-          }
+          description={searchTerm ? 'Try a different search or start a new session.' : 'Press New Session and start capturing evidence.'}
           actionHref="/dashboard/sessions/new"
-          actionLabel="New Documentation Session"
+          actionLabel="New Session"
         />
       )}
     </main>

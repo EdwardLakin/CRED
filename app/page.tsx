@@ -6,15 +6,15 @@ import { getCurrentUser } from '@/features/auth/server'
 import type { BillingPlan } from '@/features/billing'
 
 const steps = [
-  ['Capture evidence', 'Photo and video intake optimized for technicians, inspectors, and field teams.'],
-  ['Add voice/context', 'Attach narration, asset details, and field notes while work is still fresh.'],
-  ['AI extracts details', 'Classify evidence and pull out defects, identifiers, observations, and next steps.'],
-  ['Review/print report', 'Approve the structured documentation and open clean printable reports for stakeholders.'],
+  ['New Session', 'Press once and start capturing immediately. No setup required.'],
+  ['Capture Evidence', 'Use camera, gallery, voice notes, or text notes in any order.'],
+  ['Review', 'CRED turns the captured evidence into a professional report.'],
+  ['Export', 'Approve, then email, share, print, or save the report.'],
 ] as const
 
 const useCases = [
-  'CVIP / fleet inspections',
-  'Mechanical inspections',
+  'Paper form replacement',
+  'Fleet and service documentation',
   'Property documentation',
   'Field service evidence',
   'Warranty/claim support',
@@ -23,18 +23,18 @@ const useCases = [
 const screenshots = [
   {
     title: 'Capture Evidence',
-    detail: 'Mobile-first intake for photos, video clips, voice notes, and asset context.',
-    rows: ['VIN plate photo', 'Brake chamber video', 'Technician voice note'],
+    detail: 'The capture screen is the product: camera, gallery, voice note, and text note.',
+    rows: ['Paper form photo', 'Job site photo', 'Technician voice note'],
   },
   {
-    title: 'Evidence Review',
-    detail: 'AI-assisted cards keep observations, classifications, and extracted details organized.',
-    rows: ['Classification: mechanical', 'Severity: needs review', 'Extracted: axle 2 / air leak'],
+    title: 'Review',
+    detail: 'A professional report appears from the evidence, ready for technician review.',
+    rows: ['Findings', 'Recommendations', 'Photos and notes'],
   },
   {
     title: 'Printable Report',
-    detail: 'Open professional printable documentation with reviewed evidence and a clear timeline.',
-    rows: ['Executive summary', 'Report coverage', 'Findings with media references'],
+    detail: 'Group final actions under one clear export experience.',
+    rows: ['Email', 'Share link', 'Print / Save'],
   },
 ] as const
 
@@ -49,12 +49,12 @@ const plans: Array<{
     key: 'individual',
     name: 'Individual',
     price: '$39/month',
-    description: 'AI-powered inspection documentation for independent technicians and inspectors.',
+    description: 'Paper replacement for independent technicians.',
     features: [
       '1 user',
-      'Unlimited inspections',
-      'AI classification',
-      'AI extraction',
+      'Unlimited sessions',
+      'Automatic report building',
+      'Paper form capture',
       'Printable reports',
       'Mobile evidence capture',
     ],
@@ -63,10 +63,10 @@ const plans: Array<{
     key: 'team',
     name: 'Team',
     price: '$99/month',
-    description: 'Collaborative inspection platform for growing service and maintenance teams.',
+    description: 'Shared paper replacement for growing service and maintenance teams.',
     features: [
       'Up to 5 users',
-      'Shared inspections',
+      'Shared sessions',
       'Team reporting',
       'Organization dashboard',
       'Centralized evidence management',
@@ -77,25 +77,25 @@ const plans: Array<{
     name: 'Shop',
     price: '$199/month',
     description:
-      'Built for repair shops, fleet maintenance facilities, inspection companies, and service teams that need consistent, professional documentation across multiple technicians.',
+      'Built for teams that want technicians to capture evidence quickly while CRED builds consistent, professional reports.',
     features: [
       'Up to 25 users',
       'Everything in Team',
-      'Shared evidence package library',
+      'Shared report history',
       'Team-wide evidence management',
-      'AI-powered findings extraction',
+      'Automatic findings and recommendations',
       'Customer-ready printable reports',
       'Shop branding and report customization',
-      'Inspection history and audit trail',
+      'Session history and audit trail',
       'Priority support',
     ],
   },
 ]
 
 const faqs = [
-  ['Who is CRED built for?', 'CRED is built for technicians, inspectors, fleet teams, mechanical shops, property teams, and service organizations that need defensible field documentation.'],
-  ['What does the AI do?', 'AI helps classify captures, extract field details, summarize context, and prepare documentation for human review before sharing or printing.'],
-  ['Can I use CRED for CVIP and fleet inspections?', 'CRED helps document evidence and prepare a report package. It does not replace regulated inspection forms or procedures.'],
+  ['Who is CRED built for?', 'CRED is built for technicians and field teams that want to replace paper forms with fast evidence capture and professional reports.'],
+  ['What does CRED build?', 'CRED turns captured evidence into findings, recommendations, form fields, photos, notes, and report structure for human review.'],
+  ['Can I capture a paper form?', 'Yes. If you have a paper form, capture it first. The form provides context for the report.'],
   ['Can I save reports as PDF?', 'Yes. CRED opens polished printable reports that you can save from your browser’s Print or Share menu for customers, claims, regulated documentation packages, and internal records.'],
 ] as const
 
@@ -123,11 +123,10 @@ export default async function HomePage() {
 
       <section className="landing-hero">
         <div className="landing-hero-content">
-          <p className="eyebrow">AI documentation for the field</p>
-          <h1>Capture field evidence. Let AI build the report.</h1>
+          <p className="eyebrow">Paper replacement for the field</p>
+          <h1>Capture anything. Generate everything.</h1>
           <p className="landing-hero-copy">
-            CRED helps inspection, CVIP, fleet, mechanical, property, and field documentation teams turn
-            photo/video evidence, voice notes, and job context into clean, review-ready reports.
+            The technician captures evidence. CRED builds the professional report. No setup required.
           </p>
           <div className="landing-hero-actions">
             <Link href={isAuthenticated ? '/dashboard?checkout=individual' : '/sign-up?plan=individual'} className="button button-primary">
@@ -147,18 +146,18 @@ export default async function HomePage() {
           <div className="mock-capture-tile large">📸 Brake assembly photo captured</div>
           <div className="mock-capture-grid">
             <div>🎙 Voice note<br /><strong>42 sec</strong></div>
-            <div>🤖 AI class<br /><strong>Mechanical</strong></div>
+            <div>✍️ Text note<br /><strong>Ready</strong></div>
           </div>
           <div className="mock-report-strip">
-            <span>Report readiness</span>
-            <strong>86%</strong>
+            <span>Report</span>
+            <strong>Ready</strong>
           </div>
         </div>
       </section>
 
       <section className="landing-section" id="how-it-works">
         <div className="section-kicker">How it works</div>
-        <h2>From field capture to client-ready documentation.</h2>
+        <h2>From first capture to finished report.</h2>
         <div className="how-grid">
           {steps.map(([title, description], index) => (
             <article className="landing-card" key={title}>
@@ -173,10 +172,9 @@ export default async function HomePage() {
       <section className="landing-section split-section" id="use-cases">
         <div>
           <div className="section-kicker">Use cases</div>
-          <h2>Built for evidence-heavy work where details matter.</h2>
+          <h2>Built for teams replacing paper in the field.</h2>
           <p className="section-copy">
-            CRED keeps teams aligned when documentation needs to support inspections, approvals, claims,
-            warranties, customer communication, and internal quality control.
+            CRED keeps capture simple while creating reports that support approvals, claims, warranties, customer communication, and internal quality control.
           </p>
         </div>
         <div className="use-case-list">
@@ -188,7 +186,7 @@ export default async function HomePage() {
 
       <section className="landing-section">
         <div className="section-kicker">Product preview</div>
-        <h2>Capture, review, and export evidence-first reports.</h2>
+        <h2>Capture, review, and export without configuration.</h2>
         <div className="screenshot-grid">
           {screenshots.map((screenshot) => (
             <article className="screenshot-card" key={screenshot.title}>
@@ -207,7 +205,7 @@ export default async function HomePage() {
 
       <section className="landing-section" id="pricing">
         <div className="section-kicker">Pricing</div>
-        <h2>Start small. Scale documentation across the team.</h2>
+        <h2>Start capturing in under a minute. Scale across the team.</h2>
         <div className="pricing-grid">
           {plans.map((plan) => (
             <article className={`pricing-card ${plan.key === 'team' ? 'featured-plan' : ''}`} key={plan.key}>
@@ -244,7 +242,7 @@ export default async function HomePage() {
       <footer className="landing-footer">
         <div>
           <strong>CRED by ProFixIQ</strong>
-          <p>Capture, Review, Extract, Document.</p>
+          <p>Capture anything. Generate everything.</p>
         </div>
         <div className="footer-links">
           <a href="#pricing">Pricing</a>

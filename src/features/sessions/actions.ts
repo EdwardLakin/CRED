@@ -15,7 +15,7 @@ import {
 import type { Database, Json } from '@/lib/supabase/database.types'
 
 import { requireSessionWorkspace } from './data'
-import { SESSION_STATUSES, SESSION_TYPES, type SessionStatus } from './types'
+import { DEFAULT_SESSION_TYPE, SESSION_STATUSES, SESSION_TYPES, type SessionStatus } from './types'
 
 function getTrimmedValue(formData: FormData, field: string) {
   const value = formData.get(field)
@@ -33,6 +33,10 @@ function isAllowedStatus(status: string): status is SessionStatus {
 
 function isAllowedSessionType(sessionType: string) {
   return SESSION_TYPES.some((type) => type.value === sessionType)
+}
+
+function getDefaultSessionTitle() {
+  return `New Session ${new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date())}`
 }
 
 function buildFieldServiceDetails(formData: FormData, existingDetails: Json | null | undefined): Json {
@@ -56,13 +60,12 @@ function buildFieldServiceDetails(formData: FormData, existingDetails: Json | nu
 }
 
 export async function createDocumentationSession(formData: FormData) {
-  const title = getTrimmedValue(formData, 'title')
-  const sessionType = getTrimmedValue(formData, 'session_type')
+  const requestedTitle = getTrimmedValue(formData, 'title')
+  const requestedSessionType = getTrimmedValue(formData, 'session_type')
+  const title = requestedTitle || getDefaultSessionTitle()
+  const sessionType = isAllowedSessionType(requestedSessionType) ? requestedSessionType : DEFAULT_SESSION_TYPE
   const workflowTemplateId = getNullableValue(formData, 'workflow_template_id')
 
-  if (!title || !isAllowedSessionType(sessionType)) {
-    redirect('/dashboard/sessions/new?error=Please%20enter%20a%20title%20and%20session%20type.')
-  }
 
   const { supabase, profile } = await requireSessionWorkspace()
   const billingAccess = requireActiveBillingAccess(profile)
@@ -76,7 +79,7 @@ export async function createDocumentationSession(formData: FormData) {
     .insert({
       title,
       session_type: sessionType,
-      status: 'draft',
+      status: 'capturing',
       created_by: profile.id,
       organization_id: profile.organization_id,
       workflow_template_id: workflowTemplateId,
@@ -90,8 +93,14 @@ export async function createDocumentationSession(formData: FormData) {
 
   revalidatePath('/dashboard')
   revalidatePath('/dashboard/sessions')
-  redirect(`/dashboard/sessions/${session.id}`)
+  redirect(`/dashboard/sessions/${session.id}/capture`)
 }
+
+export async function createQuickCaptureSession() {
+  const formData = new FormData()
+  await createDocumentationSession(formData)
+}
+
 
 export async function updateDocumentationSession(sessionId: string, formData: FormData) {
   const title = getTrimmedValue(formData, 'title')

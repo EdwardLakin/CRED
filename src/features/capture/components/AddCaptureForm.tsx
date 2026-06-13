@@ -17,11 +17,8 @@ import {
   validateCaptureBillingAccess,
 } from '@/features/capture/actions'
 import {
-  MANUAL_CAPTURE_TYPES,
-  SOURCE_DOCUMENT_OPTIONS,
   type CaptureIntent,
   type CaptureType,
-  type SourceDocumentType,
 } from '@/features/capture/types'
 import { createClient } from '@/lib/supabase/client'
 
@@ -237,36 +234,15 @@ function getFriendlyUploadError(message: string) {
   return message || 'Upload failed — retry'
 }
 
-function getSuggestedCaptureText(sessionType?: string | null) {
-  const normalizedSessionType = sessionType?.toLowerCase() ?? ''
-
-  if (
-    normalizedSessionType.includes('cvip') ||
-    (normalizedSessionType.includes('commercial') &&
-      normalizedSessionType.includes('inspection'))
-  ) {
-    return 'Suggested: registration, VIN plate, licence plate, unit number, inspection sheet.'
-  }
-
-  if (normalizedSessionType.includes('inspection')) {
-    return 'Suggested: VIN plate, info/data plate, odometer/hour meter, work order, concern area, supporting photos.'
-  }
-
-  return 'Suggested: VIN plate, documents, asset labels, field photos, supporting evidence.'
-}
 
 export function AddCaptureForm({
   sessionId,
   organizationId,
-  sessionType,
   guidedStep,
   guidedLabel,
   workflow,
   returnPath,
-  captureButtonLabel = 'Capture Evidence',
   helperText = 'Take or select photos/videos, add a quick voice or typed note, then tap Done.',
-  commonCaptureText = 'Common captures: registration, VIN plate, unit number, licence plate, inspection sheet, work order, odometer, info/data plate, defects.',
-  showSuggestedCaptureText = true,
   stickyDoneHref,
   maxCaptureFileSizeBytes,
   maxVideoFileSizeBytes,
@@ -304,12 +280,8 @@ export function AddCaptureForm({
   const [clientError, setClientError] = useState<string | null>(null)
   const [captureIntent, setCaptureIntent] =
     useState<CaptureIntent>('auto_evidence')
-  const [manualType, setManualType] = useState<CaptureType>('document')
-  const [sourceDocumentType, setSourceDocumentType] =
-    useState<SourceDocumentType | null>(null)
-  const selectedSourceDocument = SOURCE_DOCUMENT_OPTIONS.find(
-    (option) => option.type === sourceDocumentType,
-  )
+  const manualType: CaptureType = 'document'
+  const [preferCameraCapture, setPreferCameraCapture] = useState(true)
   const [selectedFiles, setSelectedFiles] = useState<SelectedEvidenceFile[]>([])
   const [note, setNote] = useState('')
   const [noteSource, setNoteSource] = useState<'manual' | 'voice' | 'edited'>(
@@ -325,11 +297,10 @@ export function AddCaptureForm({
     captureIntent === 'auto_evidence' || captureIntent === 'auto_image'
       ? 'auto_evidence'
       : manualType
-  const fileConfig = useMemo(() => FILE_INPUT_CONFIG[activeType], [activeType])
-  const suggestedCaptureText = useMemo(
-    () => getSuggestedCaptureText(sessionType),
-    [sessionType],
-  )
+  const fileConfig = useMemo(() => {
+    const config = FILE_INPUT_CONFIG[activeType]
+    return preferCameraCapture ? config : { accept: config.accept }
+  }, [activeType, preferCameraCapture])
   const guidanceKey = guidedStep
     ? `${workflow ?? 'guided'}-${guidedStep}`
     : 'general'
@@ -467,9 +438,21 @@ export function AddCaptureForm({
     setSaveMessage(null)
   }
 
-  function openEvidencePicker() {
+  function openCameraPicker() {
     setCaptureIntent('auto_evidence')
+    setPreferCameraCapture(true)
     window.setTimeout(() => fileInputRef.current?.click(), 0)
+  }
+
+  function openGalleryPicker() {
+    setCaptureIntent('auto_evidence')
+    setPreferCameraCapture(false)
+    window.setTimeout(() => fileInputRef.current?.click(), 0)
+  }
+
+  function focusTextNote() {
+    noteTextareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    noteTextareaRef.current?.focus({ preventScroll: true })
   }
 
   function triggerBackgroundProcessing() {
@@ -538,8 +521,8 @@ export function AddCaptureForm({
           noteSource,
           reportOrder: null,
           includeInReport: true,
-          sourceDocumentType: selectedSourceDocument?.type ?? null,
-          sourceDocumentLabel: selectedSourceDocument?.label ?? null,
+          sourceDocumentType: null,
+          sourceDocumentLabel: null,
         })
 
         if (!result.ok) {
@@ -636,7 +619,7 @@ export function AddCaptureForm({
 
       if (result.savedCount > 0) {
         cleanupRecognition()
-        setSaveMessage('Saved. AI is processing in the background.')
+        setSaveMessage('Saved. Keep capturing or tap Done.')
         triggerBackgroundProcessing()
         router.refresh()
       }
@@ -656,7 +639,7 @@ export function AddCaptureForm({
         setNoteSource('manual')
         setTranscriptStatus('not_started')
         setVoiceNoteStatus(isVoiceSupported === false ? 'unsupported' : 'idle')
-        setSourceDocumentType(null)
+        setPreferCameraCapture(true)
       }, 900)
 
       if (returnPath) {
@@ -877,12 +860,6 @@ export function AddCaptureForm({
       <input type="hidden" name="manual_type" value={manualType} />
       <input type="hidden" name="transcript_status" value={transcriptStatus} />
       <input type="hidden" name="note_source" value={noteSource} />
-      {selectedSourceDocument ? (
-        <>
-          <input type="hidden" name="source_document_type" value={selectedSourceDocument.type} />
-          <input type="hidden" name="source_document_label" value={selectedSourceDocument.label} />
-        </>
-      ) : null}
       {guidedStep ? (
         <input type="hidden" name="guided_step" value={guidedStep} />
       ) : null}
@@ -901,75 +878,51 @@ export function AddCaptureForm({
       ) : null}
       {saveMessage ? <p className="success">{saveMessage}</p> : null}
 
-      <div className="source-document-shortcuts field-stack">
+      <div className="capture-start-panel field-stack">
         <div>
-          <p className="eyebrow">Source Document</p>
-          <p className="muted capture-upload-hint">
-            Source documents help CRED fill in report details. Capture them whenever it fits your workflow.
-          </p>
-          <p className="muted capture-upload-hint">CRED organizes it later.</p>
+          <p className="eyebrow">Fast capture</p>
+          <h2>What do you want to add?</h2>
+          <p className="muted capture-upload-hint">If you have a paper form, capture it first.</p>
         </div>
-        <div className="source-document-chip-row" aria-label="Source document shortcuts">
-          {SOURCE_DOCUMENT_OPTIONS.map((option) => {
-            const selected = selectedSourceDocument?.type === option.type
-
-            return (
-              <button
-                key={option.type}
-                type="button"
-                className={selected ? 'source-document-chip active' : 'source-document-chip'}
-                aria-pressed={selected}
-                onClick={() =>
-                  setSourceDocumentType((current) =>
-                    current === option.type ? null : option.type,
-                  )
-                }
-                disabled={isSaving || hasActiveUploads}
-              >
-                {option.label}
-              </button>
-            )
-          })}
+        <div className="capture-primary-action-grid" aria-label="Primary capture actions">
+          <button
+            type="button"
+            className="capture-evidence-button touch-target"
+            onClick={openCameraPicker}
+            disabled={isSaving || hasActiveUploads}
+          >
+            <span className="capture-evidence-icon" aria-hidden="true">📷</span>
+            <span><strong>Camera</strong><small>Take a photo or video</small></span>
+          </button>
+          <button
+            type="button"
+            className="capture-evidence-button touch-target"
+            onClick={openGalleryPicker}
+            disabled={isSaving || hasActiveUploads}
+          >
+            <span className="capture-evidence-icon" aria-hidden="true">🖼️</span>
+            <span><strong>Gallery</strong><small>Choose saved media</small></span>
+          </button>
+          <button
+            type="button"
+            className="capture-evidence-button touch-target"
+            onClick={startVoiceNote}
+            disabled={isSaving || hasActiveUploads || voiceNoteStatus === 'listening'}
+          >
+            <span className="capture-evidence-icon" aria-hidden="true">🎙️</span>
+            <span><strong>Voice Note</strong><small>Speak context quickly</small></span>
+          </button>
+          <button
+            type="button"
+            className="capture-evidence-button touch-target"
+            onClick={focusTextNote}
+            disabled={isSaving || hasActiveUploads}
+          >
+            <span className="capture-evidence-icon" aria-hidden="true">✍️</span>
+            <span><strong>Text Note</strong><small>Type what matters</small></span>
+          </button>
         </div>
-        {selectedSourceDocument ? (
-          <div className="selected-source-document-row">
-            <span className="classification-pill pending">
-              Source Document: {selectedSourceDocument.label}
-            </span>
-            <button
-              type="button"
-              className="secondary-link"
-              onClick={() => setSourceDocumentType(null)}
-              disabled={isSaving || hasActiveUploads}
-            >
-              Clear
-            </button>
-          </div>
-        ) : null}
-      </div>
-
-      <div className="camera-first-panel">
-        <button
-          type="button"
-          className="capture-evidence-button touch-target"
-          onClick={openEvidencePicker}
-          disabled={isSaving || hasActiveUploads}
-        >
-          <span className="capture-evidence-icon" aria-hidden="true">
-            📷
-          </span>
-          <span>
-            <strong>{captureButtonLabel}</strong>
-            <small>Open camera for photo or video</small>
-          </span>
-        </button>
         <p className="muted capture-helper-text">{helperText}</p>
-        {commonCaptureText ? (
-          <p className="muted capture-upload-hint">{commonCaptureText}</p>
-        ) : null}
-        {showSuggestedCaptureText ? (
-          <p className="muted capture-upload-hint">{suggestedCaptureText}</p>
-        ) : null}
       </div>
 
       <div className="field-stack capture-file-field">
@@ -978,7 +931,7 @@ export function AddCaptureForm({
         </label>
         <input
           ref={fileInputRef}
-          key={`${captureIntent}-${activeType}`}
+          key={`${captureIntent}-${activeType}-${preferCameraCapture ? 'camera' : 'gallery'}`}
           id={fileInputId}
           type="file"
           accept={fileConfig.accept}
@@ -1015,11 +968,6 @@ export function AddCaptureForm({
                   <div>
                     <h3>{file.name}</h3>
                     <p className="muted">Draft evidence preview</p>
-                    {selectedSourceDocument ? (
-                      <p className="muted">
-                        Source Document: {selectedSourceDocument.label}
-                      </p>
-                    ) : null}
                   </div>
                   <span className="ai-status-pill draft-status-pill">
                     {getUploadStatusLabel(file.status, file.error)}
@@ -1112,13 +1060,13 @@ export function AddCaptureForm({
           </div>
         ) : null}
         <p className="muted capture-upload-hint">
-          Maximum file size is {captureSizeLabel} per capture file and {videoSizeLabel} per video. Photos and videos are queued for AI review.
+          Maximum file size is {captureSizeLabel} per capture file and {videoSizeLabel} per video.
         </p>
       </div>
 
       <div className="field-stack capture-note-composer report-note-editor">
         <label htmlFor={`technician-note-${guidanceKey}`} className="label">
-          Edit note shown on report
+          Text Note
         </label>
         <textarea
           ref={noteTextareaRef}
@@ -1137,7 +1085,7 @@ export function AddCaptureForm({
           rows={4}
         />
         <p className="muted note-helper-text">
-          Changes update the note overlay and printable report. Manual typing works even if voice is unavailable.
+          Add anything the report should know. Manual typing works even if voice is unavailable.
         </p>
         {isVoiceSupported === false ? (
           <p className="muted capture-upload-hint" role="status">
@@ -1151,7 +1099,7 @@ export function AddCaptureForm({
               onClick={startVoiceNote}
               disabled={isSaving || hasActiveUploads || voiceNoteStatus === 'listening'}
             >
-              Start Voice Note
+              Start
             </button>
             <button
               type="button"
@@ -1205,10 +1153,10 @@ export function AddCaptureForm({
           <button
             type="button"
             className="button button-primary touch-target"
-            onClick={openEvidencePicker}
+            onClick={openCameraPicker}
             disabled={isSaving || hasActiveUploads}
           >
-            Capture
+            Camera
           </button>
           {hasActiveUploads || isSaving ? (
             <button type="button" className="button button-secondary touch-target" disabled>
@@ -1222,66 +1170,6 @@ export function AddCaptureForm({
         </div>
       ) : null}
 
-      <details className="advanced-capture-options">
-        <summary>Advanced upload options</summary>
-        <div className="advanced-capture-content form-stack">
-          <div
-            className="advanced-capture-actions"
-            aria-label="Manual upload options"
-          >
-            <button
-              type="button"
-              className="button button-secondary touch-target"
-              onClick={() => {
-                setCaptureIntent('manual')
-                setManualType('document')
-              }}
-            >
-              Upload Document
-            </button>
-            <button
-              type="button"
-              className="button button-secondary touch-target"
-              onClick={() => {
-                setCaptureIntent('manual')
-                setManualType('video')
-              }}
-            >
-              Upload Video
-            </button>
-            <button
-              type="button"
-              className="button button-secondary touch-target"
-              onClick={() => {
-                setCaptureIntent('manual')
-                setManualType('voice_note')
-              }}
-            >
-              Upload Audio Note
-            </button>
-          </div>
-          <div className="field-stack">
-            <label htmlFor="manual-capture-type" className="label">
-              Manually choose capture type
-            </label>
-            <select
-              id="manual-capture-type"
-              className="select"
-              value={manualType}
-              onChange={(event) => {
-                setCaptureIntent('manual')
-                setManualType(event.target.value as CaptureType)
-              }}
-            >
-              {MANUAL_CAPTURE_TYPES.map((type) => (
-                <option key={type.value} value={type.value}>
-                  {type.label} — {type.helper}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </details>
     </form>
   )
 }
