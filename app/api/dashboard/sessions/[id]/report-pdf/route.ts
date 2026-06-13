@@ -23,6 +23,8 @@ type RouteContext = {
 
 type ReportCapture = Database['public']['Tables']['capture_items']['Row']
 type ReportSignature = Database['public']['Tables']['signature_captures']['Row']
+type ReportDraft = Database['public']['Tables']['ai_report_drafts']['Row']
+type ReportDraftSection = Database['public']['Tables']['ai_report_draft_sections']['Row']
 type ReportSession = Database['public']['Tables']['documentation_sessions']['Row'] & {
   organizations: { name: string } | null
 }
@@ -38,6 +40,26 @@ function escapeHtml(value: unknown) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+
+function isHiddenFromReport(metadata: Json) {
+  return isRecord(metadata) && metadata.hidden_from_report === true
+}
+
+function getDisplayHeaderRows(value: Json) {
+  if (!isRecord(value)) return []
+  return Object.entries(value)
+    .filter(([, rowValue]) => rowValue !== null && rowValue !== undefined && String(rowValue).trim())
+    .slice(0, 18)
+    .map(([key, rowValue]) => ({ label: key.replace(/_/g, ' '), value: String(rowValue) }))
+}
+
+function buildGeneratedReportHtml(draft: ReportDraft | null, sections: ReportDraftSection[]) {
+  if (!draft) return ''
+  const headerRows = getDisplayHeaderRows(draft.header_fields)
+  const visibleSections = sections.filter((section) => !isHiddenFromReport(section.metadata))
+  return `${draft.summary ? `<section class="item service-section"><h2>Summary</h2><p>${escapeHtml(draft.summary)}</p></section>` : ''}${headerRows.length > 0 ? `<section class="item service-section"><h2>Report details</h2>${renderDefinitionRows(headerRows)}</section>` : ''}${visibleSections.map((section) => `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2>${section.body ? `<p>${escapeHtml(section.body)}</p>` : '<p class="muted">No details entered.</p>'}</section>`).join('')}`
 }
 
 function getFields(extractedData: Json | null) {
@@ -130,7 +152,7 @@ function buildEvidenceItemsHtml(captureItems: ReportCapture[], signedUrls: Recor
     return `<article class="item">
       <h2>Item ${index + 1}</h2>
       <div class="media">${mediaHtml}<div class="note"><strong>Technician note</strong><p>${escapeHtml(note)}</p></div></div>
-      <section class="finding"><h3>AI finding / extracted details</h3><p>${escapeHtml(getAiSummary(capture.extracted_data, capture.ai_summary))}</p>
+      <section class="finding"><h3>Finding / extracted details</h3><p>${escapeHtml(getAiSummary(capture.extracted_data, capture.ai_summary))}</p>
       ${fields.length > 0 ? renderDefinitionRows(fields) : '<p>Report details pending.</p>'}</section>
     </article>`
   }).join('')
@@ -143,6 +165,8 @@ function buildFieldServiceReportHtml({
   signedUrls,
   signatures,
   signatureUrls,
+  reportDraft,
+  reportSections,
 }: {
   session: ReportSession
   organizationName: string
@@ -150,6 +174,8 @@ function buildFieldServiceReportHtml({
   signedUrls: Record<string, string>
   signatures: ReportSignature[]
   signatureUrls: Record<string, string>
+  reportDraft: ReportDraft | null
+  reportSections: ReportDraftSection[]
 }) {
   const details = normalizeFieldServiceDetails(session.field_service_details)
   const headerRows = [
@@ -176,9 +202,11 @@ function buildFieldServiceReportHtml({
     .map((fieldName) => ({ label: FIELD_SERVICE_FIELD_LABELS[fieldName] ?? fieldName, value: getDetailValue(details, fieldName) }))
   const evidenceHtml = buildEvidenceItemsHtml(captureItems, signedUrls)
   const signaturesHtml = buildSignaturesHtml(signatures, signatureUrls)
+  const generatedReportHtml = buildGeneratedReportHtml(reportDraft, reportSections)
+  const reportTitle = reportDraft?.title || session.title
 
-  return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(session.title)} printable field service report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report"><div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div><header class="header"><p class="eyebrow">Printable Report</p><h1>${escapeHtml(session.title)}</h1><p>${escapeHtml(organizationName)}</p><p class="meta">Documentation-only service report · ${escapeHtml(new Date().toLocaleDateString())}</p>${renderDefinitionRows(headerRows)}</header>${renderFieldServiceSection(details, 'equipment')}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work performed</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Evidence</h2><p class="muted">Evidence items reference captured photos, videos, documents, and technician notes.</p></section>${evidenceHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges / documentation only</h2>${renderDefinitionRows(chargeRows)}</section><section class="item service-section"><h2>Signature requirements</h2>${renderDefinitionRows(signatureRows)}</section>${signaturesHtml}</main></body></html>`
+  return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(reportTitle)} printable field service report</title>
+  <style>${REPORT_STYLES}</style></head><body><main class="report"><div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div><header class="header"><p class="eyebrow">Printable Report</p><h1>${escapeHtml(reportTitle)}</h1><p>${escapeHtml(organizationName)}</p><p class="meta">Documentation-only service report · ${escapeHtml(new Date().toLocaleDateString())}</p>${renderDefinitionRows(headerRows)}</header>${generatedReportHtml}${renderFieldServiceSection(details, 'equipment')}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work performed</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Evidence</h2><p class="muted">Evidence items reference captured photos, videos, documents, and technician notes.</p></section>${evidenceHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges / documentation only</h2>${renderDefinitionRows(chargeRows)}</section><section class="item service-section"><h2>Signature requirements</h2>${renderDefinitionRows(signatureRows)}</section>${signaturesHtml}</main></body></html>`
 }
 
 const REPORT_STYLES = `
@@ -296,6 +324,30 @@ export async function GET(_request: Request, { params }: RouteContext) {
     if (data?.signedUrl) signatureUrls[signature.id] = data.signedUrl
   }))
 
+  const { data: reportDrafts } = await supabase
+    .from('ai_report_drafts')
+    .select('*')
+    .eq('documentation_session_id', session.id)
+    .eq('organization_id', organizationId)
+    .order('generated_at', { ascending: false })
+    .order('created_at', { ascending: false })
+
+  const reportDraft =
+    (reportDrafts ?? []).find((draft) => draft.status === 'approved') ??
+    (reportDrafts ?? []).find((draft) => draft.status !== 'superseded') ??
+    reportDrafts?.[0] ??
+    null
+
+  const { data: draftSections } = reportDraft
+    ? await supabase
+        .from('ai_report_draft_sections')
+        .select('*')
+        .eq('ai_report_draft_id', reportDraft.id)
+        .eq('organization_id', organizationId)
+        .order('sort_order', { ascending: true })
+    : { data: [] }
+  const reportSections = draftSections ?? []
+
   if (!sharedAccess && !previewOnly) {
     await supabase.from('exports').insert({
       documentation_session_id: session.id,
@@ -318,13 +370,16 @@ export async function GET(_request: Request, { params }: RouteContext) {
     ? session.organizations.name
     : 'CRED'
   if (isFieldServiceSessionType(session.session_type)) {
-    const html = buildFieldServiceReportHtml({ session, organizationName, captureItems, signedUrls, signatures: reportSignatures, signatureUrls })
+    const html = buildFieldServiceReportHtml({ session, organizationName, captureItems, signedUrls, signatures: reportSignatures, signatureUrls, reportDraft, reportSections })
     return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
   }
 
   const assetDetails = [session.asset_label, session.vin, session.unit_number, session.odometer, session.customer_name]
     .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
     .join(' · ')
+
+  const generatedReportHtml = buildGeneratedReportHtml(reportDraft, reportSections)
+  const reportTitle = reportDraft?.title || session.title
 
   const itemsHtml = captureItems.map((capture, index) => {
     const signedUrl = signedUrls[capture.id]
@@ -344,13 +399,13 @@ export async function GET(_request: Request, { params }: RouteContext) {
     return `<article class="item">
       <h2>Item ${index + 1}</h2>
       <div class="media">${mediaHtml}<div class="note"><strong>Technician note</strong><p>${escapeHtml(note)}</p></div></div>
-      <section class="finding"><h3>AI finding / extracted details</h3><p>${escapeHtml(getAiSummary(capture.extracted_data, capture.ai_summary))}</p>
+      <section class="finding"><h3>Finding / extracted details</h3><p>${escapeHtml(getAiSummary(capture.extracted_data, capture.ai_summary))}</p>
       ${fields.length > 0 ? `<dl>${fields.map((field) => `<div><dt>${escapeHtml(field.label)}</dt><dd>${escapeHtml(field.value)}</dd></div>`).join('')}</dl>` : '<p>Report details pending.</p>'}</section>
     </article>`
   }).join('')
 
-  const html = `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(session.title)} printable report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report"><div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div><header class="header"><p class="eyebrow">Printable Report</p><h1>${escapeHtml(session.title)}</h1><p>${escapeHtml(organizationName)}</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'No asset details')} · ${escapeHtml(new Date().toLocaleDateString())}</p></header>${itemsHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}${buildSignaturesHtml(reportSignatures, signatureUrls)}</main></body></html>`
+  const html = `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(reportTitle)} printable report</title>
+  <style>${REPORT_STYLES}</style></head><body><main class="report"><div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div><header class="header"><p class="eyebrow">Printable Report</p><h1>${escapeHtml(reportTitle)}</h1><p>${escapeHtml(organizationName)}</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'No asset details')} · ${escapeHtml(new Date().toLocaleDateString())}</p></header>${generatedReportHtml}${itemsHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}${buildSignaturesHtml(reportSignatures, signatureUrls)}</main></body></html>`
 
   return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
 }

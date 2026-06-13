@@ -532,6 +532,137 @@ export async function generateAiReportDraft(sessionId: string) {
   redirect(getReportRedirectPath(session.id, { draft: 1 }))
 }
 
+
+function sanitizeReportText(value: FormDataEntryValue | null, maxLength: number) {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  return trimmed.slice(0, maxLength)
+}
+
+function metadataWithReportVisibility(value: Json, includeInReport: boolean): Json {
+  const metadata = isRecord(value) ? { ...value } : {}
+  if (includeInReport) {
+    delete metadata.hidden_from_report
+  } else {
+    metadata.hidden_from_report = true
+  }
+  metadata.edited_for_report = true
+  return metadata as Json
+}
+
+export async function saveReportEdits(draftId: string, formData: FormData) {
+  const workspace = await requireSessionWorkspace()
+  const { supabase, profile } = workspace
+  const { data: draft, error: draftError } = await supabase
+    .from('ai_report_drafts')
+    .select('id, documentation_session_id, organization_id, header_fields')
+    .eq('id', draftId)
+    .eq('organization_id', profile.organization_id)
+    .single()
+
+  if (draftError || !draft) {
+    redirect('/dashboard?error=Report not found.')
+  }
+
+  const { data: session, error: sessionError } = await supabase
+    .from('documentation_sessions')
+    .select('id, organization_id')
+    .eq('id', draft.documentation_session_id)
+    .eq('organization_id', profile.organization_id)
+    .single()
+
+  if (sessionError || !session) {
+    redirect(getReportRedirectPath(draft.documentation_session_id, { error: 'Documentation session not found.' }))
+  }
+
+  const fieldCount = Number(getString(formData, 'field_count') || 0)
+  const editedHeaderFields: Record<string, string> = {}
+  for (let index = 0; index < fieldCount; index += 1) {
+    const key = getString(formData, `field_key_${index}`)
+    const value = getString(formData, `field_value_${index}`)
+    const included = formData.get(`field_include_${index}`) === 'on'
+    if (key && value && included) editedHeaderFields[key] = value.slice(0, 500)
+  }
+
+  const now = new Date().toISOString()
+  const { error: updateDraftError } = await supabase
+    .from('ai_report_drafts')
+    .update({
+      title: sanitizeReportText(formData.get('report_title'), 180),
+      summary: sanitizeReportText(formData.get('report_summary'), 1200),
+      header_fields: editedHeaderFields,
+      updated_at: now,
+    })
+    .eq('id', draft.id)
+    .eq('organization_id', profile.organization_id)
+
+  if (updateDraftError) {
+    redirect(getReportRedirectPath(session.id, { error: updateDraftError.message }))
+  }
+
+  const { data: sections, error: sectionsError } = await supabase
+    .from('ai_report_draft_sections')
+    .select('id, metadata')
+    .eq('ai_report_draft_id', draft.id)
+    .eq('organization_id', profile.organization_id)
+
+  if (sectionsError) {
+    redirect(getReportRedirectPath(session.id, { error: sectionsError.message }))
+  }
+
+  for (const section of sections ?? []) {
+    const includeInReport = formData.get(`section_include_${section.id}`) === 'on'
+    const sectionTitle = sanitizeReportText(formData.get(`section_title_${section.id}`), 140) ?? 'Report section'
+    const sectionBody = sanitizeReportText(formData.get(`section_body_${section.id}`), 4000)
+    const { error: sectionUpdateError } = await supabase
+      .from('ai_report_draft_sections')
+      .update({
+        title: sectionTitle,
+        body: sectionBody,
+        metadata: metadataWithReportVisibility(section.metadata, includeInReport),
+        updated_at: now,
+      })
+      .eq('id', section.id)
+      .eq('ai_report_draft_id', draft.id)
+      .eq('organization_id', profile.organization_id)
+
+    if (sectionUpdateError) {
+      redirect(getReportRedirectPath(session.id, { error: sectionUpdateError.message }))
+    }
+  }
+
+  const { data: captures, error: capturesError } = await supabase
+    .from('capture_items')
+    .select('id')
+    .eq('documentation_session_id', session.id)
+    .eq('organization_id', profile.organization_id)
+    .is('deleted_at', null)
+
+  if (capturesError) {
+    redirect(getReportRedirectPath(session.id, { error: capturesError.message }))
+  }
+
+  for (const capture of captures ?? []) {
+    const includeInReport = formData.get(`capture_include_${capture.id}`) === 'on'
+    const note = sanitizeReportText(formData.get(`capture_note_${capture.id}`), 2000)
+    const { error: captureUpdateError } = await supabase
+      .from('capture_items')
+      .update({ include_in_report: includeInReport, technician_note: note, updated_at: now })
+      .eq('id', capture.id)
+      .eq('documentation_session_id', session.id)
+      .eq('organization_id', profile.organization_id)
+
+    if (captureUpdateError) {
+      redirect(getReportRedirectPath(session.id, { error: captureUpdateError.message }))
+    }
+  }
+
+  revalidatePath(`/dashboard/sessions/${session.id}`)
+  revalidatePath(`/dashboard/sessions/${session.id}/report`)
+  redirect(getReportRedirectPath(session.id, { edited: 1 }))
+}
+
 export async function approveAiReportDraft(draftId: string) {
   const workspace = await requireSessionWorkspace()
   const { supabase, profile } = workspace
