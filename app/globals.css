@@ -3184,6 +3184,37 @@ a:focus-visible {
   padding-top: 4px;
 }
 
+.export-panel {
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+}
+
+.export-action-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.export-action-card {
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.export-action-card h3 {
+  margin: 0 0 4px;
+}
+
+.export-button-grid form {
+  width: 100%;
+}
+
+.export-share-list {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
 .report-section-item,
 .compact-token-item {
   background: var(--surface);

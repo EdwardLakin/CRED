@@ -16,7 +16,6 @@ import {
   saveReport,
   saveReportEdits,
 } from "@/features/reports/actions";
-import { formatReportEventLabel } from "@/features/reports/labels";
 import { formatDateTime } from "@/features/sessions";
 import { requireSessionWorkspace } from "@/features/sessions/data";
 import type { Database } from "@/lib/supabase/database.types";
@@ -26,10 +25,8 @@ type DocumentationSession = Tables["documentation_sessions"]["Row"];
 type AiReportDraft = Tables["ai_report_drafts"]["Row"];
 type AiReportDraftSection = Tables["ai_report_draft_sections"]["Row"];
 type ReportShareToken = Tables["report_share_tokens"]["Row"];
-type ReportEvent = Tables["exports"]["Row"];
 type CaptureItem = Tables["capture_items"]["Row"];
 type ServerAction = (formData: FormData) => void | Promise<void>;
-type StatusItem = { label: string; complete: boolean };
 type CoverageReminder = ReturnType<
   typeof getRequiredEvidenceCompletion
 >["missing"][number];
@@ -93,26 +90,31 @@ function isPhotoCapture(capture: CaptureItem) {
 }
 
 function getEvidenceKind(capture: CaptureItem): SupportingEvidenceItem["kind"] {
-  if (capture.type === "text_note" || capture.media_kind === "note") return "note";
+  if (capture.type === "text_note" || capture.media_kind === "note")
+    return "note";
   if (isPhotoCapture(capture)) return "photo";
-  if (capture.media_kind === "video" || capture.type === "video") return "video";
-  if (capture.media_kind === "audio" || capture.type === "voice_note") return "audio";
+  if (capture.media_kind === "video" || capture.type === "video")
+    return "video";
+  if (capture.media_kind === "audio" || capture.type === "voice_note")
+    return "audio";
   if (capture.media_kind === "document") return "document";
   return "file";
 }
 
 function getEvidenceTitle(item: CaptureItem, index: number) {
-  if (item.type === "text_note" || item.media_kind === "note") return `Technician note ${index + 1}`;
+  if (item.type === "text_note" || item.media_kind === "note")
+    return `Technician note ${index + 1}`;
   if (isPhotoCapture(item)) return `Photo ${index + 1}`;
-  if (item.media_kind === "video" || item.type === "video") return `Video ${index + 1}`;
-  if (item.media_kind === "audio" || item.type === "voice_note") return `Voice note ${index + 1}`;
+  if (item.media_kind === "video" || item.type === "video")
+    return `Video ${index + 1}`;
+  if (item.media_kind === "audio" || item.type === "voice_note")
+    return `Voice note ${index + 1}`;
   return `Evidence ${index + 1}`;
 }
 
 function getEvidenceNote(capture: CaptureItem) {
   return capture.technician_note?.trim() || capture.transcript?.trim() || null;
 }
-
 
 export default async function SessionReportPreviewPage({
   params,
@@ -186,14 +188,6 @@ export default async function SessionReportPreviewPage({
     .eq("organization_id", profile.organization_id)
     .order("created_at", { ascending: false });
 
-  const { data: reportEvents } = await supabase
-    .from("exports")
-    .select("*")
-    .eq("documentation_session_id", session.id)
-    .eq("organization_id", profile.organization_id)
-    .order("created_at", { ascending: false })
-    .limit(10);
-
   const { data: aiDrafts } = await supabase
     .from("ai_report_drafts")
     .select("*")
@@ -226,7 +220,9 @@ export default async function SessionReportPreviewPage({
     template?.required_evidence ?? null,
   );
   const allCaptures = captures ?? [];
-  const includedCaptures = allCaptures.filter((capture) => capture.include_in_report);
+  const includedCaptures = allCaptures.filter(
+    (capture) => capture.include_in_report,
+  );
   const visibleCaptures = status.edit ? allCaptures : includedCaptures;
   const signedEvidenceUrls: Record<string, string> = {};
   await Promise.all(
@@ -246,9 +242,12 @@ export default async function SessionReportPreviewPage({
     note: getEvidenceNote(capture),
     kind: getEvidenceKind(capture),
   }));
-  const photoEvidence = supportingEvidence.filter((item) => item.kind === "photo");
-  const noteEvidence = supportingEvidence.filter((item) =>
-    Boolean(item.note) || item.kind === "note" || item.kind === "audio",
+  const photoEvidence = supportingEvidence.filter(
+    (item) => item.kind === "photo",
+  );
+  const noteEvidence = supportingEvidence.filter(
+    (item) =>
+      Boolean(item.note) || item.kind === "note" || item.kind === "audio",
   );
   const otherEvidence = supportingEvidence.filter(
     (item) => item.kind !== "photo" && !noteEvidence.includes(item),
@@ -280,17 +279,7 @@ export default async function SessionReportPreviewPage({
   const isEditingReport = status.edit === "1";
   const findingCount = getArrayCount(currentReport?.findings);
   const measurementCount = getArrayCount(currentReport?.measurements);
-  const unmappedEvidenceCount = getArrayCount(
-    currentReport?.unmapped_evidence,
-  );
-  const reportStatusItems = [
-    { label: "Report created", complete: Boolean(currentReport) },
-    {
-      label: "Report approved",
-      complete: currentReport?.status === "approved",
-    },
-    { label: "Ready", complete: isReadyForExport },
-  ];
+  const unmappedEvidenceCount = getArrayCount(currentReport?.unmapped_evidence);
   const sessionSummaryRows: SessionSummaryRow[] = [
     ["VIN", session.vin ?? "Not captured"],
     [
@@ -312,26 +301,11 @@ export default async function SessionReportPreviewPage({
           <p className="eyebrow guided-eyebrow">Review</p>
           <h1>{session.title}</h1>
           <p className="muted">
-            Review the professional report CRED built from your evidence. Approve it, then export.
+            Review the professional report CRED built from your evidence.
+            Approve it, then export.
           </p>
         </div>
         <div className="page-actions report-preview-actions">
-          {isReadyForExport ? (
-            <Link
-              href={reportPath}
-              className="button button-primary touch-target"
-              target="_blank"
-            >
-              Export
-            </Link>
-          ) : (
-            <span
-              className="button button-primary touch-target disabled-action"
-              aria-disabled="true"
-            >
-              Export
-            </span>
-          )}
           <Link
             href={`/dashboard/sessions/${session.id}/capture`}
             className="button button-secondary touch-target"
@@ -349,15 +323,11 @@ export default async function SessionReportPreviewPage({
 
       <div className="report-alert-stack">
         {status.error ? <p className="error">{status.error}</p> : null}
-        {status.emailed ? (
-          <p className="success">Report email sent.</p>
-        ) : null}
+        {status.emailed ? <p className="success">Report email sent.</p> : null}
         {status.shared ? (
           <p className="success">Secure share link generated.</p>
         ) : null}
-        {status.saved ? (
-          <p className="success">Report saved.</p>
-        ) : null}
+        {status.saved ? <p className="success">Report saved.</p> : null}
         {status.edited ? (
           <p className="success">Report changes saved.</p>
         ) : null}
@@ -374,9 +344,7 @@ export default async function SessionReportPreviewPage({
           <p className="success">Share link disabled.</p>
         ) : null}
         {!isReadyForExport ? (
-          <p className="notice info">
-            Review and approve the report to unlock export.
-          </p>
+          <p className="notice info">Approve this report before exporting.</p>
         ) : null}
       </div>
 
@@ -388,9 +356,7 @@ export default async function SessionReportPreviewPage({
             visibleCaptureCount={visibleCaptures.length}
           />
           <PrintableReportPreview
-            isReadyForExport={isReadyForExport}
             previewPath={previewPath}
-            reportPath={reportPath}
             sessionTitle={session.title}
           />
           <GeneratedReportReview
@@ -420,8 +386,6 @@ export default async function SessionReportPreviewPage({
           isReadyForExport={isReadyForExport}
           markReviewedAction={markReviewedAction}
           missingEvidenceCount={evidence.missing.length}
-          reportPath={reportPath}
-          reportStatusItems={reportStatusItems}
           reviewedBy={reviewer?.full_name ?? session.reviewed_by}
           reviewedLabel={reviewedLabel}
           sessionId={session.id}
@@ -429,7 +393,7 @@ export default async function SessionReportPreviewPage({
           signatureCount={(signatures ?? []).length}
           visibleCaptureCount={visibleCaptures.length}
         >
-          <ExportCenter
+          <ExportPanel
             emailAction={emailAction}
             isReadyForExport={isReadyForExport}
             origin={origin}
@@ -438,12 +402,6 @@ export default async function SessionReportPreviewPage({
             sessionId={session.id}
             shareAction={shareAction}
             shareTokens={shareTokens ?? []}
-          />
-          <ReportActivity
-            currentReport={currentReport}
-            isReadyForExport={isReadyForExport}
-            reportEvents={reportEvents ?? []}
-            shareTokenCount={(shareTokens ?? []).length}
           />
         </ReportSidebar>
       </div>
@@ -497,14 +455,10 @@ function ReportOverview({
 }
 
 function PrintableReportPreview({
-  isReadyForExport,
   previewPath,
-  reportPath,
   sessionTitle,
 }: {
-  isReadyForExport: boolean;
   previewPath: string;
-  reportPath: string;
   sessionTitle: string;
 }) {
   return (
@@ -520,17 +474,6 @@ function PrintableReportPreview({
             save a printable copy.
           </p>
         </div>
-        {isReadyForExport ? (
-          <Link
-            href={reportPath}
-            className="button button-secondary touch-target"
-            target="_blank"
-          >
-            Open report
-          </Link>
-        ) : (
-          <span className="status-pill neutral">Approve to export</span>
-        )}
       </div>
       <iframe
         src={previewPath}
@@ -579,7 +522,9 @@ function GeneratedReportReview({
   const editableSections = reportSections;
   const visibleReportSections = isEditingReport
     ? editableSections
-    : editableSections.filter((section) => !isHiddenFromReport(section.metadata));
+    : editableSections.filter(
+        (section) => !isHiddenFromReport(section.metadata),
+      );
   const findingsSections = visibleReportSections.filter(
     (section) => !/recommend/i.test(section.title),
   );
@@ -590,10 +535,19 @@ function GeneratedReportReview({
     ? visibleReportSections
         .filter((section) => !isHiddenFromReport(section.metadata))
         .map((section) => section.title)
-    : ["Report summary", "Findings", "Recommendations", "Supporting material", "Approval", "Export"];
-  const includedEvidenceCount = [...photoEvidence, ...noteEvidence, ...otherEvidence].filter(
-    (item) => item.capture.include_in_report,
-  ).length;
+    : [
+        "Report summary",
+        "Findings",
+        "Recommendations",
+        "Supporting material",
+        "Approval",
+        "Export",
+      ];
+  const includedEvidenceCount = [
+    ...photoEvidence,
+    ...noteEvidence,
+    ...otherEvidence,
+  ].filter((item) => item.capture.include_in_report).length;
 
   return (
     <section className="card detail-card report-command-card form-stack generated-report-card">
@@ -602,7 +556,8 @@ function GeneratedReportReview({
           <p className="eyebrow">Generated Report</p>
           <h2>{currentReport?.title ?? session.title}</h2>
           <p className="muted">
-            Review the finished report, supporting material, notes, and discovered form fields before export.
+            Review the finished report, supporting material, notes, and
+            discovered form fields before export.
           </p>
         </div>
         {currentReport?.status === "approved" ? (
@@ -621,12 +576,15 @@ function GeneratedReportReview({
           <p>{currentReport.summary}</p>
         ) : (
           <p className="muted">
-            Capture more evidence to improve this report. CRED will place the title, summary, findings, recommendations, and supporting material here.
+            Capture more evidence to improve this report. CRED will place the
+            title, summary, findings, recommendations, and supporting material
+            here.
           </p>
         )}
         {hasPendingEvidence ? (
           <p className="notice info compact-report-notice">
-            New evidence is still being added. Refresh the report when you are ready.
+            New evidence is still being added. Refresh the report when you are
+            ready.
           </p>
         ) : null}
       </div>
@@ -656,22 +614,38 @@ function GeneratedReportReview({
       ) : null}
 
       {currentReport && isEditingReport && saveReportEditsAction ? (
-        <form action={saveReportEditsAction} className="form-stack report-edit-form">
+        <form
+          action={saveReportEditsAction}
+          className="form-stack report-edit-form"
+        >
           <div className="report-subsection report-edit-panel">
             <div className="report-section-title-row">
               <div>
                 <h3>Edit report</h3>
-                <p className="muted">Make quick corrections before approval or export.</p>
+                <p className="muted">
+                  Make quick corrections before approval or export.
+                </p>
               </div>
-              <button className="button button-primary touch-target">Save Changes</button>
+              <button className="button button-primary touch-target">
+                Save Changes
+              </button>
             </div>
             <label className="field-stack">
               <span className="label">Report title</span>
-              <input className="input" name="report_title" defaultValue={currentReport.title ?? session.title} />
+              <input
+                className="input"
+                name="report_title"
+                defaultValue={currentReport.title ?? session.title}
+              />
             </label>
             <label className="field-stack">
               <span className="label">Summary</span>
-              <textarea className="input text-area" name="report_summary" rows={5} defaultValue={currentReport.summary ?? ""} />
+              <textarea
+                className="input text-area"
+                name="report_summary"
+                rows={5}
+                defaultValue={currentReport.summary ?? ""}
+              />
             </label>
           </div>
 
@@ -679,18 +653,36 @@ function GeneratedReportReview({
             {editableSections.map((section) => {
               const included = !isHiddenFromReport(section.metadata);
               return (
-                <article key={section.id} className="report-edit-panel report-edit-item">
+                <article
+                  key={section.id}
+                  className="report-edit-panel report-edit-item"
+                >
                   <label className="report-visibility-toggle">
-                    <input type="checkbox" name={`section_include_${section.id}`} defaultChecked={included} />
-                    <span>{included ? "Hide from report" : "Show in report"}</span>
+                    <input
+                      type="checkbox"
+                      name={`section_include_${section.id}`}
+                      defaultChecked={included}
+                    />
+                    <span>
+                      {included ? "Hide from report" : "Show in report"}
+                    </span>
                   </label>
                   <label className="field-stack">
                     <span className="label">Heading</span>
-                    <input className="input" name={`section_title_${section.id}`} defaultValue={section.title} />
+                    <input
+                      className="input"
+                      name={`section_title_${section.id}`}
+                      defaultValue={section.title}
+                    />
                   </label>
                   <label className="field-stack">
                     <span className="label">Report text</span>
-                    <textarea className="input text-area" name={`section_body_${section.id}`} rows={5} defaultValue={section.body ?? ""} />
+                    <textarea
+                      className="input text-area"
+                      name={`section_body_${section.id}`}
+                      rows={5}
+                      defaultValue={section.body ?? ""}
+                    />
                   </label>
                 </article>
               );
@@ -700,7 +692,9 @@ function GeneratedReportReview({
           <section className="report-subsection report-edit-panel">
             <div>
               <h3>Supporting material</h3>
-              <p className="muted">Edit notes and choose what appears in the final report.</p>
+              <p className="muted">
+                Edit notes and choose what appears in the final report.
+              </p>
             </div>
             <EvidenceGallery
               isEditingReport
@@ -713,21 +707,42 @@ function GeneratedReportReview({
           <section className="report-subsection report-edit-panel">
             <div>
               <h3>Form fields</h3>
-              <p className="muted">Correct form details that should appear in the report.</p>
+              <p className="muted">
+                Correct form details that should appear in the report.
+              </p>
             </div>
-            <input type="hidden" name="field_count" value={sourceFieldEntries.length} />
+            <input
+              type="hidden"
+              name="field_count"
+              value={sourceFieldEntries.length}
+            />
             <div className="report-field-grid">
               {sourceFieldEntries.length > 0 ? (
                 sourceFieldEntries.map(([key, value], index) => (
-                  <div key={key} className="report-field-card report-edit-field-card">
-                    <input type="hidden" name={`field_key_${index}`} value={key} />
+                  <div
+                    key={key}
+                    className="report-field-card report-edit-field-card"
+                  >
+                    <input
+                      type="hidden"
+                      name={`field_key_${index}`}
+                      value={key}
+                    />
                     <label className="report-visibility-toggle">
-                      <input type="checkbox" name={`field_include_${index}`} defaultChecked />
+                      <input
+                        type="checkbox"
+                        name={`field_include_${index}`}
+                        defaultChecked
+                      />
                       <span>Show in report</span>
                     </label>
                     <label className="field-stack">
                       <span className="label">{key.replace(/_/g, " ")}</span>
-                      <input className="input" name={`field_value_${index}`} defaultValue={String(value)} />
+                      <input
+                        className="input"
+                        name={`field_value_${index}`}
+                        defaultValue={String(value)}
+                      />
                     </label>
                   </div>
                 ))
@@ -738,11 +753,19 @@ function GeneratedReportReview({
           </section>
 
           <div className="form-actions report-inline-actions report-primary-flow">
-            <button className="button button-primary touch-target">Save Changes</button>
-            <Link href={`/dashboard/sessions/${session.id}/report`} className="button button-secondary touch-target">
+            <button className="button button-primary touch-target">
+              Save Changes
+            </button>
+            <Link
+              href={`/dashboard/sessions/${session.id}/report`}
+              className="button button-secondary touch-target"
+            >
               Cancel
             </Link>
-            <Link href={`/dashboard/sessions/${session.id}/capture`} className="button button-secondary touch-target">
+            <Link
+              href={`/dashboard/sessions/${session.id}/capture`}
+              className="button button-secondary touch-target"
+            >
               Continue Capturing
             </Link>
           </div>
@@ -752,85 +775,94 @@ function GeneratedReportReview({
       {!isEditingReport ? (
         <>
           <div className="report-content-grid">
-        <ReportContentSection
-          title="Findings"
-          emptyText="No findings found yet. Capture more evidence to improve this report."
-          items={
-            findingsSections.length > 0
-              ? findingsSections.map((section) => ({
-                  id: section.id,
-                  title: section.title,
-                  body: section.body,
-                  badge: getSectionTone(section.status),
-                }))
-              : []
-          }
-        />
-        <ReportContentSection
-          title="Recommendations"
-          emptyText="No recommendations found yet."
-          items={recommendationSections.map((section, index) => ({
-            id: section.id,
-            title: section.title || `Recommendation ${index + 1}`,
-            body: section.body,
-            badge: getSectionTone(section.status),
-          }))}
-        />
-      </div>
-
-      <section className="report-subsection report-supporting-section">
-        <div className="report-section-title-row">
-          <div>
-            <h3>Supporting material</h3>
-            <p className="muted">Photos, notes, and saved files that support this report.</p>
+            <ReportContentSection
+              title="Findings"
+              emptyText="No findings found yet. Capture more evidence to improve this report."
+              items={
+                findingsSections.length > 0
+                  ? findingsSections.map((section) => ({
+                      id: section.id,
+                      title: section.title,
+                      body: section.body,
+                      badge: getSectionTone(section.status),
+                    }))
+                  : []
+              }
+            />
+            <ReportContentSection
+              title="Recommendations"
+              emptyText="No recommendations found yet."
+              items={recommendationSections.map((section, index) => ({
+                id: section.id,
+                title: section.title || `Recommendation ${index + 1}`,
+                body: section.body,
+                badge: getSectionTone(section.status),
+              }))}
+            />
           </div>
-          <span className="status-pill neutral compact">{includedEvidenceCount} included</span>
-        </div>
-        <EvidenceGallery
-          noteEvidence={noteEvidence}
-          otherEvidence={otherEvidence}
-          photoEvidence={photoEvidence}
-        />
-      </section>
 
-      <section className="report-subsection">
-        <div>
-          <h3>Form fields</h3>
-          <p className="muted">Details discovered from captured forms and documents.</p>
-        </div>
-        <div className="report-field-grid">
-          {sourceFieldEntries.length > 0 ? (
-            sourceFieldEntries.map(([key, value]) => (
-              <div key={key} className="report-field-card">
-                <span>{key.replace(/_/g, " ")}</span>
-                <strong>{String(value)}</strong>
+          <section className="report-subsection report-supporting-section">
+            <div className="report-section-title-row">
+              <div>
+                <h3>Supporting material</h3>
+                <p className="muted">
+                  Photos, notes, and saved files that support this report.
+                </p>
               </div>
-            ))
-          ) : (
-            <p className="muted">No form fields detected yet.</p>
-          )}
-        </div>
-      </section>
+              <span className="status-pill neutral compact">
+                {includedEvidenceCount} included
+              </span>
+            </div>
+            <EvidenceGallery
+              noteEvidence={noteEvidence}
+              otherEvidence={otherEvidence}
+              photoEvidence={photoEvidence}
+            />
+          </section>
 
-      <section className="report-subsection">
-        <div className="report-section-title-row">
-          <div>
-            <h3>Report structure</h3>
-            <p className="muted">The sections that will appear in the exported report.</p>
-          </div>
-          {currentReport ? (
-            <span className="status-pill neutral compact">{structureSections.length} sections</span>
-          ) : null}
-        </div>
-        <div className="report-structure-list">
-          {structureSections.map((title, index) => (
-            <p key={`${title}-${index}`}>
-              <span>{index + 1}</span> {title}
-            </p>
-          ))}
-        </div>
-      </section>
+          <section className="report-subsection">
+            <div>
+              <h3>Form fields</h3>
+              <p className="muted">
+                Details discovered from captured forms and documents.
+              </p>
+            </div>
+            <div className="report-field-grid">
+              {sourceFieldEntries.length > 0 ? (
+                sourceFieldEntries.map(([key, value]) => (
+                  <div key={key} className="report-field-card">
+                    <span>{key.replace(/_/g, " ")}</span>
+                    <strong>{String(value)}</strong>
+                  </div>
+                ))
+              ) : (
+                <p className="muted">No form fields detected yet.</p>
+              )}
+            </div>
+          </section>
 
+          <section className="report-subsection">
+            <div className="report-section-title-row">
+              <div>
+                <h3>Report structure</h3>
+                <p className="muted">
+                  The sections that will appear in the exported report.
+                </p>
+              </div>
+              {currentReport ? (
+                <span className="status-pill neutral compact">
+                  {structureSections.length} sections
+                </span>
+              ) : null}
+            </div>
+            <div className="report-structure-list">
+              {structureSections.map((title, index) => (
+                <p key={`${title}-${index}`}>
+                  <span>{index + 1}</span> {title}
+                </p>
+              ))}
+            </div>
+          </section>
         </>
       ) : null}
 
@@ -849,7 +881,10 @@ function GeneratedReportReview({
           Continue Capturing
         </Link>
         {currentReport && !isEditingReport ? (
-          <Link href={`/dashboard/sessions/${session.id}/report?edit=1`} className="button button-secondary touch-target">
+          <Link
+            href={`/dashboard/sessions/${session.id}/report?edit=1`}
+            className="button button-secondary touch-target"
+          >
             Edit Report
           </Link>
         ) : null}
@@ -878,7 +913,12 @@ function ReportContentSection({
   title,
 }: {
   emptyText: string;
-  items: Array<{ id: string; title: string; body: string | null; badge?: string | null }>;
+  items: Array<{
+    id: string;
+    title: string;
+    body: string | null;
+    badge?: string | null;
+  }>;
   title: string;
 }) {
   return (
@@ -887,11 +927,16 @@ function ReportContentSection({
       <div className="signature-list report-section-list">
         {items.length > 0 ? (
           items.map((item) => (
-            <article key={item.id} className="signature-list-item report-section-item">
+            <article
+              key={item.id}
+              className="signature-list-item report-section-item"
+            >
               <div>
                 <strong>{item.title}</strong>
                 {item.badge ? (
-                  <span className="status-pill neutral compact">{item.badge}</span>
+                  <span className="status-pill neutral compact">
+                    {item.badge}
+                  </span>
                 ) : null}
               </div>
               {item.body ? <p className="muted">{item.body}</p> : null}
@@ -917,22 +962,36 @@ function EvidenceGallery({
   photoEvidence: SupportingEvidenceItem[];
 }) {
   if (isEditingReport) {
-    const evidenceItems = [...photoEvidence, ...noteEvidence, ...otherEvidence].filter(
-      (item, index, items) => items.findIndex((candidate) => candidate.capture.id === item.capture.id) === index,
+    const evidenceItems = [
+      ...photoEvidence,
+      ...noteEvidence,
+      ...otherEvidence,
+    ].filter(
+      (item, index, items) =>
+        items.findIndex(
+          (candidate) => candidate.capture.id === item.capture.id,
+        ) === index,
     );
 
     return (
       <div className="review-note-list report-edit-evidence-list">
         {evidenceItems.length > 0 ? (
           evidenceItems.map((item) => (
-            <article key={item.capture.id} className="review-note-card report-edit-evidence-card">
+            <article
+              key={item.capture.id}
+              className="review-note-card report-edit-evidence-card"
+            >
               <label className="report-visibility-toggle">
                 <input
                   type="checkbox"
                   name={`capture_include_${item.capture.id}`}
                   defaultChecked={item.capture.include_in_report}
                 />
-                <span>{item.capture.include_in_report ? "Hide from report" : "Show in report"}</span>
+                <span>
+                  {item.capture.include_in_report
+                    ? "Hide from report"
+                    : "Show in report"}
+                </span>
               </label>
               <div className="report-edit-evidence-preview">
                 {item.kind === "photo" && item.signedUrl ? (
@@ -942,7 +1001,9 @@ function EvidenceGallery({
                 <strong>{item.title}</strong>
               </div>
               <label className="field-stack">
-                <span className="label">Technician notes / evidence caption</span>
+                <span className="label">
+                  Technician notes / evidence caption
+                </span>
                 <textarea
                   className="input text-area"
                   name={`capture_note_${item.capture.id}`}
@@ -1026,8 +1087,6 @@ function ReportSidebar({
   isReadyForExport,
   markReviewedAction,
   missingEvidenceCount,
-  reportPath,
-  reportStatusItems,
   reviewedBy,
   reviewedLabel,
   sessionId,
@@ -1042,8 +1101,6 @@ function ReportSidebar({
   isReadyForExport: boolean;
   markReviewedAction: ServerAction;
   missingEvidenceCount: number;
-  reportPath: string;
-  reportStatusItems: StatusItem[];
   reviewedBy: string | null;
   reviewedLabel: string | null;
   sessionId: string;
@@ -1055,31 +1112,6 @@ function ReportSidebar({
     <aside className="report-sidebar" aria-label="Report review controls">
       <section className="card detail-card report-sidebar-card form-stack">
         <div>
-          <p className="eyebrow">Review</p>
-          <h2>
-            {isReadyForExport
-              ? "Ready"
-              : currentReport
-                ? "Ready to review"
-                : "Create report"}
-          </h2>
-        </div>
-        <div className="report-status-list">
-          {reportStatusItems.map((item) => (
-            <p
-              key={item.label}
-              className={
-                item.complete ? "checkline complete" : "checkline neutral"
-              }
-            >
-              {item.complete ? "✓" : "○"} {item.label}
-            </p>
-          ))}
-        </div>
-      </section>
-
-      <section className="card detail-card report-sidebar-card form-stack">
-        <div>
           <p className="eyebrow">Ways to improve</p>
           <h2>
             {reminders.length > 0
@@ -1089,9 +1121,7 @@ function ReportSidebar({
         </div>
         <div className="coverage-reminder-list">
           {reminders.length > 0 ? (
-            reminders.map((row) => (
-              <p key={row.rule.key}>• {row.rule.label}</p>
-            ))
+            reminders.map((row) => <p key={row.rule.key}>• {row.rule.label}</p>)
           ) : (
             <p>✓ The report has the expected supporting material.</p>
           )}
@@ -1110,11 +1140,7 @@ function ReportSidebar({
       >
         <div>
           <p className="eyebrow">Ready</p>
-          <h2>
-            {isReadyForExport
-              ? "Approved"
-              : "Approve Report"}
-          </h2>
+          <h2>{isReadyForExport ? "Approved" : "Approve Report"}</h2>
           {reviewedLabel ? (
             <p className="success compact-success">
               Reviewed {reviewedLabel}
@@ -1154,7 +1180,8 @@ function ReportSidebar({
                 : "checkline neutral"
             }
           >
-            {missingEvidenceCount === 0 ? "✓" : "○"} Suggested additions considered
+            {missingEvidenceCount === 0 ? "✓" : "○"} Suggested additions
+            considered
           </p>
         </div>
         {!isReadyForExport ? (
@@ -1232,9 +1259,8 @@ function ReportSidebar({
           )}
           {isReadyForExport ? (
             <Link
-              href={reportPath}
+              href="#export-report"
               className="button button-secondary touch-target"
-              target="_blank"
             >
               3. Export
             </Link>
@@ -1254,7 +1280,7 @@ function ReportSidebar({
   );
 }
 
-function ExportCenter({
+function ExportPanel({
   emailAction,
   isReadyForExport,
   origin,
@@ -1273,53 +1299,29 @@ function ExportCenter({
   shareAction: ServerAction;
   shareTokens: ReportShareToken[];
 }) {
+  const activeShareTokens = shareTokens.filter((token) => !token.disabled_at);
+
   return (
-    <section className="card detail-card report-sidebar-card report-delivery-tabs form-stack">
+    <section
+      id="export-report"
+      className="card detail-card report-sidebar-card report-delivery-tabs export-panel form-stack"
+    >
       <div>
         <p className="eyebrow">Export</p>
         <h2>Export Report</h2>
-        {!isReadyForExport ? (
-          <p className="muted delivery-helper">
-            Available after report approval.
-          </p>
-        ) : null}
+        <p className="muted delivery-helper">
+          {isReadyForExport
+            ? "Send, share, print, or save the approved report with your latest edits."
+            : "Approve this report before exporting."}
+        </p>
       </div>
-      <input
-        className="delivery-tab-radio"
-        type="radio"
-        id="delivery-email"
-        name="delivery-tabs"
-        defaultChecked
-      />
-      <input
-        className="delivery-tab-radio"
-        type="radio"
-        id="delivery-share"
-        name="delivery-tabs"
-      />
-      <input
-        className="delivery-tab-radio"
-        type="radio"
-        id="delivery-save"
-        name="delivery-tabs"
-      />
-      <div
-        className="delivery-tab-list"
-        role="tablist"
-        aria-label="Export methods"
-      >
-        <label htmlFor="delivery-email" role="tab">
-          Email
-        </label>
-        <label htmlFor="delivery-share" role="tab">
-          Share Link
-        </label>
-        <label htmlFor="delivery-save" role="tab">
-          Save Report
-        </label>
-      </div>
-      <div className="delivery-tab-panel delivery-panel-email">
-        <form action={emailAction} className="form-stack">
+
+      <div className="export-action-stack" aria-label="Export actions">
+        <form action={emailAction} className="form-stack export-action-card">
+          <div>
+            <h3>Email</h3>
+            <p className="muted">Send a secure report link to recipients.</p>
+          </div>
           <div className="field-stack">
             <label htmlFor="recipients" className="label">
               Customer email / recipients
@@ -1330,6 +1332,7 @@ function ExportCenter({
               className="input"
               placeholder="customer@example.com, manager@example.com"
               required
+              disabled={!isReadyForExport}
             />
           </div>
           <div className="field-stack">
@@ -1341,6 +1344,7 @@ function ExportCenter({
               name="message"
               className="input text-area"
               placeholder="Please review the printable report."
+              disabled={!isReadyForExport}
             />
           </div>
           <button
@@ -1350,9 +1354,12 @@ function ExportCenter({
             Email Report
           </button>
         </form>
-      </div>
-      <div className="delivery-tab-panel delivery-panel-share">
-        <form action={shareAction} className="form-stack">
+
+        <form action={shareAction} className="form-stack export-action-card">
+          <div>
+            <h3>Share Link</h3>
+            <p className="muted">Create a secure link for this report.</p>
+          </div>
           <div className="field-stack">
             <label htmlFor="expires_at" className="label">
               Expiration date
@@ -1362,17 +1369,80 @@ function ExportCenter({
               name="expires_at"
               className="input"
               type="datetime-local"
+              disabled={!isReadyForExport}
             />
           </div>
           <button
             className="button button-secondary touch-target"
             disabled={!isReadyForExport}
           >
-            Share Link
+            Copy Share Link
           </button>
         </form>
-        <div className="compact-token-list">
-          {shareTokens.map((token) => {
+
+        <div className="export-action-card export-button-grid">
+          <div>
+            <h3>Print</h3>
+            <p className="muted">Open the printable report in a new tab.</p>
+          </div>
+          {isReadyForExport ? (
+            <Link
+              href={reportPath}
+              className="button button-secondary touch-target"
+              target="_blank"
+            >
+              Print
+            </Link>
+          ) : (
+            <span
+              className="button button-secondary touch-target disabled-action"
+              aria-disabled="true"
+            >
+              Print
+            </span>
+          )}
+        </div>
+
+        <div className="export-action-card export-button-grid">
+          <div>
+            <h3>Save</h3>
+            <p className="muted">
+              Save a PDF copy or keep this report in CRED.
+            </p>
+          </div>
+          {isReadyForExport ? (
+            <Link
+              href={reportPath}
+              className="button button-secondary touch-target"
+              target="_blank"
+            >
+              Save PDF
+            </Link>
+          ) : (
+            <span
+              className="button button-secondary touch-target disabled-action"
+              aria-disabled="true"
+            >
+              Save PDF
+            </span>
+          )}
+          <form action={saveAction}>
+            <button
+              className="button button-primary touch-target"
+              disabled={!isReadyForExport}
+            >
+              Save Report
+            </button>
+          </form>
+        </div>
+      </div>
+
+      {activeShareTokens.length > 0 ? (
+        <div
+          className="compact-token-list export-share-list"
+          aria-label="Current share links"
+        >
+          {activeShareTokens.map((token) => {
             const shareUrl = origin
               ? `${origin}/reports/share/${token.token}`
               : `/reports/share/${token.token}`;
@@ -1381,105 +1451,27 @@ function ExportCenter({
                 <div>
                   <strong>{shareUrl}</strong>
                   <p className="muted">
-                    Views: {token.view_count} · Expires:{" "}
                     {token.expires_at
-                      ? formatDateTime(token.expires_at)
-                      : "No expiration"}{" "}
-                    · {token.disabled_at ? "Disabled" : "Active"}
+                      ? `Expires ${formatDateTime(token.expires_at)}`
+                      : "No expiration"}
                   </p>
                 </div>
-                {!token.disabled_at ? (
-                  <form
-                    action={disableReportShareLink.bind(
-                      null,
-                      sessionId,
-                      token.id,
-                    )}
-                  >
-                    <button className="button button-secondary touch-target">
-                      Disable
-                    </button>
-                  </form>
-                ) : null}
+                <form
+                  action={disableReportShareLink.bind(
+                    null,
+                    sessionId,
+                    token.id,
+                  )}
+                >
+                  <button className="button button-secondary touch-target">
+                    Remove Link
+                  </button>
+                </form>
               </article>
             );
           })}
         </div>
-      </div>
-      <div className="delivery-tab-panel delivery-panel-save">
-        <p className="muted">
-          Saved reports remain accessible indefinitely unless deleted. Open the report to print or save a copy.
-        </p>
-        <form action={saveAction}>
-          <button
-            className="button button-primary touch-target"
-            disabled={!isReadyForExport}
-          >
-            Save Report
-          </button>
-        </form>
-        {isReadyForExport ? (
-          <Link
-            href={reportPath}
-            className="button button-secondary touch-target"
-            target="_blank"
-          >
-            Export
-          </Link>
-        ) : null}
-      </div>
-    </section>
-  );
-}
-
-function ReportActivity({
-  currentReport,
-  isReadyForExport,
-  reportEvents,
-  shareTokenCount,
-}: {
-  currentReport: AiReportDraft | null;
-  isReadyForExport: boolean;
-  reportEvents: ReportEvent[];
-  shareTokenCount: number;
-}) {
-  return (
-    <section className="card detail-card report-sidebar-card form-stack">
-      <div>
-        <p className="eyebrow">Export History</p>
-        <h2>Recent exports</h2>
-      </div>
-      <div className="report-activity-compact">
-        {currentReport ? <p>✓ Report created</p> : <p>○ Add evidence to create the report</p>}
-        {isReadyForExport || currentReport?.status === "approved" ? (
-          <p>✓ Report approved</p>
-        ) : (
-          <p>○ Approval needed</p>
-        )}
-        {reportEvents.slice(0, 2).map((event) => (
-          <p key={event.id}>
-            ✓ {formatReportEventLabel(event.export_type, event.status)}
-          </p>
-        ))}
-        {shareTokenCount > 0 ? <p>✓ Share link created</p> : null}
-      </div>
-      <details className="report-activity-details">
-        <summary>Full history</summary>
-        <div className="signature-list compact-history-list">
-          {reportEvents.map((event) => (
-            <article key={event.id} className="signature-list-item">
-              <strong>
-                {formatReportEventLabel(event.export_type, event.status)}
-              </strong>
-              <span>{event.status}</span>
-              <span className="muted">{formatDateTime(event.created_at)}</span>
-            </article>
-          ))}
-          {reportEvents.length === 0 ? (
-            <p className="muted">No export history yet.</p>
-          ) : null}
-        </div>
-      </details>
+      ) : null}
     </section>
   );
 }
