@@ -88,7 +88,7 @@ export async function createDocumentationSession(formData: FormData) {
     .single()
 
   if (error || !session) {
-    redirect(`/dashboard/sessions/new?error=${encodeURIComponent(error?.message ?? 'Unable to create session.')}`)
+    redirect(`/dashboard?error=${encodeURIComponent(error?.message ?? 'Unable to create session.')}`)
   }
 
   revalidatePath('/dashboard')

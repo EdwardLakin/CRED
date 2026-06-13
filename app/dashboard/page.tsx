@@ -72,17 +72,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
       <section className="hero-card operational-hero">
         <div>
-          <p className="eyebrow">Capture anything. Generate everything.</p>
           <h1>What do you want to work on?</h1>
-          <p className="hero-copy">
-            Start capturing evidence now. If you have a paper form, capture it first — CRED builds the professional report.
-          </p>
         </div>
         <div className="start-option-grid" aria-label="Start or continue work">
           <form action={createQuickCaptureSession}>
             <button className="start-option-card touch-target start-option-button">
               <strong>New Session</strong>
-              <span>Open capture immediately.</span>
+              <span>Start capturing now.</span>
             </button>
           </form>
           {continueSession ? (
@@ -98,7 +94,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         <div className="section-header">
           <div>
             <h2>Recent Sessions</h2>
-            <p className="muted">Simple status only: Capturing, Review Required, Ready, or Archived.</p>
+            <p className="muted">Open the most recent work or start fresh.</p>
           </div>
           <Link href="/dashboard/sessions" className="secondary-link touch-target">
             View all

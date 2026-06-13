@@ -57,7 +57,7 @@ export default async function SettingsPage() {
         <Link href="/dashboard/billing" className="card settings-link-card touch-target">
           <span className="eyebrow">Billing</span>
           <h2>Plan and subscription</h2>
-          <p className="muted">Review current billing status, usage, storage, AI actions, email sends, and checkout access.</p>
+          <p className="muted">Review current billing status, usage, storage, report sends, and checkout access.</p>
         </Link>
       </section>
     </main>

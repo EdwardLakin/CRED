@@ -218,19 +218,19 @@ export function getCaptureProcessingStatus(capture: CaptureItem): CaptureProcess
 export function getCaptureProcessingLabel(status: CaptureProcessingStatus) {
   switch (status) {
     case 'processing':
-      return 'Processing'
+      return 'Saving'
     case 'extracted':
       return 'Ready for review'
     case 'needs_review':
       return 'Needs review'
     case 'failed':
-      return 'Failed / Retry processing'
+      return 'Retry needed'
     case 'blocked_by_limit':
-      return 'AI limit reached'
+      return 'Saved'
     case 'ready_for_review':
-      return 'Preparing report details'
+      return 'Ready for review'
     case 'pending':
     default:
-      return 'Pending AI processing'
+      return 'Saved'
   }
 }
