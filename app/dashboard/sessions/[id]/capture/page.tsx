@@ -54,7 +54,6 @@ export default async function GuidedCapturePage({
     <main className="page-shell dashboard-shell focused-capture-shell">
       <div className="section-header page-header focused-capture-header">
         <div>
-          <p className="eyebrow guided-eyebrow">Capture anything. Generate everything.</p>
           <h1>Capture Evidence</h1>
           <p className="muted">{session.title}</p>
           <p className="muted">If you have a paper form, capture it first.</p>
@@ -73,7 +72,7 @@ export default async function GuidedCapturePage({
           sessionType={session.session_type}
           returnPath={`/dashboard/sessions/${session.id}/capture#main-capture-card`}
           captureButtonLabel="Camera"
-          helperText="Capture photos, choose from gallery, add a voice note, or type a note. CRED builds the report in the background."
+          helperText="Capture photos, choose from gallery, add a voice note, or type a note."
           commonCaptureText=""
           showSuggestedCaptureText={false}
           stickyDoneHref={`/dashboard/sessions/${session.id}/report`}

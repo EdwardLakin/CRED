@@ -30,7 +30,7 @@ export function RecentCapturesList({ captures, signedUrls, limit = 6 }: { captur
   const recentCaptures = captures.filter((capture) => !capture.deleted_at).slice(0, limit)
 
   if (recentCaptures.length === 0) {
-    return <div className="empty-state capture-empty-state">No captures yet. Use Capture Evidence to add photos, videos, voice notes, or text notes.</div>
+    return <div className="empty-state capture-empty-state">No captures yet. Use Camera, Gallery, Voice Note, or Text Note to add evidence.</div>
   }
 
   return (
