@@ -10,13 +10,13 @@ type DashboardNavigationItem = {
 }
 
 const primaryItems: DashboardNavigationItem[] = [
-  { href: '/dashboard', label: 'Dashboard', description: 'Workspace overview' },
-  { href: '/dashboard/sessions', label: 'Sessions', description: 'Evidence documentation' },
+  { href: '/dashboard', label: 'Dashboard', description: 'Start and resume' },
+  { href: '/dashboard/sessions', label: 'Sessions', description: 'Session history' },
+  { href: '/dashboard/templates', label: 'Form Profiles', description: 'Report context library' },
 ]
 
 const managementItems: DashboardNavigationItem[] = [
   { href: '/dashboard/settings', label: 'Settings', description: 'Workspace controls' },
-  { href: '/dashboard/templates', label: 'Form Profiles', description: 'Report context library' },
   { href: '/dashboard/billing', label: 'Billing', description: 'Plan and subscription' },
 ]
 

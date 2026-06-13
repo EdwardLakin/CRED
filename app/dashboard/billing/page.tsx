@@ -10,11 +10,14 @@ interface BillingPageProps {
 
 export default async function BillingPage({ searchParams }: BillingPageProps) {
   const params = await searchParams
+  const checkoutPlan = parseBillingPlan(params.checkout) ?? undefined
   const { supabase, profile } = await requireSessionWorkspace()
   const billingAccess = getOrganizationBillingAccess(profile.organization)
   const billingPlan = parseBillingPlan(billingAccess.plan) ?? 'individual'
   const currentPlan = getPlanDisplayName(profile.organization.plan) ?? 'Individual'
   const subscriptionStatus = profile.organization.subscription_status ?? 'not started'
+  const selectedCheckoutPlan = checkoutPlan ?? billingPlan
+  const billingButtonLabel = subscriptionStatus === 'active' ? 'Manage Billing' : 'Subscribe Now'
   const dateFormatter = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' })
   const trialEndsAt = profile.organization.trial_ends_at
     ? dateFormatter.format(new Date(profile.organization.trial_ends_at))
@@ -25,6 +28,19 @@ export default async function BillingPage({ searchParams }: BillingPageProps) {
       {params.billing === 'success' ? <div className="success">Billing checkout completed. Your subscription is being synced.</div> : null}
       {params.billing === 'cancelled' ? <div className="success">Checkout was cancelled. You can start again when you are ready.</div> : null}
       {params.error ? <p className="error">{params.error}</p> : null}
+      {checkoutPlan ? (
+        <Card className="dashboard-card billing-checkout-callout">
+          <div className="section-header">
+            <div>
+              <strong>Ready to subscribe to {getPlanDisplayName(checkoutPlan)}?</strong>
+              <p className="muted">Start checkout when you are ready. Your workspace remains available during the trial.</p>
+            </div>
+            <BillingCheckoutButton plan={checkoutPlan} className="button button-primary billing-manage-button">
+              Start Checkout
+            </BillingCheckoutButton>
+          </div>
+        </Card>
+      ) : null}
 
       <div className="section-header page-header">
         <div>
@@ -51,6 +67,17 @@ export default async function BillingPage({ searchParams }: BillingPageProps) {
           <div>
             <strong>Access</strong>
             <p className="muted">{billingAccess.hasAccess ? 'Active' : 'Checkout required'}</p>
+          </div>
+          <div className="workspace-actions">
+            {subscriptionStatus === 'active' ? (
+              <button type="button" className="button button-secondary billing-manage-button" disabled>
+                {billingButtonLabel}
+              </button>
+            ) : (
+              <BillingCheckoutButton plan={selectedCheckoutPlan} className="button button-secondary billing-manage-button">
+                {billingButtonLabel}
+              </BillingCheckoutButton>
+            )}
           </div>
         </div>
       </Card>

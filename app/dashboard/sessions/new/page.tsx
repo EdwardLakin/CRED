@@ -5,8 +5,15 @@ import { createDocumentationSession } from '@/features/sessions/actions'
 import { SESSION_TYPES } from '@/features/sessions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
-export default async function NewSessionPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
-  const { error } = await searchParams
+function getDefaultSessionType(type: string | undefined) {
+  if (type === 'inspection') return 'Inspection'
+  if (type === 'field_service_report') return 'field_service_report'
+  return 'General Documentation'
+}
+
+export default async function NewSessionPage({ searchParams }: { searchParams: Promise<{ error?: string; type?: string }> }) {
+  const { error, type } = await searchParams
+  const defaultSessionType = getDefaultSessionType(type)
   const { supabase, profile } = await requireSessionWorkspace()
   const { data: templates } = await supabase
     .from('documentation_workflow_templates')
@@ -28,7 +35,8 @@ export default async function NewSessionPage({ searchParams }: { searchParams: P
       <div>
         <h1>New Documentation Session</h1>
         <p className="muted">
-          Create an evidence package for field documentation. Capture evidence naturally, add context, and let CRED organize the report draft later.
+          Create an evidence package for field documentation. Capture evidence naturally, add context, and let CRED organize the
+          report draft later. Choose a starting point. You can still capture evidence in any order.
         </p>
       </div>
 
@@ -53,7 +61,7 @@ export default async function NewSessionPage({ searchParams }: { searchParams: P
           <label htmlFor="session_type" className="label">
             Session Type
           </label>
-          <select id="session_type" name="session_type" required defaultValue="Inspection" className="select">
+          <select id="session_type" name="session_type" required defaultValue={defaultSessionType} className="select">
             {SESSION_TYPES.map((sessionType) => (
               <option key={sessionType.value} value={sessionType.value}>
                 {sessionType.label}
@@ -74,7 +82,7 @@ export default async function NewSessionPage({ searchParams }: { searchParams: P
               </option>
             ))}
           </select>
-          <p className="muted">A Form Profile helps CRED organize the final report. It does not control the order of your inspection. You can still capture evidence without a profile.</p>
+          <p className="muted">A Form Profile helps CRED organize the final report. It does not control your capture order. You can still capture evidence without a profile.</p>
         </div>
 
         <button className="button button-primary touch-target">Create Session</button>

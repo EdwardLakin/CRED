@@ -1,15 +1,14 @@
 import Link from 'next/link'
 
+import { signOut } from '../actions'
 import { ThemeToggle } from '@/components/theme'
-import { Card } from '@/components/ui'
-import { getPlanDisplayName } from '@/features/billing'
+import { Button, Card } from '@/components/ui'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
 export default async function SettingsPage() {
   const { profile } = await requireSessionWorkspace()
   const organization = profile.organization
   const industry = organization.industry || 'Not set'
-  const plan = getPlanDisplayName(organization.plan) ?? 'Individual'
 
   return (
     <main className="page-shell dashboard-shell">
@@ -17,15 +16,16 @@ export default async function SettingsPage() {
         <div>
           <p className="eyebrow">Settings</p>
           <h1>Workspace settings</h1>
-          <p className="muted">Manage organization defaults, form profiles, billing, and your workspace experience.</p>
-        </div>
-        <div className="page-actions">
-          <ThemeToggle />
+          <p className="muted">Manage account details, organization context, display preferences, and workspace controls.</p>
         </div>
       </div>
 
       <Card className="dashboard-card workspace-card">
         <div className="dashboard-grid settings-summary-grid">
+          <div>
+            <strong>User</strong>
+            <p className="muted">{profile.full_name}</p>
+          </div>
           <div>
             <strong>Organization</strong>
             <p className="muted">{organization.name}</p>
@@ -34,13 +34,13 @@ export default async function SettingsPage() {
             <strong>Industry</strong>
             <p className="muted">{industry}</p>
           </div>
-          <div>
-            <strong>Plan</strong>
-            <p className="muted plan-name">{plan}</p>
-          </div>
-          <div>
-            <strong>Signed in as</strong>
-            <p className="muted">{profile.full_name}</p>
+          <div className="workspace-actions">
+            <ThemeToggle />
+            <form action={signOut} className="sign-out-form">
+              <Button type="submit" variant="secondary">
+                Sign out
+              </Button>
+            </form>
           </div>
         </div>
       </Card>
@@ -54,7 +54,7 @@ export default async function SettingsPage() {
         <Link href="/dashboard/billing" className="card settings-link-card touch-target">
           <span className="eyebrow">Billing</span>
           <h2>Plan and subscription</h2>
-          <p className="muted">Review current billing status and choose the plan that fits your organization.</p>
+          <p className="muted">Review current billing status, usage, storage, AI actions, email sends, and checkout access.</p>
         </Link>
       </section>
     </main>

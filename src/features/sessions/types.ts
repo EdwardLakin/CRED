@@ -14,11 +14,8 @@ export const SESSION_STATUSES: Array<{ value: SessionStatus; label: string }> = 
 
 export const SESSION_TYPES = [
   { value: 'Inspection', label: 'Inspection' },
-  { value: 'Diagnostic', label: 'Diagnostic' },
-  { value: 'Condition Report', label: 'Condition Report' },
-  { value: 'Investigation', label: 'Investigation' },
+  { value: 'field_service_report', label: 'Service Report' },
   { value: 'General Documentation', label: 'General Documentation' },
-  { value: 'field_service_report', label: 'New Field Service Report' },
 ] as const
 
 export type SessionType = (typeof SESSION_TYPES)[number]['value']

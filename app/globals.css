@@ -2758,3 +2758,82 @@ a:focus-visible {
   cursor: not-allowed;
   opacity: 0.7;
 }
+
+.operational-hero {
+  flex-direction: column;
+}
+
+.hero-copy-guardrail {
+  font-weight: 800;
+}
+
+.start-option-grid,
+.empty-start-actions {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: 100%;
+}
+
+.start-option-card {
+  background: rgb(255 255 255 / 0.16);
+  border: 1px solid rgb(255 255 255 / 0.28);
+  border-radius: 20px;
+  color: var(--hero-foreground);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 132px;
+  padding: 20px;
+  text-decoration: none;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.start-option-card:hover,
+.start-option-card:focus-visible {
+  background: rgb(255 255 255 / 0.24);
+  border-color: rgb(255 255 255 / 0.52);
+  transform: translateY(-2px);
+}
+
+.start-option-card strong {
+  font-size: 1.08rem;
+}
+
+.start-option-card span {
+  color: var(--hero-muted);
+  line-height: 1.5;
+}
+
+.session-card-action {
+  align-items: center;
+  background: var(--primary-soft);
+  border-radius: 999px;
+  color: var(--primary);
+  display: inline-flex;
+  font-weight: 900;
+  min-height: 34px;
+  padding: 8px 12px;
+}
+
+.dashboard-empty-card {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  text-align: center;
+}
+
+.empty-secondary-link {
+  justify-content: center;
+}
+
+@media (max-width: 980px) {
+  .start-option-grid,
+  .empty-start-actions {
+    grid-template-columns: 1fr;
+  }
+}
