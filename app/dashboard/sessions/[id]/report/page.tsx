@@ -14,6 +14,7 @@ import {
   generateAiReportDraft,
   markReportReviewed,
   saveReport,
+  saveReportEdits,
 } from "@/features/reports/actions";
 import { formatReportEventLabel } from "@/features/reports/labels";
 import { formatDateTime } from "@/features/sessions";
@@ -79,6 +80,10 @@ function getSectionTone(status: string | null) {
   return null;
 }
 
+function isHiddenFromReport(metadata: unknown) {
+  return isRecord(metadata) && metadata.hidden_from_report === true;
+}
+
 function isPhotoCapture(capture: CaptureItem) {
   return (
     capture.media_kind === "image" ||
@@ -119,6 +124,8 @@ export default async function SessionReportPreviewPage({
     disabled?: string;
     draft?: string;
     emailed?: string;
+    edit?: string;
+    edited?: string;
     error?: string;
     reviewed?: string;
     saved?: string;
@@ -218,7 +225,9 @@ export default async function SessionReportPreviewPage({
     session.session_type,
     template?.required_evidence ?? null,
   );
-  const visibleCaptures = captures ?? [];
+  const allCaptures = captures ?? [];
+  const includedCaptures = allCaptures.filter((capture) => capture.include_in_report);
+  const visibleCaptures = status.edit ? allCaptures : includedCaptures;
   const signedEvidenceUrls: Record<string, string> = {};
   await Promise.all(
     visibleCaptures.map(async (capture) => {
@@ -264,7 +273,11 @@ export default async function SessionReportPreviewPage({
   const approveReportContentAction = currentReport
     ? approveAiReportDraft.bind(null, currentReport.id)
     : null;
+  const saveReportEditsAction = currentReport
+    ? saveReportEdits.bind(null, currentReport.id)
+    : null;
   const sourceFieldEntries = getDisplayEntries(currentReport?.header_fields);
+  const isEditingReport = status.edit === "1";
   const findingCount = getArrayCount(currentReport?.findings);
   const measurementCount = getArrayCount(currentReport?.measurements);
   const unmappedEvidenceCount = getArrayCount(
@@ -345,6 +358,9 @@ export default async function SessionReportPreviewPage({
         {status.saved ? (
           <p className="success">Report saved.</p>
         ) : null}
+        {status.edited ? (
+          <p className="success">Report changes saved.</p>
+        ) : null}
         {status.reviewed ? (
           <p className="success">Approved and ready to export.</p>
         ) : null}
@@ -382,6 +398,7 @@ export default async function SessionReportPreviewPage({
             approveReportContentAction={approveReportContentAction}
             currentReport={currentReport}
             findingCount={findingCount}
+            isEditingReport={isEditingReport}
             measurementCount={measurementCount}
             generateReportAction={generateReportAction}
             hasPendingEvidence={hasPendingEvidence}
@@ -389,6 +406,7 @@ export default async function SessionReportPreviewPage({
             otherEvidence={otherEvidence}
             photoEvidence={photoEvidence}
             session={session}
+            saveReportEditsAction={saveReportEditsAction}
             sourceFieldEntries={sourceFieldEntries}
             unmappedEvidenceCount={unmappedEvidenceCount}
             visibleCaptureCount={visibleCaptures.length}
@@ -531,10 +549,12 @@ function GeneratedReportReview({
   measurementCount,
   generateReportAction,
   hasPendingEvidence,
+  isEditingReport,
   noteEvidence,
   otherEvidence,
   photoEvidence,
   session,
+  saveReportEditsAction,
   sourceFieldEntries,
   unmappedEvidenceCount,
   visibleCaptureCount,
@@ -546,23 +566,34 @@ function GeneratedReportReview({
   measurementCount: number;
   generateReportAction: ServerAction;
   hasPendingEvidence: boolean;
+  isEditingReport: boolean;
   noteEvidence: SupportingEvidenceItem[];
   otherEvidence: SupportingEvidenceItem[];
   photoEvidence: SupportingEvidenceItem[];
   session: Pick<DocumentationSession, "id" | "title">;
+  saveReportEditsAction: ServerAction | null;
   sourceFieldEntries: [string, unknown][];
   unmappedEvidenceCount: number;
   visibleCaptureCount: number;
 }) {
-  const findingsSections = reportSections.filter(
+  const editableSections = reportSections;
+  const visibleReportSections = isEditingReport
+    ? editableSections
+    : editableSections.filter((section) => !isHiddenFromReport(section.metadata));
+  const findingsSections = visibleReportSections.filter(
     (section) => !/recommend/i.test(section.title),
   );
-  const recommendationSections = reportSections.filter((section) =>
+  const recommendationSections = visibleReportSections.filter((section) =>
     /recommend/i.test(`${section.title} ${section.body ?? ""}`),
   );
   const structureSections = currentReport
-    ? reportSections.map((section) => section.title)
+    ? visibleReportSections
+        .filter((section) => !isHiddenFromReport(section.metadata))
+        .map((section) => section.title)
     : ["Report summary", "Findings", "Recommendations", "Supporting material", "Approval", "Export"];
+  const includedEvidenceCount = [...photoEvidence, ...noteEvidence, ...otherEvidence].filter(
+    (item) => item.capture.include_in_report,
+  ).length;
 
   return (
     <section className="card detail-card report-command-card form-stack generated-report-card">
@@ -624,7 +655,103 @@ function GeneratedReportReview({
         </form>
       ) : null}
 
-      <div className="report-content-grid">
+      {currentReport && isEditingReport && saveReportEditsAction ? (
+        <form action={saveReportEditsAction} className="form-stack report-edit-form">
+          <div className="report-subsection report-edit-panel">
+            <div className="report-section-title-row">
+              <div>
+                <h3>Edit report</h3>
+                <p className="muted">Make quick corrections before approval or export.</p>
+              </div>
+              <button className="button button-primary touch-target">Save Changes</button>
+            </div>
+            <label className="field-stack">
+              <span className="label">Report title</span>
+              <input className="input" name="report_title" defaultValue={currentReport.title ?? session.title} />
+            </label>
+            <label className="field-stack">
+              <span className="label">Summary</span>
+              <textarea className="input text-area" name="report_summary" rows={5} defaultValue={currentReport.summary ?? ""} />
+            </label>
+          </div>
+
+          <div className="report-content-grid">
+            {editableSections.map((section) => {
+              const included = !isHiddenFromReport(section.metadata);
+              return (
+                <article key={section.id} className="report-edit-panel report-edit-item">
+                  <label className="report-visibility-toggle">
+                    <input type="checkbox" name={`section_include_${section.id}`} defaultChecked={included} />
+                    <span>{included ? "Hide from report" : "Show in report"}</span>
+                  </label>
+                  <label className="field-stack">
+                    <span className="label">Heading</span>
+                    <input className="input" name={`section_title_${section.id}`} defaultValue={section.title} />
+                  </label>
+                  <label className="field-stack">
+                    <span className="label">Report text</span>
+                    <textarea className="input text-area" name={`section_body_${section.id}`} rows={5} defaultValue={section.body ?? ""} />
+                  </label>
+                </article>
+              );
+            })}
+          </div>
+
+          <section className="report-subsection report-edit-panel">
+            <div>
+              <h3>Supporting material</h3>
+              <p className="muted">Edit notes and choose what appears in the final report.</p>
+            </div>
+            <EvidenceGallery
+              isEditingReport
+              noteEvidence={noteEvidence}
+              otherEvidence={otherEvidence}
+              photoEvidence={photoEvidence}
+            />
+          </section>
+
+          <section className="report-subsection report-edit-panel">
+            <div>
+              <h3>Form fields</h3>
+              <p className="muted">Correct form details that should appear in the report.</p>
+            </div>
+            <input type="hidden" name="field_count" value={sourceFieldEntries.length} />
+            <div className="report-field-grid">
+              {sourceFieldEntries.length > 0 ? (
+                sourceFieldEntries.map(([key, value], index) => (
+                  <div key={key} className="report-field-card report-edit-field-card">
+                    <input type="hidden" name={`field_key_${index}`} value={key} />
+                    <label className="report-visibility-toggle">
+                      <input type="checkbox" name={`field_include_${index}`} defaultChecked />
+                      <span>Show in report</span>
+                    </label>
+                    <label className="field-stack">
+                      <span className="label">{key.replace(/_/g, " ")}</span>
+                      <input className="input" name={`field_value_${index}`} defaultValue={String(value)} />
+                    </label>
+                  </div>
+                ))
+              ) : (
+                <p className="muted">No form fields detected yet.</p>
+              )}
+            </div>
+          </section>
+
+          <div className="form-actions report-inline-actions report-primary-flow">
+            <button className="button button-primary touch-target">Save Changes</button>
+            <Link href={`/dashboard/sessions/${session.id}/report`} className="button button-secondary touch-target">
+              Cancel
+            </Link>
+            <Link href={`/dashboard/sessions/${session.id}/capture`} className="button button-secondary touch-target">
+              Continue Capturing
+            </Link>
+          </div>
+        </form>
+      ) : null}
+
+      {!isEditingReport ? (
+        <>
+          <div className="report-content-grid">
         <ReportContentSection
           title="Findings"
           emptyText="No findings found yet. Capture more evidence to improve this report."
@@ -657,7 +784,7 @@ function GeneratedReportReview({
             <h3>Supporting material</h3>
             <p className="muted">Photos, notes, and saved files that support this report.</p>
           </div>
-          <span className="status-pill neutral compact">{visibleCaptureCount} included</span>
+          <span className="status-pill neutral compact">{includedEvidenceCount} included</span>
         </div>
         <EvidenceGallery
           noteEvidence={noteEvidence}
@@ -704,6 +831,9 @@ function GeneratedReportReview({
         </div>
       </section>
 
+        </>
+      ) : null}
+
       <div className="report-proof-strip">
         <span>{findingCount} findings</span>
         <span>{recommendationSections.length} recommendations</span>
@@ -718,6 +848,11 @@ function GeneratedReportReview({
         >
           Continue Capturing
         </Link>
+        {currentReport && !isEditingReport ? (
+          <Link href={`/dashboard/sessions/${session.id}/report?edit=1`} className="button button-secondary touch-target">
+            Edit Report
+          </Link>
+        ) : null}
         {currentReport ? (
           <form action={generateReportAction}>
             <button className="button button-secondary touch-target">
@@ -771,14 +906,59 @@ function ReportContentSection({
 }
 
 function EvidenceGallery({
+  isEditingReport = false,
   noteEvidence,
   otherEvidence,
   photoEvidence,
 }: {
+  isEditingReport?: boolean;
   noteEvidence: SupportingEvidenceItem[];
   otherEvidence: SupportingEvidenceItem[];
   photoEvidence: SupportingEvidenceItem[];
 }) {
+  if (isEditingReport) {
+    const evidenceItems = [...photoEvidence, ...noteEvidence, ...otherEvidence].filter(
+      (item, index, items) => items.findIndex((candidate) => candidate.capture.id === item.capture.id) === index,
+    );
+
+    return (
+      <div className="review-note-list report-edit-evidence-list">
+        {evidenceItems.length > 0 ? (
+          evidenceItems.map((item) => (
+            <article key={item.capture.id} className="review-note-card report-edit-evidence-card">
+              <label className="report-visibility-toggle">
+                <input
+                  type="checkbox"
+                  name={`capture_include_${item.capture.id}`}
+                  defaultChecked={item.capture.include_in_report}
+                />
+                <span>{item.capture.include_in_report ? "Hide from report" : "Show in report"}</span>
+              </label>
+              <div className="report-edit-evidence-preview">
+                {item.kind === "photo" && item.signedUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured.
+                  <img src={item.signedUrl} alt={item.title} />
+                ) : null}
+                <strong>{item.title}</strong>
+              </div>
+              <label className="field-stack">
+                <span className="label">Technician notes / evidence caption</span>
+                <textarea
+                  className="input text-area"
+                  name={`capture_note_${item.capture.id}`}
+                  rows={3}
+                  defaultValue={item.note ?? ""}
+                />
+              </label>
+            </article>
+          ))
+        ) : (
+          <p className="muted">No supporting material added yet.</p>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="evidence-gallery-shell">
       <div>
