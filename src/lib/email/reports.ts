@@ -85,7 +85,7 @@ function buildTextEmail(input: SendReportEmailInput) {
   lines.push(
     `Secure printable report link: ${input.reportUrl}`,
     '',
-    'Use your browser Print or Share menu to save as PDF.',
+    'Use your browser Print or Share menu to save a printable report.',
   )
 
   return lines.join('\n')
@@ -108,7 +108,7 @@ function buildHtmlEmail(input: SendReportEmailInput) {
       </dl>
       ${customMessageHtml}
       <p><a href="${escapeHtml(input.reportUrl)}" style="display: inline-block; padding: 10px 14px; border-radius: 8px; background: #111827; color: #ffffff; text-decoration: none;">Open Printable Report</a></p>
-      <p>Use your browser Print or Share menu to save as PDF.</p>
+      <p>Use your browser Print or Share menu to save a printable report.</p>
       <p style="color: #6b7280; font-size: 14px;">Secure printable report link: <a href="${escapeHtml(input.reportUrl)}">${escapeHtml(input.reportUrl)}</a></p>
     </div>
   `

@@ -148,7 +148,7 @@ Notes:
 - [ ] `SENDGRID_API_KEY` has Mail Send permission.
 - [ ] API key is production-safe and not restricted to an unrelated sandbox/domain.
 - [ ] Test printable report email sends to at least two recipient domains.
-- [ ] Email includes a secure printable report link and “Print / Save as PDF” guidance.
+- [ ] Email includes a secure printable report link and “Print / Save Report” guidance.
 - [ ] Recipient can open the link without login.
 - [ ] Disabled/expired share links stop working.
 
@@ -275,7 +275,7 @@ Run this in production before beta invites and again before paid ads.
 - [ ] Confirm a new printable HTML report opens.
 - [ ] Confirm Content-Type is HTML, not binary PDF.
 - [ ] Confirm report includes captures, notes, extracted fields, signatures, and organization/session details.
-- [ ] Use browser Print / Save as PDF and confirm output is acceptable.
+- [ ] Use browser Print / Save Report and confirm output is acceptable.
 
 ### L. Email printable report through SendGrid
 
@@ -371,7 +371,7 @@ Use these copy constraints everywhere before launch:
 - Say **AI-assisted extraction/classification**, not fully automated compliance.
 - Say **Documentation-only charges/subscription**, not invoicing/accounting.
 - Say **Optional GPS start/end points**, not live tracking.
-- Say **Use your browser Print / Share menu to save as PDF** when explaining report output.
+- Say **Use your browser Print / Share menu to save a printable report** when explaining report output.
 - Do not imply CRED dispatches technicians, schedules jobs, creates invoices, collects customer payment, manages parts inventory, or syncs with external systems.
 
 ## 7. Launch Decision

@@ -10,7 +10,7 @@ True binary PDF generation is **not implemented** for the MVP. The current depen
 
 ## User-facing copy
 
-The product now describes this flow as a **Printable Report**. Buttons and report-page instructions use honest labels such as “Open Printable Report” and “Print / Save as PDF.” The report route continues to return `text/html`, and the page instructs users to use their browser’s Print or Share menu to save as PDF.
+The product now describes this flow as a **Printable Report**. Buttons and report-page instructions use honest labels such as “Open Printable Report” and “Print / Save Report.” The report route continues to return `text/html`, and the page instructs users to use their browser’s Print or Share menu to save a printable report.
 
 ## Future PDF hardening
 
