@@ -167,6 +167,7 @@ function buildFieldServiceReportHtml({
   signatureUrls,
   reportDraft,
   reportSections,
+  showToolbar = true,
 }: {
   session: ReportSession
   organizationName: string
@@ -176,6 +177,7 @@ function buildFieldServiceReportHtml({
   signatureUrls: Record<string, string>
   reportDraft: ReportDraft | null
   reportSections: ReportDraftSection[]
+  showToolbar?: boolean
 }) {
   const details = normalizeFieldServiceDetails(session.field_service_details)
   const headerRows = [
@@ -204,9 +206,10 @@ function buildFieldServiceReportHtml({
   const signaturesHtml = buildSignaturesHtml(signatures, signatureUrls)
   const generatedReportHtml = buildGeneratedReportHtml(reportDraft, reportSections)
   const reportTitle = reportDraft?.title || session.title
+  const toolbarHtml = showToolbar ? '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>' : ''
 
   return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(reportTitle)} printable field service report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report"><div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div><header class="header"><p class="eyebrow">Printable Report</p><h1>${escapeHtml(reportTitle)}</h1><p>${escapeHtml(organizationName)}</p><p class="meta">Documentation-only service report · ${escapeHtml(new Date().toLocaleDateString())}</p>${renderDefinitionRows(headerRows)}</header>${generatedReportHtml}${renderFieldServiceSection(details, 'equipment')}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work performed</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Evidence</h2><p class="muted">Evidence items reference captured photos, videos, documents, and technician notes.</p></section>${evidenceHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges / documentation only</h2>${renderDefinitionRows(chargeRows)}</section><section class="item service-section"><h2>Signature requirements</h2>${renderDefinitionRows(signatureRows)}</section>${signaturesHtml}</main></body></html>`
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Printable Report</p><h1>${escapeHtml(reportTitle)}</h1><p>${escapeHtml(organizationName)}</p><p class="meta">Documentation-only service report · ${escapeHtml(new Date().toLocaleDateString())}</p>${renderDefinitionRows(headerRows)}</header>${generatedReportHtml}${renderFieldServiceSection(details, 'equipment')}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work performed</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Evidence</h2><p class="muted">Evidence items reference captured photos, videos, documents, and technician notes.</p></section>${evidenceHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges / documentation only</h2>${renderDefinitionRows(chargeRows)}</section><section class="item service-section"><h2>Signature requirements</h2>${renderDefinitionRows(signatureRows)}</section>${signaturesHtml}</main></body></html>`
 }
 
 const REPORT_STYLES = `
@@ -215,12 +218,12 @@ const REPORT_STYLES = `
 
 function getAiSummary(extractedData: Json | null, fallback: string | null) {
   if (fallback) return fallback
-  if (!isRecord(extractedData)) return 'AI review pending.'
+  if (!isRecord(extractedData)) return 'Review pending.'
   const extraction = isRecord(extractedData.extraction) ? extractedData.extraction : null
   if (typeof extraction?.summary === 'string' && extraction.summary.trim()) return extraction.summary.trim()
   const classification = isRecord(extractedData.classification) ? extractedData.classification : null
   if (typeof classification?.label === 'string') return `Evidence identified as ${classification.label}.`
-  return 'AI review pending.'
+  return 'Review pending.'
 }
 
 export async function GET(_request: Request, { params }: RouteContext) {
@@ -284,7 +287,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
 
     if (!previewOnly && ownedSession.review_status !== 'ready_for_delivery') {
       redirect(
-        `/dashboard/sessions/${id}/report?error=${encodeURIComponent('Review and mark this report ready before delivery.')}`,
+        `/dashboard/sessions/${id}/report?error=${encodeURIComponent('Approve this report before exporting.')}`,
       )
     }
 
@@ -370,7 +373,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     ? session.organizations.name
     : 'CRED'
   if (isFieldServiceSessionType(session.session_type)) {
-    const html = buildFieldServiceReportHtml({ session, organizationName, captureItems, signedUrls, signatures: reportSignatures, signatureUrls, reportDraft, reportSections })
+    const html = buildFieldServiceReportHtml({ session, organizationName, captureItems, signedUrls, signatures: reportSignatures, signatureUrls, reportDraft, reportSections, showToolbar: !previewOnly })
     return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
   }
 
@@ -404,8 +407,9 @@ export async function GET(_request: Request, { params }: RouteContext) {
     </article>`
   }).join('')
 
+  const toolbarHtml = previewOnly ? '' : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>'
   const html = `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report"><div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div><header class="header"><p class="eyebrow">Printable Report</p><h1>${escapeHtml(reportTitle)}</h1><p>${escapeHtml(organizationName)}</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'No asset details')} · ${escapeHtml(new Date().toLocaleDateString())}</p></header>${generatedReportHtml}${itemsHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}${buildSignaturesHtml(reportSignatures, signatureUrls)}</main></body></html>`
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Printable Report</p><h1>${escapeHtml(reportTitle)}</h1><p>${escapeHtml(organizationName)}</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'No asset details')} · ${escapeHtml(new Date().toLocaleDateString())}</p></header>${generatedReportHtml}${itemsHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}${buildSignaturesHtml(reportSignatures, signatureUrls)}</main></body></html>`
 
   return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
 }

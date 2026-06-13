@@ -68,7 +68,7 @@ function requireReportReadyForDelivery(sessionId: string, session: { review_stat
   if (!reportIsReadyForDelivery(session)) {
     redirect(
       getReportRedirectPath(sessionId, {
-        error: 'Review and approve this report draft before delivery.',
+        error: 'Approve this report before exporting.',
       }),
     )
   }
@@ -82,7 +82,7 @@ export async function markReportReviewed(sessionId: string, formData: FormData) 
   if (missingEvidenceCount > 0 && !missingEvidenceAcknowledged) {
     redirect(
       getReportRedirectPath(session.id, {
-        error: 'Acknowledge unresolved coverage suggestions before approving this report draft.',
+        error: 'Please confirm you considered the suggestions before approving this report.',
       }),
     )
   }
@@ -348,10 +348,10 @@ function getDraftStatus(confidence: number, sectionCount: number): 'draft' | 'ne
 
 function getReportDraftErrorMessage(error: unknown) {
   if (error instanceof Error && error.message === 'OPENAI_API_KEY_MISSING') {
-    return 'AI Draft generation is not configured yet.'
+    return 'Report generation is not configured yet.'
   }
 
-  return error instanceof Error && error.message ? error.message : 'AI Draft could not be generated. Please try again.'
+  return error instanceof Error && error.message ? error.message : 'Report could not be generated. Please try again.'
 }
 
 export async function generateAiReportDraft(sessionId: string) {
@@ -481,7 +481,7 @@ export async function generateAiReportDraft(sessionId: string) {
     .single()
 
   if (draftError || !draft) {
-    redirect(getReportRedirectPath(session.id, { error: draftError?.message ?? 'Could not save AI Draft.' }))
+    redirect(getReportRedirectPath(session.id, { error: draftError?.message ?? 'Could not save report.' }))
   }
 
   if (draftOutput.sections.length > 0) {
@@ -674,7 +674,7 @@ export async function approveAiReportDraft(draftId: string) {
     .single()
 
   if (draftError || !draft) {
-    redirect('/dashboard?error=AI Draft not found.')
+    redirect('/dashboard?error=Report not found.')
   }
 
   const { data: session, error: sessionError } = await supabase
