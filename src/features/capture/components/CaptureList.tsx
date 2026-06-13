@@ -78,18 +78,18 @@ function formatExtractedFields(fields: { [key: string]: Json | undefined }) {
 }
 
 function getClassificationSummary(extractedData: Json | null) {
-  if (!extractedData || !isRecord(extractedData)) return { label: 'Needs classification', detectedType: null, status: 'pending', confidence: null }
+  if (!extractedData || !isRecord(extractedData)) return { label: 'Processing evidence', detectedType: null, status: 'pending', confidence: null }
   const classification = isRecord(extractedData.classification) ? extractedData.classification : null
   const detectedType = typeof classification?.detected_type === 'string' ? classification.detected_type : null
   const status = typeof classification?.status === 'string' ? classification.status : 'pending'
   if (detectedType) {
     const confidence = formatConfidence(classification?.confidence)
-    return { label: `Detected: ${formatDetectedType(detectedType)}${confidence ? ` · ${confidence}` : ''}`, detectedType, status, confidence }
+    return { label: `Evidence: ${formatDetectedType(detectedType)}${confidence ? ` · ${confidence}` : ''}`, detectedType, status, confidence }
   }
   if (status === 'manual_document') return { label: 'Document selected manually', detectedType: 'document', status, confidence: null }
   if (status === 'manual_audio') return { label: 'Audio note selected manually', detectedType: 'voice_note', status, confidence: null }
   if (status === 'manual_text_note') return { label: 'Text note saved', detectedType: 'text_note', status, confidence: null }
-  return { label: 'Needs classification', detectedType: null, status, confidence: null }
+  return { label: 'Processing evidence', detectedType: null, status, confidence: null }
 }
 
 
@@ -103,7 +103,7 @@ function getCaptureStatusVariant(status: string) {
 
 function formatExtractedDataSummary(type: string, extractedData: Json | null) {
   const classification = getClassificationSummary(extractedData)
-  if (!extractedData || !isRecord(extractedData)) return `${classification.label} · Extraction not started`
+  if (!extractedData || !isRecord(extractedData)) return `${classification.label} · Report details not started`
   const extraction = isRecord(extractedData.extraction) ? extractedData.extraction : null
   const extractionStatusRaw = typeof extraction?.status === 'string' ? extraction.status : null
   const extractionFields = extraction && isRecord(extraction.fields) ? extraction.fields : null
@@ -114,10 +114,10 @@ function formatExtractedDataSummary(type: string, extractedData: Json | null) {
     return `${extractionStatusRaw === 'extracted' ? 'Extracted' : 'Needs review'}: ${extractedFieldsSummary}${extractionConfidence ? ` · ${extractionConfidence}` : ''}`
   }
 
-  if (extractionStatusRaw === 'failed') return `Extraction failed${typeof extraction?.summary === 'string' ? `: ${extraction.summary}` : ''}`
+  if (extractionStatusRaw === 'failed') return `Report detail processing failed${typeof extraction?.summary === 'string' ? `: ${extraction.summary}` : ''}`
   if (type === 'text_note') return 'Text note evidence · No media upload required'
   if (type === 'video') return `${classification.label} · Video still/thumbnail used for report output`
-  return `${classification.label} · Extraction ${extractionStatusRaw?.replace(/_/g, ' ') ?? 'not started'}`
+  return `${classification.label} · Report details ${extractionStatusRaw?.replace(/_/g, ' ') ?? 'not started'}`
 }
 
 function SaveButton() {

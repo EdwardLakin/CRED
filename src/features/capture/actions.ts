@@ -881,7 +881,7 @@ function classificationActionMessage(
   const total = classifiedCount + needsReviewCount
 
   if (total === 0) {
-    return 'No pending captures need classification.'
+    return 'No pending captures need processing.'
   }
 
   const captureWord = total === 1 ? 'capture' : 'captures'
@@ -890,7 +890,7 @@ function classificationActionMessage(
       ? '1 needs review.'
       : `${needsReviewCount} need review.`
 
-  return `Classified ${total} ${captureWord}. ${reviewSuffix}`
+  return `Processed ${total} ${captureWord}. ${reviewSuffix}`
 }
 
 function getClassificationStatus(
@@ -1353,13 +1353,13 @@ function extractionActionMessage(
   suggestionCount: number,
 ) {
   if (extractedCount === 0) {
-    return 'No classified captures are ready for extraction.'
+    return 'No captures are ready for report detail processing.'
   }
 
   const captureWord = extractedCount === 1 ? 'capture' : 'captures'
   const suggestionWord = suggestionCount === 1 ? 'suggestion' : 'suggestions'
 
-  return `Extracted details from ${extractedCount} ${captureWord}. ${suggestionCount} session ${suggestionWord} ready.`
+  return `Prepared report details from ${extractedCount} ${captureWord}. ${suggestionCount} session ${suggestionWord} ready.`
 }
 
 function getSourceDocumentDetectedType(
@@ -1694,7 +1694,7 @@ export async function extractCaptureDetails(
     })
     return {
       ok: false,
-      message: 'Unable to load classified captures for extraction.',
+      message: 'Unable to load captures for report detail processing.',
     }
   }
 
@@ -1710,7 +1710,7 @@ export async function extractCaptureDetails(
   if (extractableCaptures.length === 0) {
     return {
       ok: false,
-      message: 'Classify captures before extracting details.',
+      message: 'Process captures before preparing report details.',
     }
   }
 
@@ -1752,7 +1752,7 @@ export async function extractCaptureDetails(
         await markCaptureExtractionFailed(
           capture,
           supabase,
-          'Unable to prepare image for extraction.',
+          'Unable to prepare image for report detail processing.',
         )
         continue
       }
@@ -2025,7 +2025,7 @@ export async function processPendingCapturesForSession(sessionId: string): Promi
       }
 
       if (!workingCapture.storage_path) {
-        await markCaptureExtractionFailed(workingCapture, supabase, 'No media file is available for extraction.')
+        await markCaptureExtractionFailed(workingCapture, supabase, 'No media file is available for report detail processing.')
         summary.failed += 1
         continue
       }
@@ -2042,7 +2042,7 @@ export async function processPendingCapturesForSession(sessionId: string): Promi
           captureId: workingCapture.id,
           ...getSafeErrorDetails(signedUrlError),
         })
-        await markCaptureExtractionFailed(workingCapture, supabase, 'Unable to prepare image for extraction.')
+        await markCaptureExtractionFailed(workingCapture, supabase, 'Unable to prepare image for report detail processing.')
         summary.failed += 1
         continue
       }

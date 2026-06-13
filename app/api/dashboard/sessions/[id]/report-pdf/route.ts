@@ -131,7 +131,7 @@ function buildEvidenceItemsHtml(captureItems: ReportCapture[], signedUrls: Recor
       <h2>Item ${index + 1}</h2>
       <div class="media">${mediaHtml}<div class="note"><strong>Technician note</strong><p>${escapeHtml(note)}</p></div></div>
       <section class="finding"><h3>AI finding / extracted details</h3><p>${escapeHtml(getAiSummary(capture.extracted_data, capture.ai_summary))}</p>
-      ${fields.length > 0 ? renderDefinitionRows(fields) : '<p>Structured extraction pending.</p>'}</section>
+      ${fields.length > 0 ? renderDefinitionRows(fields) : '<p>Report details pending.</p>'}</section>
     </article>`
   }).join('')
 }
@@ -191,7 +191,7 @@ function getAiSummary(extractedData: Json | null, fallback: string | null) {
   const extraction = isRecord(extractedData.extraction) ? extractedData.extraction : null
   if (typeof extraction?.summary === 'string' && extraction.summary.trim()) return extraction.summary.trim()
   const classification = isRecord(extractedData.classification) ? extractedData.classification : null
-  if (typeof classification?.label === 'string') return `Classified as ${classification.label}.`
+  if (typeof classification?.label === 'string') return `Evidence identified as ${classification.label}.`
   return 'AI review pending.'
 }
 
@@ -345,7 +345,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
       <h2>Item ${index + 1}</h2>
       <div class="media">${mediaHtml}<div class="note"><strong>Technician note</strong><p>${escapeHtml(note)}</p></div></div>
       <section class="finding"><h3>AI finding / extracted details</h3><p>${escapeHtml(getAiSummary(capture.extracted_data, capture.ai_summary))}</p>
-      ${fields.length > 0 ? `<dl>${fields.map((field) => `<div><dt>${escapeHtml(field.label)}</dt><dd>${escapeHtml(field.value)}</dd></div>`).join('')}</dl>` : '<p>Structured extraction pending.</p>'}</section>
+      ${fields.length > 0 ? `<dl>${fields.map((field) => `<div><dt>${escapeHtml(field.label)}</dt><dd>${escapeHtml(field.value)}</dd></div>`).join('')}</dl>` : '<p>Report details pending.</p>'}</section>
     </article>`
   }).join('')
 

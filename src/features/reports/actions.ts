@@ -205,7 +205,7 @@ export async function emailReport(sessionId: string, formData: FormData) {
     redirect(getReportRedirectPath(session.id, { error: emailAllowance.message }))
   }
 
-  const subject = `Inspection Report - ${session.title}`
+  const subject = `CRED Report - ${session.title}`
   let providerMessageId: string
 
   try {

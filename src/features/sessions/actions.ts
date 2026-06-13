@@ -14,7 +14,7 @@ import {
 } from '@/features/field-service'
 import type { Database, Json } from '@/lib/supabase/database.types'
 
-import { requireSessionWorkspace } from './data'
+import { hasInternalAdminAccess, requireSessionWorkspace } from './data'
 import { DEFAULT_SESSION_TYPE, SESSION_STATUSES, SESSION_TYPES, type SessionStatus } from './types'
 
 function getTrimmedValue(formData: FormData, field: string) {
@@ -64,10 +64,10 @@ export async function createDocumentationSession(formData: FormData) {
   const requestedSessionType = getTrimmedValue(formData, 'session_type')
   const title = requestedTitle || getDefaultSessionTitle()
   const sessionType = isAllowedSessionType(requestedSessionType) ? requestedSessionType : DEFAULT_SESSION_TYPE
-  const workflowTemplateId = getNullableValue(formData, 'workflow_template_id')
-
+  const requestedWorkflowTemplateId = getNullableValue(formData, 'workflow_template_id')
 
   const { supabase, profile } = await requireSessionWorkspace()
+  const workflowTemplateId = hasInternalAdminAccess(profile) ? requestedWorkflowTemplateId : null
   const billingAccess = requireActiveBillingAccess(profile)
 
   if (!billingAccess.ok) {

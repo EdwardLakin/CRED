@@ -7,7 +7,7 @@ import { createQuickCaptureSession } from '@/features/sessions/actions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
 interface DashboardPageProps {
-  searchParams: Promise<{ billing?: string; checkout?: string; error?: string }>
+  searchParams: Promise<{ billing?: string; checkout?: string; error?: string; notice?: string }>
 }
 
 function getCaptureCounts(captures: Array<{ documentation_session_id: string }> | null) {
@@ -28,7 +28,7 @@ function getContinueSession(sessions: Array<{ id: string; status: string }>) {
 }
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
-  const { billing, checkout, error: dashboardError } = await searchParams
+  const { billing, checkout, error: dashboardError, notice } = await searchParams
 
   if (billing || checkout) {
     const params = new URLSearchParams()
@@ -66,6 +66,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   return (
     <main className="page-shell dashboard-shell">
       {dashboardError ? <p className="error">{dashboardError}</p> : null}
+      {notice === 'internal-admin-only' ? (
+        <p className="success">That internal admin area is hidden from normal capture work. Start or continue a session below.</p>
+      ) : null}
 
       <section className="hero-card operational-hero">
         <div>

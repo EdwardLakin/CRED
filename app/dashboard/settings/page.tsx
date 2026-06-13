@@ -3,12 +3,13 @@ import Link from 'next/link'
 import { signOut } from '../actions'
 import { ThemeToggle } from '@/components/theme'
 import { Button, Card } from '@/components/ui'
-import { requireSessionWorkspace } from '@/features/sessions/data'
+import { hasInternalAdminAccess, requireSessionWorkspace } from '@/features/sessions/data'
 
 export default async function SettingsPage() {
   const { profile } = await requireSessionWorkspace()
   const organization = profile.organization
   const industry = organization.industry || 'Not set'
+  const canManageInternalTools = hasInternalAdminAccess(profile)
 
   return (
     <main className="page-shell dashboard-shell">
@@ -46,11 +47,13 @@ export default async function SettingsPage() {
       </Card>
 
       <section className="settings-link-grid" aria-label="Settings areas">
-        <Link href="/dashboard/templates" className="card settings-link-card touch-target">
-          <span className="eyebrow">Form Profiles</span>
-          <h2>Form Profile management</h2>
-          <p className="muted">Import, edit, duplicate, archive, and delete reusable form profiles for report context.</p>
-        </Link>
+        {canManageInternalTools ? (
+          <Link href="/dashboard/templates" className="card settings-link-card touch-target">
+            <span className="eyebrow">Internal / Admin</span>
+            <h2>Report context library</h2>
+            <p className="muted">Admin-only compatibility tools for reusable report context. Normal evidence capture does not require setup.</p>
+          </Link>
+        ) : null}
         <Link href="/dashboard/billing" className="card settings-link-card touch-target">
           <span className="eyebrow">Billing</span>
           <h2>Plan and subscription</h2>

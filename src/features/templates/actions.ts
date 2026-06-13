@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
 import { requireActiveBillingAccess } from '@/features/billing'
-import { requireSessionWorkspace } from '@/features/sessions/data'
+import { requireInternalAdminWorkspace } from '@/features/sessions/data'
 import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import { analyzeTemplateUpload } from './analyzer'
 import { SYSTEM_TEMPLATES, toJson, type EvidenceRequirement } from './types'
@@ -46,10 +46,10 @@ export async function importTemplate(formData: FormData) {
 
   const mimeType = file.type || 'application/octet-stream'
   if (!ALLOWED_TYPES.has(mimeType)) {
-    redirect('/dashboard/settings/templates?error=Form%20Profile%20uploads%20support%20PDF%2C%20DOCX%2C%20images%2C%20and%20paper%20form%20photos.')
+    redirect('/dashboard/settings/templates?error=Report%20context%20uploads%20support%20PDF%2C%20DOCX%2C%20images%2C%20and%20paper%20form%20photos.')
   }
 
-  const { supabase, profile } = await requireSessionWorkspace()
+  const { supabase, profile } = await requireInternalAdminWorkspace()
   const billingAccess = requireActiveBillingAccess(profile)
 
   if (!billingAccess.ok) {
@@ -92,7 +92,7 @@ export async function importTemplate(formData: FormData) {
     .single()
 
   if (importError || !templateImport) {
-    redirect(`/dashboard/settings/templates?error=${encodeURIComponent(importError?.message ?? 'Unable to save form profile import.')}`)
+    redirect(`/dashboard/settings/templates?error=${encodeURIComponent(importError?.message ?? 'Unable to save report context import.')}`)
   }
 
   const { error: templateError } = await supabase.from('documentation_workflow_templates').insert({
@@ -136,14 +136,14 @@ export async function importTemplate(formData: FormData) {
 
 export async function saveTemplate(templateId: string, formData: FormData) {
   const name = getString(formData, 'name')
-  if (!name) redirect('/dashboard/settings/templates?error=Form%20Profile%20name%20is%20required.')
+  if (!name) redirect('/dashboard/settings/templates?error=Report%20context%20name%20is%20required.')
   const description = getString(formData, 'description')
   const sections = parseLines(getString(formData, 'sections'))
   const fields = parseLines(getString(formData, 'fields'))
   const requiredEvidence = parseLines(getString(formData, 'required_evidence')).map((label) => buildRequirement(label, true))
   const optionalEvidence = parseLines(getString(formData, 'recommended_evidence')).map((label) => buildRequirement(label, false))
   const signatureRequirements = parseLines(getString(formData, 'signature_requirements')).map((label) => buildRequirement(label, !label.toLowerCase().includes('optional')))
-  const { supabase, profile } = await requireSessionWorkspace()
+  const { supabase, profile } = await requireInternalAdminWorkspace()
   const billingAccess = requireActiveBillingAccess(profile)
 
   if (!billingAccess.ok) {
@@ -168,8 +168,8 @@ export async function saveTemplate(templateId: string, formData: FormData) {
 
 export async function duplicateSystemTemplate(index: number) {
   const draft = SYSTEM_TEMPLATES[index]
-  if (!draft) redirect('/dashboard/settings/templates?error=System%20Form%20Profile%20not%20found.')
-  const { supabase, profile } = await requireSessionWorkspace()
+  if (!draft) redirect('/dashboard/settings/templates?error=System%20report%20context%20not%20found.')
+  const { supabase, profile } = await requireInternalAdminWorkspace()
   const billingAccess = requireActiveBillingAccess(profile)
 
   if (!billingAccess.ok) {
@@ -195,7 +195,7 @@ export async function duplicateSystemTemplate(index: number) {
 }
 
 export async function duplicateOrganizationTemplate(templateId: string) {
-  const { supabase, profile } = await requireSessionWorkspace()
+  const { supabase, profile } = await requireInternalAdminWorkspace()
   const billingAccess = requireActiveBillingAccess(profile)
 
   if (!billingAccess.ok) {
@@ -203,7 +203,7 @@ export async function duplicateOrganizationTemplate(templateId: string) {
   }
 
   const { data: template, error: loadError } = await supabase.from('documentation_workflow_templates').select('*').eq('id', templateId).eq('organization_id', profile.organization_id).single()
-  if (loadError || !template) redirect('/dashboard/settings/templates?error=Form%20Profile%20not%20found.')
+  if (loadError || !template) redirect('/dashboard/settings/templates?error=Report%20context%20not%20found.')
   const { error } = await supabase.from('documentation_workflow_templates').insert({
     organization_id: profile.organization_id,
     name: `${template.name} Copy`,
@@ -224,7 +224,7 @@ export async function duplicateOrganizationTemplate(templateId: string) {
 }
 
 export async function archiveTemplate(templateId: string) {
-  const { supabase, profile } = await requireSessionWorkspace()
+  const { supabase, profile } = await requireInternalAdminWorkspace()
   const billingAccess = requireActiveBillingAccess(profile)
 
   if (!billingAccess.ok) {
@@ -238,7 +238,7 @@ export async function archiveTemplate(templateId: string) {
 }
 
 export async function deleteTemplate(templateId: string) {
-  const { supabase, profile } = await requireSessionWorkspace()
+  const { supabase, profile } = await requireInternalAdminWorkspace()
   const billingAccess = requireActiveBillingAccess(profile)
 
   if (!billingAccess.ok) {

@@ -9,7 +9,7 @@ const INITIAL_STATE: CaptureClassificationActionState = {}
 function SubmitButton({ pending }: { pending: boolean }) {
   return (
     <button type="submit" className="button button-secondary touch-target" disabled={pending}>
-      {pending ? 'Classifying captures…' : 'Classify pending captures'}
+      {pending ? 'Processing evidence…' : 'Process pending evidence'}
     </button>
   )
 }
