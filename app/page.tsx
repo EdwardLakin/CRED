@@ -96,7 +96,7 @@ const faqs = [
   ['Who is CRED built for?', 'CRED is built for technicians, inspectors, fleet teams, mechanical shops, property teams, and service organizations that need defensible field documentation.'],
   ['What does the AI do?', 'AI helps classify captures, extract field details, summarize context, and prepare documentation for human review before sharing or printing.'],
   ['Can I use CRED for CVIP and fleet inspections?', 'CRED helps document evidence and prepare a report package. It does not replace regulated inspection forms or procedures.'],
-  ['Can I save reports as PDF?', 'Yes. CRED opens polished printable reports that you can save as PDF from your browser’s Print or Share menu for customers, claims, regulated documentation packages, and internal records.'],
+  ['Can I save reports as PDF?', 'Yes. CRED opens polished printable reports that you can save from your browser’s Print or Share menu for customers, claims, regulated documentation packages, and internal records.'],
 ] as const
 
 export default async function HomePage() {
