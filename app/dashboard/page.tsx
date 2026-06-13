@@ -1,28 +1,63 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 
-import { signOut } from './actions'
-import { ThemeToggle } from '@/components/theme'
-import { Button, Card } from '@/components/ui'
-import { getOrganizationBillingAccess, getPlanDisplayName, parseBillingPlan } from '@/features/billing'
-import { BillingCheckoutButton } from '@/features/billing/components/BillingCheckoutButton'
-import { EmptyState, SessionCard } from '@/features/sessions'
+import { Card } from '@/components/ui'
+import { SessionCard } from '@/features/sessions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
-import { UsageSummaryCard } from '@/features/usage'
 
 interface DashboardPageProps {
   searchParams: Promise<{ billing?: string; checkout?: string; error?: string }>
 }
 
+const startOptions = [
+  { href: '/dashboard/sessions/new?type=inspection', label: 'New Inspection', description: 'Start from an inspection context.' },
+  { href: '/dashboard/sessions/new?type=field_service_report', label: 'New Service Report', description: 'Start from a service report context.' },
+  { href: '/dashboard/sessions/new', label: 'New Documentation Session', description: 'Start with general evidence documentation.' },
+]
+
+function getLatestDraftStatuses(
+  drafts: Array<{ documentation_session_id: string; status: string; updated_at: string }> | null,
+) {
+  const latestDraftStatusBySession = new Map<string, string>()
+
+  for (const draft of drafts ?? []) {
+    if (!latestDraftStatusBySession.has(draft.documentation_session_id)) {
+      latestDraftStatusBySession.set(draft.documentation_session_id, draft.status)
+    }
+  }
+
+  return latestDraftStatusBySession
+}
+
+function getCaptureCounts(captures: Array<{ documentation_session_id: string }> | null) {
+  const captureCountBySession = new Map<string, number>()
+
+  for (const capture of captures ?? []) {
+    captureCountBySession.set(
+      capture.documentation_session_id,
+      (captureCountBySession.get(capture.documentation_session_id) ?? 0) + 1,
+    )
+  }
+
+  return captureCountBySession
+}
+
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const { billing, checkout, error: dashboardError } = await searchParams
-  const checkoutPlan = parseBillingPlan(checkout) ?? undefined
+
+  if (billing || checkout) {
+    const params = new URLSearchParams()
+    if (billing) params.set('billing', billing)
+    if (checkout) params.set('checkout', checkout)
+    redirect(`/dashboard/billing?${params.toString()}`)
+  }
+
   const { supabase, profile } = await requireSessionWorkspace()
-  const industry = profile.organization.industry || 'Not set'
   const { data: sessions, error } = await supabase
     .from('documentation_sessions')
     .select('*')
     .eq('organization_id', profile.organization_id)
-    .order('created_at', { ascending: false })
+    .order('updated_at', { ascending: false })
     .limit(5)
 
   if (error) {
@@ -30,114 +65,55 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   }
 
   const recentSessions = sessions ?? []
-  const billingAccess = getOrganizationBillingAccess(profile.organization)
-  const billingPlan = parseBillingPlan(billingAccess.plan) ?? 'individual'
-  const selectedCheckoutPlan = checkoutPlan ?? billingPlan
-  const currentPlan = getPlanDisplayName(profile.organization.plan) ?? 'Individual'
-  const subscriptionStatus = profile.organization.subscription_status ?? 'not started'
-  const dateFormatter = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' })
-  const trialEndsAt = profile.organization.trial_ends_at
-    ? dateFormatter.format(new Date(profile.organization.trial_ends_at))
-    : 'Expired'
-  const billingButtonLabel = subscriptionStatus === 'active' ? 'Manage Billing' : 'Subscribe Now'
+  const sessionIds = recentSessions.map((session) => session.id)
+  const [{ data: captures }, { data: drafts }] = sessionIds.length > 0
+    ? await Promise.all([
+        supabase
+          .from('capture_items')
+          .select('documentation_session_id')
+          .eq('organization_id', profile.organization_id)
+          .in('documentation_session_id', sessionIds)
+          .is('deleted_at', null),
+        supabase
+          .from('ai_report_drafts')
+          .select('documentation_session_id, status, updated_at')
+          .eq('organization_id', profile.organization_id)
+          .in('documentation_session_id', sessionIds)
+          .order('updated_at', { ascending: false }),
+      ])
+    : [{ data: null }, { data: null }]
+
+  const captureCountBySession = getCaptureCounts(captures)
+  const latestDraftStatusBySession = getLatestDraftStatuses(drafts)
 
   return (
     <main className="page-shell dashboard-shell">
-      {billing === 'success' ? <div className="success">Billing checkout completed. Your subscription is being synced.</div> : null}
-      {billing === 'cancelled' ? <div className="success">Checkout was cancelled. You can start again when you are ready.</div> : null}
       {dashboardError ? <p className="error">{dashboardError}</p> : null}
-      {checkoutPlan ? (
-        <Card className="dashboard-card billing-checkout-callout">
-          <div className="section-header">
-            <div>
-              <strong>Ready to subscribe to {getPlanDisplayName(checkoutPlan)}?</strong>
-              <p className="muted">Start checkout when you are ready. Your dashboard remains available during the trial.</p>
-            </div>
-            <BillingCheckoutButton plan={checkoutPlan} className="button button-primary billing-manage-button">
-              Start Checkout
-            </BillingCheckoutButton>
-          </div>
-        </Card>
-      ) : null}
-      <section className="hero-card">
+
+      <section className="hero-card operational-hero">
         <div>
           <p className="eyebrow">Evidence documentation</p>
-          <h1>Capture evidence and establish the timeline.</h1>
+          <h1>Start documentation faster.</h1>
           <p className="hero-copy">
-            Welcome back, {profile.full_name}. Start an evidence package, record field details, and keep work organized by status.
+            Capture evidence, add notes, and let CRED organize the report draft after the work is done.
           </p>
+          <p className="hero-copy hero-copy-guardrail">Choose a starting point. You can still capture evidence in any order.</p>
         </div>
-        <Link href="/dashboard/sessions/new" className="button button-primary touch-target hero-action">
-          New Documentation Session
-        </Link>
+        <div className="start-option-grid" aria-label="Start a documentation session">
+          {startOptions.map((option) => (
+            <Link key={option.href} href={option.href} className="start-option-card touch-target">
+              <strong>{option.label}</strong>
+              <span>{option.description}</span>
+            </Link>
+          ))}
+        </div>
       </section>
-
-      <Card className="dashboard-card workspace-card">
-        <div className="dashboard-grid">
-          <div>
-            <strong>User</strong>
-            <p className="muted">{profile.full_name}</p>
-          </div>
-          <div>
-            <strong>Organization</strong>
-            <p className="muted">{profile.organization.name}</p>
-          </div>
-          <div>
-            <strong>Industry</strong>
-            <p className="muted">{industry}</p>
-          </div>
-          <div className="workspace-actions">
-            <ThemeToggle />
-            <form action={signOut} className="sign-out-form">
-              <Button type="submit" variant="secondary">
-                Sign out
-              </Button>
-            </form>
-          </div>
-        </div>
-      </Card>
-
-
-
-      <UsageSummaryCard organizationId={profile.organization_id} plan={billingPlan} supabase={supabase} />
-
-      <Card className="dashboard-card workspace-card billing-state-card">
-        <div className="dashboard-grid">
-          <div>
-            <strong>Current Plan</strong>
-            <p className="muted plan-name">{currentPlan}</p>
-          </div>
-          <div>
-            <strong>Subscription Status</strong>
-            <p className="muted">{subscriptionStatus}</p>
-          </div>
-          <div>
-            <strong>Trial ends date</strong>
-            <p className="muted">{trialEndsAt}</p>
-          </div>
-          <div className="workspace-actions">
-            {subscriptionStatus === 'active' ? (
-              <button type="button" className="button button-secondary billing-manage-button" disabled>
-                {billingButtonLabel}
-              </button>
-            ) : (
-              <BillingCheckoutButton plan={selectedCheckoutPlan} className="button button-secondary billing-manage-button">
-                {billingButtonLabel}
-              </BillingCheckoutButton>
-            )}
-          </div>
-        </div>
-      </Card>
-
-      {billingAccess.trialExpired ? (
-        <p className="error">Your trial has ended. Subscribe to continue.</p>
-      ) : null}
 
       <section className="stack" aria-label="Recent sessions">
         <div className="section-header">
           <div>
             <h2>Recent Sessions</h2>
-            <p className="muted">Newest documentation sessions for your organization.</p>
+            <p className="muted">Resume capture work or review the latest report drafts for your organization.</p>
           </div>
           <Link href="/dashboard/sessions" className="secondary-link touch-target">
             View all
@@ -147,16 +123,35 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         {recentSessions.length > 0 ? (
           <div className="session-list-grid">
             {recentSessions.map((session) => (
-              <SessionCard key={session.id} session={session} dateMode="created" />
+              <SessionCard
+                key={session.id}
+                session={session}
+                evidenceCount={captureCountBySession.get(session.id)}
+                aiDraftStatus={latestDraftStatusBySession.get(session.id)}
+                showOperationalAction
+              />
             ))}
           </div>
         ) : (
-          <EmptyState
-            title="Import a Form Profile when you want reusable report context, or start an evidence package without one."
-            description="Form Profiles save uploaded forms for reuse and provide report sections, fields, measurements, signature areas, and coverage suggestions after evidence is captured."
-            actionHref="/dashboard/templates"
-            actionLabel="Import Form Profile"
-          />
+          <Card className="dashboard-card dashboard-empty-card">
+            <div className="empty-state session-empty-state">
+              <div className="empty-icon" aria-hidden="true">
+                📋
+              </div>
+              <h2>Start your first documentation session.</h2>
+              <p className="muted">Choose a starting point now, then capture evidence naturally and add report context when it helps.</p>
+            </div>
+            <div className="empty-start-actions" aria-label="Start your first documentation session">
+              {startOptions.map((option) => (
+                <Link key={option.href} href={option.href} className="button button-primary touch-target">
+                  {option.label}
+                </Link>
+              ))}
+            </div>
+            <Link href="/dashboard/templates" className="secondary-link touch-target empty-secondary-link">
+              Manage Form Profiles
+            </Link>
+          </Card>
         )}
       </section>
     </main>

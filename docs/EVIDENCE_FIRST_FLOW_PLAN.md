@@ -621,3 +621,11 @@ Capture save is intentionally separated from AI analysis. After Supabase Storage
 Recent capture cards, session summaries, and report drafting now surface background status (`pending`, `processing`, `extracted`, `needs_review`, `failed`, or `blocked_by_limit`). Manual processing actions remain available as recovery actions, not required normal-flow steps.
 
 See [Background Capture Processing](./BACKGROUND_CAPTURE_PROCESSING.md) for the lifecycle, idempotency rules, usage-limit behavior, and future queue upgrade path.
+
+## June 13, 2026 refinement: operational dashboard
+
+- Dashboard is now operational only: it focuses on starting a documentation session and resuming recent session history.
+- Account, organization, industry, theme, and sign-out controls moved to Settings.
+- Current plan, subscription status, usage, storage, AI actions, email sends, and billing controls moved to Billing.
+- Dashboard start buttons are context shortcuts for Inspection, Service Report, and General Documentation; they are not separate workflows or products.
+- The new session page can preselect the requested session type from a query parameter while preserving optional Form Profiles and evidence-first copy.
