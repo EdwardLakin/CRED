@@ -50,6 +50,21 @@ export type EvidenceGroup = {
   recommendations: string[]
 }
 
+type StructuredReportItem = {
+  source_capture_id?: string
+  label?: string
+  component?: string
+  location?: string
+  value?: string
+  unit?: string
+  status?: string
+  title?: string
+  condition?: string
+  severity?: string
+  recommendation?: string
+  notes?: string
+}
+
 export type FormStructureSummary = {
   isFormStructured: boolean
   sourceCaptureIds: string[]
@@ -144,6 +159,41 @@ export function fieldRowsFromCapture(capture: CaptureLike): NormalizedFormField[
     .slice(0, 40)
 }
 
+
+function normalizeStructuredItems(value: Json | null | undefined): StructuredReportItem[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item): StructuredReportItem[] => {
+    if (!isRecord(item)) return []
+    return [{
+      source_capture_id: clean(item.source_capture_id, 120) || undefined,
+      label: clean(item.label, 160) || undefined,
+      component: clean(item.component, 160) || undefined,
+      location: clean(item.location, 160) || undefined,
+      value: clean(item.value, 160) || undefined,
+      unit: clean(item.unit, 80) || undefined,
+      status: clean(item.status, 160) || undefined,
+      title: clean(item.title, 180) || undefined,
+      condition: clean(item.condition, 1000) || undefined,
+      severity: clean(item.severity, 160) || undefined,
+      recommendation: clean(item.recommendation, 1000) || undefined,
+      notes: clean(item.notes, 1000) || undefined,
+    }]
+  })
+}
+
+function formatMeasurement(item: StructuredReportItem) {
+  const subject = [item.label, item.component, item.location].filter(Boolean).join(' — ') || 'Measurement'
+  const measuredValue = [item.value, item.unit].filter(Boolean).join(' ')
+  const supporting = [measuredValue, item.status, item.notes].filter(Boolean).join(' · ')
+  return supporting ? `${subject}: ${supporting}` : subject
+}
+
+function formatFinding(item: StructuredReportItem) {
+  const title = [item.title, item.component, item.location].filter(Boolean).join(' — ') || 'Observed condition'
+  const details = [item.condition, item.severity, item.notes].filter(Boolean).join(' · ')
+  return details ? `${title}: ${details}` : title
+}
+
 function labelRowsFromText(capture: CaptureLike): NormalizedFormField[] {
   const labels = Array.from(new Set((capture.ocr_text ?? '').split(/\n| {2,}|\t|\|/)
     .map((part) => clean(part.replace(/[:_\-–—]+$/g, ''), 80))
@@ -208,7 +258,7 @@ export function normalizeDraftSections(sections: DraftSectionLike[], captures: C
   })
 }
 
-export function buildEvidenceGroups(captures: CaptureLike[], sections: DraftSectionLike[] = []): EvidenceGroup[] {
+export function buildEvidenceGroups(captures: CaptureLike[], sections: DraftSectionLike[] = [], measurements: Json | null = [], findings: Json | null = []): EvidenceGroup[] {
   const groups = new Map(captures.map((capture) => [capture.id, { capture_id: capture.id, details: [] as EvidenceDetail[], findings: [] as string[], recommendations: [] as string[] }]))
   for (const capture of captures) {
     const group = groups.get(capture.id)
@@ -219,6 +269,20 @@ export function buildEvidenceGroups(captures: CaptureLike[], sections: DraftSect
     if (summary) group.details.push({ label: 'Observed condition', value: summary })
     for (const field of fieldRowsFromCapture(capture).slice(0, 8)) group.details.push({ label: labelize(field.key), value: field.value })
   }
+  normalizeStructuredItems(measurements).forEach((measurement) => {
+    const id = measurement.source_capture_id
+    const group = id ? groups.get(id) : undefined
+    if (!group) return
+    group.details.push({ label: 'Measurement', value: formatMeasurement(measurement) })
+  })
+  normalizeStructuredItems(findings).forEach((finding) => {
+    const id = finding.source_capture_id
+    const group = id ? groups.get(id) : undefined
+    if (!group) return
+    group.findings.push(formatFinding(finding))
+    if (finding.recommendation) group.recommendations.push(finding.recommendation)
+  })
+
   for (const section of sections) {
     const titleAndBody = `${section.title} ${section.body ?? ''}`
     const isRecommendation = /recommend|replace|repair|correct/i.test(titleAndBody)
@@ -230,6 +294,22 @@ export function buildEvidenceGroups(captures: CaptureLike[], sections: DraftSect
     }
   }
   return Array.from(groups.values())
+}
+
+
+export function buildUnattachedStructuredDetails(captures: CaptureLike[], measurements: Json | null = [], findings: Json | null = []): EvidenceDetail[] {
+  const captureIds = new Set(captures.map((capture) => capture.id))
+  const details: EvidenceDetail[] = []
+  for (const measurement of normalizeStructuredItems(measurements)) {
+    if (measurement.source_capture_id && captureIds.has(measurement.source_capture_id)) continue
+    details.push({ label: 'Measurement', value: formatMeasurement(measurement) })
+  }
+  for (const finding of normalizeStructuredItems(findings)) {
+    if (finding.source_capture_id && captureIds.has(finding.source_capture_id)) continue
+    details.push({ label: 'Observed condition', value: formatFinding(finding) })
+    if (finding.recommendation) details.push({ label: 'Recommendation', value: finding.recommendation })
+  }
+  return details
 }
 
 export function getFormStructureSummary(reportStructure: Json | null, sections: NormalizedReportSection[]): FormStructureSummary {

@@ -8,6 +8,7 @@ import {
 } from "@/features/capture";
 import {
   buildEvidenceGroups,
+  buildUnattachedStructuredDetails,
   deriveFormSectionsFromCaptures,
   getFormStructureSummary,
   normalizeDraftSections,
@@ -230,7 +231,8 @@ export default async function SessionReportPreviewPage({
   const derivedFormSections = deriveFormSectionsFromCaptures(visibleCaptures);
   const documentSections = normalizedReportSections.length > 0 ? normalizedReportSections : derivedFormSections;
   const formStructureSummary = getFormStructureSummary(currentReport?.report_structure ?? null, documentSections);
-  const evidenceGroups = buildEvidenceGroups(visibleCaptures, visibleReportSections);
+  const evidenceGroups = buildEvidenceGroups(visibleCaptures, visibleReportSections, currentReport?.measurements ?? [], currentReport?.findings ?? []);
+  const unattachedStructuredDetails = buildUnattachedStructuredDetails(visibleCaptures, currentReport?.measurements ?? [], currentReport?.findings ?? []);
   const photoEvidence = supportingEvidence.filter(
     (item) => item.kind === "photo",
   );
@@ -343,6 +345,7 @@ export default async function SessionReportPreviewPage({
             formStructureSummary={formStructureSummary}
             evidenceGroups={evidenceGroups}
             supportingEvidence={supportingEvidence}
+            unattachedStructuredDetails={unattachedStructuredDetails}
             session={session}
             saveReportEditsAction={saveReportEditsAction}
             sourceFieldEntries={sourceFieldEntries}
@@ -387,6 +390,7 @@ function GeneratedReportReview({
   formStructureSummary,
   evidenceGroups,
   supportingEvidence,
+  unattachedStructuredDetails,
   session,
   saveReportEditsAction,
   sourceFieldEntries,
@@ -405,6 +409,7 @@ function GeneratedReportReview({
   formStructureSummary: ReturnType<typeof getFormStructureSummary>;
   evidenceGroups: ReturnType<typeof buildEvidenceGroups>;
   supportingEvidence: SupportingEvidenceItem[];
+  unattachedStructuredDetails: ReturnType<typeof buildUnattachedStructuredDetails>;
   session: Pick<DocumentationSession, "id" | "title">;
   saveReportEditsAction: ServerAction | null;
   sourceFieldEntries: [string, unknown][];
@@ -707,6 +712,16 @@ function GeneratedReportReview({
                 <span className="status-pill neutral compact">{includedEvidenceCount} included</span>
               </div>
               <EvidenceGroupList evidenceGroups={evidenceGroups} supportingEvidence={supportingEvidence} excludeCaptureIds={documentSections.flatMap((section) => section.related_capture_ids)} />
+              {unattachedStructuredDetails.length > 0 ? (
+                <div className="evidence-first-card">
+                  <div className="evidence-first-body">
+                    <h4>Supporting details</h4>
+                    {unattachedStructuredDetails.map((detail, index) => (
+                      <p key={`${detail.label}-${index}`}><strong>{detail.label}:</strong> {detail.value}</p>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </section>
           ) : null}
         </>

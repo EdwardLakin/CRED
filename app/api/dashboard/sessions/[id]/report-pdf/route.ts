@@ -10,7 +10,7 @@ import {
   isFieldServiceSessionType,
   normalizeFieldServiceDetails,
 } from '@/features/field-service'
-import { buildEvidenceGroups, deriveFormSectionsFromCaptures, normalizeDraftSections } from '@/features/reports/report-structure'
+import { buildEvidenceGroups, buildUnattachedStructuredDetails, deriveFormSectionsFromCaptures, normalizeDraftSections } from '@/features/reports/report-structure'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { recordUsageEvent } from '@/features/usage'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -140,8 +140,8 @@ function buildSignaturesHtml(signatures: ReportSignature[], signatureUrls: Recor
   }).join('')}</div></section>`
 }
 
-function buildEvidenceItemsHtml(captureItems: ReportCapture[], signedUrls: Record<string, string>, reportSections: ReportDraftSection[] = []) {
-  const evidenceGroups = buildEvidenceGroups(captureItems, reportSections)
+function buildEvidenceItemsHtml(captureItems: ReportCapture[], signedUrls: Record<string, string>, reportSections: ReportDraftSection[] = [], reportDraft: ReportDraft | null = null) {
+  const evidenceGroups = buildEvidenceGroups(captureItems, reportSections, reportDraft?.measurements ?? [], reportDraft?.findings ?? [])
   const groupsById = new Map(evidenceGroups.map((group) => [group.capture_id, group]))
   return captureItems.map((capture, index) => {
     const signedUrl = signedUrls[capture.id]
@@ -402,12 +402,14 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const derivedFormSections = deriveFormSectionsFromCaptures(captureItems)
   const formSections = documentSections.length > 0 ? documentSections : derivedFormSections
   const formSectionsHtml = formSections.length > 0 ? formSections.map((section) => `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2>${section.body ? `<p>${escapeHtml(section.body)}</p>` : ''}${section.fields.length > 0 ? renderDefinitionRows(section.fields.map((field) => ({ label: field.label, value: field.value }))) : ''}</section>`).join('') : ''
-  const itemsHtml = buildEvidenceItemsHtml(captureItems, signedUrls, visibleReportSections)
+  const unattachedDetails = buildUnattachedStructuredDetails(captureItems, reportDraft?.measurements ?? [], reportDraft?.findings ?? [])
+  const unattachedHtml = unattachedDetails.length > 0 ? `<section class="item service-section"><h2>Supporting details</h2>${renderDefinitionRows(unattachedDetails.map((detail) => ({ label: detail.label, value: detail.value })))}</section>` : ''
+  const itemsHtml = buildEvidenceItemsHtml(captureItems, signedUrls, visibleReportSections, reportDraft)
 
 
   const toolbarHtml = previewOnly ? '' : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>'
   const html = `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Printable Report</p><h1>${escapeHtml(reportTitle)}</h1><p>${escapeHtml(organizationName)}</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'No asset details')} · ${escapeHtml(new Date().toLocaleDateString())}</p></header>${formSectionsHtml || generatedReportHtml}${itemsHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}${buildSignaturesHtml(reportSignatures, signatureUrls)}</main></body></html>`
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Printable Report</p><h1>${escapeHtml(reportTitle)}</h1><p>${escapeHtml(organizationName)}</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'No asset details')} · ${escapeHtml(new Date().toLocaleDateString())}</p></header>${formSectionsHtml || generatedReportHtml}${unattachedHtml}${itemsHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}${buildSignaturesHtml(reportSignatures, signatureUrls)}</main></body></html>`
 
   return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
 }

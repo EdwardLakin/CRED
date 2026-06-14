@@ -516,7 +516,7 @@ export async function generateAiReportDraft(sessionId: string) {
   }))
   const formSections = deriveFormSectionsFromCaptures(normalizedCaptures)
   const formCaptureIds = selectPrimaryFormCaptures(normalizedCaptures).map((capture) => capture.id)
-  const evidenceGroups = buildEvidenceGroups(normalizedCaptures, draftOutput.sections)
+  const evidenceGroups = buildEvidenceGroups(normalizedCaptures, draftOutput.sections, draftOutput.measurements, draftOutput.findings)
   const formDebug = normalizedCaptures.map((capture, index) => ({ id: capture.id, score: Number(scoreFormReferenceCapture(capture, index).toFixed(2)) }))
   if (process.env.NODE_ENV !== 'production') {
     console.info('[report-structure]', { session_id: session.id, mode: formSections.length > 0 ? 'form_structured' : 'evidence_first', form_capture_ids: formCaptureIds, scores: formDebug })
