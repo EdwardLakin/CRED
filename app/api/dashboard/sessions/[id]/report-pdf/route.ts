@@ -10,7 +10,7 @@ import {
   isFieldServiceSessionType,
   normalizeFieldServiceDetails,
 } from '@/features/field-service'
-import { buildEvidenceGroups, buildUnattachedStructuredDetails, deriveFormSectionsFromCaptures, normalizeDraftSections } from '@/features/reports/report-structure'
+import { buildNonDuplicatedReviewDocument, deriveFormSectionsFromCaptures, normalizeDraftSections, stripConfidenceText } from '@/features/reports/report-structure'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { recordUsageEvent } from '@/features/usage'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -31,7 +31,7 @@ type ReportSession = Database['public']['Tables']['documentation_sessions']['Row
 }
 
 function escapeHtml(value: unknown) {
-  return String(value ?? '')
+  return stripConfidenceText(String(value ?? ''))
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -53,7 +53,8 @@ function getDisplayHeaderRows(value: Json) {
   return Object.entries(value)
     .filter(([, rowValue]) => rowValue !== null && rowValue !== undefined && String(rowValue).trim())
     .slice(0, 18)
-    .map(([key, rowValue]) => ({ label: key.replace(/_/g, ' '), value: String(rowValue) }))
+    .filter(([key]) => !/confidence|classification|ocr|document_type|workflow|template/i.test(key))
+    .map(([key, rowValue]) => ({ label: key.replace(/_/g, ' '), value: stripConfidenceText(String(rowValue)) }))
 }
 
 function buildGeneratedReportHtml(draft: ReportDraft | null, sections: ReportDraftSection[]) {
@@ -62,48 +63,6 @@ function buildGeneratedReportHtml(draft: ReportDraft | null, sections: ReportDra
   const visibleSections = sections.filter((section) => !isHiddenFromReport(section.metadata))
   return `${draft.summary ? `<section class="item service-section"><h2>Summary</h2><p>${escapeHtml(draft.summary)}</p></section>` : ''}${headerRows.length > 0 ? `<section class="item service-section"><h2>Report details</h2>${renderDefinitionRows(headerRows)}</section>` : ''}${visibleSections.map((section) => `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2>${section.body ? `<p>${escapeHtml(section.body)}</p>` : ''}</section>`).join('')}`
 }
-
-function getFields(extractedData: Json | null) {
-  if (!isRecord(extractedData) || !isRecord(extractedData.extraction) || !isRecord(extractedData.extraction.fields)) {
-    return []
-  }
-
-  const labels: Record<string, string> = {
-    location: 'Location / position',
-    component: 'Component',
-    measurement: 'Measurement',
-    condition: 'Condition',
-    recommendation: 'Recommendation',
-    severity: 'Severity',
-    vin: 'VIN',
-    unit_number: 'Unit number',
-    odometer: 'Odometer',
-    hour_meter: 'Hour meter',
-    plate_number: 'Plate',
-    work_order_number: 'Work order',
-    manufacturer: 'Manufacturer',
-    model: 'Model',
-    serial_number: 'Serial',
-    purchase_order_number: 'PO #',
-    complaint: 'Complaint',
-    cause_of_failure: 'Cause of failure',
-    correction: 'Correction',
-    technician_notes: 'Technician notes',
-    recommendations: 'Recommendations',
-    equipment_serial_number: 'Equipment serial',
-    licence_number: 'Licence #',
-  }
-
-  return Object.entries(labels)
-    .map(([field, label]) => {
-      const value = extractedData.extraction && isRecord(extractedData.extraction) && isRecord(extractedData.extraction.fields)
-        ? extractedData.extraction.fields[field]
-        : null
-      return typeof value === 'string' && value.trim() ? { label, value: value.trim() } : null
-    })
-    .filter((row): row is { label: string; value: string } => Boolean(row))
-}
-
 
 function getDetailValue(details: Record<string, unknown>, fieldName: string) {
   const field = FIELD_SERVICE_SECTIONS.flatMap((section) => section.fields).find((item) => item.name === fieldName)
@@ -140,32 +99,37 @@ function buildSignaturesHtml(signatures: ReportSignature[], signatureUrls: Recor
   }).join('')}</div></section>`
 }
 
-function buildEvidenceItemsHtml(captureItems: ReportCapture[], signedUrls: Record<string, string>, reportSections: ReportDraftSection[] = [], reportDraft: ReportDraft | null = null) {
-  const evidenceGroups = buildEvidenceGroups(captureItems, reportSections, reportDraft?.measurements ?? [], reportDraft?.findings ?? [])
-  const groupsById = new Map(evidenceGroups.map((group) => [group.capture_id, group]))
-  return captureItems.map((capture, index) => {
+function getEvidenceTitle(capture: ReportCapture, index: number) {
+  if (capture.type === 'text_note' || capture.media_kind === 'note') return `Technician note ${index + 1}`
+  if (capture.media_kind === 'audio' || capture.type === 'voice_note') return `Voice note ${index + 1}`
+  if (capture.media_kind === 'document') return `Supporting document ${index + 1}`
+  if (capture.media_kind === 'image' || capture.type === 'photo') return `Photo ${index + 1}`
+  return `Evidence ${index + 1}`
+}
+
+function buildEvidenceItemsHtml(items: ReturnType<typeof buildNonDuplicatedReviewDocument<ReportCapture>>['findings'], signedUrls: Record<string, string>) {
+  return items.map((entry, index) => {
+    const capture = entry.capture
     const signedUrl = signedUrls[capture.id]
-    const note = capture.technician_note || capture.transcript || (capture.transcript_status === 'pending' ? 'Transcribing…' : '')
-    const fields = getFields(capture.extracted_data)
+    const note = stripConfidenceText(capture.technician_note || capture.transcript || (capture.transcript_status === 'pending' ? '' : ''))
     const mediaKind = capture.media_kind || (capture.type === 'text_note' ? 'note' : capture.type === 'video' ? 'video' : 'image')
     const mediaHtml = mediaKind === 'note'
-      ? '<div class="video-still">Text note evidence</div>'
+      ? '<div class="video-still">Technician note</div>'
       : signedUrl && mediaKind === 'image'
-        ? `<img src="${escapeHtml(signedUrl)}" alt="Evidence item ${index + 1}" />`
+        ? `<img src="${escapeHtml(signedUrl)}" alt="${escapeHtml(getEvidenceTitle(capture, index))}" />`
         : signedUrl && mediaKind === 'video'
-          ? `<div class="video-still">Video reference</div><p class="video-link">Video file: <a href="${escapeHtml(signedUrl)}">${escapeHtml(capture.storage_path ?? 'video evidence')}</a></p>`
+          ? `<div class="video-still">Video reference</div><p class="video-link"><a href="${escapeHtml(signedUrl)}">Open video evidence</a></p>`
           : signedUrl
-            ? `<p><a href="${escapeHtml(signedUrl)}">Open saved ${escapeHtml(mediaKind)} file</a></p>`
+            ? `<p><a href="${escapeHtml(signedUrl)}">Open saved file</a></p>`
             : `<div class="video-still">Saved evidence file</div>`
-
-    const group = groupsById.get(capture.id)
-    const findingsHtml = group?.findings.length ? `<section class="finding"><h3>Observed condition</h3>${group.findings.map((finding) => `<p>${escapeHtml(finding)}</p>`).join('')}</section>` : ''
-    const recommendationsHtml = group?.recommendations.length ? `<section class="finding"><h3>Recommendation</h3>${group.recommendations.map((recommendation) => `<p>${escapeHtml(recommendation)}</p>`).join('')}</section>` : ''
+    const group = entry.group
+    const detailsHtml = group.details.length ? `<section class="finding"><h3>Details</h3>${renderDefinitionRows(group.details.map((detail) => ({ label: detail.label, value: detail.value })))}</section>` : ''
+    const findingsHtml = group.findings.length ? `<section class="finding"><h3>Observed condition</h3>${group.findings.map((finding) => `<p>${escapeHtml(finding)}</p>`).join('')}</section>` : ''
+    const recommendationsHtml = group.recommendations.length ? `<section class="finding"><h3>Recommendation</h3>${group.recommendations.map((recommendation) => `<p>${escapeHtml(recommendation)}</p>`).join('')}</section>` : ''
     return `<article class="item">
-      <h2>Item ${index + 1}</h2>
-      <div class="media">${mediaHtml}${note ? `<div class="note"><strong>${capture.transcript ? 'Transcript' : 'Technician note'}</strong><p>${escapeHtml(note)}</p></div>` : ''}</div>
-      <section class="finding"><h3>Supporting details</h3><p>${escapeHtml(getAiSummary(capture.extracted_data, capture.ai_summary))}</p>
-      ${fields.length > 0 ? renderDefinitionRows(fields) : ''}</section>${findingsHtml}${recommendationsHtml}
+      <h2>${escapeHtml(getEvidenceTitle(capture, index))}</h2>
+      <div class="media">${mediaHtml}${note ? `<div class="note"><strong>Technician note</strong><p>${escapeHtml(note)}</p></div>` : ''}</div>
+      ${detailsHtml}${findingsHtml}${recommendationsHtml}
     </article>`
   }).join('')
 }
@@ -214,7 +178,8 @@ function buildFieldServiceReportHtml({
     .map((fieldName) => ({ label: FIELD_SERVICE_FIELD_LABELS[fieldName] ?? fieldName, value: getDetailValue(details, fieldName) }))
   const chargeRows = ['labour_charge', 'parts_charge', 'mileage_charge', 'expenses_charge', 'misc_charges', 'subtotal', 'tax', 'total']
     .map((fieldName) => ({ label: FIELD_SERVICE_FIELD_LABELS[fieldName] ?? fieldName, value: getDetailValue(details, fieldName) }))
-  const evidenceHtml = buildEvidenceItemsHtml(captureItems, signedUrls, reportSections)
+  const reviewDocument = buildNonDuplicatedReviewDocument({ captures: captureItems, sections: [], draftSections: reportSections, measurements: reportDraft?.measurements ?? [], findings: reportDraft?.findings ?? [] })
+  const evidenceHtml = [buildEvidenceItemsHtml(reviewDocument.findings, signedUrls), buildEvidenceItemsHtml(reviewDocument.supportingDocumentation, signedUrls), buildEvidenceItemsHtml(reviewDocument.supportingEvidence, signedUrls)].join('')
   const signaturesHtml = buildSignaturesHtml(signatures, signatureUrls)
   const generatedReportHtml = buildGeneratedReportHtml(reportDraft, reportSections)
   const reportTitle = reportDraft?.title || session.title
@@ -227,16 +192,6 @@ function buildFieldServiceReportHtml({
 const REPORT_STYLES = `
     body{font-family:Arial,Helvetica,sans-serif;background:#f7f8fc;color:#13213a;margin:0;padding:32px}.report{max-width:980px;margin:0 auto}.header,.item{background:white;border:1px solid #d8e2ef;border-radius:18px;box-shadow:0 12px 34px rgba(20,33,61,.08);padding:24px;margin-bottom:18px}.eyebrow{color:#155dfc;font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}.meta,.muted{color:#5f6f89}.media{position:relative;border-radius:16px;overflow:hidden;background:#f1f5fb;border:1px solid #d8e2ef}.media img{display:block;width:100%;max-height:620px;object-fit:contain;background:#0f172a}.note{background:rgba(15,23,42,.86);bottom:0;color:white;left:0;padding:14px 18px;position:absolute;right:0}.note p{margin:6px 0 0}.finding{margin-top:16px}.finding h3{margin-bottom:8px}dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}dl div{background:#f1f5fb;border:1px solid #d8e2ef;border-radius:12px;padding:10px}dt{font-weight:800}dd{margin:4px 0 0}.video-still{align-items:center;aspect-ratio:16/9;background:#14213d;color:white;display:flex;font-size:24px;font-weight:800;justify-content:center}.video-link{padding:12px 16px}.toolbar{margin-bottom:16px}.print-help{color:#5f6f89;font-size:13px;margin:8px 0 0}.service-section h2{border-bottom:1px solid #d8e2ef;padding-bottom:8px}.signature-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.signature-block{background:#f8fafc;border:1px solid #d8e2ef;border-radius:14px;padding:14px}.signature-image{background:white;border:1px solid #d8e2ef;border-radius:10px;display:block;max-height:120px;max-width:100%;object-fit:contain;padding:8px}@media print{body{background:white;padding:0}.toolbar{display:none}.header,.item{break-inside:avoid;box-shadow:none}.note{position:static;background:#14213d}a{color:#13213a}}
   `
-
-function getAiSummary(extractedData: Json | null, fallback: string | null) {
-  if (fallback) return fallback
-  if (!isRecord(extractedData)) return 'Review pending.'
-  const extraction = isRecord(extractedData.extraction) ? extractedData.extraction : null
-  if (typeof extraction?.summary === 'string' && extraction.summary.trim()) return extraction.summary.trim()
-  const classification = isRecord(extractedData.classification) ? extractedData.classification : null
-  if (typeof classification?.label === 'string') return classification.label
-  return ''
-}
 
 export async function GET(_request: Request, { params }: RouteContext) {
   const { id } = await params
@@ -402,9 +357,10 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const derivedFormSections = deriveFormSectionsFromCaptures(captureItems)
   const formSections = documentSections.length > 0 ? documentSections : derivedFormSections
   const formSectionsHtml = formSections.length > 0 ? formSections.map((section) => `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2>${section.body ? `<p>${escapeHtml(section.body)}</p>` : ''}${section.fields.length > 0 ? renderDefinitionRows(section.fields.map((field) => ({ label: field.label, value: field.value }))) : ''}</section>`).join('') : ''
-  const unattachedDetails = buildUnattachedStructuredDetails(captureItems, reportDraft?.measurements ?? [], reportDraft?.findings ?? [])
+  const reviewDocument = buildNonDuplicatedReviewDocument({ captures: captureItems, sections: formSections, draftSections: visibleReportSections, measurements: reportDraft?.measurements ?? [], findings: reportDraft?.findings ?? [] })
+  const unattachedDetails = reviewDocument.unattachedDetails
   const unattachedHtml = unattachedDetails.length > 0 ? `<section class="item service-section"><h2>Supporting details</h2>${renderDefinitionRows(unattachedDetails.map((detail) => ({ label: detail.label, value: detail.value })))}</section>` : ''
-  const itemsHtml = buildEvidenceItemsHtml(captureItems, signedUrls, visibleReportSections, reportDraft)
+  const itemsHtml = [buildEvidenceItemsHtml(reviewDocument.findings, signedUrls), buildEvidenceItemsHtml(reviewDocument.supportingDocumentation, signedUrls), buildEvidenceItemsHtml(reviewDocument.supportingEvidence, signedUrls)].join('')
 
 
   const toolbarHtml = previewOnly ? '' : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>'

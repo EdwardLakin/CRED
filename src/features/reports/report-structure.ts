@@ -89,12 +89,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+export function stripConfidenceText(value: string) {
+  return value
+    .replace(/\s*\(\s*\d{1,3}%\s+confidence\s*\)\s*/gi, ' ')
+    .replace(/\b(?:confidence|extracted|classification|OCR|AI draft|processing|workflow|template)\b:?/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
 function clean(value: unknown, max = 600) {
-  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, max) : ''
+  return typeof value === 'string' ? stripConfidenceText(value.replace(/\s+/g, ' ').trim()).slice(0, max) : ''
+}
+
+export function normalizeUserFacingLabel(key: string) {
+  const normalized = key.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+  if (/document_type|detected_type|source_document|classification|confidence|ocr|workflow|template/.test(normalized)) return ''
+  return FORM_FIELD_LABELS[normalized] ?? key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
 function labelize(key: string) {
-  return FORM_FIELD_LABELS[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
+  return normalizeUserFacingLabel(key)
 }
 
 function slug(value: string, fallback: string) {
@@ -155,7 +169,7 @@ export function selectPrimaryFormCaptures(captures: CaptureLike[]) {
 export function fieldRowsFromCapture(capture: CaptureLike): NormalizedFormField[] {
   return Object.entries(getExtractionFields(capture.extracted_data))
     .map(([key, value]) => ({ key, label: labelize(key), value: clean(value), source_capture_id: capture.id }))
-    .filter((field) => field.value)
+    .filter((field) => field.label && field.value && !/^work_order$/i.test(field.value))
     .slice(0, 40)
 }
 
@@ -250,7 +264,13 @@ export function normalizeDraftSections(sections: DraftSectionLike[], captures: C
       key: section.section_key,
       title: section.title,
       body: section.body,
-      fields: fields.flatMap((field): NormalizedFormField[] => isRecord(field) ? [{ key: clean(field.key, 80) || clean(field.label, 80), label: clean(field.label, 120) || labelize(clean(field.key, 80)), value: clean(field.value) || 'Not captured', source_capture_id: clean(field.source_capture_id, 80) || undefined }] : []),
+      fields: fields.flatMap((field): NormalizedFormField[] => {
+        if (!isRecord(field)) return []
+        const key = clean(field.key, 80) || clean(field.label, 80)
+        const label = clean(field.label, 120) || labelize(key)
+        const value = clean(field.value) || 'Not captured'
+        return label ? [{ key, label, value, source_capture_id: clean(field.source_capture_id, 80) || undefined }] : []
+      }),
       source_capture_ids: sourceIds,
       related_capture_ids: Array.from(new Set([...sourceIds, ...related])),
       source_field_group: clean(meta.source_field_group, 120) || undefined,
@@ -333,4 +353,64 @@ export function getCaptureGuidance(sections: NormalizedReportSection[]) {
   suggestions.push('Add finding photo')
   suggestions.push('Add technician note')
   return suggestions.slice(0, 4)
+}
+
+
+export type EvidencePurpose = 'finding' | 'supporting_documentation' | 'supporting_evidence'
+
+export function classifyEvidencePurpose(capture: CaptureLike, group?: EvidenceGroup): EvidencePurpose {
+  const text = textForCapture(capture)
+  const typeText = `${capture.type ?? ''} ${capture.media_kind ?? ''} ${text}`.toLowerCase()
+  if (/work[_\s-]?order|vin|licen[cs]e|plate|registration|info[_\s-]?plate|data[_\s-]?plate|manufacturer|document|form|sheet/.test(typeText)) {
+    return 'supporting_documentation'
+  }
+  if ((group?.findings.length ?? 0) > 0 || (group?.recommendations.length ?? 0) > 0 || /\b(\d+(?:\.\d+)?\s?(?:mm|in|psi|volt|v)|red|attention|required|corrosion|wear|leak|crack|broken|replace|repair)\b/i.test(typeText)) {
+    return 'finding'
+  }
+  return 'supporting_evidence'
+}
+
+export type ReviewEvidenceItem<TCapture = CaptureLike> = {
+  capture: TCapture
+  group: EvidenceGroup
+  purpose: EvidencePurpose
+}
+
+export type ReviewDocument<TCapture = CaptureLike> = {
+  sections: NormalizedReportSection[]
+  findings: ReviewEvidenceItem<TCapture>[]
+  supportingDocumentation: ReviewEvidenceItem<TCapture>[]
+  supportingEvidence: ReviewEvidenceItem<TCapture>[]
+  renderedCaptureIds: string[]
+  unattachedDetails: EvidenceDetail[]
+}
+
+export function buildNonDuplicatedReviewDocument<TCapture extends CaptureLike>({
+  captures,
+  sections,
+  draftSections = [],
+  measurements = [],
+  findings = [],
+}: {
+  captures: TCapture[]
+  sections: NormalizedReportSection[]
+  draftSections?: DraftSectionLike[]
+  measurements?: Json | null
+  findings?: Json | null
+}): ReviewDocument<TCapture> {
+  const groups = buildEvidenceGroups(captures, draftSections, measurements, findings)
+  const groupsById = new Map(groups.map((group) => [group.capture_id, group]))
+  const rendered = new Set<string>()
+  const result: ReviewDocument<TCapture> = { sections, findings: [], supportingDocumentation: [], supportingEvidence: [], renderedCaptureIds: [], unattachedDetails: buildUnattachedStructuredDetails(captures, measurements, findings) }
+  for (const capture of captures) {
+    if (rendered.has(capture.id)) continue
+    const group = groupsById.get(capture.id) ?? { capture_id: capture.id, details: [], findings: [], recommendations: [] }
+    const item = { capture, group, purpose: classifyEvidencePurpose(capture, group) }
+    if (item.purpose === 'finding') result.findings.push(item)
+    else if (item.purpose === 'supporting_documentation') result.supportingDocumentation.push(item)
+    else result.supportingEvidence.push(item)
+    rendered.add(capture.id)
+    result.renderedCaptureIds.push(capture.id)
+  }
+  return result
 }

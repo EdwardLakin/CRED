@@ -7,11 +7,11 @@ import {
   getRequiredEvidenceCompletion,
 } from "@/features/capture";
 import {
-  buildEvidenceGroups,
-  buildUnattachedStructuredDetails,
+  buildNonDuplicatedReviewDocument,
   deriveFormSectionsFromCaptures,
   getFormStructureSummary,
   normalizeDraftSections,
+  stripConfidenceText,
 } from "@/features/reports/report-structure";
 import {
   approveAiReportDraft,
@@ -62,8 +62,8 @@ function getDisplayEntries(value: unknown) {
   if (!isRecord(value)) return [];
   return Object.entries(value)
     .filter(
-      ([, entryValue]) =>
-        entryValue !== null && entryValue !== undefined && entryValue !== "",
+      ([key, entryValue]) =>
+        entryValue !== null && entryValue !== undefined && entryValue !== "" && !/confidence|classification|ocr|document_type|workflow|template/i.test(key),
     )
     .slice(0, 16);
 }
@@ -231,8 +231,13 @@ export default async function SessionReportPreviewPage({
   const derivedFormSections = deriveFormSectionsFromCaptures(visibleCaptures);
   const documentSections = normalizedReportSections.length > 0 ? normalizedReportSections : derivedFormSections;
   const formStructureSummary = getFormStructureSummary(currentReport?.report_structure ?? null, documentSections);
-  const evidenceGroups = buildEvidenceGroups(visibleCaptures, visibleReportSections, currentReport?.measurements ?? [], currentReport?.findings ?? []);
-  const unattachedStructuredDetails = buildUnattachedStructuredDetails(visibleCaptures, currentReport?.measurements ?? [], currentReport?.findings ?? []);
+  const reviewDocument = buildNonDuplicatedReviewDocument({
+    captures: visibleCaptures,
+    sections: documentSections,
+    draftSections: visibleReportSections,
+    measurements: currentReport?.measurements ?? [],
+    findings: currentReport?.findings ?? [],
+  });
   const photoEvidence = supportingEvidence.filter(
     (item) => item.kind === "photo",
   );
@@ -343,9 +348,8 @@ export default async function SessionReportPreviewPage({
             photoEvidence={photoEvidence}
             documentSections={documentSections}
             formStructureSummary={formStructureSummary}
-            evidenceGroups={evidenceGroups}
+            reviewDocument={reviewDocument}
             supportingEvidence={supportingEvidence}
-            unattachedStructuredDetails={unattachedStructuredDetails}
             session={session}
             saveReportEditsAction={saveReportEditsAction}
             sourceFieldEntries={sourceFieldEntries}
@@ -388,9 +392,8 @@ function GeneratedReportReview({
   photoEvidence,
   documentSections,
   formStructureSummary,
-  evidenceGroups,
+  reviewDocument,
   supportingEvidence,
-  unattachedStructuredDetails,
   session,
   saveReportEditsAction,
   sourceFieldEntries,
@@ -407,9 +410,8 @@ function GeneratedReportReview({
   photoEvidence: SupportingEvidenceItem[];
   documentSections: ReturnType<typeof normalizeDraftSections>;
   formStructureSummary: ReturnType<typeof getFormStructureSummary>;
-  evidenceGroups: ReturnType<typeof buildEvidenceGroups>;
+  reviewDocument: ReturnType<typeof buildNonDuplicatedReviewDocument<CaptureItem>>;
   supportingEvidence: SupportingEvidenceItem[];
-  unattachedStructuredDetails: ReturnType<typeof buildUnattachedStructuredDetails>;
   session: Pick<DocumentationSession, "id" | "title">;
   saveReportEditsAction: ServerAction | null;
   sourceFieldEntries: [string, unknown][];
@@ -427,7 +429,7 @@ function GeneratedReportReview({
       <div className="report-section-heading generated-report-heading">
         <div>
           <p className="eyebrow">Summary</p>
-          <h2>{currentReport?.title ?? session.title}</h2>
+          <h2>{stripConfidenceText(currentReport?.title ?? session.title)}</h2>
           <p className="muted">
             A document-style review of the captured form, notes, photos, and recommendations.
           </p>
@@ -443,9 +445,9 @@ function GeneratedReportReview({
 
       <div className="report-story-card">
         <p className="eyebrow">Summary</p>
-        <h3>{currentReport?.title ?? session.title}</h3>
+        <h3>{stripConfidenceText(currentReport?.title ?? session.title)}</h3>
         {currentReport?.summary ? (
-          <p>{currentReport.summary}</p>
+          <p>{stripConfidenceText(currentReport.summary)}</p>
         ) : (
           <p className="muted">
             Building your report… Your evidence is saved. CRED is preparing the
@@ -512,7 +514,7 @@ function GeneratedReportReview({
               <input
                 className="input"
                 name="report_title"
-                defaultValue={currentReport.title ?? session.title}
+                defaultValue={stripConfidenceText(currentReport.title ?? session.title)}
               />
             </label>
             <label className="field-stack">
@@ -521,7 +523,7 @@ function GeneratedReportReview({
                 className="input text-area"
                 name="report_summary"
                 rows={5}
-                defaultValue={currentReport.summary ?? ""}
+                defaultValue={stripConfidenceText(currentReport.summary ?? "")}
               />
             </label>
           </div>
@@ -549,7 +551,7 @@ function GeneratedReportReview({
                     <input
                       className="input"
                       name={`section_title_${section.id}`}
-                      defaultValue={section.title}
+                      defaultValue={stripConfidenceText(section.title)}
                     />
                   </label>
                   <label className="field-stack">
@@ -558,9 +560,28 @@ function GeneratedReportReview({
                       className="input text-area"
                       name={`section_body_${section.id}`}
                       rows={5}
-                      defaultValue={section.body ?? ""}
+                      defaultValue={stripConfidenceText(section.body ?? "")}
                     />
                   </label>
+                  {normalizeDraftSections([section], []).flatMap((item) => item.fields).length > 0 ? (
+                    <div className="report-field-grid">
+                      <input type="hidden" name={`section_field_count_${section.id}`} value={normalizeDraftSections([section], []).flatMap((item) => item.fields).length} />
+                      {normalizeDraftSections([section], []).flatMap((item) => item.fields).map((field, fieldIndex) => (
+                        <div key={`${section.id}-${field.key}-${fieldIndex}`} className="report-field-card report-edit-field-card">
+                          <input type="hidden" name={`section_field_key_${section.id}_${fieldIndex}`} value={field.key} />
+                          <input type="hidden" name={`section_field_label_${section.id}_${fieldIndex}`} value={field.label} />
+                          <label className="report-visibility-toggle">
+                            <input type="checkbox" name={`section_field_include_${section.id}_${fieldIndex}`} defaultChecked />
+                            <span>Show field</span>
+                          </label>
+                          <label className="field-stack">
+                            <span className="label">{field.label}</span>
+                            <input className="input" name={`section_field_value_${section.id}_${fieldIndex}`} defaultValue={stripConfidenceText(field.value)} />
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </article>
               );
             })}
@@ -674,29 +695,25 @@ function GeneratedReportReview({
               <div className="report-document-flow">
                 {documentSections.map((section) => (
                   <article key={section.key} className="report-document-card">
-                    <h4>{section.title}</h4>
-                    {section.body ? <p>{section.body}</p> : null}
+                    <h4>{stripConfidenceText(section.title)}</h4>
+                    {section.body ? <p>{stripConfidenceText(section.body)}</p> : null}
                     {getProfessionalFields(section.fields).length > 0 ? (
                       <div className="report-field-grid">
                         {getProfessionalFields(section.fields).map((field) => (
                           <div key={`${section.key}-${field.key}`} className="report-field-card">
                             <span>{field.label}</span>
-                            <strong>{field.value}</strong>
+                            <strong>{stripConfidenceText(field.value)}</strong>
                           </div>
                         ))}
                       </div>
                     ) : null}
-                    <EvidenceGroupList
-                      captureIds={section.related_capture_ids}
-                      evidenceGroups={evidenceGroups}
-                      supportingEvidence={supportingEvidence}
-                    />
+
                   </article>
                 ))}
               </div>
             ) : (
               <EvidenceGroupList
-                evidenceGroups={evidenceGroups}
+                items={reviewDocument.findings}
                 supportingEvidence={supportingEvidence}
               />
             )}
@@ -711,13 +728,14 @@ function GeneratedReportReview({
                 </div>
                 <span className="status-pill neutral compact">{includedEvidenceCount} included</span>
               </div>
-              <EvidenceGroupList evidenceGroups={evidenceGroups} supportingEvidence={supportingEvidence} excludeCaptureIds={documentSections.flatMap((section) => section.related_capture_ids)} />
-              {unattachedStructuredDetails.length > 0 ? (
+              <EvidenceGroupList items={reviewDocument.supportingDocumentation} supportingEvidence={supportingEvidence} />
+              <EvidenceGroupList items={reviewDocument.supportingEvidence} supportingEvidence={supportingEvidence} />
+              {reviewDocument.unattachedDetails.length > 0 ? (
                 <div className="evidence-first-card">
                   <div className="evidence-first-body">
                     <h4>Supporting details</h4>
-                    {unattachedStructuredDetails.map((detail, index) => (
-                      <p key={`${detail.label}-${index}`}><strong>{detail.label}:</strong> {detail.value}</p>
+                    {reviewDocument.unattachedDetails.map((detail, index) => (
+                      <p key={`${detail.label}-${index}`}><strong>{detail.label}:</strong> {stripConfidenceText(detail.value)}</p>
                     ))}
                   </div>
                 </div>
@@ -769,27 +787,14 @@ function getProfessionalFields<T extends { value: string }>(fields: T[]) {
 }
 
 function EvidenceGroupList({
-  captureIds,
-  evidenceGroups,
+  items,
   supportingEvidence,
-  excludeCaptureIds,
 }: {
-  captureIds?: string[];
-  evidenceGroups: ReturnType<typeof buildEvidenceGroups>;
+  items: ReturnType<typeof buildNonDuplicatedReviewDocument<CaptureItem>>["findings"];
   supportingEvidence: SupportingEvidenceItem[];
-  excludeCaptureIds?: string[];
 }) {
   const evidenceById = new Map(supportingEvidence.map((item) => [item.capture.id, item]));
-  const allowedIds = captureIds && captureIds.length > 0 ? new Set(captureIds) : null;
-  const excludedIds = new Set(excludeCaptureIds ?? []);
-  const renderedIds = new Set<string>();
-  const groups = evidenceGroups.filter((group) => {
-    if (renderedIds.has(group.capture_id)) return false;
-    if (excludedIds.has(group.capture_id)) return false;
-    if (allowedIds && !allowedIds.has(group.capture_id)) return false;
-    renderedIds.add(group.capture_id);
-    return true;
-  });
+  const groups = items.map((entry) => entry.group);
 
   if (groups.length === 0) return <p className="muted">No supporting evidence attached yet.</p>;
 
@@ -811,13 +816,13 @@ function EvidenceGroupList({
             <div className="evidence-first-body">
               <h4>{item.title}</h4>
               {group.details.map((detail, index) => (
-                <p key={`${detail.label}-${index}`}><strong>{detail.label}:</strong> {detail.value}</p>
+                <p key={`${detail.label}-${index}`}><strong>{detail.label}:</strong> {stripConfidenceText(detail.value)}</p>
               ))}
               {group.findings.length > 0 ? (
-                <div><strong>Observed condition</strong>{group.findings.map((finding, index) => <p key={`finding-${index}`} className="muted">{finding}</p>)}</div>
+                <div><strong>Observed condition</strong>{group.findings.map((finding, index) => <p key={`finding-${index}`} className="muted">{stripConfidenceText(finding)}</p>)}</div>
               ) : null}
               {group.recommendations.length > 0 ? (
-                <div><strong>Recommendation</strong>{group.recommendations.map((recommendation, index) => <p key={`recommendation-${index}`} className="muted">{recommendation}</p>)}</div>
+                <div><strong>Recommendation</strong>{group.recommendations.map((recommendation, index) => <p key={`recommendation-${index}`} className="muted">{stripConfidenceText(recommendation)}</p>)}</div>
               ) : null}
             </div>
           </article>
@@ -885,7 +890,7 @@ function EvidenceGallery({
                   className="input text-area"
                   name={`capture_note_${item.capture.id}`}
                   rows={3}
-                  defaultValue={item.note ?? ""}
+                  defaultValue={stripConfidenceText(item.note ?? "")}
                 />
               </label>
             </article>
@@ -913,7 +918,7 @@ function EvidenceGallery({
                 )}
                 <div>
                   <strong>{item.title}</strong>
-                  <p className="muted">{item.note ?? "Supporting photo"}</p>
+                  <p className="muted">{stripConfidenceText(item.note ?? "Supporting photo")}</p>
                 </div>
               </article>
             ))}
@@ -946,7 +951,7 @@ function EvidenceGallery({
             {otherEvidence.slice(0, 6).map((item) => (
               <article key={item.capture.id} className="review-note-card">
                 <strong>{item.title}</strong>
-                <p className="muted">{item.note ?? "Saved with the report."}</p>
+                <p className="muted">{stripConfidenceText(item.note ?? "Saved with the report.")}</p>
               </article>
             ))}
           </div>
