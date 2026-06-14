@@ -913,7 +913,7 @@ export function AddCaptureForm({
       <div className="capture-start-panel field-stack">
         <div>
           <p className="eyebrow">Fast capture</p>
-          <h2>What do you want to add?</h2>
+          <h2>Capture evidence</h2>
         </div>
         <div className="capture-primary-action-grid" aria-label="Primary capture actions">
           <button
@@ -923,7 +923,7 @@ export function AddCaptureForm({
             disabled={isSaving || hasActiveUploads}
           >
             <span className="capture-evidence-icon" aria-hidden="true">📷</span>
-            <span><strong>Camera</strong><small>Take a photo or video</small></span>
+            <span><strong>Camera</strong><small>Take photo, then add note</small></span>
           </button>
           <button
             type="button"
@@ -932,7 +932,7 @@ export function AddCaptureForm({
             disabled={isSaving || hasActiveUploads}
           >
             <span className="capture-evidence-icon" aria-hidden="true">🖼️</span>
-            <span><strong>Gallery</strong><small>Choose saved media</small></span>
+            <span><strong>Gallery</strong><small>Choose media, then add note</small></span>
           </button>
           <button
             type="button"
@@ -1028,7 +1028,7 @@ export function AddCaptureForm({
                     aria-label="Read-only note shown on report"
                   >
                     <div className="evidence-note-overlay-header">
-                      <strong>Note shown on report</strong>
+                      <strong>Attached note</strong>
                       <button
                         type="button"
                         className="evidence-note-edit-link"
@@ -1046,7 +1046,7 @@ export function AddCaptureForm({
                       </button>
                     </div>
                     <span>
-                      {note.trim() || 'Add note before saving'}
+                      {note.trim() || 'Optional: speak or type a note for this media'}
                     </span>
                   </div>
                 </div>
@@ -1095,7 +1095,7 @@ export function AddCaptureForm({
 
       <div className="field-stack capture-note-composer report-note-editor capture-secondary-panel">
         <label htmlFor={`technician-note-${guidanceKey}`} className="label">
-          Text Note
+          Note for this evidence
         </label>
         <textarea
           ref={noteTextareaRef}
@@ -1114,7 +1114,7 @@ export function AddCaptureForm({
           rows={4}
         />
         <p className="muted note-helper-text">
-          Add anything the report should know. Manual typing works even if voice is unavailable.
+          For photos or gallery images, this note is saved on the same evidence record. Skip it if the media stands alone.
         </p>
         {isVoiceSupported === false ? (
           <p className="muted capture-upload-hint" role="status">
