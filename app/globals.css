@@ -3690,3 +3690,22 @@ a:focus-visible {
 .compact-export-panel[open] .export-summary-row::after {
   content: "Email, share, print, or save";
 }
+
+.signature-review-panel {
+  margin-top: 1rem;
+}
+
+.saved-signature-card {
+  align-items: center;
+}
+
+.saved-signature-image {
+  background: white;
+  border: 1px solid var(--border, #d8e2ef);
+  border-radius: 12px;
+  display: block;
+  max-height: 96px;
+  max-width: min(260px, 100%);
+  object-fit: contain;
+  padding: 0.5rem;
+}

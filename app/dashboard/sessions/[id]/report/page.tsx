@@ -14,7 +14,6 @@ import {
   stripConfidenceText,
 } from "@/features/reports/report-structure";
 import {
-  approveAiReportDraft,
   createReportShareLink,
   disableReportShareLink,
   emailReport,
@@ -25,6 +24,7 @@ import {
 } from "@/features/reports/actions";
 import { formatDateTime } from "@/features/sessions";
 import { requireSessionWorkspace } from "@/features/sessions/data";
+import { SignatureCaptureForm } from "@/features/signatures";
 import type { Database } from "@/lib/supabase/database.types";
 
 type Tables = Database["public"]["Tables"];
@@ -33,6 +33,7 @@ type AiReportDraft = Tables["ai_report_drafts"]["Row"];
 type AiReportDraftSection = Tables["ai_report_draft_sections"]["Row"];
 type ReportShareToken = Tables["report_share_tokens"]["Row"];
 type CaptureItem = Tables["capture_items"]["Row"];
+type SignatureCapture = Tables["signature_captures"]["Row"];
 type ServerAction = (formData: FormData) => void | Promise<void>;
 type SupportingEvidenceItem = {
   capture: CaptureItem;
@@ -181,6 +182,23 @@ export default async function SessionReportPreviewPage({
     .order("generated_at", { ascending: false })
     .order("created_at", { ascending: false });
 
+  const { data: signatures } = await supabase
+    .from("signature_captures")
+    .select("*")
+    .eq("documentation_session_id", session.id)
+    .eq("organization_id", profile.organization_id)
+    .order("signed_at", { ascending: false });
+
+  const signatureUrls: Record<string, string> = {};
+  await Promise.all(
+    (signatures ?? []).map(async (signature) => {
+      const { data } = await supabase.storage
+        .from("documentation-signatures")
+        .createSignedUrl(signature.signature_image_path, 60 * 10);
+      if (data?.signedUrl) signatureUrls[signature.id] = data.signedUrl;
+    }),
+  );
+
   const currentReport =
     (aiDrafts ?? []).find((draft) => draft.status === "approved") ??
     (aiDrafts ?? []).find((draft) => draft.status !== "superseded") ??
@@ -262,9 +280,6 @@ export default async function SessionReportPreviewPage({
   const emailAction = emailReport.bind(null, session.id);
   const shareAction = createReportShareLink.bind(null, session.id);
   const generateReportAction = generateAiReportDraft.bind(null, session.id);
-  const approveReportContentAction = currentReport
-    ? approveAiReportDraft.bind(null, currentReport.id)
-    : null;
   const saveReportEditsAction = currentReport
     ? saveReportEdits.bind(null, currentReport.id)
     : null;
@@ -285,17 +300,6 @@ export default async function SessionReportPreviewPage({
           <span className={isReadyForExport ? "status-pill success" : "status-pill neutral"}>
             {isReadyForExport ? "Ready" : "Review Required"}
           </span>
-          <Link href={`/dashboard/sessions/${session.id}/capture`} className="button button-secondary touch-target">
-            Continue Capturing
-          </Link>
-          {!isReadyForExport ? (
-            <Link href="#approval" className="button button-primary touch-target">
-              Approve Report
-            </Link>
-          ) : null}
-          <Link href="#export-report" className="button button-secondary touch-target">
-            Export
-          </Link>
         </div>
       </div>
 
@@ -330,7 +334,6 @@ export default async function SessionReportPreviewPage({
         <div className="report-workspace-column">
           <GeneratedReportReview
             reportSections={reportSections ?? []}
-            approveReportContentAction={approveReportContentAction}
             currentReport={currentReport}
             isEditingReport={isEditingReport}
             generateReportAction={generateReportAction}
@@ -346,6 +349,12 @@ export default async function SessionReportPreviewPage({
             saveReportEditsAction={saveReportEditsAction}
             sourceFieldEntries={sourceFieldEntries}
             visibleCaptureCount={visibleCaptures.length}
+          />
+
+          <SignaturePanel
+            sessionId={session.id}
+            signatures={signatures ?? []}
+            signatureUrls={signatureUrls}
           />
         </div>
 
@@ -374,7 +383,6 @@ export default async function SessionReportPreviewPage({
 
 function GeneratedReportReview({
   reportSections,
-  approveReportContentAction,
   currentReport,
   generateReportAction,
   hasPendingEvidence,
@@ -392,7 +400,6 @@ function GeneratedReportReview({
   visibleCaptureCount,
 }: {
   reportSections: AiReportDraftSection[];
-  approveReportContentAction: ServerAction | null;
   currentReport: AiReportDraft | null;
   generateReportAction: ServerAction;
   hasPendingEvidence: boolean;
@@ -497,9 +504,6 @@ function GeneratedReportReview({
                   Edit this report directly, then save changes before approval or export.
                 </p>
               </div>
-              <button className="button button-primary touch-target">
-                Save Changes
-              </button>
             </div>
             <label className="field-stack">
               <span className="label">Report title</span>
@@ -731,28 +735,63 @@ function GeneratedReportReview({
         </>
       ) : null}
 
-      <div className="form-actions report-inline-actions report-primary-flow">
-        <Link
-          href={`/dashboard/sessions/${session.id}/capture`}
-          className="button button-secondary touch-target"
-        >
-          Continue Capturing
-        </Link>
-        {currentReport ? (
-          <form action={generateReportAction}>
-            <button className="button button-secondary touch-target">
-              Update Report
-            </button>
-          </form>
-        ) : null}
-        {currentReport?.status !== "approved" && approveReportContentAction ? (
-          <form action={approveReportContentAction}>
-            <button className="button button-primary touch-target">
-              Approve Report
-            </button>
-          </form>
-        ) : null}
+    </section>
+  );
+}
+
+
+function SignaturePanel({
+  sessionId,
+  signatures,
+  signatureUrls,
+}: {
+  sessionId: string;
+  signatures: SignatureCapture[];
+  signatureUrls: Record<string, string>;
+}) {
+  return (
+    <section className="card detail-card report-command-card form-stack signature-review-panel">
+      <div className="report-section-heading generated-report-heading">
+        <div>
+          <p className="eyebrow">Signatures</p>
+          <h2>Signatures</h2>
+          <p className="muted">
+            Capture a customer, technician, inspector, or supervisor signature before approval and export.
+          </p>
+        </div>
+        <span className={signatures.length > 0 ? "status-pill success" : "status-pill neutral"}>
+          {signatures.length > 0 ? `${signatures.length} saved` : "Not signed"}
+        </span>
       </div>
+
+      {signatures.length > 0 ? (
+        <div className="signature-list saved-signature-list">
+          {signatures.map((signature) => (
+            <article key={signature.id} className="signature-list-item saved-signature-card">
+              <div>
+                <strong>{signature.signature_type}</strong>
+                <p className="muted">
+                  {signature.signer_name} · {formatDateTime(signature.signed_at)}
+                </p>
+              </div>
+              {signatureUrls[signature.id] ? (
+                // eslint-disable-next-line @next/next/no-img-element -- signed signature URLs are short-lived Supabase links and should render exactly as captured.
+                <img
+                  className="saved-signature-image"
+                  src={signatureUrls[signature.id]}
+                  alt={`${signature.signature_type} by ${signature.signer_name}`}
+                />
+              ) : (
+                <span className="status-pill neutral compact">Signature saved</span>
+              )}
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="muted">No signatures captured.</p>
+      )}
+
+      <SignatureCaptureForm sessionId={sessionId} />
     </section>
   );
 }
