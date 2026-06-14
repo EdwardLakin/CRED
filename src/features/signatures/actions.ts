@@ -27,19 +27,19 @@ export async function saveSignature(sessionId: string, formData: FormData) {
   const signatureDataUrl = getString(formData, 'signature_data_url')
 
   if (!signerName || !SIGNATURE_TYPES.has(signatureType)) {
-    redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent('Signer name and signature type are required.')}`)
+    redirect(`/dashboard/sessions/${sessionId}/report?error=${encodeURIComponent('Signer name and signature type are required.')}`)
   }
 
   const decoded = decodeDataUrl(signatureDataUrl)
   if (!decoded || decoded.bytes.byteLength < 100) {
-    redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent('Capture a signature before saving.')}`)
+    redirect(`/dashboard/sessions/${sessionId}/report?error=${encodeURIComponent('Capture a signature before saving.')}`)
   }
 
   const { supabase, profile } = await requireSessionWorkspace()
   const billingAccess = requireActiveBillingAccess(profile)
 
   if (!billingAccess.ok) {
-    redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent(billingAccess.message)}`)
+    redirect(`/dashboard/sessions/${sessionId}/report?error=${encodeURIComponent(billingAccess.message)}`)
   }
 
   const storageAllowance = await requireUsageAllowance({
@@ -52,15 +52,15 @@ export async function saveSignature(sessionId: string, formData: FormData) {
   })
 
   if (!storageAllowance.ok) {
-    redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent(storageAllowance.message)}`)
+    redirect(`/dashboard/sessions/${sessionId}/report?error=${encodeURIComponent(storageAllowance.message)}`)
   }
 
   const { data: session, error: sessionError } = await supabase.from('documentation_sessions').select('id').eq('id', sessionId).eq('organization_id', profile.organization_id).single()
-  if (sessionError || !session) redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent('Documentation session not found.')}`)
+  if (sessionError || !session) redirect(`/dashboard/sessions/${sessionId}/report?error=${encodeURIComponent('Documentation session not found.')}`)
 
   const storagePath = `organizations/${profile.organization_id}/sessions/${session.id}/signatures/${Date.now()}-${signatureType.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.${decoded.extension}`
   const { error: uploadError } = await supabase.storage.from(SIGNATURE_BUCKET).upload(storagePath, decoded.bytes, { contentType: decoded.mimeType, upsert: false })
-  if (uploadError) redirect(`/dashboard/sessions/${session.id}?error=${encodeURIComponent(uploadError.message)}`)
+  if (uploadError) redirect(`/dashboard/sessions/${session.id}/report?error=${encodeURIComponent(uploadError.message)}`)
 
   const { error } = await supabase.from('signature_captures').insert({
     documentation_session_id: session.id,
@@ -71,7 +71,7 @@ export async function saveSignature(sessionId: string, formData: FormData) {
     created_by: profile.id,
   })
 
-  if (error) redirect(`/dashboard/sessions/${session.id}?error=${encodeURIComponent(error.message)}`)
+  if (error) redirect(`/dashboard/sessions/${session.id}/report?error=${encodeURIComponent(error.message)}`)
   await recordUsageEvent({
     supabase,
     organizationId: profile.organization_id,
@@ -89,5 +89,5 @@ export async function saveSignature(sessionId: string, formData: FormData) {
   })
   revalidatePath(`/dashboard/sessions/${session.id}`)
   revalidatePath(`/dashboard/sessions/${session.id}/report`)
-  redirect(`/dashboard/sessions/${session.id}?saved=signature`)
+  redirect(`/dashboard/sessions/${session.id}/report?saved=signature`)
 }
