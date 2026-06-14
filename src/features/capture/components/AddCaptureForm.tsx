@@ -245,7 +245,6 @@ export function AddCaptureForm({
   guidedLabel,
   workflow,
   returnPath,
-  helperText = 'Take or select photos/videos, add a quick voice or typed note, then tap Done.',
   stickyDoneHref,
   maxCaptureFileSizeBytes,
   maxVideoFileSizeBytes,
@@ -915,7 +914,6 @@ export function AddCaptureForm({
         <div>
           <p className="eyebrow">Fast capture</p>
           <h2>What do you want to add?</h2>
-          <p className="muted capture-upload-hint">If you have a paper form, capture it first.</p>
         </div>
         <div className="capture-primary-action-grid" aria-label="Primary capture actions">
           <button
@@ -955,10 +953,9 @@ export function AddCaptureForm({
             <span><strong>Text Note</strong><small>Type what matters</small></span>
           </button>
         </div>
-        <p className="muted capture-helper-text">{helperText}</p>
       </div>
 
-      <div className="field-stack capture-file-field">
+      <div className="field-stack capture-file-field capture-secondary-panel">
         <label htmlFor={fileInputId} className="label visually-hidden">
           Capture evidence file
         </label>
@@ -1096,7 +1093,7 @@ export function AddCaptureForm({
         </p>
       </div>
 
-      <div className="field-stack capture-note-composer report-note-editor">
+      <div className="field-stack capture-note-composer report-note-editor capture-secondary-panel">
         <label htmlFor={`technician-note-${guidanceKey}`} className="label">
           Text Note
         </label>

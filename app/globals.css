@@ -728,6 +728,19 @@ a {
   gap: 14px;
   padding: 18px;
 }
+.capture-start-panel {
+  background: linear-gradient(135deg, var(--primary-soft), var(--surface));
+  border: 1px solid var(--border-strong);
+  border-radius: 28px;
+  gap: clamp(18px, 4vw, 30px);
+  padding: clamp(20px, 5vw, 34px);
+}
+
+.capture-start-panel h2 {
+  font-size: clamp(1.55rem, 4vw, 2.35rem);
+  letter-spacing: -0.03em;
+  margin: 4px 0 0;
+}
 
 .capture-evidence-button {
   align-items: center;
@@ -738,10 +751,10 @@ a {
   color: var(--primary-foreground);
   cursor: pointer;
   display: flex;
-  gap: 14px;
-  justify-content: center;
-  min-height: 76px;
-  padding: 18px 22px;
+  gap: clamp(14px, 3vw, 20px);
+  justify-content: flex-start;
+  min-height: 112px;
+  padding: clamp(22px, 4vw, 32px);
   text-align: left;
   transition:
     background 160ms ease,
@@ -762,13 +775,15 @@ a {
 }
 
 .capture-evidence-button strong {
-  font-size: 1.12rem;
+  font-size: clamp(1.18rem, 2.8vw, 1.42rem);
+  line-height: 1.1;
 }
 
 .capture-evidence-button small {
   color: var(--primary-foreground-muted);
   font-weight: 700;
-  margin-top: 3px;
+  line-height: 1.25;
+  margin-top: 7px;
 }
 
 .capture-evidence-icon {
@@ -776,10 +791,17 @@ a {
   background: var(--primary-foreground-soft);
   border-radius: 16px;
   display: inline-flex;
-  font-size: 1.6rem;
-  height: 48px;
+  flex: 0 0 auto;
+  font-size: 1.8rem;
+  height: 56px;
   justify-content: center;
-  width: 48px;
+  width: 56px;
+}
+
+.capture-secondary-panel {
+  background: var(--surface-muted);
+  border-color: color-mix(in srgb, var(--border) 78%, transparent);
+  margin-top: 2px;
 }
 
 .capture-helper-text {
@@ -1454,7 +1476,7 @@ a:focus-visible {
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   border: 1px solid var(--border);
   border-radius: 999px;
-  bottom: 18px;
+  bottom: max(18px, env(safe-area-inset-bottom));
   box-shadow: var(--shadow);
   display: flex;
   gap: 10px;
@@ -1491,7 +1513,7 @@ a:focus-visible {
 
   .guided-sticky-actions {
     border-radius: 22px;
-    bottom: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom));
     left: 10px;
     right: 10px;
     transform: none;
@@ -1766,7 +1788,7 @@ a:focus-visible {
 }
 
 .focused-capture-shell {
-  padding-bottom: 112px;
+  padding-bottom: calc(144px + env(safe-area-inset-bottom));
 }
 
 .focused-capture-header h1,
@@ -1848,8 +1870,9 @@ a:focus-visible {
 }
 
 .focused-capture-done-actions {
-  min-width: min(520px, calc(100vw - 20px));
   justify-content: center;
+  max-width: min(560px, calc(100vw - 24px));
+  min-width: min(520px, calc(100vw - 24px));
 }
 
 @media (max-width: 760px) {
@@ -3425,17 +3448,28 @@ a:focus-visible {
 
 .capture-primary-action-grid {
   display: grid;
-  gap: var(--space-3);
+  gap: clamp(16px, 3vw, 24px);
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .capture-start-panel .capture-evidence-button {
-  min-height: 7rem;
+  min-height: clamp(112px, 18vw, 148px);
 }
 
 @media (max-width: 720px) {
   .capture-primary-action-grid {
+    gap: 14px;
     grid-template-columns: 1fr;
+  }
+
+  .capture-start-panel .capture-evidence-button {
+    min-height: 96px;
+  }
+}
+
+@media (min-width: 721px) and (max-width: 1180px) {
+  .capture-start-panel {
+    padding: clamp(24px, 4vw, 40px);
   }
 }
 
