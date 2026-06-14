@@ -10,7 +10,7 @@ import {
   isFieldServiceSessionType,
   normalizeFieldServiceDetails,
 } from '@/features/field-service'
-import { buildNonDuplicatedReviewDocument, deriveFormSectionsFromCaptures, normalizeDraftSections, stripConfidenceText } from '@/features/reports/report-structure'
+import { buildNonDuplicatedReviewDocument, dedupeEvidenceDetails, deriveFormSectionsFromCaptures, normalizeDraftSections, shouldRenderDetail, stripConfidenceText } from '@/features/reports/report-structure'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { recordUsageEvent } from '@/features/usage'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -107,31 +107,52 @@ function getEvidenceTitle(capture: ReportCapture, index: number) {
   return `Evidence ${index + 1}`
 }
 
-function buildEvidenceItemsHtml(items: ReturnType<typeof buildNonDuplicatedReviewDocument<ReportCapture>>['findings'], signedUrls: Record<string, string>) {
+function renderTextList(title: string, values: string[], existingRenderedText: string[]) {
+  const visible = values.filter((value) => shouldRenderDetail(title, value, existingRenderedText))
+  visible.forEach((value) => existingRenderedText.push(value))
+  if (visible.length === 0) return ''
+  return `<section class="finding"><h3>${escapeHtml(title)}</h3>${visible.map((value) => `<p>${escapeHtml(value)}</p>`).join('')}</section>`
+}
+
+function buildEvidenceItemsHtml(
+  items: ReturnType<typeof buildNonDuplicatedReviewDocument<ReportCapture>>['findings'],
+  signedUrls: Record<string, string>,
+  headingPrefix = 'Evidence',
+) {
   return items.map((entry, index) => {
     const capture = entry.capture
     const signedUrl = signedUrls[capture.id]
-    const note = stripConfidenceText(capture.technician_note || capture.transcript || (capture.transcript_status === 'pending' ? '' : ''))
     const mediaKind = capture.media_kind || (capture.type === 'text_note' ? 'note' : capture.type === 'video' ? 'video' : 'image')
+    const title = `${headingPrefix} ${index + 1}: ${getEvidenceTitle(capture, index)}`
     const mediaHtml = mediaKind === 'note'
-      ? '<div class="video-still">Technician note</div>'
+      ? `<div class="video-still">${escapeHtml(stripConfidenceText(capture.technician_note || capture.transcript || 'Technician note'))}</div>`
       : signedUrl && mediaKind === 'image'
         ? `<img src="${escapeHtml(signedUrl)}" alt="${escapeHtml(getEvidenceTitle(capture, index))}" />`
         : signedUrl && mediaKind === 'video'
           ? `<div class="video-still">Video reference</div><p class="video-link"><a href="${escapeHtml(signedUrl)}">Open video evidence</a></p>`
           : signedUrl
             ? `<p><a href="${escapeHtml(signedUrl)}">Open saved file</a></p>`
-            : `<div class="video-still">Saved evidence file</div>`
+            : mediaKind === 'audio'
+              ? '<div class="video-still">Voice note</div>'
+              : `<div class="video-still">Saved evidence file</div>`
     const group = entry.group
-    const detailsHtml = group.details.length ? `<section class="finding"><h3>Details</h3>${renderDefinitionRows(group.details.map((detail) => ({ label: detail.label, value: detail.value })))}</section>` : ''
-    const findingsHtml = group.findings.length ? `<section class="finding"><h3>Observed condition</h3>${group.findings.map((finding) => `<p>${escapeHtml(finding)}</p>`).join('')}</section>` : ''
-    const recommendationsHtml = group.recommendations.length ? `<section class="finding"><h3>Recommendation</h3>${group.recommendations.map((recommendation) => `<p>${escapeHtml(recommendation)}</p>`).join('')}</section>` : ''
+    const renderedText: string[] = []
+    const details = dedupeEvidenceDetails(group.details).filter((detail) => shouldRenderDetail(detail.label, detail.value, renderedText))
+    details.forEach((detail) => renderedText.push(detail.value))
+    const detailsHtml = details.length ? `<section class="finding"><h3>Details</h3>${renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value })))}</section>` : ''
+    const findingsHtml = renderTextList('Observed condition', group.findings, renderedText)
+    const recommendationsHtml = renderTextList('Recommendation', group.recommendations, renderedText)
     return `<article class="item">
-      <h2>${escapeHtml(getEvidenceTitle(capture, index))}</h2>
-      <div class="media">${mediaHtml}${note ? `<div class="note"><strong>Technician note</strong><p>${escapeHtml(note)}</p></div>` : ''}</div>
+      <h2>${escapeHtml(title)}</h2>
+      <div class="media">${mediaHtml}</div>
       ${detailsHtml}${findingsHtml}${recommendationsHtml}
     </article>`
   }).join('')
+}
+
+function buildEvidenceSectionHtml(title: string, items: ReturnType<typeof buildNonDuplicatedReviewDocument<ReportCapture>>['findings'], signedUrls: Record<string, string>) {
+  if (items.length === 0) return ''
+  return `<section class="item service-section"><h2>${escapeHtml(title)}</h2><p class="muted">${title === 'Supporting Documentation' ? 'Reference documents captured for report context.' : 'Evidence directly tied to inspection findings.'}</p></section>${buildEvidenceItemsHtml(items, signedUrls, title === 'Inspection Findings' ? 'Finding' : 'Photo')}`
 }
 
 function buildFieldServiceReportHtml({
@@ -179,7 +200,7 @@ function buildFieldServiceReportHtml({
   const chargeRows = ['labour_charge', 'parts_charge', 'mileage_charge', 'expenses_charge', 'misc_charges', 'subtotal', 'tax', 'total']
     .map((fieldName) => ({ label: FIELD_SERVICE_FIELD_LABELS[fieldName] ?? fieldName, value: getDetailValue(details, fieldName) }))
   const reviewDocument = buildNonDuplicatedReviewDocument({ captures: captureItems, sections: [], draftSections: reportSections, measurements: reportDraft?.measurements ?? [], findings: reportDraft?.findings ?? [] })
-  const evidenceHtml = [buildEvidenceItemsHtml(reviewDocument.findings, signedUrls), buildEvidenceItemsHtml(reviewDocument.supportingDocumentation, signedUrls), buildEvidenceItemsHtml(reviewDocument.supportingEvidence, signedUrls)].join('')
+  const evidenceHtml = [buildEvidenceSectionHtml('Inspection Findings', reviewDocument.findings, signedUrls), buildEvidenceSectionHtml('Supporting Documentation', reviewDocument.supportingDocumentation, signedUrls), buildEvidenceSectionHtml('Supporting Evidence', reviewDocument.supportingEvidence, signedUrls)].join('')
   const signaturesHtml = buildSignaturesHtml(signatures, signatureUrls)
   const generatedReportHtml = buildGeneratedReportHtml(reportDraft, reportSections)
   const reportTitle = reportDraft?.title || session.title
@@ -360,7 +381,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const reviewDocument = buildNonDuplicatedReviewDocument({ captures: captureItems, sections: formSections, draftSections: visibleReportSections, measurements: reportDraft?.measurements ?? [], findings: reportDraft?.findings ?? [] })
   const unattachedDetails = reviewDocument.unattachedDetails
   const unattachedHtml = unattachedDetails.length > 0 ? `<section class="item service-section"><h2>Supporting details</h2>${renderDefinitionRows(unattachedDetails.map((detail) => ({ label: detail.label, value: detail.value })))}</section>` : ''
-  const itemsHtml = [buildEvidenceItemsHtml(reviewDocument.findings, signedUrls), buildEvidenceItemsHtml(reviewDocument.supportingDocumentation, signedUrls), buildEvidenceItemsHtml(reviewDocument.supportingEvidence, signedUrls)].join('')
+  const itemsHtml = [buildEvidenceSectionHtml('Inspection Findings', reviewDocument.findings, signedUrls), buildEvidenceSectionHtml('Supporting Documentation', reviewDocument.supportingDocumentation, signedUrls), buildEvidenceSectionHtml('Supporting Evidence', reviewDocument.supportingEvidence, signedUrls)].join('')
 
 
   const toolbarHtml = previewOnly ? '' : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>'

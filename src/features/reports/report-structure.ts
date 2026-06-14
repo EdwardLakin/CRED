@@ -82,7 +82,7 @@ const FORM_FIELD_LABELS: Record<string, string> = {
   customer_name: 'Customer', work_order_number: 'Work order', purchase_order_number: 'PO number',
   complaint: 'Complaint', cause_of_failure: 'Cause of failure', correction: 'Correction', technician_notes: 'Technician notes',
   recommendation: 'Recommendation', recommendations: 'Recommendations', condition: 'Condition', measurement: 'Measurement',
-  severity: 'Status', location: 'Location', component: 'Component', date: 'Date', model: 'Model', serial_number: 'Serial number',
+  severity: 'Severity', location: 'Location', component: 'Component', date: 'Date', model: 'Model', serial_number: 'Serial number',
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -110,7 +110,7 @@ export function normalizeUserFacingLabel(key: string) {
 function labelize(key: string) {
   const normalized = key.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
   if (/^(tech|technician)_notes?$|^notes?$|^caption$/.test(normalized)) return 'Technician note'
-  if (/location|position/.test(normalized)) return 'Location / position'
+  if (/location|position/.test(normalized)) return 'Location'
   if (/severity/.test(normalized)) return 'Severity'
   if (/measurement|reading|value/.test(normalized)) return 'Measurement'
   if (/condition|finding|observed/.test(normalized)) return 'Observed condition'
@@ -141,6 +141,75 @@ function textClearlyMatchesCapture(text: string, capture: CaptureLike) {
   if (!source || !target) return false
   const targetTerms = Array.from(new Set(target.split(' ').filter((term) => term.length >= 4 && !/^(this|that|with|from|should|recommendation|recommend|replace|repair|condition|observed|general|global)$/.test(term))))
   return targetTerms.some((term) => source.includes(term))
+}
+
+
+const COMPONENT_GROUPS: Record<string, string[]> = {
+  brakes: ['brake', 'brakes', 'pad', 'pads', 'rotor'],
+  battery: ['battery', 'terminal', 'post', 'corrosion'],
+  tires: ['tire', 'tyre', 'tread'],
+  wheel: ['wheel', 'bearing'],
+  axle: ['axle', 'seal'],
+  engine: ['engine', 'coolant', 'oil', 'leak'],
+  documentation: ['vin', 'plate', 'license', 'licence', 'work order'],
+}
+
+const INTERNAL_DETAIL_LABEL = /^(document type|source document|confidence|classification|ocr|ai summary|transcript status|detected type|workflow|template)$/i
+
+function componentHits(text: string) {
+  const normalized = normalizeForMatch(text)
+  return Object.entries(COMPONENT_GROUPS)
+    .filter(([, terms]) => terms.some((term) => normalized.includes(normalizeForMatch(term))))
+    .map(([group]) => group)
+}
+
+export function isGlobalRecommendation(text: string) {
+  const normalized = normalizeForMatch(text)
+  if (!normalized) return false
+  const hits = componentHits(normalized).filter((term) => term !== 'documentation')
+  if (hits.length >= 2) return true
+  return /\b(all|multiple|overall|general|global|complete inspection|entire vehicle|vehicle maintenance|recommended services)\b/i.test(text)
+}
+
+export function belongsToCapture(text: string, capture: CaptureLike) {
+  const cleanedText = clean(text, 1200)
+  if (!cleanedText) return false
+  if (isGlobalRecommendation(cleanedText)) return false
+  return textClearlyMatchesCapture(cleanedText, capture)
+}
+
+export function splitRecommendationByEvidence(text: string, capture: CaptureLike) {
+  const cleanedText = clean(text, 1200)
+  if (!cleanedText) return ''
+  const sentences = cleanedText.split(/(?<=[.!?])\s+|;|\n+/).map((sentence) => clean(sentence, 400)).filter(Boolean)
+  const relevant = sentences.filter((sentence) => belongsToCapture(sentence, capture))
+  if (relevant.length > 0) return relevant.join(' ')
+  return isGlobalRecommendation(cleanedText) ? '' : (belongsToCapture(cleanedText, capture) ? cleanedText : '')
+}
+
+export function shouldRenderDetail(label: string, value: string, existingRenderedText: string[] = []) {
+  const normalizedLabel = labelize(label)
+  const cleanedValue = clean(value, 1200)
+  if (!normalizedLabel || !cleanedValue || INTERNAL_DETAIL_LABEL.test(normalizedLabel)) return false
+  const normalizedValue = normalizeForMatch(cleanedValue)
+  if (!normalizedValue || /^(not captured|pending|unknown)$/i.test(cleanedValue)) return false
+  return !existingRenderedText.some((existing) => {
+    const normalizedExisting = normalizeForMatch(existing)
+    return normalizedExisting === normalizedValue || normalizedExisting.includes(normalizedValue) || normalizedValue.includes(normalizedExisting)
+  })
+}
+
+export function dedupeEvidenceDetails(details: EvidenceDetail[]) {
+  const rendered: string[] = []
+  const result: EvidenceDetail[] = []
+  for (const detail of details) {
+    const label = labelize(detail.label)
+    const value = clean(detail.value, 1200)
+    if (!shouldRenderDetail(label, value, rendered)) continue
+    rendered.push(value)
+    result.push({ label, value })
+  }
+  return result
 }
 
 function pushUnique(list: string[], value: string) {
@@ -332,7 +401,10 @@ export function buildEvidenceGroups(captures: CaptureLike[], sections: DraftSect
     const group = id ? groups.get(id) : undefined
     if (!group) return
     pushUnique(group.findings, formatFinding(finding))
-    if (finding.recommendation) pushUnique(group.recommendations, finding.recommendation)
+    if (finding.recommendation) {
+      const recommendation = splitRecommendationByEvidence(finding.recommendation, captures.find((capture) => capture.id === id) ?? ({ id: id ?? '', type: null, media_kind: null, extracted_data: null } as CaptureLike))
+      if (recommendation) pushUnique(group.recommendations, recommendation)
+    }
   })
 
   for (const section of sections) {
@@ -346,12 +418,14 @@ export function buildEvidenceGroups(captures: CaptureLike[], sections: DraftSect
       // Draft sections can contain broad/global source_capture_ids. Only attach
       // section copy to a card when it is uniquely sourced or clearly matches
       // that capture's own extracted text, note, transcript, or summary.
-      if (sectionSourceIds.length > 1 && !textClearlyMatchesCapture(titleAndBody, capture)) continue
-      if (isRecommendation) pushUnique(group.recommendations, section.body)
-      else pushUnique(group.findings, section.body)
+      if (sectionSourceIds.length > 1 && !belongsToCapture(titleAndBody, capture)) continue
+      if (isRecommendation) {
+        const recommendation = splitRecommendationByEvidence(section.body, capture)
+        if (recommendation) pushUnique(group.recommendations, recommendation)
+      } else if (belongsToCapture(section.body, capture)) pushUnique(group.findings, section.body)
     }
   }
-  return Array.from(groups.values())
+  return Array.from(groups.values()).map((group) => ({ ...group, details: dedupeEvidenceDetails(group.details) }))
 }
 
 
@@ -446,7 +520,7 @@ export function buildNonDuplicatedReviewDocument<TCapture extends CaptureLike>({
     const matchingCaptures = sourceIds
       .map((id) => captures.find((capture) => capture.id === id))
       .filter((capture): capture is TCapture => Boolean(capture))
-      .filter((capture) => textClearlyMatchesCapture(`${section.title} ${section.body ?? ''}`, capture))
+      .filter((capture) => belongsToCapture(`${section.title} ${section.body ?? ''}`, capture))
     if (sourceIds.length <= 1 || matchingCaptures.length > 0) continue
     pushUniqueDetail(result.unattachedDetails, {
       label: /recommend|replace|repair|correct/i.test(`${section.title} ${section.body}`) ? 'Recommendation' : 'Observed condition',
