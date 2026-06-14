@@ -468,14 +468,15 @@ export function getCaptureGuidance(sections: NormalizedReportSection[]) {
 }
 
 
-export type EvidencePurpose = 'finding' | 'supporting_documentation' | 'supporting_evidence'
+export type EvidencePurpose = 'finding' | 'reference_document' | 'additional_note' | 'supporting_evidence'
 
 export function classifyEvidencePurpose(capture: CaptureLike, group?: EvidenceGroup): EvidencePurpose {
   const text = textForCapture(capture)
   const typeText = `${capture.type ?? ''} ${capture.media_kind ?? ''} ${text}`.toLowerCase()
   if (/work[_\s-]?order|vin|licen[cs]e|plate|registration|info[_\s-]?plate|data[_\s-]?plate|manufacturer|document|form|sheet/.test(typeText)) {
-    return 'supporting_documentation'
+    return 'reference_document'
   }
+  if (capture.type === 'text_note' || capture.media_kind === 'note' || capture.media_kind === 'audio' || capture.type === 'voice_note') return 'additional_note'
   if ((group?.findings.length ?? 0) > 0 || (group?.recommendations.length ?? 0) > 0 || /\b(\d+(?:\.\d+)?\s?(?:mm|in|psi|volt|v)|red|attention|required|corrosion|wear|leak|crack|broken|replace|repair)\b/i.test(typeText)) {
     return 'finding'
   }
@@ -491,7 +492,8 @@ export type ReviewEvidenceItem<TCapture = CaptureLike> = {
 export type ReviewDocument<TCapture = CaptureLike> = {
   sections: NormalizedReportSection[]
   findings: ReviewEvidenceItem<TCapture>[]
-  supportingDocumentation: ReviewEvidenceItem<TCapture>[]
+  referenceDocuments: ReviewEvidenceItem<TCapture>[]
+  additionalNotes: ReviewEvidenceItem<TCapture>[]
   supportingEvidence: ReviewEvidenceItem<TCapture>[]
   renderedCaptureIds: string[]
   unattachedDetails: EvidenceDetail[]
@@ -513,7 +515,7 @@ export function buildNonDuplicatedReviewDocument<TCapture extends CaptureLike>({
   const groups = buildEvidenceGroups(captures, draftSections, measurements, findings)
   const groupsById = new Map(groups.map((group) => [group.capture_id, group]))
   const rendered = new Set<string>()
-  const result: ReviewDocument<TCapture> = { sections, findings: [], supportingDocumentation: [], supportingEvidence: [], renderedCaptureIds: [], unattachedDetails: buildUnattachedStructuredDetails(captures, measurements, findings) }
+  const result: ReviewDocument<TCapture> = { sections, findings: [], referenceDocuments: [], additionalNotes: [], supportingEvidence: [], renderedCaptureIds: [], unattachedDetails: buildUnattachedStructuredDetails(captures, measurements, findings) }
   for (const section of draftSections) {
     if (!section.body) continue
     const sourceIds = section.source_capture_ids ?? []
@@ -532,10 +534,58 @@ export function buildNonDuplicatedReviewDocument<TCapture extends CaptureLike>({
     const group = groupsById.get(capture.id) ?? { capture_id: capture.id, details: [], findings: [], recommendations: [] }
     const item = { capture, group, purpose: classifyEvidencePurpose(capture, group) }
     if (item.purpose === 'finding') result.findings.push(item)
-    else if (item.purpose === 'supporting_documentation') result.supportingDocumentation.push(item)
+    else if (item.purpose === 'reference_document') result.referenceDocuments.push(item)
+    else if (item.purpose === 'additional_note') result.additionalNotes.push(item)
     else result.supportingEvidence.push(item)
     rendered.add(capture.id)
     result.renderedCaptureIds.push(capture.id)
   }
   return result
+}
+
+
+export function splitRecommendationText(value: string) {
+  const cleaned = clean(value, 1600)
+  if (!cleaned) return []
+  const parts = cleaned
+    .replace(/\s*(?:^|\n)\s*\d+[.)]\s+/g, '\n')
+    .split(/\n+|;|(?<=[.!?])\s+(?=[A-Z0-9])/)
+    .map((item) => clean(item.replace(/^[-*•]\s*/, ''), 500))
+    .filter(Boolean)
+  const source = parts.length > 1 ? parts : [cleaned]
+  const seen = new Set<string>()
+  return source.filter((item) => {
+    const key = normalizeForMatch(item)
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+
+export function buildCustomerAssetRows(sections: NormalizedReportSection[], session: Record<string, unknown> = {}) {
+  const wanted: Array<[string, string[]]> = [
+    ['Customer', ['customer_name', 'customer', 'client', 'owner']],
+    ['Customer contact', ['customer_contact', 'contact', 'phone', 'email']],
+    ['Work order number', ['work_order_number', 'work_order', 'wo']],
+    ['PO number', ['purchase_order_number', 'po_number', 'po']],
+    ['Unit number', ['unit_number', 'unit']],
+    ['Equipment / asset name', ['asset_label', 'asset', 'equipment']],
+    ['Make', ['make']], ['Model', ['model']], ['Serial number', ['serial_number', 'serial']], ['VIN', ['vin']],
+    ['Licence plate', ['licence_plate', 'license_plate', 'plate', 'licence_number']],
+    ['Odometer', ['odometer', 'mileage']], ['Hours', ['hours', 'hour_meter']], ['Date', ['date']],
+  ]
+  const rows: EvidenceDetail[] = []
+  const source = sections.flatMap((section) => section.fields)
+  for (const [label, keys] of wanted) {
+    const sessionValue = keys.map((key) => session[key]).find((value) => typeof value === 'string' && value.trim())
+    const field = source.find((item) => keys.some((key) => normalizeForMatch(`${item.key} ${item.label}`) === normalizeForMatch(key) || normalizeForMatch(`${item.key} ${item.label}`).includes(normalizeForMatch(key))))
+    const value = clean(sessionValue || field?.value, 300)
+    if (value) pushUniqueDetail(rows, { label, value })
+  }
+  return rows
+}
+
+export function isCustomerAssetSection(section: NormalizedReportSection) {
+  return /customer|contact|unit|equipment|vehicle|asset|vin|serial|model|odometer|hour|plate|license|licence/i.test(`${section.key} ${section.title}`)
 }

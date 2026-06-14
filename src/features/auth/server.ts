@@ -21,7 +21,7 @@ export interface CurrentProfile extends ProfileRow {
     | 'trial_ends_at'
     | 'billing_started_at'
   >
-  company_profile: Pick<CompanyProfileRow, 'company_name'> | null
+  company_profile: Pick<CompanyProfileRow, 'company_name' | 'facility_name' | 'facility_number' | 'facility_address_line_1' | 'facility_address_line_2' | 'facility_city' | 'facility_region' | 'facility_postal_code' | 'facility_country' | 'facility_phone' | 'facility_email' | 'permit_number' | 'certification_number'> | null
 }
 
 export async function getCurrentUser() {
@@ -43,7 +43,7 @@ export async function getCurrentProfile(): Promise<CurrentProfile | null> {
   const supabase = await createClient()
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('id, user_id, organization_id, full_name, role, created_at')
+.select('id, user_id, organization_id, full_name, role, created_at, inspector_role_or_title, technician_license_number, inspector_phone, inspector_email, default_signature_path, use_default_signature')
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -63,7 +63,7 @@ export async function getCurrentProfile(): Promise<CurrentProfile | null> {
 
   const { data: companyProfile } = await supabase
     .from('company_profiles')
-    .select('company_name')
+    .select('company_name, facility_name, facility_number, facility_address_line_1, facility_address_line_2, facility_city, facility_region, facility_postal_code, facility_country, facility_phone, facility_email, permit_number, certification_number')
     .eq('organization_id', profile.organization_id)
     .maybeSingle()
 
@@ -74,6 +74,12 @@ export async function getCurrentProfile(): Promise<CurrentProfile | null> {
     full_name: profile.full_name,
     role: profile.role,
     created_at: profile.created_at,
+    inspector_role_or_title: profile.inspector_role_or_title,
+    technician_license_number: profile.technician_license_number,
+    inspector_phone: profile.inspector_phone,
+    inspector_email: profile.inspector_email,
+    default_signature_path: profile.default_signature_path,
+    use_default_signature: profile.use_default_signature,
     organization,
     company_profile: companyProfile,
   }

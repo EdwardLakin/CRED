@@ -7,10 +7,13 @@ import {
   getRequiredEvidenceCompletion,
 } from "@/features/capture";
 import {
+  buildCustomerAssetRows,
   buildNonDuplicatedReviewDocument,
   deriveFormSectionsFromCaptures,
   getFormStructureSummary,
+  isCustomerAssetSection,
   normalizeDraftSections,
+  splitRecommendationText,
   stripConfidenceText,
 } from "@/features/reports/report-structure";
 import {
@@ -344,12 +347,15 @@ export default async function SessionReportPreviewPage({
             documentSections={documentSections}
             formStructureSummary={formStructureSummary}
             reviewDocument={reviewDocument}
+            customerAssetRows={buildCustomerAssetRows(documentSections, session as unknown as Record<string, unknown>)}
             supportingEvidence={supportingEvidence}
             session={session}
             saveReportEditsAction={saveReportEditsAction}
             sourceFieldEntries={sourceFieldEntries}
             visibleCaptureCount={visibleCaptures.length}
           />
+
+          <InspectorFacilityPanel profile={profile} signatures={signatures ?? []} signatureUrls={signatureUrls} />
 
           <SignaturePanel
             sessionId={session.id}
@@ -393,6 +399,7 @@ function GeneratedReportReview({
   documentSections,
   formStructureSummary,
   reviewDocument,
+  customerAssetRows,
   supportingEvidence,
   session,
   saveReportEditsAction,
@@ -410,6 +417,7 @@ function GeneratedReportReview({
   documentSections: ReturnType<typeof normalizeDraftSections>;
   formStructureSummary: ReturnType<typeof getFormStructureSummary>;
   reviewDocument: ReturnType<typeof buildNonDuplicatedReviewDocument<CaptureItem>>;
+  customerAssetRows: ReturnType<typeof buildCustomerAssetRows>;
   supportingEvidence: SupportingEvidenceItem[];
   session: Pick<DocumentationSession, "id" | "title">;
   saveReportEditsAction: ServerAction | null;
@@ -585,7 +593,7 @@ function GeneratedReportReview({
 
           <section className="report-subsection report-edit-panel">
             <div>
-              <h3>Supporting material</h3>
+              <h3>Report evidence</h3>
               <p className="muted">
                 Edit notes and choose what appears in the final report.
               </p>
@@ -665,7 +673,7 @@ function GeneratedReportReview({
           <section className="report-subsection report-document-section">
             <div className="report-section-title-row">
               <div>
-                <h3>{documentSections.length > 0 ? "Captured form" : "Evidence report"}</h3>
+                <h3>Customer / Asset Details</h3>
                 <p className="muted">
                   {documentSections.length > 0
                     ? "Related fields are grouped under familiar report headings."
@@ -681,9 +689,12 @@ function GeneratedReportReview({
                 ))}
               </div>
             ) : null}
-            {documentSections.length > 0 ? (
+            {customerAssetRows.length > 0 ? (
+              <div className="report-field-grid">{customerAssetRows.map((field) => <div key={field.label} className="report-field-card"><span>{field.label}</span><strong>{stripConfidenceText(field.value)}</strong></div>)}</div>
+            ) : null}
+            {documentSections.filter((section) => !isCustomerAssetSection(section)).length > 0 ? (
               <div className="report-document-flow">
-                {documentSections.map((section) => (
+                {documentSections.filter((section) => !isCustomerAssetSection(section)).map((section) => (
                   <article key={section.key} className="report-document-card">
                     <h4>{stripConfidenceText(section.title)}</h4>
                     {section.body ? <p>{stripConfidenceText(section.body)}</p> : null}
@@ -713,13 +724,15 @@ function GeneratedReportReview({
             <section className="report-subsection report-supporting-section">
               <div className="report-section-title-row">
                 <div>
-                  <h3>Supporting evidence</h3>
-                  <p className="muted">Evidence not already tied to a form section stays grouped here.</p>
+                  <h3>Inspection Findings</h3>
+                  <p className="muted">Issue and condition evidence tied to findings, measurements, and recommendations.</p>
                 </div>
                 <span className="status-pill neutral compact">{includedEvidenceCount} included</span>
               </div>
-              <EvidenceGroupList items={reviewDocument.supportingDocumentation} supportingEvidence={supportingEvidence} />
-              <EvidenceGroupList items={reviewDocument.supportingEvidence} supportingEvidence={supportingEvidence} />
+              <EvidenceGroupList items={reviewDocument.findings} supportingEvidence={supportingEvidence} emptyMessage="No inspection findings attached yet." />
+              {reviewDocument.referenceDocuments.length > 0 ? <><h3>Reference Documents</h3><EvidenceGroupList items={reviewDocument.referenceDocuments} supportingEvidence={supportingEvidence} /></> : null}
+              {reviewDocument.additionalNotes.length > 0 ? <><h3>Additional Notes</h3><EvidenceGroupList items={reviewDocument.additionalNotes} supportingEvidence={supportingEvidence} /></> : null}
+              {reviewDocument.supportingEvidence.length > 0 ? <><h3>Supporting Evidence</h3><EvidenceGroupList items={reviewDocument.supportingEvidence} supportingEvidence={supportingEvidence} /></> : null}
               {reviewDocument.unattachedDetails.length > 0 ? (
                 <div className="evidence-first-card">
                   <div className="evidence-first-body">
@@ -739,6 +752,44 @@ function GeneratedReportReview({
   );
 }
 
+
+
+function InspectorFacilityPanel({
+  profile,
+  signatures,
+  signatureUrls,
+}: {
+  profile: Awaited<ReturnType<typeof requireSessionWorkspace>>["profile"];
+  signatures: SignatureCapture[];
+  signatureUrls: Record<string, string>;
+}) {
+  const facility = profile.company_profile;
+  const address = [facility?.facility_address_line_1, facility?.facility_address_line_2, facility?.facility_city, facility?.facility_region, facility?.facility_postal_code, facility?.facility_country].filter(Boolean).join(', ');
+  const latestSignature = signatures.find((signature) => /inspector|technician/i.test(signature.signature_type)) ?? signatures[0];
+  const rows = [
+    ['Inspector name', profile.full_name],
+    ['Role/title', profile.inspector_role_or_title],
+    ['Technician licence number', profile.technician_license_number],
+    ['Facility name', facility?.facility_name ?? facility?.company_name],
+    ['Facility number', facility?.facility_number],
+    ['Facility address', address],
+    ['Permit number', facility?.permit_number],
+    ['Certification number', facility?.certification_number],
+  ].filter(([, value]) => typeof value === 'string' && value.trim());
+  return (
+    <section className="card detail-card report-command-card form-stack signature-review-panel">
+      <div className="report-section-heading generated-report-heading"><div><p className="eyebrow">Report details</p><h2>Inspector / Facility Details</h2><p className="muted">Autofilled from Settings and included in the export.</p></div></div>
+      {rows.length > 0 ? <div className="report-field-grid">{rows.map(([label, value]) => <div key={label} className="report-field-card"><span>{label}</span><strong>{value}</strong></div>)}</div> : <p className="muted">No inspector or facility details saved yet.</p>}
+      {latestSignature && signatureUrls[latestSignature.id] ? (
+        <div className="saved-signature-card">
+          <strong>Signature</strong>
+          {/* eslint-disable-next-line @next/next/no-img-element -- signed signature URLs are short-lived Supabase links and should render exactly as captured. */}
+          <img className="saved-signature-image" src={signatureUrls[latestSignature.id]} alt="Saved report signature" />
+        </div>
+      ) : <p className="muted">No report-specific signature captured.</p>}
+    </section>
+  );
+}
 
 function SignaturePanel({
   sessionId,
@@ -806,14 +857,16 @@ function getProfessionalFields<T extends { value: string }>(fields: T[]) {
 function EvidenceGroupList({
   items,
   supportingEvidence,
+  emptyMessage = "No supporting evidence attached yet.",
 }: {
   items: ReturnType<typeof buildNonDuplicatedReviewDocument<CaptureItem>>["findings"];
   supportingEvidence: SupportingEvidenceItem[];
+  emptyMessage?: string;
 }) {
   const evidenceById = new Map(supportingEvidence.map((item) => [item.capture.id, item]));
   const groups = items.map((entry) => entry.group);
 
-  if (groups.length === 0) return <p className="muted">No supporting evidence attached yet.</p>;
+  if (groups.length === 0) return <p className="muted">{emptyMessage}</p>;
 
   return (
     <div className="evidence-first-list">
@@ -823,7 +876,7 @@ function EvidenceGroupList({
         return (
           <article key={group.capture_id} className="evidence-first-card">
             <div className="evidence-first-media">
-              {item.kind === "photo" && item.signedUrl ? (
+              {item.kind === "note" || item.kind === "audio" ? <div className="review-note-card"><strong>Note</strong><p>{stripConfidenceText(item.note ?? "Note saved for this report.")}</p></div> : item.kind === "photo" && item.signedUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured.
                 <img src={item.signedUrl} alt={item.title} />
               ) : (
@@ -839,7 +892,7 @@ function EvidenceGroupList({
                 <div><strong>Observed condition</strong>{group.findings.map((finding, index) => <p key={`finding-${index}`} className="muted">{stripConfidenceText(finding)}</p>)}</div>
               ) : null}
               {group.recommendations.length > 0 ? (
-                <div><strong>Recommendation</strong>{group.recommendations.map((recommendation, index) => <p key={`recommendation-${index}`} className="muted">{stripConfidenceText(recommendation)}</p>)}</div>
+                <div><strong>Recommendation</strong><ul>{group.recommendations.flatMap(splitRecommendationText).map((recommendation, index) => <li key={`recommendation-${index}`}>{stripConfidenceText(recommendation)}</li>)}</ul></div>
               ) : null}
             </div>
           </article>
