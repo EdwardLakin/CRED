@@ -10,7 +10,7 @@ import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import { ReportEmailError, sendReportEmail, validateReportEmailRecipients } from '@/lib/email/reports'
 import { AI_REPORT_DRAFT_MODEL, AI_REPORT_DRAFT_PROMPT_VERSION, generateReportDraft } from '@/lib/openai/report-draft-generator'
 import type { OrganizationPlan } from '@/lib/stripe'
-import { buildEvidenceGroups, deriveFormSectionsFromCaptures, scoreFormReferenceCapture, selectPrimaryFormCaptures } from '@/features/reports/report-structure'
+import { buildEvidenceGroups, deriveFormSectionsFromCaptures, scoreFormReferenceCapture, selectPrimaryFormCaptures, stripConfidenceText } from '@/features/reports/report-structure'
 import type { Json } from '@/lib/supabase/database.types'
 
 const REPORT_SHARE_EXPIRATION_DAYS = 30
@@ -608,18 +608,19 @@ export async function generateAiReportDraft(sessionId: string) {
 
 function sanitizeReportText(value: FormDataEntryValue | null, maxLength: number) {
   if (typeof value !== 'string') return null
-  const trimmed = value.trim()
+  const trimmed = stripConfidenceText(value.trim())
   if (!trimmed) return null
   return trimmed.slice(0, maxLength)
 }
 
-function metadataWithReportVisibility(value: Json, includeInReport: boolean): Json {
+function metadataWithReportVisibility(value: Json, includeInReport: boolean, fields?: Json): Json {
   const metadata = isRecord(value) ? { ...value } : {}
   if (includeInReport) {
     delete metadata.hidden_from_report
   } else {
     metadata.hidden_from_report = true
   }
+  if (fields) metadata.fields = fields
   metadata.edited_for_report = true
   return metadata as Json
 }
@@ -688,12 +689,22 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
     const includeInReport = formData.get(`section_include_${section.id}`) === 'on'
     const sectionTitle = sanitizeReportText(formData.get(`section_title_${section.id}`), 140) ?? 'Report section'
     const sectionBody = sanitizeReportText(formData.get(`section_body_${section.id}`), 4000)
+    const sectionFieldCount = Number(getString(formData, `section_field_count_${section.id}`) || 0)
+    const editedSectionFields: Json[] = []
+    for (let fieldIndex = 0; fieldIndex < sectionFieldCount; fieldIndex += 1) {
+      const included = formData.get(`section_field_include_${section.id}_${fieldIndex}`) === 'on'
+      if (!included) continue
+      const key = getString(formData, `section_field_key_${section.id}_${fieldIndex}`)
+      const label = getString(formData, `section_field_label_${section.id}_${fieldIndex}`)
+      const value = sanitizeReportText(formData.get(`section_field_value_${section.id}_${fieldIndex}`), 800)
+      if (key && label && value) editedSectionFields.push({ key, label, value })
+    }
     const { error: sectionUpdateError } = await supabase
       .from('ai_report_draft_sections')
       .update({
         title: sectionTitle,
         body: sectionBody,
-        metadata: metadataWithReportVisibility(section.metadata, includeInReport),
+        metadata: metadataWithReportVisibility(section.metadata, includeInReport, editedSectionFields.length > 0 ? editedSectionFields : undefined),
         updated_at: now,
       })
       .eq('id', section.id)
