@@ -204,10 +204,7 @@ export default async function SessionReportPreviewPage({
     template?.required_evidence ?? null,
   );
   const allCaptures = captures ?? [];
-  const includedCaptures = allCaptures.filter(
-    (capture) => capture.include_in_report,
-  );
-  const visibleCaptures = status.edit ? allCaptures : includedCaptures;
+  const visibleCaptures = allCaptures;
   const signedEvidenceUrls: Record<string, string> = {};
   await Promise.all(
     visibleCaptures.map(async (capture) => {
@@ -272,7 +269,7 @@ export default async function SessionReportPreviewPage({
     ? saveReportEdits.bind(null, currentReport.id)
     : null;
   const sourceFieldEntries = getDisplayEntries(currentReport?.header_fields);
-  const isEditingReport = status.edit === "1";
+  const isEditingReport = Boolean(currentReport);
   return (
     <main className="page-shell dashboard-shell report-preview-shell report-review-shell">
       <div className="section-header page-header report-preview-header report-review-header">
@@ -291,11 +288,6 @@ export default async function SessionReportPreviewPage({
           <Link href={`/dashboard/sessions/${session.id}/capture`} className="button button-secondary touch-target">
             Continue Capturing
           </Link>
-          {currentReport && !isEditingReport ? (
-            <Link href={`/dashboard/sessions/${session.id}/report?edit=1`} className="button button-secondary touch-target">
-              Edit Report
-            </Link>
-          ) : null}
           {!isReadyForExport ? (
             <Link href="#approval" className="button button-primary touch-target">
               Approve Report
@@ -500,9 +492,9 @@ function GeneratedReportReview({
           <div className="report-subsection report-edit-panel">
             <div className="report-section-title-row">
               <div>
-                <h3>Edit report</h3>
+                <h3>Review and correct report</h3>
                 <p className="muted">
-                  Make quick corrections before approval or export.
+                  Edit this report directly, then save changes before approval or export.
                 </p>
               </div>
               <button className="button button-primary touch-target">
@@ -655,12 +647,6 @@ function GeneratedReportReview({
               Save Changes
             </button>
             <Link
-              href={`/dashboard/sessions/${session.id}/report`}
-              className="button button-secondary touch-target"
-            >
-              Cancel
-            </Link>
-            <Link
               href={`/dashboard/sessions/${session.id}/capture`}
               className="button button-secondary touch-target"
             >
@@ -752,14 +738,6 @@ function GeneratedReportReview({
         >
           Continue Capturing
         </Link>
-        {currentReport && !isEditingReport ? (
-          <Link
-            href={`/dashboard/sessions/${session.id}/report?edit=1`}
-            className="button button-secondary touch-target"
-          >
-            Edit Report
-          </Link>
-        ) : null}
         {currentReport ? (
           <form action={generateReportAction}>
             <button className="button button-secondary touch-target">

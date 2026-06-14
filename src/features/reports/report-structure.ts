@@ -108,6 +108,13 @@ export function normalizeUserFacingLabel(key: string) {
 }
 
 function labelize(key: string) {
+  const normalized = key.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+  if (/^(tech|technician)_notes?$|^notes?$|^caption$/.test(normalized)) return 'Technician note'
+  if (/location|position/.test(normalized)) return 'Location / position'
+  if (/severity/.test(normalized)) return 'Severity'
+  if (/measurement|reading|value/.test(normalized)) return 'Measurement'
+  if (/condition|finding|observed/.test(normalized)) return 'Observed condition'
+  if (/recommend/.test(normalized)) return 'Recommendation'
   return normalizeUserFacingLabel(key)
 }
 
@@ -121,7 +128,32 @@ export function getExtractionFields(extractedData: Json | null): Record<string, 
 }
 
 function textForCapture(capture: CaptureLike) {
-  return `${capture.ocr_text ?? ''} ${capture.ai_summary ?? ''} ${capture.technician_note ?? ''}`.toLowerCase()
+  return `${capture.ocr_text ?? ''} ${capture.ai_summary ?? ''} ${capture.technician_note ?? ''} ${capture.transcript ?? ''} ${JSON.stringify(capture.extracted_data ?? {})}`.toLowerCase()
+}
+
+function normalizeForMatch(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function textClearlyMatchesCapture(text: string, capture: CaptureLike) {
+  const source = normalizeForMatch(textForCapture(capture))
+  const target = normalizeForMatch(text)
+  if (!source || !target) return false
+  const targetTerms = Array.from(new Set(target.split(' ').filter((term) => term.length >= 4 && !/^(this|that|with|from|should|recommendation|recommend|replace|repair|condition|observed|general|global)$/.test(term))))
+  return targetTerms.some((term) => source.includes(term))
+}
+
+function pushUnique(list: string[], value: string) {
+  const cleaned = clean(value, 1200)
+  if (!cleaned) return
+  if (!list.some((item) => normalizeForMatch(item) === normalizeForMatch(cleaned))) list.push(cleaned)
+}
+
+function pushUniqueDetail(list: EvidenceDetail[], detail: EvidenceDetail) {
+  const label = labelize(detail.label)
+  const value = clean(detail.value, 1200)
+  if (!label || !value) return
+  if (!list.some((item) => labelize(item.label) === label && normalizeForMatch(item.value) === normalizeForMatch(value))) list.push({ label, value })
 }
 
 function getSourceDocumentFields(capture: CaptureLike) {
@@ -284,33 +316,39 @@ export function buildEvidenceGroups(captures: CaptureLike[], sections: DraftSect
     const group = groups.get(capture.id)
     if (!group) continue
     const note = clean(capture.technician_note || capture.transcript, 1200)
-    if (note) group.details.push({ label: capture.transcript ? 'Transcript' : 'Technician note', value: note })
+    if (note) pushUniqueDetail(group.details, { label: 'Technician note', value: note })
     const summary = clean(capture.ai_summary, 800)
-    if (summary) group.details.push({ label: 'Observed condition', value: summary })
-    for (const field of fieldRowsFromCapture(capture).slice(0, 8)) group.details.push({ label: labelize(field.key), value: field.value })
+    if (summary) pushUniqueDetail(group.details, { label: 'Observed condition', value: summary })
+    for (const field of fieldRowsFromCapture(capture).slice(0, 8)) pushUniqueDetail(group.details, { label: labelize(field.key), value: field.value })
   }
   normalizeStructuredItems(measurements).forEach((measurement) => {
     const id = measurement.source_capture_id
     const group = id ? groups.get(id) : undefined
     if (!group) return
-    group.details.push({ label: 'Measurement', value: formatMeasurement(measurement) })
+    pushUniqueDetail(group.details, { label: 'Measurement', value: formatMeasurement(measurement) })
   })
   normalizeStructuredItems(findings).forEach((finding) => {
     const id = finding.source_capture_id
     const group = id ? groups.get(id) : undefined
     if (!group) return
-    group.findings.push(formatFinding(finding))
-    if (finding.recommendation) group.recommendations.push(finding.recommendation)
+    pushUnique(group.findings, formatFinding(finding))
+    if (finding.recommendation) pushUnique(group.recommendations, finding.recommendation)
   })
 
   for (const section of sections) {
     const titleAndBody = `${section.title} ${section.body ?? ''}`
     const isRecommendation = /recommend|replace|repair|correct/i.test(titleAndBody)
-    for (const id of section.source_capture_ids ?? []) {
+    const sectionSourceIds = section.source_capture_ids ?? []
+    for (const id of sectionSourceIds) {
       const group = groups.get(id)
-      if (!group || !section.body) continue
-      if (isRecommendation) group.recommendations.push(section.body)
-      else group.findings.push(section.body)
+      const capture = captures.find((candidate) => candidate.id === id)
+      if (!group || !capture || !section.body) continue
+      // Draft sections can contain broad/global source_capture_ids. Only attach
+      // section copy to a card when it is uniquely sourced or clearly matches
+      // that capture's own extracted text, note, transcript, or summary.
+      if (sectionSourceIds.length > 1 && !textClearlyMatchesCapture(titleAndBody, capture)) continue
+      if (isRecommendation) pushUnique(group.recommendations, section.body)
+      else pushUnique(group.findings, section.body)
     }
   }
   return Array.from(groups.values())
@@ -322,12 +360,12 @@ export function buildUnattachedStructuredDetails(captures: CaptureLike[], measur
   const details: EvidenceDetail[] = []
   for (const measurement of normalizeStructuredItems(measurements)) {
     if (measurement.source_capture_id && captureIds.has(measurement.source_capture_id)) continue
-    details.push({ label: 'Measurement', value: formatMeasurement(measurement) })
+    pushUniqueDetail(details, { label: 'Measurement', value: formatMeasurement(measurement) })
   }
   for (const finding of normalizeStructuredItems(findings)) {
     if (finding.source_capture_id && captureIds.has(finding.source_capture_id)) continue
-    details.push({ label: 'Observed condition', value: formatFinding(finding) })
-    if (finding.recommendation) details.push({ label: 'Recommendation', value: finding.recommendation })
+    pushUniqueDetail(details, { label: 'Observed condition', value: formatFinding(finding) })
+    if (finding.recommendation) pushUniqueDetail(details, { label: 'Recommendation', value: finding.recommendation })
   }
   return details
 }
@@ -402,6 +440,19 @@ export function buildNonDuplicatedReviewDocument<TCapture extends CaptureLike>({
   const groupsById = new Map(groups.map((group) => [group.capture_id, group]))
   const rendered = new Set<string>()
   const result: ReviewDocument<TCapture> = { sections, findings: [], supportingDocumentation: [], supportingEvidence: [], renderedCaptureIds: [], unattachedDetails: buildUnattachedStructuredDetails(captures, measurements, findings) }
+  for (const section of draftSections) {
+    if (!section.body) continue
+    const sourceIds = section.source_capture_ids ?? []
+    const matchingCaptures = sourceIds
+      .map((id) => captures.find((capture) => capture.id === id))
+      .filter((capture): capture is TCapture => Boolean(capture))
+      .filter((capture) => textClearlyMatchesCapture(`${section.title} ${section.body ?? ''}`, capture))
+    if (sourceIds.length <= 1 || matchingCaptures.length > 0) continue
+    pushUniqueDetail(result.unattachedDetails, {
+      label: /recommend|replace|repair|correct/i.test(`${section.title} ${section.body}`) ? 'Recommendation' : 'Observed condition',
+      value: section.body,
+    })
+  }
   for (const capture of captures) {
     if (rendered.has(capture.id)) continue
     const group = groupsById.get(capture.id) ?? { capture_id: capture.id, details: [], findings: [], recommendations: [] }
