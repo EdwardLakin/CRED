@@ -98,6 +98,12 @@ export interface Database {
           full_name: string
           role: 'owner' | 'admin' | 'member'
           created_at: string | null
+          inspector_role_or_title: string | null
+          technician_license_number: string | null
+          inspector_phone: string | null
+          inspector_email: string | null
+          default_signature_path: string | null
+          use_default_signature: boolean
         }
         Insert: {
           id?: string
@@ -106,6 +112,12 @@ export interface Database {
           full_name: string
           role: 'owner' | 'admin' | 'member'
           created_at?: string | null
+          inspector_role_or_title?: string | null
+          technician_license_number?: string | null
+          inspector_phone?: string | null
+          inspector_email?: string | null
+          default_signature_path?: string | null
+          use_default_signature?: boolean
         }
         Update: {
           id?: string
@@ -114,6 +126,12 @@ export interface Database {
           full_name?: string
           role?: 'owner' | 'admin' | 'member'
           created_at?: string | null
+          inspector_role_or_title?: string | null
+          technician_license_number?: string | null
+          inspector_phone?: string | null
+          inspector_email?: string | null
+          default_signature_path?: string | null
+          use_default_signature?: boolean
         }
         Relationships: [
           {
@@ -131,18 +149,54 @@ export interface Database {
           organization_id: string
           company_name: string
           created_at: string | null
+          facility_name: string | null
+          facility_number: string | null
+          facility_address_line_1: string | null
+          facility_address_line_2: string | null
+          facility_city: string | null
+          facility_region: string | null
+          facility_postal_code: string | null
+          facility_country: string | null
+          facility_phone: string | null
+          facility_email: string | null
+          permit_number: string | null
+          certification_number: string | null
         }
         Insert: {
           id?: string
           organization_id: string
           company_name: string
           created_at?: string | null
+          facility_name?: string | null
+          facility_number?: string | null
+          facility_address_line_1?: string | null
+          facility_address_line_2?: string | null
+          facility_city?: string | null
+          facility_region?: string | null
+          facility_postal_code?: string | null
+          facility_country?: string | null
+          facility_phone?: string | null
+          facility_email?: string | null
+          permit_number?: string | null
+          certification_number?: string | null
         }
         Update: {
           id?: string
           organization_id?: string
           company_name?: string
           created_at?: string | null
+          facility_name?: string | null
+          facility_number?: string | null
+          facility_address_line_1?: string | null
+          facility_address_line_2?: string | null
+          facility_city?: string | null
+          facility_region?: string | null
+          facility_postal_code?: string | null
+          facility_country?: string | null
+          facility_phone?: string | null
+          facility_email?: string | null
+          permit_number?: string | null
+          certification_number?: string | null
         }
         Relationships: [
           {
