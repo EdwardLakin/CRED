@@ -8,6 +8,51 @@ const MAX_SECTIONS = 24
 const MAX_ARRAY_ITEMS = 60
 const SECTION_STATUSES = ['pass', 'fail', 'recommended', 'na', 'needs_review', 'informational'] as const
 
+const NULLABLE_STRING_FIELD = { type: ['string', 'null'] } as const
+const MEASUREMENT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    label: NULLABLE_STRING_FIELD,
+    component: NULLABLE_STRING_FIELD,
+    location: NULLABLE_STRING_FIELD,
+    value: NULLABLE_STRING_FIELD,
+    unit: NULLABLE_STRING_FIELD,
+    status: NULLABLE_STRING_FIELD,
+    source_capture_id: NULLABLE_STRING_FIELD,
+    notes: NULLABLE_STRING_FIELD,
+  },
+  required: ['label', 'component', 'location', 'value', 'unit', 'status', 'source_capture_id', 'notes'],
+} as const
+const FINDING_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    title: NULLABLE_STRING_FIELD,
+    component: NULLABLE_STRING_FIELD,
+    location: NULLABLE_STRING_FIELD,
+    condition: NULLABLE_STRING_FIELD,
+    severity: NULLABLE_STRING_FIELD,
+    recommendation: NULLABLE_STRING_FIELD,
+    source_capture_id: NULLABLE_STRING_FIELD,
+    notes: NULLABLE_STRING_FIELD,
+  },
+  required: ['title', 'component', 'location', 'condition', 'severity', 'recommendation', 'source_capture_id', 'notes'],
+} as const
+const UNMAPPED_EVIDENCE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    source_capture_id: NULLABLE_STRING_FIELD,
+    label: NULLABLE_STRING_FIELD,
+    summary: NULLABLE_STRING_FIELD,
+    evidence_type: NULLABLE_STRING_FIELD,
+    notes: NULLABLE_STRING_FIELD,
+    suggested_section: NULLABLE_STRING_FIELD,
+  },
+  required: ['source_capture_id', 'label', 'summary', 'evidence_type', 'notes', 'suggested_section'],
+} as const
+
 const SOURCE_DOCUMENT_IDENTITY_FIELDS = new Set([
   'vin',
   'unit_number',
@@ -377,10 +422,10 @@ export async function generateReportDraft(input: GenerateReportDraftInput): Prom
                 },
                 required: ['customer_name', 'contact_name', 'phone', 'email', 'unit_number', 'asset_label', 'vin', 'serial_number', 'model', 'work_order_number', 'purchase_order_number', 'date'],
               },
-              measurements: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {}, required: [] } },
-              findings: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {}, required: [] } },
+              measurements: { type: 'array', items: MEASUREMENT_SCHEMA },
+              findings: { type: 'array', items: FINDING_SCHEMA },
               coverage: { type: 'object', additionalProperties: false, properties: {} },
-              unmapped_evidence: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {}, required: [] } },
+              unmapped_evidence: { type: 'array', items: UNMAPPED_EVIDENCE_SCHEMA },
               confidence: { type: 'number', minimum: 0, maximum: 1 },
               sections: {
                 type: 'array',
