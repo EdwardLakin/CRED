@@ -3651,3 +3651,42 @@ a:focus-visible {
     padding: 0.9rem;
   }
 }
+
+.compact-approval-panel,
+.compact-export-panel {
+  max-width: 980px;
+  margin: 1rem auto 0;
+}
+
+.compact-export-panel:not([open]) {
+  padding: 0;
+}
+
+.export-summary-row {
+  cursor: pointer;
+  font-weight: 800;
+  list-style: none;
+  padding: 18px 20px;
+}
+
+.export-summary-row::-webkit-details-marker {
+  display: none;
+}
+
+.export-summary-row::after {
+  content: "Open export options";
+  color: var(--muted);
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin-top: 4px;
+}
+
+.compact-export-panel[open] .export-summary-row {
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.compact-export-panel[open] .export-summary-row::after {
+  content: "Email, share, print, or save";
+}

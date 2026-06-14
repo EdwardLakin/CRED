@@ -33,9 +33,6 @@ type AiReportDraftSection = Tables["ai_report_draft_sections"]["Row"];
 type ReportShareToken = Tables["report_share_tokens"]["Row"];
 type CaptureItem = Tables["capture_items"]["Row"];
 type ServerAction = (formData: FormData) => void | Promise<void>;
-type CoverageReminder = ReturnType<
-  typeof getRequiredEvidenceCompletion
->["missing"][number];
 type SupportingEvidenceItem = {
   capture: CaptureItem;
   signedUrl: string | null;
@@ -158,12 +155,6 @@ export default async function SessionReportPreviewPage({
         .eq("organization_id", profile.organization_id)
         .maybeSingle()
     : { data: null };
-
-  const { data: signatures } = await supabase
-    .from("signature_captures")
-    .select("id")
-    .eq("documentation_session_id", session.id)
-    .eq("organization_id", profile.organization_id);
 
   const { data: reviewer } = session.reviewed_by
     ? await supabase
@@ -360,28 +351,23 @@ export default async function SessionReportPreviewPage({
         </div>
 
         <InlineReviewPanel
-          reminders={evidence.missing}
-          currentReport={currentReport}
           isReadyForExport={isReadyForExport}
           markReviewedAction={markReviewedAction}
           missingEvidenceCount={evidence.missing.length}
           reviewedBy={reviewer?.full_name ?? session.reviewed_by}
           reviewedLabel={reviewedLabel}
+        />
+
+        <ExportPanel
+          emailAction={emailAction}
+          isReadyForExport={isReadyForExport}
+          origin={origin}
+          reportPath={reportPath}
+          saveAction={saveAction}
           sessionId={session.id}
-          signatureCount={(signatures ?? []).length}
-          visibleCaptureCount={visibleCaptures.length}
-        >
-          <ExportPanel
-            emailAction={emailAction}
-            isReadyForExport={isReadyForExport}
-            origin={origin}
-            reportPath={reportPath}
-            saveAction={saveAction}
-            sessionId={session.id}
-            shareAction={shareAction}
-            shareTokens={shareTokens ?? []}
-          />
-        </InlineReviewPanel>
+          shareAction={shareAction}
+          shareTokens={shareTokens ?? []}
+        />
       </div>
     </main>
   );
@@ -666,13 +652,14 @@ function GeneratedReportReview({
                 <h3>{documentSections.length > 0 ? "Captured form" : "Evidence report"}</h3>
                 <p className="muted">
                   {documentSections.length > 0
-                    ? "Related fields are grouped under the same headings a customer would expect on the paper form."
-                    : "Evidence is grouped with its notes, details, findings, and recommendations."}
+                    ? "Related fields are grouped under familiar report headings."
+                    : "Evidence is grouped with notes, details, observations, and recommendations."}
                 </p>
               </div>
             </div>
             {formStructureSummary.guidance.length > 0 ? (
               <div className="missing-form-guidance">
+                {formStructureSummary.isFormStructured ? <span className="status-pill neutral compact">Based on captured form</span> : null}
                 {formStructureSummary.guidance.map((item) => (
                   <Link key={item} href={`/dashboard/sessions/${session.id}/capture`} className="suggestion-chip">{item}</Link>
                 ))}
@@ -719,7 +706,7 @@ function GeneratedReportReview({
                 </div>
                 <span className="status-pill neutral compact">{includedEvidenceCount} included</span>
               </div>
-              <EvidenceGroupList evidenceGroups={evidenceGroups} supportingEvidence={supportingEvidence} />
+              <EvidenceGroupList evidenceGroups={evidenceGroups} supportingEvidence={supportingEvidence} excludeCaptureIds={documentSections.flatMap((section) => section.related_capture_ids)} />
             </section>
           ) : null}
         </>
@@ -770,14 +757,24 @@ function EvidenceGroupList({
   captureIds,
   evidenceGroups,
   supportingEvidence,
+  excludeCaptureIds,
 }: {
   captureIds?: string[];
   evidenceGroups: ReturnType<typeof buildEvidenceGroups>;
   supportingEvidence: SupportingEvidenceItem[];
+  excludeCaptureIds?: string[];
 }) {
   const evidenceById = new Map(supportingEvidence.map((item) => [item.capture.id, item]));
   const allowedIds = captureIds && captureIds.length > 0 ? new Set(captureIds) : null;
-  const groups = evidenceGroups.filter((group) => !allowedIds || allowedIds.has(group.capture_id));
+  const excludedIds = new Set(excludeCaptureIds ?? []);
+  const renderedIds = new Set<string>();
+  const groups = evidenceGroups.filter((group) => {
+    if (renderedIds.has(group.capture_id)) return false;
+    if (excludedIds.has(group.capture_id)) return false;
+    if (allowedIds && !allowedIds.has(group.capture_id)) return false;
+    renderedIds.add(group.capture_id);
+    return true;
+  });
 
   if (groups.length === 0) return <p className="muted">No supporting evidence attached yet.</p>;
 
@@ -945,60 +942,20 @@ function EvidenceGallery({
 }
 
 function InlineReviewPanel({
-  children,
-  reminders,
-  currentReport,
   isReadyForExport,
   markReviewedAction,
   missingEvidenceCount,
   reviewedBy,
   reviewedLabel,
-  sessionId,
-  signatureCount,
-  visibleCaptureCount,
 }: {
-  children: React.ReactNode;
-  reminders: CoverageReminder[];
-  currentReport: AiReportDraft | null;
   isReadyForExport: boolean;
   markReviewedAction: ServerAction;
   missingEvidenceCount: number;
   reviewedBy: string | null;
   reviewedLabel: string | null;
-  sessionId: string;
-  signatureCount: number;
-  visibleCaptureCount: number;
 }) {
   return (
-    <aside className="report-inline-review-panel" aria-label="Report review controls">
-      <section className="card detail-card report-sidebar-card form-stack">
-        <div>
-          <p className="eyebrow">Ways to improve</p>
-          <h2>
-            {reminders.length > 0
-              ? `${reminders.length} suggestion${reminders.length === 1 ? "" : "s"}`
-              : "All set"}
-          </h2>
-        </div>
-        <div className="coverage-reminder-list">
-          {reminders.length > 0 ? (
-            reminders.map((row) => <p key={row.rule.key}>• {row.rule.label}</p>)
-          ) : (
-            <p>✓ The report has the expected supporting material.</p>
-          )}
-        </div>
-        <Link
-          href={`/dashboard/sessions/${sessionId}/capture`}
-          className="button button-secondary touch-target"
-        >
-          Continue Capturing
-        </Link>
-      </section>
-
-      <section
-        id="approval"
-        className="card detail-card report-sidebar-card form-stack"
-      >
+    <section id="approval" className="card detail-card report-sidebar-card form-stack compact-approval-panel">
         <div>
           <p className="eyebrow">Ready</p>
           <h2>{isReadyForExport ? "Approved" : "Approve Report"}</h2>
@@ -1009,42 +966,7 @@ function InlineReviewPanel({
             </p>
           ) : null}
         </div>
-        <div className="report-status-list">
-          <p className="checkline complete">✓ Evidence reviewed</p>
-          <p
-            className={
-              currentReport ? "checkline complete" : "checkline neutral"
-            }
-          >
-            {currentReport ? "✓" : "○"} Findings reviewed
-          </p>
-          <p
-            className={
-              visibleCaptureCount > 0
-                ? "checkline complete"
-                : "checkline neutral"
-            }
-          >
-            {visibleCaptureCount > 0 ? "✓" : "○"} Photos and notes reviewed
-          </p>
-          <p
-            className={
-              signatureCount > 0 ? "checkline complete" : "checkline neutral"
-            }
-          >
-            {signatureCount > 0 ? "✓" : "○"} Signatures reviewed if required
-          </p>
-          <p
-            className={
-              missingEvidenceCount === 0
-                ? "checkline complete"
-                : "checkline neutral"
-            }
-          >
-            {missingEvidenceCount === 0 ? "✓" : "○"} Suggested additions
-            considered
-          </p>
-        </div>
+        <p className="muted">Confirm the report is ready for delivery after reviewing the summary, sections, evidence, and signatures.</p>
         {!isReadyForExport ? (
           <form action={markReviewedAction} className="form-stack">
             <input
@@ -1070,9 +992,6 @@ function InlineReviewPanel({
           </form>
         ) : null}
       </section>
-
-      {children}
-    </aside>
   );
 }
 
@@ -1098,10 +1017,11 @@ function ExportPanel({
   const activeShareTokens = shareTokens.filter((token) => !token.disabled_at);
 
   return (
-    <section
+    <details
       id="export-report"
-      className="card detail-card report-sidebar-card report-delivery-tabs export-panel form-stack"
+      className="card detail-card report-sidebar-card report-delivery-tabs export-panel form-stack compact-export-panel"
     >
+      <summary className="export-summary-row">Export Report</summary>
       <div>
         <p className="eyebrow">Export</p>
         <h2>Export Report</h2>
@@ -1268,6 +1188,6 @@ function ExportPanel({
           })}
         </div>
       ) : null}
-    </section>
+    </details>
   );
 }
