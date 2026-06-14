@@ -3521,3 +3521,62 @@ a:focus-visible {
   object-fit: cover;
   width: 68px;
 }
+
+.report-document-layout {
+  display: block;
+}
+
+.report-document-layout .report-workspace-column {
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+.report-inline-review-panel {
+  display: grid;
+  gap: 1rem;
+  max-width: 980px;
+  margin: 1rem auto 0;
+}
+
+.report-document-flow,
+.evidence-first-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.report-document-card,
+.evidence-first-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  background: var(--surface-muted);
+  padding: 1rem;
+}
+
+.evidence-first-card {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.evidence-first-media img {
+  width: 100%;
+  max-height: 420px;
+  object-fit: contain;
+  border-radius: 14px;
+  background: #0f172a;
+}
+
+.evidence-first-body {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.evidence-first-body p {
+  margin: 0;
+}
+
+@media (min-width: 760px) {
+  .evidence-first-card {
+    grid-template-columns: minmax(180px, 280px) 1fr;
+    align-items: start;
+  }
+}

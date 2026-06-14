@@ -7,6 +7,11 @@ import {
   getRequiredEvidenceCompletion,
 } from "@/features/capture";
 import {
+  buildEvidenceGroups,
+  deriveFormSectionsFromCaptures,
+  normalizeDraftSections,
+} from "@/features/reports/report-structure";
+import {
   approveAiReportDraft,
   createReportShareLink,
   disableReportShareLink,
@@ -67,14 +72,6 @@ function getDisplayEntries(value: unknown) {
 
 function getArrayCount(value: unknown) {
   return Array.isArray(value) ? value.length : 0;
-}
-
-function getSectionTone(status: string | null) {
-  if (status === "pass") return "Complete";
-  if (status === "fail") return "Action needed";
-  if (status === "recommended") return "Recommended";
-  if (status === "na") return "Not applicable";
-  return null;
 }
 
 function isHiddenFromReport(metadata: unknown) {
@@ -242,6 +239,10 @@ export default async function SessionReportPreviewPage({
     note: getEvidenceNote(capture),
     kind: getEvidenceKind(capture),
   }));
+  const normalizedReportSections = normalizeDraftSections(reportSections ?? [], visibleCaptures);
+  const derivedFormSections = deriveFormSectionsFromCaptures(visibleCaptures);
+  const documentSections = normalizedReportSections.length > 0 ? normalizedReportSections : derivedFormSections;
+  const evidenceGroups = buildEvidenceGroups(visibleCaptures, reportSections ?? []);
   const photoEvidence = supportingEvidence.filter(
     (item) => item.kind === "photo",
   );
@@ -348,7 +349,7 @@ export default async function SessionReportPreviewPage({
         ) : null}
       </div>
 
-      <div className="report-review-layout">
+      <div className="report-review-layout report-document-layout">
         <div className="report-workspace-column">
           <ReportOverview
             findingCount={findingCount}
@@ -371,6 +372,9 @@ export default async function SessionReportPreviewPage({
             noteEvidence={noteEvidence}
             otherEvidence={otherEvidence}
             photoEvidence={photoEvidence}
+            documentSections={documentSections}
+            evidenceGroups={evidenceGroups}
+            supportingEvidence={supportingEvidence}
             session={session}
             saveReportEditsAction={saveReportEditsAction}
             sourceFieldEntries={sourceFieldEntries}
@@ -379,7 +383,7 @@ export default async function SessionReportPreviewPage({
           />
         </div>
 
-        <ReportSidebar
+        <InlineReviewPanel
           approveReportContentAction={approveReportContentAction}
           reminders={evidence.missing}
           currentReport={currentReport}
@@ -403,7 +407,7 @@ export default async function SessionReportPreviewPage({
             shareAction={shareAction}
             shareTokens={shareTokens ?? []}
           />
-        </ReportSidebar>
+        </InlineReviewPanel>
       </div>
     </main>
   );
@@ -496,6 +500,9 @@ function GeneratedReportReview({
   noteEvidence,
   otherEvidence,
   photoEvidence,
+  documentSections,
+  evidenceGroups,
+  supportingEvidence,
   session,
   saveReportEditsAction,
   sourceFieldEntries,
@@ -513,6 +520,9 @@ function GeneratedReportReview({
   noteEvidence: SupportingEvidenceItem[];
   otherEvidence: SupportingEvidenceItem[];
   photoEvidence: SupportingEvidenceItem[];
+  documentSections: ReturnType<typeof normalizeDraftSections>;
+  evidenceGroups: ReturnType<typeof buildEvidenceGroups>;
+  supportingEvidence: SupportingEvidenceItem[];
   session: Pick<DocumentationSession, "id" | "title">;
   saveReportEditsAction: ServerAction | null;
   sourceFieldEntries: [string, unknown][];
@@ -525,24 +535,9 @@ function GeneratedReportReview({
     : editableSections.filter(
         (section) => !isHiddenFromReport(section.metadata),
       );
-  const findingsSections = visibleReportSections.filter(
-    (section) => !/recommend/i.test(section.title),
-  );
   const recommendationSections = visibleReportSections.filter((section) =>
     /recommend/i.test(`${section.title} ${section.body ?? ""}`),
   );
-  const structureSections = currentReport
-    ? visibleReportSections
-        .filter((section) => !isHiddenFromReport(section.metadata))
-        .map((section) => section.title)
-    : [
-        "Report summary",
-        "Findings",
-        "Recommendations",
-        "Supporting material",
-        "Approval",
-        "Export",
-      ];
   const includedEvidenceCount = [
     ...photoEvidence,
     ...noteEvidence,
@@ -779,95 +774,61 @@ function GeneratedReportReview({
 
       {!isEditingReport ? (
         <>
-          <div className="report-content-grid">
-            <ReportContentSection
-              title="Findings"
-              emptyText="No findings found yet. Capture more evidence to improve this report."
-              items={
-                findingsSections.length > 0
-                  ? findingsSections.map((section) => ({
-                      id: section.id,
-                      title: section.title,
-                      body: section.body,
-                      badge: getSectionTone(section.status),
-                    }))
-                  : []
-              }
-            />
-            <ReportContentSection
-              title="Recommendations"
-              emptyText="No recommendations found yet."
-              items={recommendationSections.map((section, index) => ({
-                id: section.id,
-                title: section.title || `Recommendation ${index + 1}`,
-                body: section.body,
-                badge: getSectionTone(section.status),
-              }))}
-            />
-          </div>
-
-          <section className="report-subsection report-supporting-section">
+          <section className="report-subsection report-document-section">
             <div className="report-section-title-row">
               <div>
-                <h3>Supporting material</h3>
+                <h3>{documentSections.length > 0 ? "Report sections" : "Evidence report"}</h3>
                 <p className="muted">
-                  Photos, notes, and saved files that support this report.
+                  {documentSections.length > 0
+                    ? "The captured form and evidence provide this report structure."
+                    : "Evidence is grouped with its notes, details, findings, and recommendations."}
                 </p>
               </div>
-              <span className="status-pill neutral compact">
-                {includedEvidenceCount} included
-              </span>
             </div>
-            <EvidenceGallery
-              noteEvidence={noteEvidence}
-              otherEvidence={otherEvidence}
-              photoEvidence={photoEvidence}
-            />
-          </section>
-
-          <section className="report-subsection">
-            <div>
-              <h3>Form fields</h3>
-              <p className="muted">
-                Saved details from captured forms and documents.
-              </p>
-            </div>
-            <div className="report-field-grid">
-              {sourceFieldEntries.length > 0 ? (
-                sourceFieldEntries.map(([key, value]) => (
-                  <div key={key} className="report-field-card">
-                    <span>{key.replace(/_/g, " ")}</span>
-                    <strong>{String(value)}</strong>
-                  </div>
-                ))
-              ) : (
-                <p className="muted">No saved form fields yet.</p>
-              )}
-            </div>
-          </section>
-
-          <section className="report-subsection">
-            <div className="report-section-title-row">
-              <div>
-                <h3>Report structure</h3>
-                <p className="muted">
-                  The sections that will appear in the exported report.
-                </p>
+            {documentSections.length > 0 ? (
+              <div className="report-document-flow">
+                {documentSections.map((section) => (
+                  <article key={section.key} className="report-document-card">
+                    <h4>{section.title}</h4>
+                    {section.body ? <p>{section.body}</p> : null}
+                    {section.fields.length > 0 ? (
+                      <div className="report-field-grid">
+                        {section.fields.map((field) => (
+                          <div key={`${section.key}-${field.key}`} className="report-field-card">
+                            <span>{field.label}</span>
+                            <strong>{field.value}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    <EvidenceGroupList
+                      captureIds={section.related_capture_ids}
+                      evidenceGroups={evidenceGroups}
+                      supportingEvidence={supportingEvidence}
+                    />
+                  </article>
+                ))}
               </div>
-              {currentReport ? (
-                <span className="status-pill neutral compact">
-                  {structureSections.length} sections
-                </span>
-              ) : null}
-            </div>
-            <div className="report-structure-list">
-              {structureSections.map((title, index) => (
-                <p key={`${title}-${index}`}>
-                  <span>{index + 1}</span> {title}
-                </p>
-              ))}
-            </div>
+            ) : (
+              <EvidenceGroupList
+                evidenceGroups={evidenceGroups}
+                supportingEvidence={supportingEvidence}
+              />
+            )}
           </section>
+
+          {documentSections.length > 0 ? (
+            <section className="report-subsection report-supporting-section">
+              <div className="report-section-title-row">
+                <div>
+                  <h3>Supporting evidence</h3>
+                  <p className="muted">Evidence not already tied to a form section stays grouped here.</p>
+                </div>
+                <span className="status-pill neutral compact">{includedEvidenceCount} included</span>
+              </div>
+              <EvidenceGroupList evidenceGroups={evidenceGroups} supportingEvidence={supportingEvidence} />
+            </section>
+          ) : null}
         </>
       ) : null}
 
@@ -912,46 +873,52 @@ function GeneratedReportReview({
   );
 }
 
-function ReportContentSection({
-  emptyText,
-  items,
-  title,
+function EvidenceGroupList({
+  captureIds,
+  evidenceGroups,
+  supportingEvidence,
 }: {
-  emptyText: string;
-  items: Array<{
-    id: string;
-    title: string;
-    body: string | null;
-    badge?: string | null;
-  }>;
-  title: string;
+  captureIds?: string[];
+  evidenceGroups: ReturnType<typeof buildEvidenceGroups>;
+  supportingEvidence: SupportingEvidenceItem[];
 }) {
+  const evidenceById = new Map(supportingEvidence.map((item) => [item.capture.id, item]));
+  const allowedIds = captureIds && captureIds.length > 0 ? new Set(captureIds) : null;
+  const groups = evidenceGroups.filter((group) => !allowedIds || allowedIds.has(group.capture_id));
+
+  if (groups.length === 0) return <p className="muted">No supporting evidence attached yet.</p>;
+
   return (
-    <section className="report-subsection report-content-section">
-      <h3>{title}</h3>
-      <div className="signature-list report-section-list">
-        {items.length > 0 ? (
-          items.map((item) => (
-            <article
-              key={item.id}
-              className="signature-list-item report-section-item"
-            >
-              <div>
-                <strong>{item.title}</strong>
-                {item.badge ? (
-                  <span className="status-pill neutral compact">
-                    {item.badge}
-                  </span>
-                ) : null}
-              </div>
-              {item.body ? <p className="muted">{item.body}</p> : null}
-            </article>
-          ))
-        ) : (
-          <p className="muted">{emptyText}</p>
-        )}
-      </div>
-    </section>
+    <div className="evidence-first-list">
+      {groups.map((group) => {
+        const item = evidenceById.get(group.capture_id);
+        if (!item) return null;
+        return (
+          <article key={group.capture_id} className="evidence-first-card">
+            <div className="evidence-first-media">
+              {item.kind === "photo" && item.signedUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured.
+                <img src={item.signedUrl} alt={item.title} />
+              ) : (
+                <div className="review-evidence-placeholder">{item.title}</div>
+              )}
+            </div>
+            <div className="evidence-first-body">
+              <h4>{item.title}</h4>
+              {group.details.map((detail, index) => (
+                <p key={`${detail.label}-${index}`}><strong>{detail.label}:</strong> {detail.value}</p>
+              ))}
+              {group.findings.length > 0 ? (
+                <div><strong>Observed condition</strong>{group.findings.map((finding, index) => <p key={`finding-${index}`} className="muted">{finding}</p>)}</div>
+              ) : null}
+              {group.recommendations.length > 0 ? (
+                <div><strong>Recommendation</strong>{group.recommendations.map((recommendation, index) => <p key={`recommendation-${index}`} className="muted">{recommendation}</p>)}</div>
+              ) : null}
+            </div>
+          </article>
+        );
+      })}
+    </div>
   );
 }
 
@@ -1084,7 +1051,7 @@ function EvidenceGallery({
   );
 }
 
-function ReportSidebar({
+function InlineReviewPanel({
   approveReportContentAction,
   children,
   reminders,
@@ -1114,7 +1081,7 @@ function ReportSidebar({
   visibleCaptureCount: number;
 }) {
   return (
-    <aside className="report-sidebar" aria-label="Report review controls">
+    <aside className="report-inline-review-panel" aria-label="Report review controls">
       <section className="card detail-card report-sidebar-card form-stack">
         <div>
           <p className="eyebrow">Ways to improve</p>

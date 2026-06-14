@@ -10,6 +10,7 @@ import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import { ReportEmailError, sendReportEmail, validateReportEmailRecipients } from '@/lib/email/reports'
 import { AI_REPORT_DRAFT_MODEL, AI_REPORT_DRAFT_PROMPT_VERSION, generateReportDraft } from '@/lib/openai/report-draft-generator'
 import type { OrganizationPlan } from '@/lib/stripe'
+import { deriveFormSectionsFromCaptures, buildEvidenceGroups } from '@/features/reports/report-structure'
 import type { Json } from '@/lib/supabase/database.types'
 
 const REPORT_SHARE_EXPIRATION_DAYS = 30
@@ -503,6 +504,25 @@ export async function generateAiReportDraft(sessionId: string) {
     redirect(getReportRedirectPath(session.id, { error: getReportDraftErrorMessage(error) }))
   }
 
+  const normalizedCaptures = (captures ?? []).map((capture) => ({
+    id: capture.id,
+    type: capture.type,
+    media_kind: capture.media_kind,
+    ai_summary: capture.ai_summary,
+    ocr_text: capture.ocr_text,
+    technician_note: capture.technician_note,
+    transcript: capture.transcript,
+    extracted_data: capture.extracted_data,
+  }))
+  const formSections = deriveFormSectionsFromCaptures(normalizedCaptures)
+  const evidenceGroups = buildEvidenceGroups(normalizedCaptures, draftOutput.sections)
+  const reportStructure: Json = safeJson({
+    version: 1,
+    mode: formSections.length > 0 ? 'form_structured' : 'evidence_first',
+    form_sections: formSections,
+    evidence_groups: evidenceGroups,
+  }) ?? {}
+
   const now = new Date().toISOString()
   const { data: draft, error: draftError } = await supabase
     .from('ai_report_drafts')
@@ -518,6 +538,7 @@ export async function generateAiReportDraft(sessionId: string) {
       findings: draftOutput.findings,
       coverage: draftOutput.coverage,
       unmapped_evidence: draftOutput.unmapped_evidence,
+      report_structure: reportStructure,
       confidence: draftOutput.confidence,
       model: AI_REPORT_DRAFT_MODEL,
       prompt_version: AI_REPORT_DRAFT_PROMPT_VERSION,

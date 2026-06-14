@@ -10,6 +10,7 @@ import {
   isFieldServiceSessionType,
   normalizeFieldServiceDetails,
 } from '@/features/field-service'
+import { buildEvidenceGroups, deriveFormSectionsFromCaptures, normalizeDraftSections } from '@/features/reports/report-structure'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { recordUsageEvent } from '@/features/usage'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -133,7 +134,9 @@ function buildSignaturesHtml(signatures: ReportSignature[], signatureUrls: Recor
   }).join('')}</div></section>`
 }
 
-function buildEvidenceItemsHtml(captureItems: ReportCapture[], signedUrls: Record<string, string>) {
+function buildEvidenceItemsHtml(captureItems: ReportCapture[], signedUrls: Record<string, string>, reportSections: ReportDraftSection[] = []) {
+  const evidenceGroups = buildEvidenceGroups(captureItems, reportSections)
+  const groupsById = new Map(evidenceGroups.map((group) => [group.capture_id, group]))
   return captureItems.map((capture, index) => {
     const signedUrl = signedUrls[capture.id]
     const note = capture.technician_note || capture.transcript || (capture.transcript_status === 'pending' ? 'Transcribing…' : 'No technician note provided.')
@@ -149,11 +152,14 @@ function buildEvidenceItemsHtml(captureItems: ReportCapture[], signedUrls: Recor
             ? `<p><a href="${escapeHtml(signedUrl)}">Open saved ${escapeHtml(mediaKind)} file</a></p>`
             : `<div class="video-still">Saved evidence file</div>`
 
+    const group = groupsById.get(capture.id)
+    const findingsHtml = group?.findings.length ? `<section class="finding"><h3>Observed condition</h3>${group.findings.map((finding) => `<p>${escapeHtml(finding)}</p>`).join('')}</section>` : ''
+    const recommendationsHtml = group?.recommendations.length ? `<section class="finding"><h3>Recommendation</h3>${group.recommendations.map((recommendation) => `<p>${escapeHtml(recommendation)}</p>`).join('')}</section>` : ''
     return `<article class="item">
       <h2>Item ${index + 1}</h2>
       <div class="media">${mediaHtml}<div class="note"><strong>Technician note</strong><p>${escapeHtml(note)}</p></div></div>
-      <section class="finding"><h3>Finding / extracted details</h3><p>${escapeHtml(getAiSummary(capture.extracted_data, capture.ai_summary))}</p>
-      ${fields.length > 0 ? renderDefinitionRows(fields) : '<p>Report details pending.</p>'}</section>
+      <section class="finding"><h3>Supporting details</h3><p>${escapeHtml(getAiSummary(capture.extracted_data, capture.ai_summary))}</p>
+      ${fields.length > 0 ? renderDefinitionRows(fields) : '<p>Details pending review.</p>'}</section>${findingsHtml}${recommendationsHtml}
     </article>`
   }).join('')
 }
@@ -202,7 +208,7 @@ function buildFieldServiceReportHtml({
     .map((fieldName) => ({ label: FIELD_SERVICE_FIELD_LABELS[fieldName] ?? fieldName, value: getDetailValue(details, fieldName) }))
   const chargeRows = ['labour_charge', 'parts_charge', 'mileage_charge', 'expenses_charge', 'misc_charges', 'subtotal', 'tax', 'total']
     .map((fieldName) => ({ label: FIELD_SERVICE_FIELD_LABELS[fieldName] ?? fieldName, value: getDetailValue(details, fieldName) }))
-  const evidenceHtml = buildEvidenceItemsHtml(captureItems, signedUrls)
+  const evidenceHtml = buildEvidenceItemsHtml(captureItems, signedUrls, reportSections)
   const signaturesHtml = buildSignaturesHtml(signatures, signatureUrls)
   const generatedReportHtml = buildGeneratedReportHtml(reportDraft, reportSections)
   const reportTitle = reportDraft?.title || session.title
@@ -384,32 +390,16 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const generatedReportHtml = buildGeneratedReportHtml(reportDraft, reportSections)
   const reportTitle = reportDraft?.title || session.title
 
-  const itemsHtml = captureItems.map((capture, index) => {
-    const signedUrl = signedUrls[capture.id]
-    const note = capture.technician_note || capture.transcript || (capture.transcript_status === 'pending' ? 'Transcribing…' : 'No technician note provided.')
-    const fields = getFields(capture.extracted_data)
-    const mediaKind = capture.media_kind || (capture.type === 'text_note' ? 'note' : capture.type === 'video' ? 'video' : 'image')
-    const mediaHtml = mediaKind === 'note'
-      ? '<div class="video-still">Text note evidence</div>'
-      : signedUrl && mediaKind === 'image'
-        ? `<img src="${escapeHtml(signedUrl)}" alt="Evidence item ${index + 1}" />`
-        : signedUrl && mediaKind === 'video'
-          ? `<div class="video-still">Video thumbnail/still</div><p class="video-link">Video file: <a href="${escapeHtml(signedUrl)}">${escapeHtml(capture.storage_path ?? 'video evidence')}</a></p>`
-          : signedUrl
-            ? `<p><a href="${escapeHtml(signedUrl)}">Open saved ${escapeHtml(mediaKind)} file</a></p>`
-            : `<div class="video-still">Saved evidence file</div>`
+  const documentSections = normalizeDraftSections(reportSections, captureItems)
+  const derivedFormSections = deriveFormSectionsFromCaptures(captureItems)
+  const formSections = documentSections.length > 0 ? documentSections : derivedFormSections
+  const formSectionsHtml = formSections.length > 0 ? formSections.map((section) => `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2>${section.body ? `<p>${escapeHtml(section.body)}</p>` : ''}${section.fields.length > 0 ? renderDefinitionRows(section.fields.map((field) => ({ label: field.label, value: field.value }))) : ''}</section>`).join('') : ''
+  const itemsHtml = buildEvidenceItemsHtml(captureItems, signedUrls, reportSections)
 
-    return `<article class="item">
-      <h2>Item ${index + 1}</h2>
-      <div class="media">${mediaHtml}<div class="note"><strong>Technician note</strong><p>${escapeHtml(note)}</p></div></div>
-      <section class="finding"><h3>Finding / extracted details</h3><p>${escapeHtml(getAiSummary(capture.extracted_data, capture.ai_summary))}</p>
-      ${fields.length > 0 ? `<dl>${fields.map((field) => `<div><dt>${escapeHtml(field.label)}</dt><dd>${escapeHtml(field.value)}</dd></div>`).join('')}</dl>` : '<p>Report details pending.</p>'}</section>
-    </article>`
-  }).join('')
 
   const toolbarHtml = previewOnly ? '' : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>'
   const html = `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Printable Report</p><h1>${escapeHtml(reportTitle)}</h1><p>${escapeHtml(organizationName)}</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'No asset details')} · ${escapeHtml(new Date().toLocaleDateString())}</p></header>${generatedReportHtml}${itemsHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}${buildSignaturesHtml(reportSignatures, signatureUrls)}</main></body></html>`
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Printable Report</p><h1>${escapeHtml(reportTitle)}</h1><p>${escapeHtml(organizationName)}</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'No asset details')} · ${escapeHtml(new Date().toLocaleDateString())}</p></header>${generatedReportHtml}${formSectionsHtml}${itemsHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}${buildSignaturesHtml(reportSignatures, signatureUrls)}</main></body></html>`
 
   return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
 }
