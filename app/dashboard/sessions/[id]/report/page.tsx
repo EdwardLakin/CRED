@@ -36,7 +36,6 @@ type ServerAction = (formData: FormData) => void | Promise<void>;
 type CoverageReminder = ReturnType<
   typeof getRequiredEvidenceCompletion
 >["missing"][number];
-type SessionSummaryRow = [label: string, value: string];
 type SupportingEvidenceItem = {
   capture: CaptureItem;
   signedUrl: string | null;
@@ -69,10 +68,6 @@ function getDisplayEntries(value: unknown) {
         entryValue !== null && entryValue !== undefined && entryValue !== "",
     )
     .slice(0, 16);
-}
-
-function getArrayCount(value: unknown) {
-  return Array.isArray(value) ? value.length : 0;
 }
 
 function isHiddenFromReport(metadata: unknown) {
@@ -209,7 +204,6 @@ export default async function SessionReportPreviewPage({
     : { data: [] };
 
   const reportPath = `/api/dashboard/sessions/${session.id}/report-pdf`;
-  const previewPath = `${reportPath}?preview=1`;
   const headersList = await headers();
   const origin = getReportOrigin(headersList);
   const evidence = getRequiredEvidenceCompletion(
@@ -281,23 +275,6 @@ export default async function SessionReportPreviewPage({
     : null;
   const sourceFieldEntries = getDisplayEntries(currentReport?.header_fields);
   const isEditingReport = status.edit === "1";
-  const findingCount = getArrayCount(currentReport?.findings);
-  const measurementCount = getArrayCount(currentReport?.measurements);
-  const unmappedEvidenceCount = getArrayCount(currentReport?.unmapped_evidence);
-  const sessionSummaryRows: SessionSummaryRow[] = [
-    ["VIN", session.vin ?? "Not captured"],
-    [
-      "Unit Number",
-      session.unit_number ?? session.asset_label ?? "Not captured",
-    ],
-    ["Customer", session.customer_name ?? "Not captured"],
-    ["Capture Count", String(visibleCaptures.length)],
-    [
-      "Last Updated",
-      session.updated_at ? formatDateTime(session.updated_at) : "Not recorded",
-    ],
-  ];
-
   return (
     <main className="page-shell dashboard-shell report-preview-shell report-review-shell">
       <div className="section-header page-header report-preview-header report-review-header">
@@ -309,18 +286,25 @@ export default async function SessionReportPreviewPage({
             Approve it, then export.
           </p>
         </div>
-        <div className="page-actions report-preview-actions">
-          <Link
-            href={`/dashboard/sessions/${session.id}/capture`}
-            className="button button-secondary touch-target"
-          >
+        <div className="page-actions report-preview-actions compact-report-actions">
+          <span className={isReadyForExport ? "status-pill success" : "status-pill neutral"}>
+            {isReadyForExport ? "Ready" : "Review Required"}
+          </span>
+          <Link href={`/dashboard/sessions/${session.id}/capture`} className="button button-secondary touch-target">
             Continue Capturing
           </Link>
-          <Link
-            href="/dashboard"
-            className="button button-secondary touch-target"
-          >
-            Dashboard
+          {currentReport && !isEditingReport ? (
+            <Link href={`/dashboard/sessions/${session.id}/report?edit=1`} className="button button-secondary touch-target">
+              Edit Report
+            </Link>
+          ) : null}
+          {!isReadyForExport ? (
+            <Link href="#approval" className="button button-primary touch-target">
+              Approve Report
+            </Link>
+          ) : null}
+          <Link href="#export-report" className="button button-secondary touch-target">
+            Export
           </Link>
         </div>
       </div>
@@ -354,22 +338,11 @@ export default async function SessionReportPreviewPage({
 
       <div className="report-review-layout report-document-layout">
         <div className="report-workspace-column">
-          <ReportOverview
-            findingCount={findingCount}
-            session={session}
-            visibleCaptureCount={visibleCaptures.length}
-          />
-          <PrintableReportPreview
-            previewPath={previewPath}
-            sessionTitle={session.title}
-          />
           <GeneratedReportReview
             reportSections={reportSections ?? []}
             approveReportContentAction={approveReportContentAction}
             currentReport={currentReport}
-            findingCount={findingCount}
             isEditingReport={isEditingReport}
-            measurementCount={measurementCount}
             generateReportAction={generateReportAction}
             hasPendingEvidence={hasPendingEvidence}
             noteEvidence={noteEvidence}
@@ -382,13 +355,11 @@ export default async function SessionReportPreviewPage({
             session={session}
             saveReportEditsAction={saveReportEditsAction}
             sourceFieldEntries={sourceFieldEntries}
-            unmappedEvidenceCount={unmappedEvidenceCount}
             visibleCaptureCount={visibleCaptures.length}
           />
         </div>
 
         <InlineReviewPanel
-          approveReportContentAction={approveReportContentAction}
           reminders={evidence.missing}
           currentReport={currentReport}
           isReadyForExport={isReadyForExport}
@@ -397,7 +368,6 @@ export default async function SessionReportPreviewPage({
           reviewedBy={reviewer?.full_name ?? session.reviewed_by}
           reviewedLabel={reviewedLabel}
           sessionId={session.id}
-          sessionSummaryRows={sessionSummaryRows}
           signatureCount={(signatures ?? []).length}
           visibleCaptureCount={visibleCaptures.length}
         >
@@ -417,87 +387,10 @@ export default async function SessionReportPreviewPage({
   );
 }
 
-function ReportOverview({
-  findingCount,
-  session,
-  visibleCaptureCount,
-}: {
-  findingCount: number;
-  session: Pick<
-    DocumentationSession,
-    "asset_label" | "title" | "unit_number" | "vin"
-  >;
-  visibleCaptureCount: number;
-}) {
-  return (
-    <section className="card detail-card report-command-card report-overview-card">
-      <div>
-        <p className="eyebrow">Report Preview</p>
-        <h2>Professional report</h2>
-        <p className="muted">
-          CRED assembled this report from the evidence you captured.
-        </p>
-      </div>
-      <div className="report-identity-grid">
-        <div>
-          <span>Vehicle / Asset</span>
-          <strong>
-            {session.asset_label ?? session.unit_number ?? session.title}
-          </strong>
-        </div>
-        <div>
-          <span>VIN</span>
-          <strong>{session.vin ?? "Not captured"}</strong>
-        </div>
-        <div>
-          <span>Findings</span>
-          <strong>{findingCount}</strong>
-        </div>
-        <div>
-          <span>Photos / Evidence</span>
-          <strong>{visibleCaptureCount}</strong>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function PrintableReportPreview({
-  previewPath,
-  sessionTitle,
-}: {
-  previewPath: string;
-  sessionTitle: string;
-}) {
-  return (
-    <section
-      className="card detail-card report-preview-card report-preview-card-primary"
-      aria-label="CRED printable report preview"
-    >
-      <div className="report-preview-toolbar">
-        <div>
-          <strong>Printable report preview</strong>
-          <p className="muted">
-            Use your browser’s Print or Share menu from the printable report to
-            save a printable copy.
-          </p>
-        </div>
-      </div>
-      <iframe
-        src={previewPath}
-        title={`CRED printable report preview for ${sessionTitle}`}
-        className="report-preview-frame"
-      />
-    </section>
-  );
-}
-
 function GeneratedReportReview({
   reportSections,
   approveReportContentAction,
   currentReport,
-  findingCount,
-  measurementCount,
   generateReportAction,
   hasPendingEvidence,
   isEditingReport,
@@ -511,14 +404,11 @@ function GeneratedReportReview({
   session,
   saveReportEditsAction,
   sourceFieldEntries,
-  unmappedEvidenceCount,
   visibleCaptureCount,
 }: {
   reportSections: AiReportDraftSection[];
   approveReportContentAction: ServerAction | null;
   currentReport: AiReportDraft | null;
-  findingCount: number;
-  measurementCount: number;
   generateReportAction: ServerAction;
   hasPendingEvidence: boolean;
   isEditingReport: boolean;
@@ -532,18 +422,9 @@ function GeneratedReportReview({
   session: Pick<DocumentationSession, "id" | "title">;
   saveReportEditsAction: ServerAction | null;
   sourceFieldEntries: [string, unknown][];
-  unmappedEvidenceCount: number;
   visibleCaptureCount: number;
 }) {
   const editableSections = reportSections;
-  const visibleReportSections = isEditingReport
-    ? editableSections
-    : editableSections.filter(
-        (section) => !isHiddenFromReport(section.metadata),
-      );
-  const recommendationSections = visibleReportSections.filter((section) =>
-    /recommend/i.test(`${section.title} ${section.body ?? ""}`),
-  );
   const includedEvidenceCount = [
     ...photoEvidence,
     ...noteEvidence,
@@ -554,16 +435,13 @@ function GeneratedReportReview({
     <section className="card detail-card report-command-card form-stack generated-report-card">
       <div className="report-section-heading generated-report-heading">
         <div>
-          <p className="eyebrow">Report</p>
+          <p className="eyebrow">Summary</p>
           <h2>{currentReport?.title ?? session.title}</h2>
           <p className="muted">
-            Review the finished report, supporting material, notes, and saved
-            report details before export.
+            A document-style review of the captured form, notes, photos, and recommendations.
           </p>
         </div>
-        {formStructureSummary.isFormStructured ? (
-          <p className="status-pill neutral">Based on captured form</p>
-        ) : currentReport?.status === "approved" ? (
+        {currentReport?.status === "approved" ? (
           <p className="status-pill success">Ready</p>
         ) : currentReport ? (
           <p className="status-pill neutral">Review Required</p>
@@ -785,13 +663,10 @@ function GeneratedReportReview({
           <section className="report-subsection report-document-section">
             <div className="report-section-title-row">
               <div>
-                <h3>{documentSections.length > 0 ? "Report sections" : "Evidence report"}</h3>
-                {formStructureSummary.isFormStructured ? (
-                  <p className="status-pill neutral compact">Based on captured form</p>
-                ) : null}
+                <h3>{documentSections.length > 0 ? "Captured form" : "Evidence report"}</h3>
                 <p className="muted">
                   {documentSections.length > 0
-                    ? "The captured form and evidence provide this report structure."
+                    ? "Related fields are grouped under the same headings a customer would expect on the paper form."
                     : "Evidence is grouped with its notes, details, findings, and recommendations."}
                 </p>
               </div>
@@ -809,9 +684,9 @@ function GeneratedReportReview({
                   <article key={section.key} className="report-document-card">
                     <h4>{section.title}</h4>
                     {section.body ? <p>{section.body}</p> : null}
-                    {section.fields.length > 0 ? (
+                    {getProfessionalFields(section.fields).length > 0 ? (
                       <div className="report-field-grid">
-                        {section.fields.map((field) => (
+                        {getProfessionalFields(section.fields).map((field) => (
                           <div key={`${section.key}-${field.key}`} className="report-field-card">
                             <span>{field.label}</span>
                             <strong>{field.value}</strong>
@@ -850,13 +725,6 @@ function GeneratedReportReview({
         </>
       ) : null}
 
-      <div className="report-proof-strip">
-        <span>{findingCount} findings</span>
-        <span>{recommendationSections.length} recommendations</span>
-        <span>{measurementCount} measurements</span>
-        <span>{unmappedEvidenceCount} additional notes</span>
-      </div>
-
       <div className="form-actions report-inline-actions report-primary-flow">
         <Link
           href={`/dashboard/sessions/${session.id}/capture`}
@@ -889,6 +757,13 @@ function GeneratedReportReview({
       </div>
     </section>
   );
+}
+
+
+function getProfessionalFields<T extends { value: string }>(fields: T[]) {
+  const captured = fields.filter((field) => field.value && !/^(not captured|pending|unknown)$/i.test(field.value.trim()));
+  if (captured.length > 0) return captured;
+  return fields.filter((field) => field.value).slice(0, 4);
 }
 
 function EvidenceGroupList({
@@ -1070,7 +945,6 @@ function EvidenceGallery({
 }
 
 function InlineReviewPanel({
-  approveReportContentAction,
   children,
   reminders,
   currentReport,
@@ -1080,11 +954,9 @@ function InlineReviewPanel({
   reviewedBy,
   reviewedLabel,
   sessionId,
-  sessionSummaryRows,
   signatureCount,
   visibleCaptureCount,
 }: {
-  approveReportContentAction: ServerAction | null;
   children: React.ReactNode;
   reminders: CoverageReminder[];
   currentReport: AiReportDraft | null;
@@ -1094,7 +966,6 @@ function InlineReviewPanel({
   reviewedBy: string | null;
   reviewedLabel: string | null;
   sessionId: string;
-  sessionSummaryRows: SessionSummaryRow[];
   signatureCount: number;
   visibleCaptureCount: number;
 }) {
@@ -1125,7 +996,7 @@ function InlineReviewPanel({
       </section>
 
       <section
-        id="ready-for-delivery"
+        id="approval"
         className="card detail-card report-sidebar-card form-stack"
       >
         <div>
@@ -1198,71 +1069,6 @@ function InlineReviewPanel({
             </div>
           </form>
         ) : null}
-      </section>
-
-      <section className="card detail-card report-sidebar-card form-stack">
-        <div>
-          <p className="eyebrow">Report Details</p>
-          <h2>Details</h2>
-        </div>
-        <dl className="report-summary-list">
-          {sessionSummaryRows.map(([label, value]) => (
-            <div key={label}>
-              <dt>{label}</dt>
-              <dd>{value}</dd>
-            </div>
-          ))}
-        </dl>
-      </section>
-
-      <section className="card detail-card report-sidebar-card form-stack">
-        <div>
-          <p className="eyebrow">Next Steps</p>
-          <h2>Capture → Review → Export</h2>
-        </div>
-        <div className="sidebar-action-stack">
-          <Link
-            href={`/dashboard/sessions/${sessionId}/capture`}
-            className="button button-secondary touch-target"
-          >
-            1. Continue Capturing
-          </Link>
-          {currentReport &&
-          currentReport.status !== "approved" &&
-          approveReportContentAction ? (
-            <form action={approveReportContentAction}>
-              <button className="button button-primary touch-target">
-                2. Approve Report
-              </button>
-            </form>
-          ) : !isReadyForExport ? (
-            <Link
-              href="#ready-for-delivery"
-              className="button button-primary touch-target"
-            >
-              2. Approve Report
-            </Link>
-          ) : (
-            <span className="button button-primary touch-target disabled-action">
-              2. Approved
-            </span>
-          )}
-          {isReadyForExport ? (
-            <Link
-              href="#export-report"
-              className="button button-secondary touch-target"
-            >
-              3. Export
-            </Link>
-          ) : (
-            <span
-              className="button button-secondary touch-target disabled-action"
-              aria-disabled="true"
-            >
-              3. Export
-            </span>
-          )}
-        </div>
       </section>
 
       {children}

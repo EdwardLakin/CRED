@@ -113,9 +113,15 @@ function getDetailValue(details: Record<string, unknown>, fieldName: string) {
   return getFieldServiceText(details, fieldName)
 }
 
-function renderDefinitionRows(rows: Array<{ label: string; value: string }>) {
+function getProfessionalRows(rows: Array<{ label: string; value: string }>) {
   const visibleRows = rows.filter((row) => row.value.trim())
-  if (visibleRows.length === 0) return '<p class="muted">No details entered.</p>'
+  const captured = visibleRows.filter((row) => !/^(not captured|pending|unknown)$/i.test(row.value.trim()))
+  return captured.length > 0 ? captured : visibleRows.slice(0, 4)
+}
+
+function renderDefinitionRows(rows: Array<{ label: string; value: string }>) {
+  const visibleRows = getProfessionalRows(rows)
+  if (visibleRows.length === 0) return ''
   return `<dl>${visibleRows.map((row) => `<div><dt>${escapeHtml(row.label)}</dt><dd>${escapeHtml(row.value)}</dd></div>`).join('')}</dl>`
 }
 
@@ -139,7 +145,7 @@ function buildEvidenceItemsHtml(captureItems: ReportCapture[], signedUrls: Recor
   const groupsById = new Map(evidenceGroups.map((group) => [group.capture_id, group]))
   return captureItems.map((capture, index) => {
     const signedUrl = signedUrls[capture.id]
-    const note = capture.technician_note || capture.transcript || (capture.transcript_status === 'pending' ? 'Transcribing…' : 'No technician note provided.')
+    const note = capture.technician_note || capture.transcript || (capture.transcript_status === 'pending' ? 'Transcribing…' : '')
     const fields = getFields(capture.extracted_data)
     const mediaKind = capture.media_kind || (capture.type === 'text_note' ? 'note' : capture.type === 'video' ? 'video' : 'image')
     const mediaHtml = mediaKind === 'note'
@@ -157,9 +163,9 @@ function buildEvidenceItemsHtml(captureItems: ReportCapture[], signedUrls: Recor
     const recommendationsHtml = group?.recommendations.length ? `<section class="finding"><h3>Recommendation</h3>${group.recommendations.map((recommendation) => `<p>${escapeHtml(recommendation)}</p>`).join('')}</section>` : ''
     return `<article class="item">
       <h2>Item ${index + 1}</h2>
-      <div class="media">${mediaHtml}<div class="note"><strong>Technician note</strong><p>${escapeHtml(note)}</p></div></div>
+      <div class="media">${mediaHtml}${note ? `<div class="note"><strong>${capture.transcript ? 'Transcript' : 'Technician note'}</strong><p>${escapeHtml(note)}</p></div>` : ''}</div>
       <section class="finding"><h3>Supporting details</h3><p>${escapeHtml(getAiSummary(capture.extracted_data, capture.ai_summary))}</p>
-      ${fields.length > 0 ? renderDefinitionRows(fields) : '<p>Details pending review.</p>'}</section>${findingsHtml}${recommendationsHtml}
+      ${fields.length > 0 ? renderDefinitionRows(fields) : ''}</section>${findingsHtml}${recommendationsHtml}
     </article>`
   }).join('')
 }
@@ -228,8 +234,8 @@ function getAiSummary(extractedData: Json | null, fallback: string | null) {
   const extraction = isRecord(extractedData.extraction) ? extractedData.extraction : null
   if (typeof extraction?.summary === 'string' && extraction.summary.trim()) return extraction.summary.trim()
   const classification = isRecord(extractedData.classification) ? extractedData.classification : null
-  if (typeof classification?.label === 'string') return `Evidence identified as ${classification.label}.`
-  return 'Review pending.'
+  if (typeof classification?.label === 'string') return classification.label
+  return ''
 }
 
 export async function GET(_request: Request, { params }: RouteContext) {

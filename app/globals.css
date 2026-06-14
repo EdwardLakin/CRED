@@ -3605,3 +3605,49 @@ a:focus-visible {
 .suggestion-chip:hover {
   background: #e0ecff;
 }
+
+.compact-report-actions {
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.report-document-card {
+  background: linear-gradient(180deg, var(--surface), var(--surface-muted));
+  padding: 1.25rem;
+}
+
+.report-document-card h4 {
+  font-size: 1.15rem;
+  margin-bottom: 0.65rem;
+}
+
+.evidence-first-card {
+  background: var(--surface);
+}
+
+.evidence-first-body > div {
+  border-left: 3px solid var(--border-subtle);
+  margin-top: 0.35rem;
+  padding-left: 0.75rem;
+}
+
+.evidence-first-body strong {
+  color: var(--text-primary);
+}
+
+@media (max-width: 759px) {
+  .compact-report-actions {
+    justify-content: stretch;
+  }
+
+  .compact-report-actions > * {
+    width: 100%;
+  }
+
+  .report-document-card,
+  .evidence-first-card {
+    border-radius: 14px;
+    padding: 0.9rem;
+  }
+}
