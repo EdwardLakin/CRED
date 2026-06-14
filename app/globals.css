@@ -3580,3 +3580,28 @@ a:focus-visible {
     align-items: start;
   }
 }
+
+.missing-form-guidance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.suggestion-chip {
+  align-items: center;
+  background: #eef4ff;
+  border: 1px solid #c9dcff;
+  border-radius: 999px;
+  color: #174ea6;
+  display: inline-flex;
+  font-size: 0.9rem;
+  font-weight: 700;
+  min-height: 42px;
+  padding: 0.55rem 0.8rem;
+  text-decoration: none;
+}
+
+.suggestion-chip:hover {
+  background: #e0ecff;
+}

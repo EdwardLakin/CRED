@@ -9,6 +9,7 @@ import {
 import {
   buildEvidenceGroups,
   deriveFormSectionsFromCaptures,
+  getFormStructureSummary,
   normalizeDraftSections,
 } from "@/features/reports/report-structure";
 import {
@@ -239,10 +240,12 @@ export default async function SessionReportPreviewPage({
     note: getEvidenceNote(capture),
     kind: getEvidenceKind(capture),
   }));
-  const normalizedReportSections = normalizeDraftSections(reportSections ?? [], visibleCaptures);
+  const visibleReportSections = (reportSections ?? []).filter((section) => !isHiddenFromReport(section.metadata));
+  const normalizedReportSections = normalizeDraftSections(visibleReportSections, visibleCaptures);
   const derivedFormSections = deriveFormSectionsFromCaptures(visibleCaptures);
   const documentSections = normalizedReportSections.length > 0 ? normalizedReportSections : derivedFormSections;
-  const evidenceGroups = buildEvidenceGroups(visibleCaptures, reportSections ?? []);
+  const formStructureSummary = getFormStructureSummary(currentReport?.report_structure ?? null, documentSections);
+  const evidenceGroups = buildEvidenceGroups(visibleCaptures, visibleReportSections);
   const photoEvidence = supportingEvidence.filter(
     (item) => item.kind === "photo",
   );
@@ -373,6 +376,7 @@ export default async function SessionReportPreviewPage({
             otherEvidence={otherEvidence}
             photoEvidence={photoEvidence}
             documentSections={documentSections}
+            formStructureSummary={formStructureSummary}
             evidenceGroups={evidenceGroups}
             supportingEvidence={supportingEvidence}
             session={session}
@@ -501,6 +505,7 @@ function GeneratedReportReview({
   otherEvidence,
   photoEvidence,
   documentSections,
+  formStructureSummary,
   evidenceGroups,
   supportingEvidence,
   session,
@@ -521,6 +526,7 @@ function GeneratedReportReview({
   otherEvidence: SupportingEvidenceItem[];
   photoEvidence: SupportingEvidenceItem[];
   documentSections: ReturnType<typeof normalizeDraftSections>;
+  formStructureSummary: ReturnType<typeof getFormStructureSummary>;
   evidenceGroups: ReturnType<typeof buildEvidenceGroups>;
   supportingEvidence: SupportingEvidenceItem[];
   session: Pick<DocumentationSession, "id" | "title">;
@@ -548,14 +554,16 @@ function GeneratedReportReview({
     <section className="card detail-card report-command-card form-stack generated-report-card">
       <div className="report-section-heading generated-report-heading">
         <div>
-          <p className="eyebrow">Generated Report</p>
+          <p className="eyebrow">Report</p>
           <h2>{currentReport?.title ?? session.title}</h2>
           <p className="muted">
             Review the finished report, supporting material, notes, and saved
             report details before export.
           </p>
         </div>
-        {currentReport?.status === "approved" ? (
+        {formStructureSummary.isFormStructured ? (
+          <p className="status-pill neutral">Based on captured form</p>
+        ) : currentReport?.status === "approved" ? (
           <p className="status-pill success">Ready</p>
         ) : currentReport ? (
           <p className="status-pill neutral">Review Required</p>
@@ -778,6 +786,9 @@ function GeneratedReportReview({
             <div className="report-section-title-row">
               <div>
                 <h3>{documentSections.length > 0 ? "Report sections" : "Evidence report"}</h3>
+                {formStructureSummary.isFormStructured ? (
+                  <p className="status-pill neutral compact">Based on captured form</p>
+                ) : null}
                 <p className="muted">
                   {documentSections.length > 0
                     ? "The captured form and evidence provide this report structure."
@@ -785,6 +796,13 @@ function GeneratedReportReview({
                 </p>
               </div>
             </div>
+            {formStructureSummary.guidance.length > 0 ? (
+              <div className="missing-form-guidance">
+                {formStructureSummary.guidance.map((item) => (
+                  <Link key={item} href={`/dashboard/sessions/${session.id}/capture`} className="suggestion-chip">{item}</Link>
+                ))}
+              </div>
+            ) : null}
             {documentSections.length > 0 ? (
               <div className="report-document-flow">
                 {documentSections.map((section) => (

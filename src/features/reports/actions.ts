@@ -10,7 +10,7 @@ import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import { ReportEmailError, sendReportEmail, validateReportEmailRecipients } from '@/lib/email/reports'
 import { AI_REPORT_DRAFT_MODEL, AI_REPORT_DRAFT_PROMPT_VERSION, generateReportDraft } from '@/lib/openai/report-draft-generator'
 import type { OrganizationPlan } from '@/lib/stripe'
-import { deriveFormSectionsFromCaptures, buildEvidenceGroups } from '@/features/reports/report-structure'
+import { buildEvidenceGroups, deriveFormSectionsFromCaptures, scoreFormReferenceCapture, selectPrimaryFormCaptures } from '@/features/reports/report-structure'
 import type { Json } from '@/lib/supabase/database.types'
 
 const REPORT_SHARE_EXPIRATION_DAYS = 30
@@ -515,11 +515,17 @@ export async function generateAiReportDraft(sessionId: string) {
     extracted_data: capture.extracted_data,
   }))
   const formSections = deriveFormSectionsFromCaptures(normalizedCaptures)
+  const formCaptureIds = selectPrimaryFormCaptures(normalizedCaptures).map((capture) => capture.id)
   const evidenceGroups = buildEvidenceGroups(normalizedCaptures, draftOutput.sections)
+  const formDebug = normalizedCaptures.map((capture, index) => ({ id: capture.id, score: Number(scoreFormReferenceCapture(capture, index).toFixed(2)) }))
+  if (process.env.NODE_ENV !== 'production') {
+    console.info('[report-structure]', { session_id: session.id, mode: formSections.length > 0 ? 'form_structured' : 'evidence_first', form_capture_ids: formCaptureIds, scores: formDebug })
+  }
   const reportStructure: Json = safeJson({
-    version: 1,
+    version: 2,
     mode: formSections.length > 0 ? 'form_structured' : 'evidence_first',
     form_sections: formSections,
+    form_capture_ids: formCaptureIds,
     evidence_groups: evidenceGroups,
   }) ?? {}
 
@@ -623,7 +629,7 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
   const { supabase, profile } = workspace
   const { data: draft, error: draftError } = await supabase
     .from('ai_report_drafts')
-    .select('id, documentation_session_id, organization_id, header_fields')
+    .select('id, documentation_session_id, organization_id, title, summary, header_fields')
     .eq('id', draftId)
     .eq('organization_id', profile.organization_id)
     .single()
@@ -656,8 +662,8 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
   const { error: updateDraftError } = await supabase
     .from('ai_report_drafts')
     .update({
-      title: sanitizeReportText(formData.get('report_title'), 180),
-      summary: sanitizeReportText(formData.get('report_summary'), 1200),
+      title: sanitizeReportText(formData.get('report_title'), 180) ?? draft.title,
+      summary: sanitizeReportText(formData.get('report_summary'), 1200) ?? draft.summary,
       header_fields: editedHeaderFields,
       updated_at: now,
     })

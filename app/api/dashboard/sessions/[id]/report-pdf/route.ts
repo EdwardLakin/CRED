@@ -60,7 +60,7 @@ function buildGeneratedReportHtml(draft: ReportDraft | null, sections: ReportDra
   if (!draft) return ''
   const headerRows = getDisplayHeaderRows(draft.header_fields)
   const visibleSections = sections.filter((section) => !isHiddenFromReport(section.metadata))
-  return `${draft.summary ? `<section class="item service-section"><h2>Summary</h2><p>${escapeHtml(draft.summary)}</p></section>` : ''}${headerRows.length > 0 ? `<section class="item service-section"><h2>Report details</h2>${renderDefinitionRows(headerRows)}</section>` : ''}${visibleSections.map((section) => `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2>${section.body ? `<p>${escapeHtml(section.body)}</p>` : '<p class="muted">No details entered.</p>'}</section>`).join('')}`
+  return `${draft.summary ? `<section class="item service-section"><h2>Summary</h2><p>${escapeHtml(draft.summary)}</p></section>` : ''}${headerRows.length > 0 ? `<section class="item service-section"><h2>Report details</h2>${renderDefinitionRows(headerRows)}</section>` : ''}${visibleSections.map((section) => `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2>${section.body ? `<p>${escapeHtml(section.body)}</p>` : ''}</section>`).join('')}`
 }
 
 function getFields(extractedData: Json | null) {
@@ -379,7 +379,8 @@ export async function GET(_request: Request, { params }: RouteContext) {
     ? session.organizations.name
     : 'CRED'
   if (isFieldServiceSessionType(session.session_type)) {
-    const html = buildFieldServiceReportHtml({ session, organizationName, captureItems, signedUrls, signatures: reportSignatures, signatureUrls, reportDraft, reportSections, showToolbar: !previewOnly })
+    const visibleReportSections = reportSections.filter((section) => !isHiddenFromReport(section.metadata))
+    const html = buildFieldServiceReportHtml({ session, organizationName, captureItems, signedUrls, signatures: reportSignatures, signatureUrls, reportDraft, reportSections: visibleReportSections, showToolbar: !previewOnly })
     return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
   }
 
@@ -387,19 +388,20 @@ export async function GET(_request: Request, { params }: RouteContext) {
     .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
     .join(' · ')
 
-  const generatedReportHtml = buildGeneratedReportHtml(reportDraft, reportSections)
+  const visibleReportSections = reportSections.filter((section) => !isHiddenFromReport(section.metadata))
+  const generatedReportHtml = buildGeneratedReportHtml(reportDraft, visibleReportSections)
   const reportTitle = reportDraft?.title || session.title
 
-  const documentSections = normalizeDraftSections(reportSections, captureItems)
+  const documentSections = normalizeDraftSections(visibleReportSections, captureItems)
   const derivedFormSections = deriveFormSectionsFromCaptures(captureItems)
   const formSections = documentSections.length > 0 ? documentSections : derivedFormSections
   const formSectionsHtml = formSections.length > 0 ? formSections.map((section) => `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2>${section.body ? `<p>${escapeHtml(section.body)}</p>` : ''}${section.fields.length > 0 ? renderDefinitionRows(section.fields.map((field) => ({ label: field.label, value: field.value }))) : ''}</section>`).join('') : ''
-  const itemsHtml = buildEvidenceItemsHtml(captureItems, signedUrls, reportSections)
+  const itemsHtml = buildEvidenceItemsHtml(captureItems, signedUrls, visibleReportSections)
 
 
   const toolbarHtml = previewOnly ? '' : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>'
   const html = `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Printable Report</p><h1>${escapeHtml(reportTitle)}</h1><p>${escapeHtml(organizationName)}</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'No asset details')} · ${escapeHtml(new Date().toLocaleDateString())}</p></header>${generatedReportHtml}${formSectionsHtml}${itemsHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}${buildSignaturesHtml(reportSignatures, signatureUrls)}</main></body></html>`
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Printable Report</p><h1>${escapeHtml(reportTitle)}</h1><p>${escapeHtml(organizationName)}</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'No asset details')} · ${escapeHtml(new Date().toLocaleDateString())}</p></header>${formSectionsHtml || generatedReportHtml}${itemsHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}${buildSignaturesHtml(reportSignatures, signatureUrls)}</main></body></html>`
 
   return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
 }
