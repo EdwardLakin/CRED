@@ -249,6 +249,7 @@ export interface Database {
           findings: Json
           coverage: Json
           unmapped_evidence: Json
+          report_structure: Json
           confidence: number | null
           model: string | null
           prompt_version: string | null
@@ -271,6 +272,7 @@ export interface Database {
           findings?: Json
           coverage?: Json
           unmapped_evidence?: Json
+          report_structure?: Json
           confidence?: number | null
           model?: string | null
           prompt_version?: string | null
@@ -293,6 +295,7 @@ export interface Database {
           findings?: Json
           coverage?: Json
           unmapped_evidence?: Json
+          report_structure?: Json
           confidence?: number | null
           model?: string | null
           prompt_version?: string | null

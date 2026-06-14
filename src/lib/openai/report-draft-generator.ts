@@ -1,7 +1,7 @@
 import type { Json } from '@/lib/supabase/database.types'
 
 export const AI_REPORT_DRAFT_MODEL = 'gpt-4.1-mini'
-export const AI_REPORT_DRAFT_PROMPT_VERSION = 'ai-report-draft-v2'
+export const AI_REPORT_DRAFT_PROMPT_VERSION = 'form-evidence-report-v3'
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const MAX_SECTIONS = 24
@@ -128,17 +128,17 @@ export type GeneratedReportDraft = {
   sections: GeneratedReportDraftSection[]
 }
 
-const REPORT_DRAFT_SYSTEM_PROMPT = `You generate editable AI Drafts for CRED evidence-first reports.
+const REPORT_DRAFT_SYSTEM_PROMPT = `You generate editable drafts for CRED evidence-first, form-structured reports.
 Return JSON only, no markdown.
-Use the selected Form Profile as report context, not as a forced checklist. Use its terminology and sections where reasonable, but do not force empty sections to appear if there is no evidence.
+If a captured source document/form exists, use that captured form as the report structure. Extract or infer its sections, labels, and field groups generically from the captured document; do not require or invent a form type selection. Use any selected context only as secondary terminology.
 Technicians capture evidence naturally; synthesize technician-captured evidence into a professional, human-reviewable draft instead of dumping captures.
 Do not invent unsupported facts.
 Prioritize draft inputs in this order: 1) technician notes on evidence captures, 2) evidence photos/videos, 3) extracted measurements/findings from evidence captures, 4) source document identity fields, 5) selected Form Profile/report context.
-Source documents are used for identity/header context. Do not convert work order line descriptions or prior comments into findings unless the technician note explicitly asks to include them.
-Source documents may populate header_fields, Vehicle / Asset Information, customer/work order fields, and Source Documents Reviewed. Source documents must not populate final Findings, Recommendations, or Repairs Performed unless the technician intentionally notes that source document content should be included.
+Source documents/forms provide the report skeleton, field labels, and filled values. Do not convert prior work-order lines into findings unless technician evidence explicitly supports them.
+Each section should include metadata for form/evidence rendering when available: section_type ('form_section' or 'evidence_group'), source_field_group, fields [{key,label,value,source_capture_id}], related_capture_ids, observations, findings, recommendations. Attach findings/recommendations to the evidence capture IDs that support them.
 Every finding or section based on evidence must reference source_capture_ids from supplied non-source evidence captures or explicitly requested source-document captures.
 Use needs_review when uncertain or when evidence is incomplete.
-Organize around sections such as Report Summary, Vehicle / Asset Information, Source Documents Reviewed, Findings, Measurements, Recommendations, Supporting Evidence, and Signatures. Omit sections with no supporting evidence unless needed for context.
+Organize around captured form sections first when a form is present, then supporting evidence. When no form is present, organize as evidence groups that keep each photo/file/text/voice note together with its note, details, findings, and recommendations.
 Do not claim official CVIP/compliance completion, automatic compliance, or final inspection approval.
 If unmentioned items are assumed pass, clearly mark them as assumptions requiring review.
 Prefer technician notes/transcripts over visual guesswork for location, component, measurement, and recommendation.
@@ -342,7 +342,7 @@ export async function generateReportDraft(input: GenerateReportDraftInput): Prom
           content: [
             {
               type: 'input_text',
-              text: `Create an editable AI Draft from this report context, source document identity fields, evidence captures, technician notes/transcripts, and extracted details. Follow the source document policy exactly. Return the strict JSON shape only.\n${JSON.stringify(buildDraftContext(input)).slice(0, 70000)}`,
+              text: `Create an editable CRED report draft from this context. Use captured form/source-document sections as the structure when present. Keep evidence as the anchor: findings, recommendations, measurements, details, notes, and transcripts must attach to their source capture IDs where possible. Return the strict JSON shape only.\n${JSON.stringify(buildDraftContext(input)).slice(0, 70000)}`,
             },
           ],
         },
