@@ -354,8 +354,54 @@ function getReportDraftErrorMessage(error: unknown) {
   return error instanceof Error && error.message ? error.message : 'Report could not be generated. Please try again.'
 }
 
+
+export async function completeCaptureAndPrepareReport(sessionId: string, formData: FormData) {
+  void formData
+  const { supabase, profile, session } = await requireOwnedSession(sessionId)
+
+  const { error } = await supabase
+    .from('documentation_sessions')
+    .update({ status: 'review', updated_at: new Date().toISOString() })
+    .eq('id', session.id)
+    .eq('organization_id', profile.organization_id)
+
+  if (error) {
+    redirect(getReportRedirectPath(session.id, { error: error.message }))
+  }
+
+  const { data: activeReport } = await supabase
+    .from('ai_report_drafts')
+    .select('id')
+    .eq('documentation_session_id', session.id)
+    .eq('organization_id', profile.organization_id)
+    .not('status', 'in', '(superseded)')
+    .order('generated_at', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  revalidatePath('/dashboard')
+  revalidatePath('/dashboard/sessions')
+  revalidatePath(`/dashboard/sessions/${session.id}`)
+  revalidatePath(`/dashboard/sessions/${session.id}/capture`)
+  revalidatePath(`/dashboard/sessions/${session.id}/report`)
+
+  if (activeReport) {
+    redirect(getReportRedirectPath(session.id))
+  }
+
+  await generateAiReportDraft(session.id)
+}
+
 export async function generateAiReportDraft(sessionId: string) {
   const { supabase, profile, session } = await requireOwnedSession(sessionId)
+
+  await supabase
+    .from('documentation_sessions')
+    .update({ status: 'review', updated_at: new Date().toISOString() })
+    .eq('id', session.id)
+    .eq('organization_id', profile.organization_id)
+
   const billingAccess = requireActiveBillingAccess(profile)
   if (!billingAccess.ok) {
     redirect(getReportRedirectPath(session.id, { error: billingAccess.message }))
