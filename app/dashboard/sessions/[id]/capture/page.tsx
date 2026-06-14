@@ -1,8 +1,8 @@
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { getPlanLimits, parseBillingPlan } from '@/features/billing'
 import { AddCaptureForm, RecentCapturesList } from '@/features/capture'
+import { completeCaptureAndPrepareReport } from '@/features/reports/actions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
 export default async function GuidedCapturePage({
@@ -49,6 +49,7 @@ export default async function GuidedCapturePage({
   )
 
   const planLimits = getPlanLimits(parseBillingPlan(profile.organization.plan))
+  const doneAction = completeCaptureAndPrepareReport.bind(null, session.id)
 
   return (
     <main className="page-shell dashboard-shell focused-capture-shell">
@@ -58,9 +59,9 @@ export default async function GuidedCapturePage({
           <p className="muted">{session.title}</p>
           <p className="muted">If you have a paper form, capture it first.</p>
         </div>
-        <Link href={`/dashboard/sessions/${session.id}/report`} className="button button-primary touch-target">
-          Done
-        </Link>
+        <form action={doneAction}>
+          <button className="button button-primary touch-target">Done</button>
+        </form>
       </div>
 
       {captureSaved ? <p className="success">Saved. Keep capturing or tap Done.</p> : null}

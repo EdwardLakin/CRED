@@ -335,7 +335,7 @@ export default async function SessionReportPreviewPage({
           <p className="success">Approved and ready to export.</p>
         ) : null}
         {status.draft ? (
-          <p className="success">Report generated and ready for review.</p>
+          <p className="success">Report is ready for review.</p>
         ) : null}
         {status.approved_draft ? (
           <p className="success">Report approved and ready to export.</p>
@@ -556,16 +556,16 @@ function GeneratedReportReview({
           <p className="eyebrow">Generated Report</p>
           <h2>{currentReport?.title ?? session.title}</h2>
           <p className="muted">
-            Review the finished report, supporting material, notes, and
-            discovered form fields before export.
+            Review the finished report, supporting material, notes, and saved
+            report details before export.
           </p>
         </div>
         {currentReport?.status === "approved" ? (
-          <p className="status-pill success">Approved</p>
+          <p className="status-pill success">Ready</p>
         ) : currentReport ? (
-          <p className="status-pill neutral">Ready for your approval</p>
+          <p className="status-pill neutral">Review Required</p>
         ) : (
-          <p className="status-pill neutral">Report shell ready</p>
+          <p className="status-pill neutral">Review Required</p>
         )}
       </div>
 
@@ -576,15 +576,14 @@ function GeneratedReportReview({
           <p>{currentReport.summary}</p>
         ) : (
           <p className="muted">
-            Capture more evidence to improve this report. CRED will place the
-            title, summary, findings, recommendations, and supporting material
-            here.
+            Building your report… Your evidence is saved. CRED is preparing the
+            report so you can review it here.
           </p>
         )}
         {hasPendingEvidence ? (
           <p className="notice info compact-report-notice">
-            New evidence is still being added. Refresh the report when you are
-            ready.
+            Your evidence is saved. CRED is preparing the report. You can
+            continue capturing while this finishes.
           </p>
         ) : null}
       </div>
@@ -592,10 +591,10 @@ function GeneratedReportReview({
       {!currentReport ? (
         <form action={generateReportAction} className="empty-report-shell">
           <div>
-            <h3>Start with a clean report shell</h3>
+            <h3>Building your report…</h3>
             <p className="muted">
               {visibleCaptureCount > 0
-                ? "Create the report from the evidence captured so far, or continue capturing to add more detail."
+                ? "Your evidence is saved. CRED is preparing the report. You can refresh this page or continue capturing while this finishes."
                 : "No evidence has been added yet. Continue capturing to build the report."}
             </p>
           </div>
@@ -606,8 +605,14 @@ function GeneratedReportReview({
             >
               Continue Capturing
             </Link>
+            <Link
+              href={`/dashboard/sessions/${session.id}/report`}
+              className="button button-secondary touch-target"
+            >
+              Refresh
+            </Link>
             <button className="button button-secondary touch-target">
-              Generate Report
+              Prepare Report
             </button>
           </div>
         </form>
@@ -747,7 +752,7 @@ function GeneratedReportReview({
                   </div>
                 ))
               ) : (
-                <p className="muted">No form fields detected yet.</p>
+                <p className="muted">No saved form fields yet.</p>
               )}
             </div>
           </section>
@@ -824,7 +829,7 @@ function GeneratedReportReview({
             <div>
               <h3>Form fields</h3>
               <p className="muted">
-                Details discovered from captured forms and documents.
+                Saved details from captured forms and documents.
               </p>
             </div>
             <div className="report-field-grid">
@@ -836,7 +841,7 @@ function GeneratedReportReview({
                   </div>
                 ))
               ) : (
-                <p className="muted">No form fields detected yet.</p>
+                <p className="muted">No saved form fields yet.</p>
               )}
             </div>
           </section>
@@ -891,7 +896,7 @@ function GeneratedReportReview({
         {currentReport ? (
           <form action={generateReportAction}>
             <button className="button button-secondary touch-target">
-              Refresh Report
+              Update Report
             </button>
           </form>
         ) : null}
