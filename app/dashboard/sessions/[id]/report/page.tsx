@@ -15,6 +15,7 @@ import {
   isCustomerAssetSection,
   normalizeDraftSections,
   shouldRenderDetail,
+  shouldRenderDraftSectionStandalone,
   splitRecommendationText,
   stripConfidenceText,
   getNormalizedInspectionStatus,
@@ -734,9 +735,9 @@ function GeneratedReportReview({
             {customerAssetRows.length > 0 ? (
               <div className="report-field-grid">{customerAssetRows.map((field) => <div key={field.label} className="report-field-card"><span>{field.label}</span><strong>{stripConfidenceText(field.value)}</strong></div>)}</div>
             ) : null}
-            {documentSections.filter((section) => !isCustomerAssetSection(section) && !/supporting details|supporting evidence/i.test(section.title)).length > 0 ? (
+            {documentSections.filter((section) => shouldRenderDraftSectionStandalone(section) && !isCustomerAssetSection(section) && !/supporting details|supporting evidence/i.test(section.title)).length > 0 ? (
               <div className="report-document-flow">
-                {documentSections.filter((section) => !isCustomerAssetSection(section) && !/supporting details|supporting evidence/i.test(section.title)).map((section) => (
+                {documentSections.filter((section) => shouldRenderDraftSectionStandalone(section) && !isCustomerAssetSection(section) && !/supporting details|supporting evidence/i.test(section.title)).map((section) => (
                   <article key={section.key} className="report-document-card">
                     <h4>{stripConfidenceText(/supporting details/i.test(section.title) ? "Supporting Evidence" : section.title)}</h4>
                     {section.body ? (/recommend/i.test(section.title) ? <ul>{splitRecommendationText(section.body).map((item, index) => <li key={index}>{stripConfidenceText(item)}</li>)}</ul> : <p>{stripConfidenceText(section.body)}</p>) : null}

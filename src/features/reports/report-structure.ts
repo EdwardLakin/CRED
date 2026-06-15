@@ -463,6 +463,27 @@ export function deriveFormSectionsFromCaptures(captures: CaptureLike[]): Normali
   })).slice(0, 10)
 }
 
+
+const NORMALIZED_MODEL_SECTION_PATTERNS = [
+  /findings?|inspection findings?|observed conditions?|defects?|issues?/,
+  /recommendations?|recommended actions?|actions?/,
+  /signatures?|signature requirements?|acceptance \/ signature/,
+  /customer (?:\/ )?(?:contact )?information|customer details|customer \/ asset details/,
+  /equipment information|unit \/ equipment information|asset information|vehicle information/,
+  /supporting evidence|supporting details|evidence/,
+  /additional notes?|notes? placeholder/,
+] as const
+
+function isNormalizedModelRepresentedSection(key: string, title: string) {
+  const normalized = normalizeForMatch(`${key} ${title}`)
+  return NORMALIZED_MODEL_SECTION_PATTERNS.some((pattern) => pattern.test(normalized))
+}
+
+export function shouldRenderDraftSectionStandalone(section: Pick<DraftSectionLike, 'section_key' | 'title'> | Pick<NormalizedReportSection, 'key' | 'title'>) {
+  const key = 'section_key' in section ? section.section_key : section.key
+  return !isNormalizedModelRepresentedSection(key, section.title)
+}
+
 export function normalizeDraftSections(sections: DraftSectionLike[], captures: CaptureLike[]): NormalizedReportSection[] {
   const captureIds = new Set(captures.map((capture) => capture.id))
   return sections.map((section) => {
@@ -587,15 +608,20 @@ export function getCaptureGuidance(sections: NormalizedReportSection[]) {
 
 export type EvidencePurpose = 'finding' | 'reference_document' | 'additional_note' | 'supporting_evidence'
 
+function hasFindingLikeEvidence(capture: CaptureLike, group?: EvidenceGroup) {
+  const typeText = `${capture.type ?? ''} ${capture.media_kind ?? ''} ${textForCapture(capture)}`.toLowerCase()
+  return (group?.findings.length ?? 0) > 0
+    || (group?.recommendations.length ?? 0) > 0
+    || /\b(technician[_\s-]?note|condition|severity|measurement|recommendation|\d+(?:\.\d+)?\s?(?:mm|in|psi|volt|v)|red|attention|required|corrosion|brake\s+pads?|battery|wear|leak|crack|broken|replace|repair)\b/i.test(typeText)
+}
+
 export function classifyEvidencePurpose(capture: CaptureLike, group?: EvidenceGroup): EvidencePurpose {
   const text = textForCapture(capture)
   const typeText = `${capture.type ?? ''} ${capture.media_kind ?? ''} ${text}`.toLowerCase()
   if (isNoteCapture(capture)) return 'additional_note'
-  if (isDocumentCapture(capture) && /work[_\s-]?order|vin|licen[cs]e|plate|registration|info[_\s-]?plate|data[_\s-]?plate|manufacturer|document|form|sheet/.test(typeText)) {
+  if (hasFindingLikeEvidence(capture, group)) return 'finding'
+  if (isDocumentCapture(capture) && /work[_\s-]?order|repair[_\s-]?order|\bro\s*(?:number|#)?\b|vin|licen[cs]e|plate|registration|info[_\s-]?plate|data[_\s-]?plate|manufacturer|document|form|sheet/.test(typeText)) {
     return 'reference_document'
-  }
-  if ((group?.findings.length ?? 0) > 0 || (group?.recommendations.length ?? 0) > 0 || /\b(\d+(?:\.\d+)?\s?(?:mm|in|psi|volt|v)|red|attention|required|corrosion|wear|leak|crack|broken|replace|repair)\b/i.test(typeText)) {
-    return 'finding'
   }
   return 'supporting_evidence'
 }
@@ -708,9 +734,9 @@ export function isCustomerAssetSection(section: NormalizedReportSection) {
 
 
 export const REPORT_SEVERITY_PRESENTATION = [
-  { key: 'critical', label: '🔴 Critical', priority: 5, patterns: [/\b(?:red|critical|danger|fail|failed|urgent)\b/i, /replace\s+(?:front\s+)?brake\s+pads?/i, /brake\s+pads?.*replace/i, /wear\s*limit/i, /at\s+wear\s+limit/i, /\b2\s*mm\b.*\bbrake\s*pads?\b/i, /\bbrake\s*pads?\b.*\b2\s*mm\b/i, /immediate|unsafe|out of service/i] },
-  { key: 'advisory', label: '🟡 Advisory', priority: 3, patterns: [/\b(?:yellow|warning|advisory|monitor|attention|medium)\b/i] },
-  { key: 'informational', label: '🟢 Informational', priority: 1, patterns: [/\b(?:green|pass|ok|info|informational)\b/i] },
+  { key: 'critical', label: '🔴 Critical', priority: 5, patterns: [/\b(?:red|critical|danger|fail|failed)\b/i, /replace\s+(?:front\s+)?brake\s+pads?/i, /brake\s+pads?.*replace/i, /wear\s*limit/i, /at\s+wear\s+limit/i, /\b2\s*mm\b.*\bbrake\s+pads?\b/i, /\bbrake\s+pads?\b.*\b2\s*mm\b/i, /unsafe|out of service/i] },
+  { key: 'advisory', label: '🟡 Advisory', priority: 3, patterns: [/\b(?:yellow|warning|advisory|monitor|attention|medium)\b/i, /corrosion\s+present/i, /clean\s+corrosion/i, /inspect\s+for\s+damage/i] },
+  { key: 'informational', label: '🟢 Informational', priority: 1, patterns: [/\b(?:green|pass|ok|info|informational|reference documents?|vin|plate|work order)\b/i] },
 ] as const
 
 export type NormalizedReportSeverity = (typeof REPORT_SEVERITY_PRESENTATION)[number] | { key: 'informational'; label: '🟢 Informational'; priority: 1 }
@@ -777,6 +803,10 @@ function isFindingLikeField(field: NormalizedFormField) {
   return /findings?|issues?|defects?|observed|condition|severity|fail|failed|wear|worn|corrosion|damage|unsafe/i.test(labelText) || stronglyLooksLikeFindingValue(field.value)
 }
 
+function isIsolatedFindingFieldValue(value: string) {
+  return /^(?:corrosion present|\d+(?:\.\d+)?\s*mm|red|medium|replace front brake pads|clean corrosion|inspect for damage)$/i.test(clean(value, 200))
+}
+
 function collectDraftFindingFallbackItems<TCapture extends CaptureLike>(params: Parameters<typeof buildNonDuplicatedReviewDocument<TCapture>>[0], existing: ReviewDocument<TCapture>['findings']): ReviewDocument<TCapture>['findings'] {
   const fallbackCapture = params.captures[0]
   if (!fallbackCapture) return []
@@ -807,6 +837,10 @@ function collectDraftFindingFallbackItems<TCapture extends CaptureLike>(params: 
 
     for (const finding of findingTexts) {
       const findingComponents = componentHits(finding)
+      if (isIsolatedFindingFieldValue(finding) && existingText.some((text) => {
+        const existingComponents = componentHits(text)
+        return existingComponents.some((component) => findingComponents.includes(component))
+      })) continue
       const recommendations = dedupeReportText([
         ...sectionRecommendations,
         ...globalRecommendations.filter((recommendation) => {
@@ -825,10 +859,16 @@ function collectDraftFindingFallbackItems<TCapture extends CaptureLike>(params: 
   const seen = new Set(existingText.map(normalizeForMatch))
   return candidates.flatMap((candidate, index) => {
     const key = normalizeForMatch(candidate.finding)
+    const candidateText = [candidate.finding, ...candidate.recommendations, ...candidate.details.map((detail) => detail.value)].join(' ')
+    const candidateComponents = componentHits(candidateText)
     if (!key || existingText.some((text) => {
       const existingKey = normalizeForMatch(text)
       return existingKey === key || existingKey.includes(key) || key.includes(existingKey)
-    }) || seen.has(key)) return []
+    }) || Array.from(seen).some((seenKey) => seenKey === key || seenKey.includes(key) || key.includes(seenKey)) || candidates.slice(0, index).some((other) => {
+      const otherText = [other.finding, ...other.recommendations, ...other.details.map((detail) => detail.value)].join(' ')
+      const otherComponents = componentHits(otherText)
+      return candidateComponents.length > 0 && candidateComponents.some((component) => otherComponents.includes(component))
+    })) return []
     seen.add(key)
     const group: EvidenceGroup = {
       capture_id: `draft-finding-${index + 1}`,
