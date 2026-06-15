@@ -606,23 +606,39 @@ export function getCaptureGuidance(sections: NormalizedReportSection[]) {
 }
 
 
+export type CaptureClassification = 'inspection_finding' | 'reference_document' | 'additional_note' | 'supporting_evidence' | 'ignored_internal'
 export type EvidencePurpose = 'finding' | 'reference_document' | 'additional_note' | 'supporting_evidence'
 
-function hasFindingLikeEvidence(capture: CaptureLike, group?: EvidenceGroup) {
-  const typeText = `${capture.type ?? ''} ${capture.media_kind ?? ''} ${textForCapture(capture)}`.toLowerCase()
-  return (group?.findings.length ?? 0) > 0
-    || (group?.recommendations.length ?? 0) > 0
-    || /\b(technician[_\s-]?note|condition|severity|measurement|recommendation|\d+(?:\.\d+)?\s?(?:mm|in|psi|volt|v)|red|attention|required|corrosion|brake\s+pads?|battery|wear|leak|crack|broken|replace|repair)\b/i.test(typeText)
+
+function hasExplicitReferenceDocumentSignal(capture: CaptureLike) {
+  const text = `${capture.type ?? ''} ${capture.media_kind ?? ''} ${documentTextForCapture(capture)}`.toLowerCase()
+  return /work[_\s-]?order|repair[_\s-]?order|\bro\s*(?:number|#)?\b|licen[cs]e\s*plate|plate\s*(?:number|#)|registration plate|\bvin\b|manufacturer|data[_\s-]?plate|compliance plate|info[_\s-]?plate|serial plate|registration|form|checklist|certificate|certification/.test(text)
+}
+
+function hasTrueDefectEvidence(capture: CaptureLike, group?: EvidenceGroup) {
+  const text = `${capture.type ?? ''} ${capture.media_kind ?? ''} ${textForCapture(capture)} ${(group?.findings ?? []).join(' ')} ${(group?.recommendations ?? []).join(' ')}`.toLowerCase()
+  const hasComponent = /\b(brake\s*pads?|brakes?|rotor|battery|terminal|post|tire|tyre|tread|wheel|bearing|axle|engine|coolant|oil|hose|belt|body|frame|panel|light|lamp)\b/i.test(text)
+  const hasDefect = /\b(corrosion|wear|worn|wear\s*limit|leak|crack|broken|damage|rust|loose|missing|defect|unsafe|fail(?:ed)?|red|critical|medium|advisory|attention|required)\b/i.test(text)
+  const hasRepairRecommendation = /\b(replace|repair|clean\s+corrosion|inspect\s+for\s+damage|service|adjust)\b/i.test(text) && !/\bwork[_\s-]?order|repair[_\s-]?order\b/i.test(text)
+  const hasRepairMeasurement = /\b(?:brake\s*pads?|tread|battery|terminal|post)\b[\s\S]{0,80}\b\d+(?:\.\d+)?\s?(?:mm|in|psi|volt|v)\b|\b\d+(?:\.\d+)?\s?(?:mm|in|psi|volt|v)\b[\s\S]{0,80}\b(?:brake\s*pads?|tread|battery|terminal|post)\b/i.test(text)
+  return (hasComponent && (hasDefect || hasRepairRecommendation || hasRepairMeasurement)) || hasRepairMeasurement
+}
+
+export function classifyCapture(capture: CaptureLike, group?: EvidenceGroup): CaptureClassification {
+  const text = textForCapture(capture)
+  if (/\b(hidden_from_report|internal_only|debug)\b/i.test(text)) return 'ignored_internal'
+  if (isNoteCapture(capture) && !hasTrueDefectEvidence(capture, group)) return 'additional_note'
+  if (hasExplicitReferenceDocumentSignal(capture)) return 'reference_document'
+  if (hasTrueDefectEvidence(capture, group)) return 'inspection_finding'
+  if (isDocumentCapture(capture)) return 'reference_document'
+  return 'supporting_evidence'
 }
 
 export function classifyEvidencePurpose(capture: CaptureLike, group?: EvidenceGroup): EvidencePurpose {
-  const text = textForCapture(capture)
-  const typeText = `${capture.type ?? ''} ${capture.media_kind ?? ''} ${text}`.toLowerCase()
-  if (isNoteCapture(capture)) return 'additional_note'
-  if (hasFindingLikeEvidence(capture, group)) return 'finding'
-  if (isDocumentCapture(capture) && /work[_\s-]?order|repair[_\s-]?order|\bro\s*(?:number|#)?\b|vin|licen[cs]e|plate|registration|info[_\s-]?plate|data[_\s-]?plate|manufacturer|document|form|sheet/.test(typeText)) {
-    return 'reference_document'
-  }
+  const classification = classifyCapture(capture, group)
+  if (classification === 'inspection_finding') return 'finding'
+  if (classification === 'reference_document') return 'reference_document'
+  if (classification === 'additional_note') return 'additional_note'
   return 'supporting_evidence'
 }
 
@@ -912,7 +928,7 @@ export function getNormalizedInspectionStatus<TCapture = CaptureLike>(findings: 
 
 export function buildNormalizedReportModel<TCapture extends CaptureLike>(params: Parameters<typeof buildNonDuplicatedReviewDocument<TCapture>>[0]): NormalizedReportModel<TCapture> {
   const document = buildNonDuplicatedReviewDocument(params)
-  const fallbackFindings = collectDraftFindingFallbackItems(params, document.findings)
+  const fallbackFindings = document.findings.length > 0 ? [] : collectDraftFindingFallbackItems(params, document.findings)
   const allFindings = [...document.findings, ...fallbackFindings]
   const findingModels = getNormalizedFindingModels(allFindings)
   const recommendedActions = getNormalizedRecommendedActions(findingModels)
