@@ -10,7 +10,7 @@ import {
   isFieldServiceSessionType,
   normalizeFieldServiceDetails,
 } from '@/features/field-service'
-import { buildCustomerAssetRows, buildNormalizedReportModel, classifyReferenceDocumentTitle, dedupeEvidenceDetails, deriveFormSectionsFromCaptures, getNormalizedFindingModels, getNormalizedInspectionStatus, getNormalizedRecommendedActions, isCustomerAssetSection, isMeaningfulCustomerReportText, normalizeDraftSections, shouldRenderDetail, splitRecommendationText, stripConfidenceText } from '@/features/reports/report-structure'
+import { buildCustomerAssetRows, buildNormalizedReportModel, classifyReferenceDocumentTitle, dedupeEvidenceDetails, deriveFormSectionsFromCaptures, getNormalizedFindingModels, getNormalizedInspectionStatus, getNormalizedRecommendedActions, isCustomerAssetSection, isMeaningfulCustomerReportText, normalizeDraftSections, shouldRenderDetail, shouldRenderDraftSectionStandalone, splitRecommendationText, stripConfidenceText } from '@/features/reports/report-structure'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { recordUsageEvent } from '@/features/usage'
 import { formatDateInTimeZone } from '@/lib/date-format'
@@ -62,7 +62,7 @@ function getDisplayHeaderRows(value: Json) {
 function buildGeneratedReportHtml(draft: ReportDraft | null, sections: ReportDraftSection[]) {
   if (!draft) return ''
   const headerRows = getDisplayHeaderRows(draft.header_fields)
-  const visibleSections = sections.filter((section) => !isHiddenFromReport(section.metadata))
+  const visibleSections = sections.filter((section) => !isHiddenFromReport(section.metadata) && shouldRenderDraftSectionStandalone(section))
   return `${draft.summary ? `<section class="item service-section"><h2>Summary</h2><p>${escapeHtml(draft.summary)}</p></section>` : ''}${headerRows.length > 0 ? `<section class="item service-section"><h2>Report details</h2>${renderDefinitionRows(headerRows)}</section>` : ''}${visibleSections.map((section) => {
     const title = /supporting details/i.test(section.title) ? 'Supporting Evidence' : section.title
     const isRecommendations = /recommend/i.test(title)
@@ -242,8 +242,6 @@ function buildFieldServiceReportHtml({
     .map((fieldName) => ({ label: FIELD_SERVICE_FIELD_LABELS[fieldName] ?? fieldName, value: getDetailValue(details, fieldName) }))
   const timeRows = ['work_started_at', 'work_ended_at', 'travel_time_hours', 'working_time_hours', 'overtime_hours', 'double_time_hours', 'total_hours']
     .map((fieldName) => ({ label: FIELD_SERVICE_FIELD_LABELS[fieldName] ?? fieldName, value: getDetailValue(details, fieldName) }))
-  const signatureRows = ['technician_name', 'technician_signature', 'customer_name_signed', 'customer_signature', 'customer_signed_at', 'supervisor_signature_name']
-    .map((fieldName) => ({ label: FIELD_SERVICE_FIELD_LABELS[fieldName] ?? fieldName, value: getDetailValue(details, fieldName) }))
   const chargeRows = ['labour_charge', 'parts_charge', 'mileage_charge', 'expenses_charge', 'misc_charges', 'subtotal', 'tax', 'total']
     .map((fieldName) => ({ label: FIELD_SERVICE_FIELD_LABELS[fieldName] ?? fieldName, value: getDetailValue(details, fieldName) }))
   const reviewDocument = buildNormalizedReportModel({ captures: captureItems, sections: [], draftSections: reportSections, measurements: reportDraft?.measurements ?? [], findings: reportDraft?.findings ?? [] })
@@ -255,7 +253,7 @@ function buildFieldServiceReportHtml({
   const toolbarHtml = showToolbar ? '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>' : ''
 
   return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(reportTitle)} printable field service report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Report Header</p>${renderDefinitionRows(headerRows)}</header>${summaryHtml}${generatedReportHtml}${renderFieldServiceSection(details, 'equipment')}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work performed</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Evidence</h2><p class="muted">Evidence items reference captured photos, videos, documents, and technician notes.</p></section>${evidenceHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges / documentation only</h2>${renderDefinitionRows(chargeRows)}</section><section class="item service-section"><h2>Signature requirements</h2>${renderDefinitionRows(signatureRows)}</section>${buildInspectorFacilityHtml(null, null, signatures, signatureUrls)}</main></body></html>`
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Report Header</p>${renderDefinitionRows(headerRows)}</header>${summaryHtml}${generatedReportHtml}${renderFieldServiceSection(details, 'equipment')}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work performed</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Evidence</h2><p class="muted">Evidence items reference captured photos, videos, documents, and technician notes.</p></section>${evidenceHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges / documentation only</h2>${renderDefinitionRows(chargeRows)}</section>${buildInspectorFacilityHtml(null, null, signatures, signatureUrls)}</main></body></html>`
 }
 
 const REPORT_STYLES = `
@@ -443,7 +441,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const derivedFormSections = deriveFormSectionsFromCaptures(captureItems)
   const formSections = documentSections.length > 0 ? documentSections : derivedFormSections
   const customerAssetHtml = renderDefinitionRows(buildCustomerAssetRows(formSections, session as unknown as Record<string, unknown>))
-  const formSectionsHtml = formSections.length > 0 ? formSections.filter((section) => !isCustomerAssetSection(section) && !/supporting details|supporting evidence/i.test(section.title)).map((section) => {
+  const formSectionsHtml = formSections.length > 0 ? formSections.filter((section) => shouldRenderDraftSectionStandalone(section) && !isCustomerAssetSection(section) && !/supporting details|supporting evidence/i.test(section.title)).map((section) => {
     const title = /supporting details/i.test(section.title) ? 'Supporting Evidence' : section.title
     const rowsHtml = section.fields.length > 0 ? renderDefinitionRows(section.fields.map((field) => ({ label: field.label, value: field.value }))) : ''
     const bodyHtml = section.body ? (/recommend/i.test(title) ? `<ul>${splitRecommendationText(section.body).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : `<p>${escapeHtml(section.body)}</p>`) : ''
