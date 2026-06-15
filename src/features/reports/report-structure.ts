@@ -176,9 +176,15 @@ function hasDeterministicDefectNote(capture: CaptureLike) {
 function getDeterministicReferenceTitle(capture: CaptureLike) {
   if (hasDeterministicDefectNote(capture)) return null
   const text = captureDeterministicRuleText(capture)
-  if (/\b(?:work order|workorder|repair order|repairorder|ro number|ro no|r o|complaint|correction|cause|customer|engine model)\b/.test(text)) return 'Work Order'
-  if (/\b(?:licen[cs]e plate|licen[cs]e number|plate number|registration plate|cps 0368)\b/.test(text)) return 'Licence Plate'
-  if (/\b(?:vin|vehicle identification number|manufacturer|data plate|gvwr|gawr|tire size|tyre size|weight ratings?)\b/.test(text)) return 'VIN / Manufacturer Plate'
+  const isLicencePlate = /\b(?:licen[cs]e plate|licen[cs]e number|plate number|registration plate|cps 0368)\b/.test(text)
+  const isManufacturerPlate = /\b(?:manufacturer|data plate|info plate|vehicle info plate|gvwr|gawr|tire size|tyre size|weight ratings?)\b/.test(text)
+  const isVinPlate = isManufacturerPlate || /\b(?:vin|vehicle identification number)\b/.test(text)
+  const isWorkOrder = /\b(?:work order|workorder|repair order|repairorder|ro number|ro no|r o|complaint|correction|cause|customer|engine model)\b/.test(text)
+  if (isLicencePlate && !isWorkOrder) return 'Licence Plate'
+  if (isManufacturerPlate || (isVinPlate && !isWorkOrder)) return 'VIN / Manufacturer Plate'
+  if (isWorkOrder) return 'Work Order'
+  if (isLicencePlate) return 'Licence Plate'
+  if (isVinPlate) return 'VIN / Manufacturer Plate'
   return null
 }
 
@@ -1033,6 +1039,14 @@ function filterFindingScopedDetails(details: EvidenceDetail[], scope: string[]) 
   })
 }
 
+function isRecommendationDetail(detail: EvidenceDetail) {
+  return /\brecommend(?:ation|ations|ed)?\b|\baction(?:s)?\b/i.test(detail.label)
+}
+
+function isSeverityDetail(detail: EvidenceDetail) {
+  return /^severity$/i.test(labelize(detail.label))
+}
+
 function filterFindingScopedRecommendations(recommendations: string[], scope: string[]) {
   return recommendations.filter((recommendation) => {
     if (isWorkOrderComplaintText(recommendation)) return false
@@ -1071,16 +1085,18 @@ export function getNormalizedFindingModels<TCapture extends CaptureLike>(items: 
   return items.map((entry, index) => {
     const renderedText: string[] = []
     const scope = findingComponentScope(entry)
-    const details = filterFindingScopedDetails(dedupeEvidenceDetails(entry.group.details), scope).filter((detail) => {
+    const scopedDetails = filterFindingScopedDetails(dedupeEvidenceDetails(entry.group.details), scope)
+    const detailRecommendations = scopedDetails.filter(isRecommendationDetail).flatMap((detail) => splitRecommendationText(detail.value))
+    const details = scopedDetails.filter((detail) => !isRecommendationDetail(detail) && !isSeverityDetail(detail)).filter((detail) => {
       const visible = shouldRenderDetail(detail.label, detail.value, renderedText)
       if (visible) renderedText.push(detail.value)
       return visible
     })
     const observations = dedupeReportText(entry.group.findings.filter((finding) => shouldRenderDetail('Observed condition', finding, renderedText)))
     observations.forEach((finding) => renderedText.push(finding))
-    const recommendations = dedupeReportText(filterFindingScopedRecommendations(entry.group.recommendations.flatMap(splitRecommendationText), scope).filter((recommendation) => shouldRenderDetail('Recommendation', recommendation, renderedText)))
+    const recommendations = dedupeReportText(filterFindingScopedRecommendations([...entry.group.recommendations.flatMap(splitRecommendationText), ...detailRecommendations], scope).filter((recommendation) => shouldRenderDetail('Recommendation', recommendation, renderedText)))
     recommendations.forEach((recommendation) => renderedText.push(recommendation))
-    const severity = normalizeReportSeverity([...observations, ...recommendations, ...details.map((detail) => `${detail.label} ${detail.value}`)])
+    const severity = normalizeReportSeverity([...observations, ...recommendations, ...scopedDetails.map((detail) => `${detail.label} ${detail.value}`)])
     const title = buildFindingTitle(details, observations, entry, index)
     return { id: entry.group.capture_id, title, severity, observations, recommendations, details, evidenceCount: 1, entry }
   })
