@@ -879,11 +879,9 @@ function RecommendedActionsTable({ findings }: { findings: ReturnType<typeof bui
 }
 
 function ReferenceDocumentList({ items, supportingEvidence }: { items: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>["findings"]; supportingEvidence: SupportingEvidenceItem[] }) {
-  const evidenceById = new Map(supportingEvidence.map((item) => [item.capture.id, item]));
   return <div className="reference-document-list">{items.map((entry) => {
-    const item = evidenceById.get(entry.group.capture_id);
     const details = entry.group.details.filter((detail) => isMeaningfulCustomerReportText(detail.value));
-    return <article key={entry.group.capture_id} className="reference-document-card"><h4>{item?.title ?? "Reference Document"}</h4>{details.length > 0 ? <div className="report-field-grid">{details.map((detail, index) => <div key={`${detail.label}-${index}`} className="report-field-card"><span>{detail.label}</span><strong>{stripConfidenceText(detail.value)}</strong></div>)}</div> : <p className="muted">Reference captured for inspection support.</p>}<details><summary>View Original Reference</summary><EvidenceGroupList items={[entry]} supportingEvidence={supportingEvidence} /></details></article>;
+    return <article key={entry.group.capture_id} className="reference-document-card"><h4>{getEvidenceTitle(entry.capture)}</h4>{details.length > 0 ? <div className="report-field-grid">{details.map((detail, index) => <div key={`${detail.label}-${index}`} className="report-field-card"><span>{detail.label}</span><strong>{stripConfidenceText(detail.value)}</strong></div>)}</div> : <p className="muted">Reference captured for inspection support.</p>}<details><summary>View Original Reference</summary><EvidenceGroupList items={[entry]} supportingEvidence={supportingEvidence} /></details></article>;
   })}</div>;
 }
 
