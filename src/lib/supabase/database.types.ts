@@ -102,6 +102,7 @@ export interface Database {
           technician_license_number: string | null
           inspector_phone: string | null
           inspector_email: string | null
+          timezone: string
           default_signature_path: string | null
           use_default_signature: boolean
         }
@@ -116,6 +117,7 @@ export interface Database {
           technician_license_number?: string | null
           inspector_phone?: string | null
           inspector_email?: string | null
+          timezone?: string
           default_signature_path?: string | null
           use_default_signature?: boolean
         }
@@ -130,6 +132,7 @@ export interface Database {
           technician_license_number?: string | null
           inspector_phone?: string | null
           inspector_email?: string | null
+          timezone?: string
           default_signature_path?: string | null
           use_default_signature?: boolean
         }

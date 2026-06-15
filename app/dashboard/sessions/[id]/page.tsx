@@ -48,7 +48,7 @@ export default async function SessionDetailPage({
             <h1>{session.title}</h1>
             <SessionStatusBadge status={session.status} />
           </div>
-          <p className="muted">Updated {formatDateTime(session.updated_at ?? session.created_at)} · {evidenceCount ?? 0} saved</p>
+          <p className="muted">Updated {formatDateTime(session.updated_at ?? session.created_at, profile.timezone)} · {evidenceCount ?? 0} saved</p>
         </div>
       </div>
 

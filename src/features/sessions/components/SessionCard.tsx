@@ -21,17 +21,19 @@ export function SessionCard({
   dateMode = 'updated',
   evidenceCount,
   showOperationalAction = false,
+  timeZone,
 }: {
   session: DocumentationSession
   dateMode?: 'created' | 'updated'
   evidenceCount?: number
   showOperationalAction?: boolean
+  timeZone?: string | null
 }) {
   const action = showOperationalAction ? getOperationalAction(session) : null
   const href = action?.href ?? `/dashboard/sessions/${session.id}`
   const dateLabel = dateMode === 'created' ? 'Created' : 'Last updated'
   const dateValue =
-    dateMode === 'created' ? formatDate(session.created_at) : formatDateTime(session.updated_at ?? session.created_at)
+    dateMode === 'created' ? formatDate(session.created_at, timeZone) : formatDateTime(session.updated_at ?? session.created_at, timeZone)
   const evidenceLabel = evidenceCount === undefined ? 'Not available' : `${evidenceCount} item${evidenceCount === 1 ? '' : 's'}`
 
   return (
@@ -46,7 +48,7 @@ export function SessionCard({
       <dl className="session-meta-grid">
         <div>
           <dt>{showOperationalAction ? 'Updated' : dateLabel}</dt>
-          <dd>{showOperationalAction ? formatDateTime(session.updated_at ?? session.created_at) : dateValue}</dd>
+          <dd>{showOperationalAction ? formatDateTime(session.updated_at ?? session.created_at, timeZone) : dateValue}</dd>
         </div>
         {showOperationalAction ? (
           <>

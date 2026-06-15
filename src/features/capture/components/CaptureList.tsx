@@ -4,6 +4,7 @@ import { useActionState, useRef, useState } from 'react'
 import { useFormStatus } from 'react-dom'
 
 import { removeCaptureItem, updateCaptureReview } from '@/features/capture/actions'
+import { formatDateTimeInTimeZone } from '@/lib/date-format'
 import type { Json } from '@/lib/supabase/database.types'
 
 import {
@@ -20,8 +21,7 @@ function isRecord(value: Json | undefined): value is { [key: string]: Json | und
 }
 
 function formatDateTime(value: string | null) {
-  if (!value) return 'Not available'
-  return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value))
+  return formatDateTimeInTimeZone(value, null)
 }
 
 const DETECTED_TYPE_LABELS: Record<string, string> = {

@@ -85,6 +85,7 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
               session={session}
               evidenceCount={captureCountBySession.get(session.id)}
               showOperationalAction
+              timeZone={profile.timezone}
             />
           ))}
         </div>

@@ -20,6 +20,8 @@ export default async function SharedReportPage({ params }: { params: Promise<{ t
     .update({ view_count: (shareToken.view_count ?? 0) + 1, last_viewed_at: new Date().toISOString() })
     .eq('id', shareToken.id)
 
+  const { data: profile } = await supabase.from('profiles').select('timezone').eq('id', shareToken.created_by ?? '').eq('organization_id', shareToken.organization_id).maybeSingle()
+
   const session = Array.isArray(shareToken.documentation_sessions) ? shareToken.documentation_sessions[0] : shareToken.documentation_sessions
   if (!session || session.organization_id !== shareToken.organization_id) notFound()
 
@@ -29,7 +31,7 @@ export default async function SharedReportPage({ params }: { params: Promise<{ t
         <div>
           <p className="eyebrow">Secure report link</p>
           <h1>{session.title}</h1>
-          <p className="muted">Shared report access expires {shareToken.expires_at ? formatDateTime(shareToken.expires_at) : 'when disabled by the organization'}.</p>
+          <p className="muted">Shared report access expires {shareToken.expires_at ? formatDateTime(shareToken.expires_at, profile?.timezone) : 'when disabled by the organization'}.</p>
         </div>
       </div>
       <section className="card detail-card report-preview-card">
