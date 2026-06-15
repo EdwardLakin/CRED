@@ -9,6 +9,7 @@ import {
   requireActiveBillingAccess,
 } from '@/features/billing'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import { queueCaptureAnalysisJobs } from '@/lib/capture-processing/queue'
 import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import {
   buildClassifiedImageData,
@@ -793,7 +794,11 @@ export async function createCaptureRecordFromUploadedFile(
       captured_at: capturedAt,
       ai_status:
         sourceDocument || itemMediaKind !== 'video'
-          ? 'pending'
+          ? 'queued'
+          : 'needs_review',
+      processing_status:
+        sourceDocument || itemMediaKind !== 'video'
+          ? 'queued'
           : 'needs_review',
       extracted_data: itemExtractedData,
       technician_note: technicianNote || null,
@@ -854,6 +859,25 @@ export async function createCaptureRecordFromUploadedFile(
       .eq('organization_id', profile.organization_id)
     await removeUploadedObject(supabase, storagePath)
     return captureError(timelineError.message, session.id)
+  }
+
+
+  try {
+    if (sourceDocument || itemMediaKind !== 'video') {
+      await queueCaptureAnalysisJobs({
+        supabase,
+        organizationId: profile.organization_id,
+        sessionId: session.id,
+        captureItemId: captureItem.id,
+        metadata: { filename, mime_type: mimeType, capture_intent: rawCaptureIntent },
+      })
+    }
+  } catch (queueError) {
+    logCaptureFailure({
+      step: 'capture_processing_queue_insert',
+      captureId: captureItem.id,
+      ...getSafeErrorDetails(queueError),
+    })
   }
 
   try {
