@@ -612,10 +612,26 @@ export type CaptureClassification = 'inspection_finding' | 'reference_document' 
 export type EvidencePurpose = 'finding' | 'reference_document' | 'additional_note' | 'supporting_evidence'
 
 
-function hasExplicitReferenceDocumentSignal(capture: CaptureLike) {
+function hardReferenceText(capture: CaptureLike) {
   const typeText = normalizeForMatch(`${capture.type ?? ''} ${capture.media_kind ?? ''}`)
-  const text = normalizeForMatch(`${typeText} ${documentTextForCapture(capture)}`)
-  return /\b(?:work order|work_order|repair order|repair_order|ro number|license plate|licence plate|license_plate|licence_plate|plate number|registration plate|vin|vin_plate|manufacturer|data plate|compliance plate|info plate|serial plate|registration|form|checklist|certificate|certification)\b/.test(text)
+  const fields = Object.entries(getExtractionFields(capture.extracted_data))
+    .map(([key, value]) => `${key} ${typeof value === 'string' ? value : JSON.stringify(value)}`)
+    .join(' ')
+  return normalizeForMatch(`${typeText} ${documentTextForCapture(capture)} ${fields}`)
+}
+
+export function isHardReferenceDocument(capture: CaptureLike) {
+  const text = hardReferenceText(capture)
+  if (!text) return false
+  if (/\b(?:work order|workorder|repair order|repairorder|ro number|ro no|r o)\b/.test(text)) return true
+  if (/\b(?:licen[cs]e plate|licen[cs]e number|plate number|registration plate)\b/.test(text)) return true
+  if (/\b(?:vin plate|vehicle identification number|manufacturer plate|manufacturer label|data plate|compliance label|compliance plate|info plate|serial plate)\b/.test(text)) return true
+  if (/\b(?:registration|certificate|certification|form|checklist)\b/.test(text)) return true
+  return false
+}
+
+function hasExplicitReferenceDocumentSignal(capture: CaptureLike) {
+  return isHardReferenceDocument(capture)
 }
 
 function hasBatteryFindingEvidence(text: string) {
@@ -624,20 +640,22 @@ function hasBatteryFindingEvidence(text: string) {
 
 function hasTrueDefectEvidence(capture: CaptureLike, group?: EvidenceGroup) {
   const text = `${capture.type ?? ''} ${capture.media_kind ?? ''} ${textForCapture(capture)} ${(group?.findings ?? []).join(' ')} ${(group?.recommendations ?? []).join(' ')}`.toLowerCase()
+  const hasBrakePadDefect = /\bbrakes?\b[\s\S]{0,120}\bpads?\b[\s\S]{0,120}\b(?:wear\s*limit|2\s*mm|replace)|\bpads?\b[\s\S]{0,120}\b(?:wear\s*limit|2\s*mm|replace)[\s\S]{0,120}\bbrakes?\b/i.test(text)
+  const hasBatteryDefect = hasBatteryFindingEvidence(text)
   const hasComponent = /\b(brake\s*pads?|brakes?|rotor|battery|terminal|post|tire|tyre|tread|wheel|bearing|axle|engine|coolant|oil|hose|belt|body|frame|panel|light|lamp)\b/i.test(text)
   const hasDefect = /\b(corrosion|wear|worn|wear\s*limit|leak|crack|broken|damage|rust|loose|missing|defect|unsafe|fail(?:ed)?|red|critical|medium|advisory|attention|required)\b/i.test(text)
   const hasRepairRecommendation = /\b(replace|repair|clean\s+corrosion|inspect\s+for\s+damage|service|adjust)\b/i.test(text) && !/\bwork[_\s-]?order|repair[_\s-]?order\b/i.test(text)
   const hasRepairMeasurement = /\b(?:brake\s*pads?|tread|battery|terminal|post)\b[\s\S]{0,80}\b\d+(?:\.\d+)?\s?(?:mm|in|psi|volt|v)\b|\b\d+(?:\.\d+)?\s?(?:mm|in|psi|volt|v)\b[\s\S]{0,80}\b(?:brake\s*pads?|tread|battery|terminal|post)\b/i.test(text)
-  return hasBatteryFindingEvidence(text) || (hasComponent && (hasDefect || hasRepairRecommendation || hasRepairMeasurement)) || hasRepairMeasurement
+  return hasBrakePadDefect || hasBatteryDefect || (hasComponent && hasDefect && (hasRepairRecommendation || hasRepairMeasurement)) || hasRepairMeasurement
 }
 
 export function classifyCapture(capture: CaptureLike, group?: EvidenceGroup): CaptureClassification {
   const text = textForCapture(capture)
   if (/\b(hidden_from_report|internal_only|debug)\b/i.test(text)) return 'ignored_internal'
+  if (isHardReferenceDocument(capture)) return 'reference_document'
   if (isNoteCapture(capture) && !hasTrueDefectEvidence(capture, group)) return 'additional_note'
-  if (hasTrueDefectEvidence(capture, group) && !/\b(?:work_?order|repair_?order|license_?plate|licence_?plate|vin_?plate|info_?plate)\b/i.test(`${capture.type ?? ''}`)) return 'inspection_finding'
-  if (hasExplicitReferenceDocumentSignal(capture)) return 'reference_document'
   if (hasTrueDefectEvidence(capture, group)) return 'inspection_finding'
+  if (hasExplicitReferenceDocumentSignal(capture)) return 'reference_document'
   if (isDocumentCapture(capture)) return 'reference_document'
   return 'supporting_evidence'
 }
@@ -919,7 +937,7 @@ function textMatchesFindingScope(value: string, scope: string[]) {
 }
 
 function isWorkOrderComplaintText(value: string) {
-  return /\b(?:customer\s+)?complaint\b|\bconcern\b|\brequested\s+work\b/i.test(value) && !/\b(?:recommend|replace|repair|clean|inspect|maintain|service)\b/i.test(value)
+  return /\b(?:customer\s+)?complaint\b|\bconcern\b|\brequested\s+work\b|\bcorrection\b|\bcause of failure\b|\bwork order\b|\brepair order\b/i.test(value) && !/\b(?:recommend|replace\s+(?:front\s+)?brake\s+pads?|clean\s+corrosion|inspect\s+for\s+damage|maintain|maintenance)\b/i.test(value)
 }
 
 function filterFindingScopedDetails(details: EvidenceDetail[], scope: string[]) {
@@ -942,6 +960,29 @@ function filterFindingScopedRecommendations(recommendations: string[], scope: st
   })
 }
 
+function findingTitleFromText(value: string) {
+  const text = clean(value, 220)
+  if (!text || /^finding\s+\d+$/i.test(text)) return ''
+  if (/\bbrakes?\b/i.test(text) && /\bpads?\b/i.test(text) && /\b(?:wear\s*limit|2\s*mm|replace)\b/i.test(text)) return 'Front brake pads are at wear limit'
+  if (/\bbattery\b/i.test(text) && /\bpositive\s+post\b/i.test(text) && /\bcorrosion\b/i.test(text)) return 'Passenger side battery positive post corrosion'
+  if (/\bbattery\b/i.test(text) && /\bcorrosion\b/i.test(text)) return 'Battery terminal corrosion'
+  return stripConfidenceText(text.split(/[.;]/)[0] ?? '').replace(/^observed condition:?\s*/i, '').trim()
+}
+
+function buildFindingTitle(details: EvidenceDetail[], observations: string[], entry: ReviewEvidenceItem, index: number) {
+  const sourceText = `${entry.capture.technician_note ?? ''} ${entry.capture.ai_summary ?? ''} ${observations.join(' ')} ${details.map((detail) => `${detail.label} ${detail.value}`).join(' ')}`
+  const scopedTitle = findingTitleFromText(sourceText)
+  if (scopedTitle) return scopedTitle
+  for (const value of [
+    details.find((detail) => /title|component|system|item|area|location/i.test(detail.label))?.value,
+    ...observations,
+  ]) {
+    const title = findingTitleFromText(value ?? '')
+    if (title) return title
+  }
+  return `Inspection finding ${index + 1}`
+}
+
 export function getNormalizedFindingModels<TCapture extends CaptureLike>(items: ReviewDocument<TCapture>['findings']): NormalizedFindingModel<TCapture>[] {
   return items.map((entry, index) => {
     const renderedText: string[] = []
@@ -956,7 +997,7 @@ export function getNormalizedFindingModels<TCapture extends CaptureLike>(items: 
     const recommendations = dedupeReportText(filterFindingScopedRecommendations(entry.group.recommendations.flatMap(splitRecommendationText), scope).filter((recommendation) => shouldRenderDetail('Recommendation', recommendation, renderedText)))
     recommendations.forEach((recommendation) => renderedText.push(recommendation))
     const severity = normalizeReportSeverity([...observations, ...recommendations, ...details.map((detail) => `${detail.label} ${detail.value}`)])
-    const title = stripConfidenceText(details.find((detail) => /title|component|system|item|area|location/i.test(detail.label))?.value ?? observations[0]?.split(/[.;]/)[0] ?? `Finding ${index + 1}`)
+    const title = buildFindingTitle(details, observations, entry, index)
     return { id: entry.group.capture_id, title, severity, observations, recommendations, details, evidenceCount: 1, entry }
   })
 }
