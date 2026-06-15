@@ -145,7 +145,8 @@ export function isValidHeaderFieldValue(fieldKey: HeaderFieldKey, label: string,
 }
 
 export function classifyReferenceDocumentTitle(capture: CaptureLike) {
-  const text = textForCapture(capture)
+  if (!isDocumentCapture(capture) || isNoteCapture(capture)) return 'Reference Document'
+  const text = documentTextForCapture(capture)
   if (/work[_\s-]?order|repair[_\s-]?order|\bro\s*(?:number|#)?\b/.test(text)) return 'Work Order'
   if (/licen[cs]e\s*plate|plate\s*(?:number|#)|registration plate/.test(text)) return 'Licence Plate'
   if (/\bvin\b|manufacturer|data[_\s-]?plate|info[_\s-]?plate|serial plate/.test(text)) return 'VIN / Manufacturer Plate'
@@ -221,6 +222,18 @@ export function getExtractionFields(extractedData: Json | null): Record<string, 
 
 function textForCapture(capture: CaptureLike) {
   return `${capture.ocr_text ?? ''} ${capture.ai_summary ?? ''} ${capture.technician_note ?? ''} ${capture.transcript ?? ''} ${JSON.stringify(capture.extracted_data ?? {})}`.toLowerCase()
+}
+
+function documentTextForCapture(capture: CaptureLike) {
+  return `${capture.ocr_text ?? ''} ${capture.ai_summary ?? ''} ${JSON.stringify(capture.extracted_data ?? {})}`.toLowerCase()
+}
+
+function isNoteCapture(capture: CaptureLike) {
+  return capture.type === 'text_note' || capture.media_kind === 'note' || capture.media_kind === 'audio' || capture.type === 'voice_note'
+}
+
+function isDocumentCapture(capture: CaptureLike) {
+  return capture.media_kind === 'document' || Boolean(capture.ocr_text?.trim()) || Boolean(isRecord(capture.extracted_data) && (isRecord(capture.extracted_data.source_document) || isRecord(capture.extracted_data.extraction)))
 }
 
 function normalizeForMatch(value: string) {
@@ -565,10 +578,10 @@ export type EvidencePurpose = 'finding' | 'reference_document' | 'additional_not
 export function classifyEvidencePurpose(capture: CaptureLike, group?: EvidenceGroup): EvidencePurpose {
   const text = textForCapture(capture)
   const typeText = `${capture.type ?? ''} ${capture.media_kind ?? ''} ${text}`.toLowerCase()
-  if (/work[_\s-]?order|vin|licen[cs]e|plate|registration|info[_\s-]?plate|data[_\s-]?plate|manufacturer|document|form|sheet/.test(typeText)) {
+  if (isNoteCapture(capture)) return 'additional_note'
+  if (isDocumentCapture(capture) && /work[_\s-]?order|vin|licen[cs]e|plate|registration|info[_\s-]?plate|data[_\s-]?plate|manufacturer|document|form|sheet/.test(typeText)) {
     return 'reference_document'
   }
-  if (capture.type === 'text_note' || capture.media_kind === 'note' || capture.media_kind === 'audio' || capture.type === 'voice_note') return 'additional_note'
   if ((group?.findings.length ?? 0) > 0 || (group?.recommendations.length ?? 0) > 0 || /\b(\d+(?:\.\d+)?\s?(?:mm|in|psi|volt|v)|red|attention|required|corrosion|wear|leak|crack|broken|replace|repair)\b/i.test(typeText)) {
     return 'finding'
   }
@@ -616,6 +629,7 @@ export function buildNonDuplicatedReviewDocument<TCapture extends CaptureLike>({
       .filter((capture): capture is TCapture => Boolean(capture))
       .filter((capture) => belongsToCapture(`${section.title} ${section.body ?? ''}`, capture))
     if (sourceIds.length <= 1 || matchingCaptures.length > 0) continue
+    if (/recommend|replace|repair|correct/i.test(`${section.title} ${section.body}`)) continue
     pushUniqueDetail(result.unattachedDetails, {
       label: /recommend|replace|repair|correct/i.test(`${section.title} ${section.body}`) ? 'Recommendation' : 'Observed condition',
       value: section.body,

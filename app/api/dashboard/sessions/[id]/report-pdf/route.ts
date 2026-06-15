@@ -114,13 +114,13 @@ function buildInspectorFacilityHtml(profile: { full_name?: string | null; inspec
   return `<section class="item service-section"><h2>Inspector / Facility Details</h2>${renderDefinitionRows(rows)}${signatureHtml}</section>`
 }
 
-function getEvidenceTitle(capture: ReportCapture, index: number) {
+function getEvidenceTitle(capture: ReportCapture) {
   const referenceTitle = classifyReferenceDocumentTitle(capture)
   if (referenceTitle !== 'Reference Document' || capture.media_kind === 'document') return referenceTitle
-  if (capture.type === 'text_note' || capture.media_kind === 'note') return `Technician note ${index + 1}`
-  if (capture.media_kind === 'audio' || capture.type === 'voice_note') return `Voice note ${index + 1}`
-  if (capture.media_kind === 'image' || capture.type === 'photo') return `Photo ${index + 1}`
-  return `Evidence ${index + 1}`
+  if (capture.type === 'text_note' || capture.media_kind === 'note') return "Technician Note"
+  if (capture.media_kind === 'audio' || capture.type === 'voice_note') return "Voice Note"
+  if (capture.media_kind === 'image' || capture.type === 'photo') return "Inspection Photo"
+  return "Supporting Evidence"
 }
 
 function renderTextList(title: string, values: string[], existingRenderedText: string[]) {
@@ -133,24 +133,23 @@ function renderTextList(title: string, values: string[], existingRenderedText: s
 function buildEvidenceItemsHtml(
   items: ReturnType<typeof buildNonDuplicatedReviewDocument<ReportCapture>>['findings'],
   signedUrls: Record<string, string>,
-  headingPrefix = 'Evidence',
 ) {
-  return items.map((entry, index) => {
+  return items.map((entry) => {
     const capture = entry.capture
     const signedUrl = signedUrls[capture.id]
     const mediaKind = capture.media_kind || (capture.type === 'text_note' ? 'note' : capture.type === 'video' ? 'video' : 'image')
-    const evidenceTitle = getEvidenceTitle(capture, index)
-    const title = headingPrefix === 'Reference' ? evidenceTitle : `${headingPrefix} ${index + 1}: ${evidenceTitle}`
+    const evidenceTitle = getEvidenceTitle(capture)
+    const title = evidenceTitle
     const mediaHtml = mediaKind === 'note'
-      ? `<div class="video-still">${escapeHtml(stripConfidenceText(capture.technician_note || capture.transcript || 'Technician note'))}</div>`
+      ? `<div class="video-still">${escapeHtml(stripConfidenceText(capture.technician_note || capture.transcript || 'Technician Note'))}</div>`
       : signedUrl && mediaKind === 'image'
-        ? `<img src="${escapeHtml(signedUrl)}" alt="${escapeHtml(getEvidenceTitle(capture, index))}" />`
+        ? `<img src="${escapeHtml(signedUrl)}" alt="${escapeHtml(getEvidenceTitle(capture))}" />`
         : signedUrl && mediaKind === 'video'
           ? `<div class="video-still">Video reference</div><p class="video-link"><a href="${escapeHtml(signedUrl)}">Open video evidence</a></p>`
           : signedUrl
             ? `<p><a href="${escapeHtml(signedUrl)}">Open saved file</a></p>`
             : mediaKind === 'audio'
-              ? '<div class="video-still">Voice note</div>'
+              ? '<div class="video-still">Voice Note</div>'
               : `<div class="video-still">Saved evidence file</div>`
     const group = entry.group
     const renderedText: string[] = []
@@ -171,7 +170,7 @@ function buildEvidenceItemsHtml(
 
 function buildEvidenceSectionHtml(title: string, items: ReturnType<typeof buildNonDuplicatedReviewDocument<ReportCapture>>['findings'], signedUrls: Record<string, string>) {
   if (items.length === 0) return ''
-  return `<section class="item service-section"><h2>${escapeHtml(title)}</h2><p class="muted">${title === 'Reference Documents' ? 'Work orders, plates, forms, and documents captured for context.' : title === 'Additional Notes' ? 'Standalone text and voice notes.' : 'Evidence directly tied to inspection findings.'}</p></section>${buildEvidenceItemsHtml(items, signedUrls, title === 'Inspection Findings' ? 'Finding' : title === 'Reference Documents' ? 'Reference' : 'Evidence')}`
+  return `<section class="item service-section"><h2>${escapeHtml(title)}</h2><div class="evidence-children">${buildEvidenceItemsHtml(items, signedUrls)}</div></section>`
 }
 
 function buildFieldServiceReportHtml({
@@ -409,7 +408,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const derivedFormSections = deriveFormSectionsFromCaptures(captureItems)
   const formSections = documentSections.length > 0 ? documentSections : derivedFormSections
   const customerAssetHtml = renderDefinitionRows(buildCustomerAssetRows(formSections, session as unknown as Record<string, unknown>))
-  const formSectionsHtml = formSections.length > 0 ? formSections.filter((section) => !isCustomerAssetSection(section)).map((section) => {
+  const formSectionsHtml = formSections.length > 0 ? formSections.filter((section) => !isCustomerAssetSection(section) && !/supporting details|supporting evidence/i.test(section.title)).map((section) => {
     const title = /supporting details/i.test(section.title) ? 'Supporting Evidence' : section.title
     const rowsHtml = section.fields.length > 0 ? renderDefinitionRows(section.fields.map((field) => ({ label: field.label, value: field.value }))) : ''
     const bodyHtml = section.body ? (/recommend/i.test(title) ? `<ul>${splitRecommendationText(section.body).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : `<p>${escapeHtml(section.body)}</p>`) : ''

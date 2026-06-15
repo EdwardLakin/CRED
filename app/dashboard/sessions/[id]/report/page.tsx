@@ -14,6 +14,7 @@ import {
   getFormStructureSummary,
   isCustomerAssetSection,
   normalizeDraftSections,
+  shouldRenderDetail,
   splitRecommendationText,
   stripConfidenceText,
 } from "@/features/reports/report-structure";
@@ -97,17 +98,17 @@ function getEvidenceKind(capture: CaptureItem): SupportingEvidenceItem["kind"] {
   return "file";
 }
 
-function getEvidenceTitle(item: CaptureItem, index: number) {
+function getEvidenceTitle(item: CaptureItem) {
   const referenceTitle = classifyReferenceDocumentTitle(item);
   if (referenceTitle !== "Reference Document" || item.media_kind === "document") return referenceTitle;
   if (item.type === "text_note" || item.media_kind === "note")
-    return `Technician note ${index + 1}`;
-  if (isPhotoCapture(item)) return `Photo ${index + 1}`;
+    return "Technician Note";
+  if (isPhotoCapture(item)) return "Inspection Photo";
   if (item.media_kind === "video" || item.type === "video")
-    return `Video ${index + 1}`;
+    return "Inspection Video";
   if (item.media_kind === "audio" || item.type === "voice_note")
-    return `Voice note ${index + 1}`;
-  return `Evidence ${index + 1}`;
+    return "Voice Note";
+  return "Supporting Evidence";
 }
 
 function getEvidenceNote(capture: CaptureItem) {
@@ -240,10 +241,10 @@ export default async function SessionReportPreviewPage({
       if (data?.signedUrl) signedEvidenceUrls[capture.id] = data.signedUrl;
     }),
   );
-  const supportingEvidence = visibleCaptures.map((capture, index) => ({
+  const supportingEvidence = visibleCaptures.map((capture) => ({
     capture,
     signedUrl: signedEvidenceUrls[capture.id] ?? null,
-    title: getEvidenceTitle(capture, index),
+    title: getEvidenceTitle(capture),
     note: getEvidenceNote(capture),
     kind: getEvidenceKind(capture),
   }));
@@ -690,9 +691,9 @@ function GeneratedReportReview({
             {customerAssetRows.length > 0 ? (
               <div className="report-field-grid">{customerAssetRows.map((field) => <div key={field.label} className="report-field-card"><span>{field.label}</span><strong>{stripConfidenceText(field.value)}</strong></div>)}</div>
             ) : null}
-            {documentSections.filter((section) => !isCustomerAssetSection(section)).length > 0 ? (
+            {documentSections.filter((section) => !isCustomerAssetSection(section) && !/supporting details|supporting evidence/i.test(section.title)).length > 0 ? (
               <div className="report-document-flow">
-                {documentSections.filter((section) => !isCustomerAssetSection(section)).map((section) => (
+                {documentSections.filter((section) => !isCustomerAssetSection(section) && !/supporting details|supporting evidence/i.test(section.title)).map((section) => (
                   <article key={section.key} className="report-document-card">
                     <h4>{stripConfidenceText(/supporting details/i.test(section.title) ? "Supporting Evidence" : section.title)}</h4>
                     {section.body ? (/recommend/i.test(section.title) ? <ul>{splitRecommendationText(section.body).map((item, index) => <li key={index}>{stripConfidenceText(item)}</li>)}</ul> : <p>{stripConfidenceText(section.body)}</p>) : null}
@@ -820,7 +821,7 @@ function EvidenceGroupList({
         return (
           <article key={group.capture_id} className="evidence-first-card">
             <div className="evidence-first-media">
-              {item.kind === "note" || item.kind === "audio" ? <div className="review-note-card"><strong>Note</strong><p>{stripConfidenceText(item.note ?? "Note saved for this report.")}</p></div> : item.kind === "photo" && item.signedUrl ? (
+              {item.kind === "note" || item.kind === "audio" ? <div className="review-note-card"><strong>{item.kind === "audio" ? "Voice Note" : "Technician Note"}</strong><p>{stripConfidenceText(item.note ?? "Note saved for this report.")}</p></div> : item.kind === "photo" && item.signedUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured.
                 <img src={item.signedUrl} alt={item.title} />
               ) : (
@@ -829,15 +830,37 @@ function EvidenceGroupList({
             </div>
             <div className="evidence-first-body">
               <h4>{item.title}</h4>
-              {group.details.map((detail, index) => (
-                <p key={`${detail.label}-${index}`}><strong>{detail.label}:</strong> {stripConfidenceText(detail.value)}</p>
-              ))}
-              {group.findings.length > 0 ? (
-                <div><strong>Observed condition</strong>{group.findings.map((finding, index) => <p key={`finding-${index}`} className="muted">{stripConfidenceText(finding)}</p>)}</div>
-              ) : null}
-              {group.recommendations.length > 0 ? (
-                <div><strong>Recommendation</strong><ul>{group.recommendations.flatMap(splitRecommendationText).map((recommendation, index) => <li key={`recommendation-${index}`}>{stripConfidenceText(recommendation)}</li>)}</ul></div>
-              ) : null}
+              {(() => {
+                const renderedText: string[] = [];
+                const details = group.details.filter((detail) => {
+                  const visible = shouldRenderDetail(detail.label, detail.value, renderedText);
+                  if (visible) renderedText.push(detail.value);
+                  return visible;
+                });
+                const findings = group.findings.filter((finding) => {
+                  const visible = shouldRenderDetail("Observed condition", finding, renderedText);
+                  if (visible) renderedText.push(finding);
+                  return visible;
+                });
+                const recommendations = group.recommendations.flatMap(splitRecommendationText).filter((recommendation) => {
+                  const visible = shouldRenderDetail("Recommendation", recommendation, renderedText);
+                  if (visible) renderedText.push(recommendation);
+                  return visible;
+                });
+                return (
+                  <>
+                    {details.map((detail, index) => (
+                      <p key={`${detail.label}-${index}`}><strong>{detail.label}:</strong> {stripConfidenceText(detail.value)}</p>
+                    ))}
+                    {findings.length > 0 ? (
+                      <div><strong>Observed condition</strong>{findings.map((finding, index) => <p key={`finding-${index}`} className="muted">{stripConfidenceText(finding)}</p>)}</div>
+                    ) : null}
+                    {recommendations.length > 0 ? (
+                      <div><strong>Recommendation</strong><ul>{recommendations.map((recommendation, index) => <li key={`recommendation-${index}`}>{stripConfidenceText(recommendation)}</li>)}</ul></div>
+                    ) : null}
+                  </>
+                );
+              })()}
             </div>
           </article>
         );
