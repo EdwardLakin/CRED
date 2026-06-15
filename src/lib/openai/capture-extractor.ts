@@ -78,6 +78,15 @@ export type CaptureExtractionFields = Record<
 
 export type CaptureExtractedValue = { value: string; confidence: number }
 
+type JsonSchemaObject = {
+  type?: string | string[]
+  additionalProperties?: boolean
+  properties?: Record<string, JsonSchemaObject>
+  required?: readonly string[]
+  items?: JsonSchemaObject
+  [key: string]: unknown
+}
+
 export type CaptureExtractionResult = {
   summary: string
   confidence: number
@@ -107,7 +116,7 @@ Source documents are used for identity/header context. Do not convert work order
 For source document captures such as work_order, registration, VIN plate, data plate, odometer, licence plate, and unit number, extract only identity/context fields when visible: customer/account name, VIN, unit number, asset id/label, licence plate, odometer, hours, work order number, purchase order number, job number, date, year, make, model, manufacturer, serial number, GVWR/GAWR, registered owner, and jurisdiction/province.
 For source documents, do not extract complaint, cause of failure, correction, job line descriptions, labour operations, parts lines, historic notes, prior recommendations, unrelated comments, or report findings into condition/recommendation/technician note fields unless the technician note explicitly says to use the document content as a finding (for example “use this as finding” or “include line 3”).
 For hour meters, put the hour reading in hour_meter; the app may suggest it to the odometer/session reading if no hour field exists.
-Extract raw OCR text into extracted_text, including printed reports and handwritten notes where possible. Put numeric readings and units in extracted_values using normalized keys such as voltage, current_draw, cca, ripple_voltage, resistance, tire_tread_depth, brake_lining, odometer, hour_meter, or meter_reading. Generate a concise technician-style generated_note that describes what the evidence shows without overwriting any technician-entered note.
+Extract raw OCR text into extracted_text, including printed reports and handwritten notes where possible. Put numeric readings and units in extracted_values as an array of objects with key, value, and confidence. Use normalized keys such as voltage, current_draw, cca, ripple_voltage, resistance, tire_tread_depth, brake_lining, odometer, hour_meter, or meter_reading. Generate a concise technician-style generated_note that describes what the evidence shows without overwriting any technician-entered note.
 Keep summary brief and human readable. For brake_measurement, always populate component, location, measurement, condition, recommendation, and severity when visible or supported by technician context. Example note 'left front brake pads at wear limit of 2mm' should extract component brake pads, location left front, measurement 2mm, condition at wear limit, severity red, recommendation replace front brake pads when visually plausible.`
 
 const TARGET_INSTRUCTIONS: Partial<Record<ExtractionTargetType, string>> = {
@@ -170,6 +179,93 @@ const TARGET_INSTRUCTIONS: Partial<Record<ExtractionTargetType, string>> = {
   other:
     'Source Document: Other. Extract identity/header fields cautiously. Do not extract source document comments as report findings unless the technician note explicitly asks to include them. Use null for unclear values and needs_review language in notes for uncertainty.',
 }
+
+export const CAPTURE_DETAIL_EXTRACTION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    summary: { type: 'string' },
+    confidence: { type: 'number', minimum: 0, maximum: 1 },
+    fields: {
+      type: 'object',
+      additionalProperties: false,
+      properties: Object.fromEntries(
+        CAPTURE_EXTRACTION_FIELDS.map((field) => [
+          field,
+          { type: ['string', 'null'] },
+        ]),
+      ),
+      required: CAPTURE_EXTRACTION_FIELDS,
+    },
+    notes: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    extracted_text: { type: ['string', 'null'] },
+    extracted_values: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          key: { type: 'string' },
+          value: { type: 'string' },
+          confidence: { type: 'number', minimum: 0, maximum: 1 },
+        },
+        required: ['key', 'value', 'confidence'],
+      },
+    },
+    generated_note: { type: ['string', 'null'] },
+    generated_observation: { type: ['string', 'null'] },
+    generated_recommendation: { type: ['string', 'null'] },
+  },
+  required: [
+    'summary',
+    'confidence',
+    'fields',
+    'notes',
+    'extracted_text',
+    'extracted_values',
+    'generated_note',
+    'generated_observation',
+    'generated_recommendation',
+  ],
+} as const satisfies JsonSchemaObject
+
+function assertOpenAiStrictSchema(schema: JsonSchemaObject, path = 'schema') {
+  if (schema.type === 'object') {
+    if (schema.additionalProperties !== false) {
+      throw new Error(
+        `${path} must set additionalProperties: false for strict OpenAI structured outputs.`,
+      )
+    }
+
+    const propertyKeys = Object.keys(schema.properties ?? {})
+    const requiredKeys = [...(schema.required ?? [])]
+    const missingRequired = propertyKeys.filter(
+      (key) => !requiredKeys.includes(key),
+    )
+    const extraRequired = requiredKeys.filter(
+      (key) => !propertyKeys.includes(key),
+    )
+
+    if (missingRequired.length > 0 || extraRequired.length > 0) {
+      throw new Error(
+        `${path} required keys must exactly match properties. Missing: ${missingRequired.join(', ') || 'none'}. Extra: ${extraRequired.join(', ') || 'none'}.`,
+      )
+    }
+
+    for (const [key, child] of Object.entries(schema.properties ?? {})) {
+      assertOpenAiStrictSchema(child, `${path}.properties.${key}`)
+    }
+  }
+
+  if (schema.items) {
+    assertOpenAiStrictSchema(schema.items, `${path}.items`)
+  }
+}
+
+assertOpenAiStrictSchema(CAPTURE_DETAIL_EXTRACTION_SCHEMA)
 
 const SOURCE_DOCUMENT_CAPTURE_TYPES = new Set<ExtractionTargetType>([
   'unit_number',
@@ -315,13 +411,21 @@ function extractOutputText(response: unknown) {
 function sanitizeExtractedValues(
   value: unknown,
 ): Record<string, CaptureExtractedValue> {
-  if (!isRecord(value)) {
-    return {}
-  }
+  const entries = Array.isArray(value)
+    ? value
+        .filter(isRecord)
+        .map((entry) => [entry.key, entry] as const)
+    : isRecord(value)
+      ? Object.entries(value)
+      : []
 
   return Object.fromEntries(
-    Object.entries(value)
+    entries
       .map(([key, entry]) => {
+        if (typeof key !== 'string') {
+          return null
+        }
+
         const normalizedKey = key
           .replace(/[^a-zA-Z0-9_]+/g, '_')
           .replace(/^_+|_+$/g, '')
@@ -530,56 +634,7 @@ export async function extractCaptureImageDetails(
           type: 'json_schema',
           name: 'capture_detail_extraction',
           strict: true,
-          schema: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              summary: { type: 'string' },
-              confidence: { type: 'number', minimum: 0, maximum: 1 },
-              fields: {
-                type: 'object',
-                additionalProperties: false,
-                properties: Object.fromEntries(
-                  CAPTURE_EXTRACTION_FIELDS.map((field) => [
-                    field,
-                    { type: ['string', 'null'] },
-                  ]),
-                ),
-                required: CAPTURE_EXTRACTION_FIELDS,
-              },
-              notes: {
-                type: 'array',
-                items: { type: 'string' },
-              },
-              extracted_text: { type: ['string', 'null'] },
-              extracted_values: {
-                type: 'object',
-                additionalProperties: {
-                  type: 'object',
-                  additionalProperties: false,
-                  properties: {
-                    value: { type: 'string' },
-                    confidence: { type: 'number', minimum: 0, maximum: 1 },
-                  },
-                  required: ['value', 'confidence'],
-                },
-              },
-              generated_note: { type: ['string', 'null'] },
-              generated_observation: { type: ['string', 'null'] },
-              generated_recommendation: { type: ['string', 'null'] },
-            },
-            required: [
-              'summary',
-              'confidence',
-              'fields',
-              'notes',
-              'extracted_text',
-              'extracted_values',
-              'generated_note',
-              'generated_observation',
-              'generated_recommendation',
-            ],
-          },
+          schema: CAPTURE_DETAIL_EXTRACTION_SCHEMA,
         },
       },
       max_output_tokens: 1400,
