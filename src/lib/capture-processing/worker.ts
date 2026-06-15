@@ -85,6 +85,7 @@ function getSourceDocument(extractedData: Json) {
 }
 
 export async function processCaptureProcessingTick(batchSize = 5) {
+  const safeBatchSize = Math.max(1, Math.min(25, Math.floor(batchSize) || 5))
   const supabase = createAdminClient()
   const workerId = `capture-worker-${crypto.randomUUID()}`
   const staleBefore = new Date(Date.now() - LOCK_STALE_MINUTES * 60_000).toISOString()
@@ -97,7 +98,7 @@ export async function processCaptureProcessingTick(batchSize = 5) {
     .or(`locked_at.is.null,locked_at.lt.${staleBefore}`)
     .order('priority', { ascending: true })
     .order('created_at', { ascending: true })
-    .limit(batchSize)
+    .limit(safeBatchSize)
 
   if (queryError) throw queryError
 
@@ -155,7 +156,7 @@ export async function processCaptureProcessingTick(batchSize = 5) {
     }
   }
 
-  return { workerId, processed: results.length, results }
+  return { workerId, processed: results.length, results, batchSize: safeBatchSize }
 }
 
 async function processJob(supabase: ReturnType<typeof createAdminClient>, job: Job) {
@@ -203,7 +204,7 @@ async function processJob(supabase: ReturnType<typeof createAdminClient>, job: J
     .from('capture_items')
     .update({
       ai_status: result.status === 'needs_review' ? 'needs_review' : 'extracted',
-      processing_status: result.status,
+      processing_status: result.status === 'needs_review' ? 'needs_review' : 'analyzed',
       ai_summary: result.summary,
       capture_ai_analysis: mergeJson(item.capture_ai_analysis, result.analysis),
       extracted_data: mergeJson(item.extracted_data, result.extractedDataPatch),

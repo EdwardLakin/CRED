@@ -439,7 +439,17 @@ function EvidenceCard({
               ) : null}
               {percent !== null && percent < 80 ? (
                 <span className="classification-pill danger">
-                  Review requested
+                  Low confidence, verify reading
+                </span>
+              ) : null}
+              {capture.processing_status === 'analysis_failed' ? (
+                <span className="classification-pill danger">
+                  AI failed, manual review available
+                </span>
+              ) : null}
+              {isRecord(analysis.duplicate_of) || analysis.possible_duplicate === true ? (
+                <span className="classification-pill attention">
+                  Possible duplicate
                 </span>
               ) : null}
             </div>
