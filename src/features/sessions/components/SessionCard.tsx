@@ -2,10 +2,11 @@ import Link from 'next/link'
 
 import type { DocumentationSession } from '../types'
 import { formatDate, formatDateTime } from '../utils'
+import { archiveDocumentationSession, restoreDocumentationSession } from '../actions'
 import { SessionStatusBadge } from './SessionStatusBadge'
 
 function getOperationalAction(session: DocumentationSession) {
-  if (session.status === 'finalized') {
+  if (session.status === 'finalized' || session.review_status === 'ready_for_delivery') {
     return { href: `/dashboard/sessions/${session.id}/report`, label: 'Open Report' }
   }
 
@@ -16,17 +17,23 @@ function getOperationalAction(session: DocumentationSession) {
   return { href: `/dashboard/sessions/${session.id}/capture`, label: 'Continue Capture' }
 }
 
+function canArchiveFromCard(session: DocumentationSession) {
+  return !session.archived_at && (session.status === 'review' || session.status === 'finalized' || session.review_status === 'ready_for_delivery')
+}
+
 export function SessionCard({
   session,
   dateMode = 'updated',
   evidenceCount,
   showOperationalAction = false,
+  showArchiveAction = false,
   timeZone,
 }: {
   session: DocumentationSession
   dateMode?: 'created' | 'updated'
   evidenceCount?: number
   showOperationalAction?: boolean
+  showArchiveAction?: boolean
   timeZone?: string | null
 }) {
   const action = showOperationalAction ? getOperationalAction(session) : null
@@ -35,39 +42,50 @@ export function SessionCard({
   const dateValue =
     dateMode === 'created' ? formatDate(session.created_at, timeZone) : formatDateTime(session.updated_at ?? session.created_at, timeZone)
   const evidenceLabel = evidenceCount === undefined ? 'Not available' : `${evidenceCount} item${evidenceCount === 1 ? '' : 's'}`
+  const isArchived = Boolean(session.archived_at)
+  const archiveAction = archiveDocumentationSession.bind(null, session.id)
+  const restoreAction = restoreDocumentationSession.bind(null, session.id)
+  const renderArchiveAction = showArchiveAction && (isArchived || canArchiveFromCard(session))
 
   return (
-    <Link href={href} className="session-card">
-      <div className="session-card-header">
-        <div className="session-card-title-block">
-          <h3>{session.title}</h3>
-          <p className="muted">{session.asset_label || session.unit_number || 'Evidence session'}</p>
+    <article className="session-card session-card-shell">
+      <Link href={href} className="session-card-link">
+        <div className="session-card-header">
+          <div className="session-card-title-block">
+            <h3>{session.title}</h3>
+            <p className="muted">{session.asset_label || session.unit_number || 'Evidence session'}</p>
+          </div>
+          <SessionStatusBadge status={isArchived ? 'archived' : session.status} />
         </div>
-        <SessionStatusBadge status={session.status} />
-      </div>
-      <dl className="session-meta-grid">
-        <div>
-          <dt>{showOperationalAction ? 'Updated' : dateLabel}</dt>
-          <dd>{showOperationalAction ? formatDateTime(session.updated_at ?? session.created_at, timeZone) : dateValue}</dd>
-        </div>
-        {showOperationalAction ? (
-          <>
+        <dl className="session-meta-grid">
+          <div>
+            <dt>{showOperationalAction ? 'Updated' : dateLabel}</dt>
+            <dd>{showOperationalAction ? formatDateTime(session.updated_at ?? session.created_at, timeZone) : dateValue}</dd>
+          </div>
+          {showOperationalAction ? (
+            <>
+              <div>
+                <dt>Evidence</dt>
+                <dd>{evidenceLabel}</dd>
+              </div>
+              <div>
+                <dt>Action</dt>
+                <dd className="session-card-action">{action?.label}</dd>
+              </div>
+            </>
+          ) : (
             <div>
               <dt>Evidence</dt>
               <dd>{evidenceLabel}</dd>
             </div>
-            <div>
-              <dt>Action</dt>
-              <dd className="session-card-action">{action?.label}</dd>
-            </div>
-          </>
-        ) : (
-          <div>
-            <dt>Evidence</dt>
-            <dd>{evidenceLabel}</dd>
-          </div>
-        )}
-      </dl>
-    </Link>
+          )}
+        </dl>
+      </Link>
+      {renderArchiveAction ? (
+        <form action={isArchived ? restoreAction : archiveAction} className="session-card-inline-action">
+          <button className="button button-secondary touch-target">{isArchived ? 'Restore' : 'Archive'}</button>
+        </form>
+      ) : null}
+    </article>
   )
 }

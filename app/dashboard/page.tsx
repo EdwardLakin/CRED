@@ -24,7 +24,7 @@ function getCaptureCounts(captures: Array<{ documentation_session_id: string }> 
 }
 
 function getContinueSession(sessions: Array<{ id: string; status: string }>) {
-  return sessions.find((session) => session.status !== 'archived' && session.status !== 'finalized') ?? sessions[0]
+  return sessions.find((session) => session.status !== 'finalized') ?? sessions[0]
 }
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
@@ -42,6 +42,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     .from('documentation_sessions')
     .select('*')
     .eq('organization_id', profile.organization_id)
+    .is('archived_at', null)
     .order('updated_at', { ascending: false })
     .limit(6)
 

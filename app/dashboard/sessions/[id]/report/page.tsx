@@ -240,7 +240,7 @@ export default async function SessionReportPreviewPage({
   const signedEvidenceUrls: Record<string, string> = {};
   await Promise.all(
     visibleCaptures.map(async (capture) => {
-      const path = capture.thumbnail_path ?? capture.storage_path;
+      const path = isPhotoCapture(capture) ? (capture.storage_path ?? capture.thumbnail_path) : (capture.thumbnail_path ?? capture.storage_path);
       if (!path) return;
       const { data } = await supabase.storage
         .from("documentation-captures")

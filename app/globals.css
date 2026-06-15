@@ -3857,3 +3857,25 @@ a:focus-visible {
     flex-direction: column;
   }
 }
+
+.session-card-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.session-card-link {
+  color: inherit;
+  display: block;
+  text-decoration: none;
+}
+
+.session-card-inline-action {
+  margin-top: auto;
+}
+
+.tab-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
