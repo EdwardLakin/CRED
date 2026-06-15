@@ -36,9 +36,9 @@ begin
     select
       ec.organization_id,
       ec.documentation_session_id,
-      ec.id as capture_item_id,
-      job_type,
-      50 + ordinal::integer as priority,
+      ec.id as queued_capture_item_id,
+      jobs.job_type,
+      50 + jobs.ordinal::integer as priority,
       jsonb_build_object('repair', true, 'queued_by', 'queue_missing_capture_processing_jobs') as metadata
     from eligible_captures ec
     cross join unnest(array['classify_capture', 'extract_capture', 'generate_capture_note']::text[]) with ordinality as jobs(job_type, ordinal)
@@ -53,26 +53,26 @@ begin
       metadata
     )
     select
-      organization_id,
-      documentation_session_id,
-      capture_item_id,
-      job_type,
-      priority,
+      jr.organization_id,
+      jr.documentation_session_id,
+      jr.queued_capture_item_id,
+      jr.job_type,
+      jr.priority,
       'queued',
-      metadata
-    from job_rows
+      jr.metadata
+    from job_rows jr
     on conflict do nothing
-    returning capture_item_id
+    returning public.capture_processing_jobs.capture_item_id as queued_capture_item_id
   ), updated as (
     update public.capture_items ci
     set processing_status = 'queued',
         ai_status = coalesce(nullif(ci.ai_status, 'extracted'), 'queued')
-    where ci.id in (select distinct inserted.capture_item_id from inserted)
+    where ci.id in (select distinct inserted.queued_capture_item_id from inserted)
     returning ci.id
   )
-  select inserted.capture_item_id, count(*)::integer as inserted_jobs
+  select inserted.queued_capture_item_id as capture_item_id, count(*)::integer as inserted_jobs
   from inserted
-  group by inserted.capture_item_id;
+  group by inserted.queued_capture_item_id;
 end;
 $$;
 
