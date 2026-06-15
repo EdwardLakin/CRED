@@ -10,7 +10,7 @@ import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import { ReportEmailError, sendReportEmail, validateReportEmailRecipients } from '@/lib/email/reports'
 import { AI_REPORT_DRAFT_MODEL, AI_REPORT_DRAFT_PROMPT_VERSION, generateReportDraft } from '@/lib/openai/report-draft-generator'
 import type { OrganizationPlan } from '@/lib/stripe'
-import { buildEvidenceGroups, deriveFormSectionsFromCaptures, scoreFormReferenceCapture, selectPrimaryFormCaptures, stripConfidenceText } from '@/features/reports/report-structure'
+import { buildEvidenceGroups, buildEvidencePackages, buildNormalizedReportFields, deriveFormSectionsFromCaptures, scoreFormReferenceCapture, selectPrimaryFormCaptures, stripConfidenceText } from '@/features/reports/report-structure'
 import type { Json } from '@/lib/supabase/database.types'
 
 const REPORT_SHARE_EXPIRATION_DAYS = 30
@@ -526,7 +526,9 @@ export async function generateAiReportDraft(sessionId: string) {
     mode: formSections.length > 0 ? 'form_structured' : 'evidence_first',
     form_sections: formSections,
     form_capture_ids: formCaptureIds,
-    evidence_groups: evidenceGroups,
+    evidence_groups: buildEvidencePackages(normalizedCaptures, evidenceGroups),
+    evidence_cards: evidenceGroups,
+    normalized_report_fields: buildNormalizedReportFields(normalizedCaptures),
   }) ?? {}
 
   const now = new Date().toISOString()

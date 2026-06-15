@@ -50,6 +50,32 @@ export type EvidenceGroup = {
   recommendations: string[]
 }
 
+export type NormalizedReportField = {
+  key: string
+  label: string
+  value: string
+  unit: string | null
+  canonical_value: number | null
+  source_capture_ids: string[]
+  display_value: string
+}
+
+export type EvidencePackage = {
+  id: string
+  title: string
+  summary: string
+  capture_ids: string[]
+  confidence: number
+  generated_finding: {
+    text: string
+    confidence: number
+    severity: 'pass' | 'advisory' | 'fail' | 'needs_review'
+    source_values: NormalizedReportField[]
+  }
+  recommendations: Array<{ text: string; supporting_capture_ids: string[] }>
+  duplicate_flags: Array<{ capture_id: string; duplicate_of_capture_id: string; reason: string; label: 'Possible Duplicate' }>
+}
+
 type StructuredReportItem = {
   source_capture_id?: string
   label?: string
@@ -1210,4 +1236,128 @@ export function buildNormalizedReportModel<TCapture extends CaptureLike>(params:
       severityBreakdown,
     },
   }
+}
+
+
+const EVIDENCE_PACKAGE_RULES = [
+  { key: 'battery_charging', title: 'Battery and Charging System Test', terms: ['battery', 'cca', 'voltage', 'volt', 'current draw', 'amp clamp', 'multimeter', 'ripple', 'alternator', 'charging', 'starter'] },
+  { key: 'corrosion', title: 'Corrosion Inspection', terms: ['corrosion', 'rust', 'terminal', 'post'] },
+  { key: 'brakes', title: 'Brake Inspection', terms: ['brake', 'pad', 'rotor', 'lining', 'caliper', 'drum'] },
+  { key: 'tires', title: 'Tire and Tread Inspection', terms: ['tire', 'tyre', 'tread', 'sidewall'] },
+  { key: 'complaint', title: 'Customer Complaint Verification', terms: ['complaint', 'concern', 'verify', 'verification', 'customer states'] },
+  { key: 'fluid_leak', title: 'Fluid Leak Inspection', terms: ['leak', 'oil', 'coolant', 'fluid', 'hydraulic'] },
+]
+
+function getCapturePackageText(capture: CaptureLike, group?: EvidenceGroup) {
+  return normalizeForMatch(`${capture.type ?? ''} ${capture.media_kind ?? ''} ${textForCapture(capture)} ${(group?.details ?? []).map((detail) => `${detail.label} ${detail.value}`).join(' ')} ${(group?.findings ?? []).join(' ')} ${(group?.recommendations ?? []).join(' ')}`)
+}
+
+function getPackageRule(capture: CaptureLike, group?: EvidenceGroup) {
+  const text = getCapturePackageText(capture, group)
+  return EVIDENCE_PACKAGE_RULES.find((rule) => rule.terms.some((term) => text.includes(normalizeForMatch(term))))
+}
+
+function canonicalizeReportField(key: string, value: string): NormalizedReportField | null {
+  const label = labelize(key) || normalizeUserFacingLabel(key)
+  const cleaned = clean(value, 160)
+  if (!label || !cleaned) return null
+  const match = cleaned.match(/(-?\d+(?:[,.]\d+)?)\s*(m?a|amps?|v|volts?|mv|cca|mm|in|psi|%|percent)\b/i)
+  if (!match) return { key: slug(key, 'field'), label, value: cleaned, unit: null, canonical_value: null, source_capture_ids: [], display_value: cleaned }
+  const raw = Number(match[1].replace(',', '.'))
+  if (!Number.isFinite(raw)) return null
+  const unitText = match[2].toLowerCase()
+  let unit = unitText
+  let canonicalValue = raw
+  if (unitText === 'ma') { unit = 'A'; canonicalValue = raw / 1000 }
+  else if (/^a|amp/.test(unitText)) unit = 'A'
+  else if (unitText === 'mv') { unit = 'V'; canonicalValue = raw / 1000 }
+  else if (/^v|volt/.test(unitText)) unit = 'V'
+  else if (unitText === 'percent') unit = '%'
+  const display = unit === 'A' && canonicalValue < 1 ? `${Math.round(canonicalValue * 1000)} mA` : `${Number(canonicalValue.toFixed(3))} ${unit}`
+  return { key: slug(key, 'field'), label, value: cleaned, unit, canonical_value: Number(canonicalValue.toFixed(6)), source_capture_ids: [], display_value: display }
+}
+
+export function buildNormalizedReportFields(captures: CaptureLike[]): NormalizedReportField[] {
+  const fields = new Map<string, NormalizedReportField>()
+  for (const capture of captures) {
+    for (const [key, value] of Object.entries(getExtractionFields(capture.extracted_data))) {
+      if (typeof value !== 'string') continue
+      const normalized = canonicalizeReportField(key, value)
+      if (!normalized) continue
+      const dedupeKey = `${normalized.key}:${normalized.unit ?? 'text'}:${normalized.canonical_value ?? normalizeForMatch(normalized.display_value)}`
+      const existing = fields.get(dedupeKey)
+      if (existing) existing.source_capture_ids = Array.from(new Set([...existing.source_capture_ids, capture.id]))
+      else fields.set(dedupeKey, { ...normalized, source_capture_ids: [capture.id] })
+    }
+  }
+  return Array.from(fields.values())
+}
+
+function detectDuplicateFlags(captures: CaptureLike[]) {
+  const seen = new Map<string, string>()
+  const seenReadings = new Map<string, string>()
+  const flags: EvidencePackage['duplicate_flags'] = []
+  const flagOnce = (captureId: string, duplicateOf: string, reason: string) => {
+    if (captureId === duplicateOf || flags.some((flag) => flag.capture_id === captureId && flag.duplicate_of_capture_id === duplicateOf)) return
+    flags.push({ capture_id: captureId, duplicate_of_capture_id: duplicateOf, reason, label: 'Possible Duplicate' })
+  }
+  for (const capture of captures) {
+    const textKey = normalizeForMatch(`${capture.type ?? ''} ${capture.media_kind ?? ''} ${capture.ocr_text ?? ''} ${capture.ai_summary ?? ''} ${JSON.stringify(getExtractionFields(capture.extracted_data))}`).slice(0, 500)
+    if (textKey.length >= 12) {
+      const duplicateOf = seen.get(textKey)
+      if (duplicateOf) flagOnce(capture.id, duplicateOf, 'Same document, upload, or highly similar extracted evidence was captured more than once. It was flagged for review and not deleted.')
+      else seen.set(textKey, capture.id)
+    }
+    for (const [key, value] of Object.entries(getExtractionFields(capture.extracted_data))) {
+      if (typeof value !== 'string') continue
+      const normalized = canonicalizeReportField(key, value)
+      if (!normalized?.unit || normalized.canonical_value === null) continue
+      const readingKey = `${normalized.key}:${normalized.unit}:${normalized.canonical_value}`
+      const duplicateReadingOf = seenReadings.get(readingKey)
+      if (duplicateReadingOf) flagOnce(capture.id, duplicateReadingOf, 'Same normalized reading appears more than once. It was merged for reporting and flagged for review, not deleted.')
+      else seenReadings.set(readingKey, capture.id)
+    }
+  }
+  return flags
+}
+
+function buildGeneratedFinding(title: string, fields: NormalizedReportField[], groups: EvidenceGroup[]) {
+  const text = normalizeForMatch(`${title} ${fields.map((field) => `${field.key} ${field.display_value}`).join(' ')} ${groups.flatMap((group) => [...group.findings, ...group.recommendations]).join(' ')}`)
+  const hasBattery = /battery|charging|starter|cca|current draw|ripple/.test(text)
+  const hasDefect = /fail|failed|replace|required|critical|leak|crack|broken|wear limit|corrosion/.test(text)
+  const hasAdvisory = /monitor|recommend|advisory|attention|ripple/.test(text)
+  if (hasBattery && !hasDefect) return { text: 'Battery, starter, and charging system operating within specification.', severity: 'pass' as const, confidence: 0.96 }
+  if (hasDefect) return { text: `${title} has supported inspection findings requiring review.`, severity: 'fail' as const, confidence: 0.88 }
+  if (hasAdvisory) return { text: `${title} has supported advisory observations.`, severity: 'advisory' as const, confidence: 0.84 }
+  return { text: `${title} evidence package prepared for review.`, severity: 'needs_review' as const, confidence: 0.72 }
+}
+
+export function buildEvidencePackages(captures: CaptureLike[], evidenceGroups: EvidenceGroup[] = buildEvidenceGroups(captures)): EvidencePackage[] {
+  const groupByCapture = new Map(evidenceGroups.map((group) => [group.capture_id, group]))
+  const buckets = new Map<string, { title: string; captures: CaptureLike[] }>()
+  for (const capture of captures) {
+    const rule = getPackageRule(capture, groupByCapture.get(capture.id))
+    const key = rule?.key ?? (isNoteCapture(capture) ? 'notes' : isDocumentCapture(capture) ? 'documents' : 'general')
+    const title = rule?.title ?? (key === 'notes' ? 'Technician Notes' : key === 'documents' ? 'Reference Documents' : 'General Supporting Evidence')
+    buckets.set(key, { title, captures: [...(buckets.get(key)?.captures ?? []), capture] })
+  }
+  const allFields = buildNormalizedReportFields(captures)
+  const allDuplicateFlags = detectDuplicateFlags(captures)
+  return Array.from(buckets.entries()).map(([key, bucket], index) => {
+    const captureIds = bucket.captures.map((capture) => capture.id)
+    const packageGroups = captureIds.flatMap((id) => groupByCapture.get(id) ? [groupByCapture.get(id)!] : [])
+    const sourceValues = allFields.filter((field) => field.source_capture_ids.some((id) => captureIds.includes(id)))
+    const finding = buildGeneratedFinding(bucket.title, sourceValues, packageGroups)
+    const recommendations = packageGroups.flatMap((group) => group.recommendations).map((text) => ({ text, supporting_capture_ids: captureIds.filter((id) => groupByCapture.get(id)?.recommendations.includes(text)) }))
+    return {
+      id: `${key}_${index + 1}`,
+      title: bucket.title,
+      summary: `${bucket.captures.length} capture${bucket.captures.length === 1 ? '' : 's'} grouped as related evidence.`,
+      capture_ids: captureIds,
+      confidence: Math.min(0.98, 0.68 + Math.min(captureIds.length, 5) * 0.06),
+      generated_finding: { ...finding, source_values: sourceValues },
+      recommendations: recommendations.filter((item) => item.supporting_capture_ids.length > 0),
+      duplicate_flags: allDuplicateFlags.filter((flag) => captureIds.includes(flag.capture_id)),
+    }
+  })
 }
