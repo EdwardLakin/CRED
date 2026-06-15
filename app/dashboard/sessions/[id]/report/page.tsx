@@ -8,7 +8,7 @@ import {
 } from "@/features/capture";
 import {
   buildCustomerAssetRows,
-  buildNonDuplicatedReviewDocument,
+  buildNormalizedReportModel,
   classifyReferenceDocumentTitle,
   deriveFormSectionsFromCaptures,
   getFormStructureSummary,
@@ -17,6 +17,10 @@ import {
   shouldRenderDetail,
   splitRecommendationText,
   stripConfidenceText,
+  getNormalizedInspectionStatus,
+  getNormalizedFindingModels,
+  getNormalizedRecommendedActions,
+  isMeaningfulCustomerReportText,
 } from "@/features/reports/report-structure";
 import {
   createReportShareLink,
@@ -49,63 +53,6 @@ type SupportingEvidenceItem = {
   kind: "photo" | "video" | "audio" | "note" | "document" | "file";
 };
 
-
-const SEVERITY_PRESENTATION = [
-  { key: "critical", label: "🔴 Critical", priority: 5, patterns: [/\bcritical\b/i, /\bred\b/i, /immediate|unsafe|out of service/i] },
-  { key: "high", label: "🟠 High", priority: 4, patterns: [/\bhigh\b/i, /priority/i, /repair|required|replace/i] },
-  { key: "medium", label: "🟡 Medium", priority: 3, patterns: [/\bmedium\b/i, /\byellow\b/i, /maintenance|service/i] },
-  { key: "low", label: "🟢 Low", priority: 2, patterns: [/\blow\b/i, /\bgreen\b/i, /monitor/i] },
-] as const;
-
-function normalizeSeverityPresentation(values: string[]) {
-  const text = values.join(" ");
-  return SEVERITY_PRESENTATION.find((severity) => severity.patterns.some((pattern) => pattern.test(text))) ?? { key: "info", label: "⚪ Information", priority: 1 };
-}
-
-function dedupeText(values: string[]) {
-  const seen = new Set<string>();
-  return values.map((value) => stripConfidenceText(value).trim()).filter((value) => {
-    const key = value.toLowerCase().replace(/\s+/g, " ");
-    if (!value || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function isMeaningfulReportText(value: string) {
-  const text = stripConfidenceText(value).trim();
-  return text.length >= 8 && !/^(n\/?a|none|null|test|testing|placeholder|sample|lorem ipsum|generated filler|empty notes?|no notes?|additional notes?)$/i.test(text);
-}
-
-function getFindingModels(items: ReturnType<typeof buildNonDuplicatedReviewDocument<CaptureItem>>["findings"]) {
-  return items.map((entry, index) => {
-    const renderedText: string[] = [];
-    const details = entry.group.details.filter((detail) => {
-      const visible = shouldRenderDetail(detail.label, detail.value, renderedText);
-      if (visible) renderedText.push(detail.value);
-      return visible;
-    });
-    const observations = dedupeText(entry.group.findings.filter((finding) => shouldRenderDetail("Observed condition", finding, renderedText)));
-    observations.forEach((finding) => renderedText.push(finding));
-    const recommendations = dedupeText(entry.group.recommendations.flatMap(splitRecommendationText).filter((recommendation) => shouldRenderDetail("Recommendation", recommendation, renderedText)));
-    recommendations.forEach((recommendation) => renderedText.push(recommendation));
-    const severity = normalizeSeverityPresentation([...observations, ...recommendations, ...details.map((detail) => `${detail.label} ${detail.value}`)]);
-    const title = stripConfidenceText(details.find((detail) => /title|component|system|item|area|location/i.test(detail.label))?.value ?? observations[0]?.split(/[.;]/)[0] ?? `Finding ${index + 1}`);
-    return { id: entry.group.capture_id, title, severity, observations, recommendations, details, evidenceCount: 1 };
-  });
-}
-
-function getRecommendedActions(findings: ReturnType<typeof getFindingModels>) {
-  return findings.flatMap((finding) => finding.recommendations.map((action) => ({ priority: finding.severity.label.replace(/^[^ ]+ /, ""), priorityScore: finding.severity.priority, action })))
-    .filter((item, index, items) => items.findIndex((candidate) => candidate.action.toLowerCase() === item.action.toLowerCase()) === index)
-    .sort((a, b) => b.priorityScore - a.priorityScore || a.action.localeCompare(b.action));
-}
-
-function getInspectionStatus(findings: ReturnType<typeof getFindingModels>) {
-  if (findings.some((finding) => finding.severity.key === "critical" || finding.severity.key === "high")) return "⚠ Repairs Recommended";
-  if (findings.some((finding) => finding.severity.key === "medium")) return "⚠ Maintenance Recommended";
-  return findings.length > 0 ? "ℹ Review Findings" : "✅ No Findings Identified";
-}
 
 function getReportOrigin(headersList: Headers) {
   const configuredUrl =
@@ -149,6 +96,7 @@ function getEvidenceKind(capture: CaptureItem): SupportingEvidenceItem["kind"] {
   if (capture.type === "text_note" || capture.media_kind === "note")
     return "note";
   if (isPhotoCapture(capture)) return "photo";
+  if (capture.media_kind === "document" && capture.storage_path?.match(/\.(jpg|jpeg|png|webp|gif|heic)$/i)) return "photo";
   if (capture.media_kind === "video" || capture.type === "video")
     return "video";
   if (capture.media_kind === "audio" || capture.type === "voice_note")
@@ -312,7 +260,7 @@ export default async function SessionReportPreviewPage({
   const derivedFormSections = deriveFormSectionsFromCaptures(visibleCaptures);
   const documentSections = normalizedReportSections.length > 0 ? normalizedReportSections : derivedFormSections;
   const formStructureSummary = getFormStructureSummary(currentReport?.report_structure ?? null, documentSections);
-  const reviewDocument = buildNonDuplicatedReviewDocument({
+  const reviewDocument = buildNormalizedReportModel({
     captures: visibleCaptures,
     sections: documentSections,
     draftSections: visibleReportSections,
@@ -481,7 +429,7 @@ function GeneratedReportReview({
   photoEvidence: SupportingEvidenceItem[];
   documentSections: ReturnType<typeof normalizeDraftSections>;
   formStructureSummary: ReturnType<typeof getFormStructureSummary>;
-  reviewDocument: ReturnType<typeof buildNonDuplicatedReviewDocument<CaptureItem>>;
+  reviewDocument: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>;
   customerAssetRows: ReturnType<typeof buildCustomerAssetRows>;
   supportingEvidence: SupportingEvidenceItem[];
   session: Pick<DocumentationSession, "id" | "title">;
@@ -498,9 +446,9 @@ function GeneratedReportReview({
     ...noteEvidence,
     ...otherEvidence,
   ].filter((item) => item.capture.include_in_report).length;
-  const findings = getFindingModels(reviewDocument.findings);
-  const actions = getRecommendedActions(findings);
-  const severityBreakdown = ["critical", "high", "medium", "low", "info"].map((key) => ({ key, count: findings.filter((finding) => finding.severity.key === key).length, label: findings.find((finding) => finding.severity.key === key)?.severity.label ?? ({ critical: "🔴 Critical", high: "🟠 High", medium: "🟡 Medium", low: "🟢 Low", info: "⚪ Information" } as Record<string, string>)[key] })).filter((item) => item.count > 0);
+  const findings = reviewDocument.findingModels;
+  const actions = reviewDocument.recommendedActions;
+  const severityBreakdown = reviewDocument.summary.severityBreakdown;
 
   return (
     <section className="card detail-card report-command-card form-stack generated-report-card">
@@ -536,12 +484,12 @@ function GeneratedReportReview({
             <p className="eyebrow">Inspection Summary</p>
             <h3>Inspection completed on {formatDate(new Date().toISOString(), timeZone)}</h3>
           </div>
-          <span className="status-pill attention">{getInspectionStatus(findings)}</span>
+          <span className="status-pill attention">{getNormalizedInspectionStatus(findings)}</span>
         </div>
         {currentReport?.summary ? <p>{stripConfidenceText(currentReport.summary)}</p> : null}
         <div className="inspection-metric-grid">
           <div><span>Total Findings</span><strong>{findings.length}</strong></div>
-          <div><span>Critical Findings</span><strong>{findings.filter((finding) => finding.severity.key === "critical").length}</strong></div>
+          <div><span>Critical Findings</span><strong>{reviewDocument.summary.criticalFindings}</strong></div>
           <div><span>Reference Documents Captured</span><strong>{reviewDocument.referenceDocuments.length}</strong></div>
           <div><span>Evidence Items Captured</span><strong>{includedEvidenceCount}</strong></div>
         </div>
@@ -826,7 +774,7 @@ function GeneratedReportReview({
               <FindingCardList items={reviewDocument.findings} supportingEvidence={supportingEvidence} />
               <RecommendedActionsTable findings={findings} />
               {reviewDocument.referenceDocuments.length > 0 ? <><h3>Reference Documents</h3><ReferenceDocumentList items={reviewDocument.referenceDocuments} supportingEvidence={supportingEvidence} /></> : null}
-              {reviewDocument.additionalNotes.some((entry) => isMeaningfulReportText([entry.capture.technician_note, entry.capture.transcript, ...entry.group.findings, ...entry.group.recommendations].filter(Boolean).join(" "))) ? <><h3>Additional Notes</h3><EvidenceGroupList items={reviewDocument.additionalNotes.filter((entry) => isMeaningfulReportText([entry.capture.technician_note, entry.capture.transcript, ...entry.group.findings, ...entry.group.recommendations].filter(Boolean).join(" ")))} supportingEvidence={supportingEvidence} /></> : null}
+              {reviewDocument.additionalNotes.some((entry) => isMeaningfulCustomerReportText([entry.capture.technician_note, entry.capture.transcript, ...entry.group.findings, ...entry.group.recommendations].filter(Boolean).join(" "))) ? <><h3>Additional Notes</h3><EvidenceGroupList items={reviewDocument.additionalNotes.filter((entry) => isMeaningfulCustomerReportText([entry.capture.technician_note, entry.capture.transcript, ...entry.group.findings, ...entry.group.recommendations].filter(Boolean).join(" ")))} supportingEvidence={supportingEvidence} /></> : null}
               {reviewDocument.supportingEvidence.length > 0 ? <><h3>Supporting Evidence</h3><EvidenceGroupList items={reviewDocument.supportingEvidence} supportingEvidence={supportingEvidence} /></> : null}
               {reviewDocument.unattachedDetails.length > 0 ? (
                 <div className="evidence-first-card">
@@ -904,11 +852,11 @@ function FindingCardList({
   items,
   supportingEvidence,
 }: {
-  items: ReturnType<typeof buildNonDuplicatedReviewDocument<CaptureItem>>["findings"];
+  items: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>["findings"];
   supportingEvidence: SupportingEvidenceItem[];
 }) {
   const evidenceById = new Map(supportingEvidence.map((item) => [item.capture.id, item]));
-  const findings = getFindingModels(items);
+  const findings = getNormalizedFindingModels(items);
   if (findings.length === 0) return <p className="muted">No inspection findings attached yet.</p>;
   return <div className="finding-card-list">{findings.map((finding, index) => {
     const evidence = evidenceById.get(finding.id);
@@ -923,17 +871,17 @@ function FindingCardList({
   })}</div>;
 }
 
-function RecommendedActionsTable({ findings }: { findings: ReturnType<typeof getFindingModels> }) {
-  const actions = getRecommendedActions(findings);
+function RecommendedActionsTable({ findings }: { findings: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>["findingModels"] }) {
+  const actions = getNormalizedRecommendedActions(findings);
   if (actions.length === 0) return null;
   return <section className="recommended-actions-card"><h3>Recommended Actions</h3><div className="actions-table"><div><strong>Priority</strong><strong>Action</strong></div>{actions.map((item) => <div key={item.action}><span>{item.priority}</span><span>{item.action}</span></div>)}</div></section>;
 }
 
-function ReferenceDocumentList({ items, supportingEvidence }: { items: ReturnType<typeof buildNonDuplicatedReviewDocument<CaptureItem>>["findings"]; supportingEvidence: SupportingEvidenceItem[] }) {
+function ReferenceDocumentList({ items, supportingEvidence }: { items: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>["findings"]; supportingEvidence: SupportingEvidenceItem[] }) {
   const evidenceById = new Map(supportingEvidence.map((item) => [item.capture.id, item]));
   return <div className="reference-document-list">{items.map((entry) => {
     const item = evidenceById.get(entry.group.capture_id);
-    const details = entry.group.details.filter((detail) => isMeaningfulReportText(detail.value));
+    const details = entry.group.details.filter((detail) => isMeaningfulCustomerReportText(detail.value));
     return <article key={entry.group.capture_id} className="reference-document-card"><h4>{item?.title ?? "Reference Document"}</h4>{details.length > 0 ? <div className="report-field-grid">{details.map((detail, index) => <div key={`${detail.label}-${index}`} className="report-field-card"><span>{detail.label}</span><strong>{stripConfidenceText(detail.value)}</strong></div>)}</div> : <p className="muted">Reference captured for inspection support.</p>}<details><summary>View Original Reference</summary><EvidenceGroupList items={[entry]} supportingEvidence={supportingEvidence} /></details></article>;
   })}</div>;
 }
@@ -943,7 +891,7 @@ function EvidenceGroupList({
   supportingEvidence,
   emptyMessage = "No supporting evidence attached yet.",
 }: {
-  items: ReturnType<typeof buildNonDuplicatedReviewDocument<CaptureItem>>["findings"];
+  items: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>["findings"];
   supportingEvidence: SupportingEvidenceItem[];
   emptyMessage?: string;
 }) {
