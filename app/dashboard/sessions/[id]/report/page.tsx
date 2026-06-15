@@ -8,6 +8,7 @@ import {
 } from "@/features/capture";
 import {
   buildCustomerAssetRows,
+  buildEvidencePackages,
   buildNormalizedReportModel,
   classifyReferenceDocumentTitle,
   deriveFormSectionsFromCaptures,
@@ -268,6 +269,7 @@ export default async function SessionReportPreviewPage({
     measurements: currentReport?.measurements ?? [],
     findings: currentReport?.findings ?? [],
   });
+  const evidencePackages = buildEvidencePackages(visibleCaptures, reviewDocument.findings.map((entry) => entry.group));
   const photoEvidence = supportingEvidence.filter(
     (item) => item.kind === "photo",
   );
@@ -359,6 +361,7 @@ export default async function SessionReportPreviewPage({
             documentSections={documentSections}
             formStructureSummary={formStructureSummary}
             reviewDocument={reviewDocument}
+            evidencePackages={evidencePackages}
             customerAssetRows={buildCustomerAssetRows(documentSections, session as unknown as Record<string, unknown>)}
             supportingEvidence={supportingEvidence}
             session={session}
@@ -410,6 +413,7 @@ function GeneratedReportReview({
   documentSections,
   formStructureSummary,
   reviewDocument,
+  evidencePackages,
   customerAssetRows,
   supportingEvidence,
   session,
@@ -431,6 +435,7 @@ function GeneratedReportReview({
   documentSections: ReturnType<typeof normalizeDraftSections>;
   formStructureSummary: ReturnType<typeof getFormStructureSummary>;
   reviewDocument: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>;
+  evidencePackages: ReturnType<typeof buildEvidencePackages>;
   customerAssetRows: ReturnType<typeof buildCustomerAssetRows>;
   supportingEvidence: SupportingEvidenceItem[];
   session: Pick<DocumentationSession, "id" | "title">;
@@ -772,6 +777,7 @@ function GeneratedReportReview({
                 </div>
                 <span className="status-pill neutral compact">{includedEvidenceCount} included</span>
               </div>
+              <EvidencePackageList packages={evidencePackages} supportingEvidence={supportingEvidence} />
               <FindingCardList items={reviewDocument.findings} supportingEvidence={supportingEvidence} />
               <RecommendedActionsTable findings={findings} />
               {reviewDocument.referenceDocuments.length > 0 ? <><h3>Reference Documents</h3><ReferenceDocumentList items={reviewDocument.referenceDocuments} supportingEvidence={supportingEvidence} /></> : null}
@@ -848,6 +854,35 @@ function getProfessionalFields<T extends { value: string }>(fields: T[]) {
   return fields.filter((field) => field.value).slice(0, 4);
 }
 
+
+
+function EvidencePackageList({
+  packages,
+  supportingEvidence,
+}: {
+  packages: ReturnType<typeof buildEvidencePackages>;
+  supportingEvidence: SupportingEvidenceItem[];
+}) {
+  const evidenceById = new Map(supportingEvidence.map((item) => [item.capture.id, item]));
+  if (packages.length === 0) return <p className="muted">No evidence groups available yet.</p>;
+  return (
+    <section className="evidence-package-section">
+      <div className="report-section-title-row"><div><h3>Evidence Groups</h3><p className="muted">Related captures are grouped into reviewable evidence packages with findings, source values, and traceability.</p></div></div>
+      <div className="evidence-package-list">
+        {packages.map((group) => (
+          <details key={group.id} className="evidence-package-card" open>
+            <summary><span><strong>{group.title}</strong><span className="muted">({group.capture_ids.length} capture{group.capture_ids.length === 1 ? "" : "s"})</span></span><span className="status-pill neutral compact">{Math.round(group.confidence * 100)}%</span></summary>
+            <p>{group.summary}</p>
+            {group.duplicate_flags.length > 0 ? <p className="notice warning">Possible Duplicate — review flagged captures before delivery.</p> : null}
+            <div className="finding-card-grid"><div><strong>Finding</strong><p>{group.generated_finding.text}</p><p className="muted">Severity: {group.generated_finding.severity} · Confidence {Math.round(group.generated_finding.confidence * 100)}%</p></div><div><strong>Source values</strong>{group.generated_finding.source_values.length > 0 ? <ul>{group.generated_finding.source_values.map((field) => <li key={`${group.id}-${field.key}-${field.display_value}`}>{field.label}: {field.display_value} <span className="muted">({field.source_capture_ids.length} source{field.source_capture_ids.length === 1 ? "" : "s"})</span></li>)}</ul> : <p className="muted">No normalized readings extracted.</p>}</div></div>
+            {group.recommendations.length > 0 ? <div><strong>Recommendations</strong><ul>{group.recommendations.map((item) => <li key={item.text}>{item.text} <span className="muted">Supported by {item.supporting_capture_ids.length} capture{item.supporting_capture_ids.length === 1 ? "" : "s"}</span></li>)}</ul></div> : null}
+            <details className="finding-evidence-details"><summary>Supporting Evidence</summary><div className="evidence-chip-list">{group.capture_ids.map((id) => { const item = evidenceById.get(id); return item ? <span key={id} className="status-pill neutral compact">{item.title}</span> : null })}</div></details>
+          </details>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 function FindingCardList({
   items,
