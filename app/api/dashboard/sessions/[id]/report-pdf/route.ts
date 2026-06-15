@@ -30,6 +30,34 @@ type ReportSession = Database['public']['Tables']['documentation_sessions']['Row
   organizations: { name: string } | null
 }
 
+
+const SEVERITY_PRESENTATION = [
+  { key: 'critical', label: '🔴 Critical', priority: 5, patterns: [/\bcritical\b/i, /\bred\b/i, /immediate|unsafe|out of service/i] },
+  { key: 'high', label: '🟠 High', priority: 4, patterns: [/\bhigh\b/i, /priority/i, /repair|required|replace/i] },
+  { key: 'medium', label: '🟡 Medium', priority: 3, patterns: [/\bmedium\b/i, /\byellow\b/i, /maintenance|service/i] },
+  { key: 'low', label: '🟢 Low', priority: 2, patterns: [/\blow\b/i, /\bgreen\b/i, /monitor/i] },
+] as const
+
+function normalizeSeverityPresentation(values: string[]) {
+  const text = values.join(' ')
+  return SEVERITY_PRESENTATION.find((severity) => severity.patterns.some((pattern) => pattern.test(text))) ?? { key: 'info', label: '⚪ Information', priority: 1 }
+}
+
+function dedupeText(values: string[]) {
+  const seen = new Set<string>()
+  return values.map((value) => stripConfidenceText(value).trim()).filter((value) => {
+    const key = value.toLowerCase().replace(/\s+/g, ' ')
+    if (!value || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function isMeaningfulReportText(value: string) {
+  const text = stripConfidenceText(value).trim()
+  return text.length >= 8 && !/^(n\/?a|none|null|test|testing|placeholder|sample|lorem ipsum|generated filler|empty notes?|no notes?|additional notes?)$/i.test(text)
+}
+
 function escapeHtml(value: unknown) {
   return stripConfidenceText(String(value ?? ''))
     .replace(/&/g, '&amp;')
@@ -130,6 +158,60 @@ function renderTextList(title: string, values: string[], existingRenderedText: s
   return `<section class="finding"><h3>${escapeHtml(title)}</h3>${visible.map((value) => `<p>${escapeHtml(value)}</p>`).join('')}</section>`
 }
 
+
+function getFindingModels(items: ReturnType<typeof buildNonDuplicatedReviewDocument<ReportCapture>>['findings']) {
+  return items.map((entry, index) => {
+    const renderedText: string[] = []
+    const details = dedupeEvidenceDetails(entry.group.details).filter((detail) => {
+      const visible = shouldRenderDetail(detail.label, detail.value, renderedText)
+      if (visible) renderedText.push(detail.value)
+      return visible
+    })
+    const observations = dedupeText(entry.group.findings.filter((finding) => shouldRenderDetail('Observed condition', finding, renderedText)))
+    observations.forEach((finding) => renderedText.push(finding))
+    const recommendations = dedupeText(entry.group.recommendations.flatMap(splitRecommendationText).filter((recommendation) => shouldRenderDetail('Recommendation', recommendation, renderedText)))
+    recommendations.forEach((recommendation) => renderedText.push(recommendation))
+    const severity = normalizeSeverityPresentation([...observations, ...recommendations, ...details.map((detail) => `${detail.label} ${detail.value}`)])
+    const title = stripConfidenceText(details.find((detail) => /title|component|system|item|area|location/i.test(detail.label))?.value ?? observations[0]?.split(/[.;]/)[0] ?? `Finding ${index + 1}`)
+    return { id: entry.group.capture_id, title, severity, observations, recommendations, details, entry }
+  })
+}
+
+function getRecommendedActions(findings: ReturnType<typeof getFindingModels>) {
+  return findings.flatMap((finding) => finding.recommendations.map((action) => ({ priority: finding.severity.label.replace(/^[^ ]+ /, ''), priorityScore: finding.severity.priority, action })))
+    .filter((item, index, items) => items.findIndex((candidate) => candidate.action.toLowerCase() === item.action.toLowerCase()) === index)
+    .sort((a, b) => b.priorityScore - a.priorityScore || a.action.localeCompare(b.action))
+}
+
+function getInspectionStatus(findings: ReturnType<typeof getFindingModels>) {
+  if (findings.some((finding) => finding.severity.key === 'critical' || finding.severity.key === 'high')) return '⚠ Repairs Recommended'
+  if (findings.some((finding) => finding.severity.key === 'medium')) return '⚠ Maintenance Recommended'
+  return findings.length > 0 ? 'ℹ Review Findings' : '✅ No Findings Identified'
+}
+
+function buildExecutiveSummaryHtml(params: { reportTitle: string; organizationName: string; dateLabel: string; findings: ReturnType<typeof getFindingModels>; referenceCount: number; evidenceCount: number }) {
+  const actions = getRecommendedActions(params.findings)
+  const breakdown = ['critical', 'high', 'medium', 'low', 'info'].map((key) => ({ key, count: params.findings.filter((finding) => finding.severity.key === key).length, label: params.findings.find((finding) => finding.severity.key === key)?.severity.label ?? ({ critical: '🔴 Critical', high: '🟠 High', medium: '🟡 Medium', low: '🟢 Low', info: '⚪ Information' } as Record<string, string>)[key] })).filter((item) => item.count > 0)
+  return `<section class="item premium-cover"><p class="eyebrow">Professional Inspection Report</p><h1>${escapeHtml(params.reportTitle)}</h1><p class="meta">${escapeHtml(params.organizationName)}</p></section><section class="item service-section"><h2>Inspection Summary</h2><p>Inspection completed on ${escapeHtml(params.dateLabel)}.</p><dl><div><dt>Total Findings</dt><dd>${params.findings.length}</dd></div><div><dt>Critical Findings</dt><dd>${params.findings.filter((finding) => finding.severity.key === 'critical').length}</dd></div><div><dt>Reference Documents Captured</dt><dd>${params.referenceCount}</dd></div><div><dt>Evidence Items Captured</dt><dd>${params.evidenceCount}</dd></div></dl><h3>Findings Identified</h3>${breakdown.length ? `<ul>${breakdown.map((item) => `<li>${item.count} ${escapeHtml(item.label)}</li>`).join('')}</ul>` : '<p class="muted">No findings identified from included evidence.</p>'}<h3>Recommended Actions</h3>${actions.length ? `<ul>${actions.slice(0, 5).map((item) => `<li>${escapeHtml(item.action)}</li>`).join('')}</ul>` : '<p class="muted">No recommended actions captured.</p>'}<h3>Inspection Status</h3><p><strong>${escapeHtml(getInspectionStatus(params.findings))}</strong></p></section>`
+}
+
+function buildFindingCardsHtml(items: ReturnType<typeof buildNonDuplicatedReviewDocument<ReportCapture>>['findings']) {
+  const findings = getFindingModels(items)
+  if (findings.length === 0) return ''
+  return `<section class="item service-section"><h2>Findings</h2>${findings.map((finding, index) => `<article class="finding-card"><p class="eyebrow">Finding ${index + 1}</p><h3>Finding ${index + 1} — ${escapeHtml(finding.title)}</h3><p class="severity">${escapeHtml(finding.severity.label)}</p><h4>Observed Condition</h4>${finding.observations.length ? finding.observations.map((item) => `<p>${escapeHtml(item)}</p>`).join('') : '<p class="muted">Condition documented in supporting evidence.</p>'}<h4>Recommendation</h4>${finding.recommendations.length ? `<ul>${finding.recommendations.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : '<p class="muted">No recommendation captured.</p>'}<p><strong>Supporting Evidence:</strong> 1 item attached.</p></article>`).join('')}</section>`
+}
+
+function buildRecommendedActionsHtml(findings: ReturnType<typeof getFindingModels>) {
+  const actions = getRecommendedActions(findings)
+  if (!actions.length) return ''
+  return `<section class="item service-section"><h2>Recommended Actions</h2><table><thead><tr><th>Priority</th><th>Action</th></tr></thead><tbody>${actions.map((item) => `<tr><td>${escapeHtml(item.priority)}</td><td>${escapeHtml(item.action)}</td></tr>`).join('')}</tbody></table></section>`
+}
+
+function buildReferenceDocumentsHtml(items: ReturnType<typeof buildNonDuplicatedReviewDocument<ReportCapture>>['findings'], signedUrls: Record<string, string>) {
+  if (!items.length) return ''
+  return `<section class="item service-section"><h2>Reference Documents</h2>${items.map((entry) => { const details = dedupeEvidenceDetails(entry.group.details).filter((detail) => isMeaningfulReportText(detail.value)); return `<article class="reference-card"><h3>${escapeHtml(getEvidenceTitle(entry.capture))}</h3>${details.length ? renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value }))) : '<p class="muted">Reference captured for inspection support.</p>'}<details><summary>View Original Reference</summary>${buildEvidenceItemsHtml([entry], signedUrls)}</details></article>` }).join('')}</section>`
+}
+
 function buildEvidenceItemsHtml(
   items: ReturnType<typeof buildNonDuplicatedReviewDocument<ReportCapture>>['findings'],
   signedUrls: Record<string, string>,
@@ -218,17 +300,19 @@ function buildFieldServiceReportHtml({
   const chargeRows = ['labour_charge', 'parts_charge', 'mileage_charge', 'expenses_charge', 'misc_charges', 'subtotal', 'tax', 'total']
     .map((fieldName) => ({ label: FIELD_SERVICE_FIELD_LABELS[fieldName] ?? fieldName, value: getDetailValue(details, fieldName) }))
   const reviewDocument = buildNonDuplicatedReviewDocument({ captures: captureItems, sections: [], draftSections: reportSections, measurements: reportDraft?.measurements ?? [], findings: reportDraft?.findings ?? [] })
-  const evidenceHtml = [buildEvidenceSectionHtml('Inspection Findings', reviewDocument.findings, signedUrls), buildEvidenceSectionHtml('Reference Documents', reviewDocument.referenceDocuments, signedUrls), buildEvidenceSectionHtml('Additional Notes', reviewDocument.additionalNotes, signedUrls), buildEvidenceSectionHtml('Supporting Evidence', reviewDocument.supportingEvidence, signedUrls)].join('')
-  const generatedReportHtml = buildGeneratedReportHtml(reportDraft, reportSections)
   const reportTitle = reportDraft?.title || session.title
+  const findingModels = getFindingModels(reviewDocument.findings)
+  const summaryHtml = buildExecutiveSummaryHtml({ reportTitle, organizationName, dateLabel: new Date().toLocaleDateString(), findings: findingModels, referenceCount: reviewDocument.referenceDocuments.length, evidenceCount: captureItems.length })
+  const evidenceHtml = [buildFindingCardsHtml(reviewDocument.findings), buildRecommendedActionsHtml(findingModels), buildReferenceDocumentsHtml(reviewDocument.referenceDocuments, signedUrls), buildEvidenceSectionHtml('Additional Notes', reviewDocument.additionalNotes.filter((entry) => isMeaningfulReportText([entry.capture.technician_note, entry.capture.transcript, ...entry.group.findings, ...entry.group.recommendations].filter(Boolean).join(' '))), signedUrls), buildEvidenceSectionHtml('Supporting Evidence', reviewDocument.supportingEvidence, signedUrls)].join('')
+  const generatedReportHtml = buildGeneratedReportHtml(reportDraft, reportSections)
   const toolbarHtml = showToolbar ? '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>' : ''
 
   return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(reportTitle)} printable field service report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Printable Report</p><h1>${escapeHtml(reportTitle)}</h1><p>${escapeHtml(organizationName)}</p><p class="meta">Documentation-only service report · ${escapeHtml(new Date().toLocaleDateString())}</p>${renderDefinitionRows(headerRows)}</header>${generatedReportHtml}${renderFieldServiceSection(details, 'equipment')}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work performed</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Evidence</h2><p class="muted">Evidence items reference captured photos, videos, documents, and technician notes.</p></section>${evidenceHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges / documentation only</h2>${renderDefinitionRows(chargeRows)}</section><section class="item service-section"><h2>Signature requirements</h2>${renderDefinitionRows(signatureRows)}</section>${buildInspectorFacilityHtml(null, null, signatures, signatureUrls)}</main></body></html>`
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Report Header</p>${renderDefinitionRows(headerRows)}</header>${summaryHtml}${generatedReportHtml}${renderFieldServiceSection(details, 'equipment')}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work performed</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Evidence</h2><p class="muted">Evidence items reference captured photos, videos, documents, and technician notes.</p></section>${evidenceHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges / documentation only</h2>${renderDefinitionRows(chargeRows)}</section><section class="item service-section"><h2>Signature requirements</h2>${renderDefinitionRows(signatureRows)}</section>${buildInspectorFacilityHtml(null, null, signatures, signatureUrls)}</main></body></html>`
 }
 
 const REPORT_STYLES = `
-    body{font-family:Arial,Helvetica,sans-serif;background:#f7f8fc;color:#13213a;margin:0;padding:32px}.report{max-width:980px;margin:0 auto}.header,.item{background:white;border:1px solid #d8e2ef;border-radius:18px;box-shadow:0 12px 34px rgba(20,33,61,.08);padding:24px;margin-bottom:18px}.eyebrow{color:#155dfc;font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}.meta,.muted{color:#5f6f89}.media{position:relative;border-radius:16px;overflow:hidden;background:#f1f5fb;border:1px solid #d8e2ef}.media img{display:block;width:100%;max-height:620px;object-fit:contain;background:#0f172a}.note{background:rgba(15,23,42,.86);bottom:0;color:white;left:0;padding:14px 18px;position:absolute;right:0}.note p{margin:6px 0 0}.finding{margin-top:16px}.finding h3{margin-bottom:8px}dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}dl div{background:#f1f5fb;border:1px solid #d8e2ef;border-radius:12px;padding:10px}dt{font-weight:800}dd{margin:4px 0 0}.video-still{align-items:center;aspect-ratio:16/9;background:#14213d;color:white;display:flex;font-size:24px;font-weight:800;justify-content:center}.video-link{padding:12px 16px}.toolbar{margin-bottom:16px}.print-help{color:#5f6f89;font-size:13px;margin:8px 0 0}.service-section h2{border-bottom:1px solid #d8e2ef;padding-bottom:8px}.signature-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.signature-block{background:#f8fafc;border:1px solid #d8e2ef;border-radius:14px;padding:14px}.signature-image{background:white;border:1px solid #d8e2ef;border-radius:10px;display:block;max-height:120px;max-width:100%;object-fit:contain;padding:8px}@media print{body{background:white;padding:0}.toolbar{display:none}.header,.item{break-inside:avoid;box-shadow:none}.note{position:static;background:#14213d}a{color:#13213a}}
+    body{font-family:Arial,Helvetica,sans-serif;background:#f7f8fc;color:#13213a;margin:0;padding:32px}.report{max-width:980px;margin:0 auto}.header,.item{background:white;border:1px solid #d8e2ef;border-radius:18px;box-shadow:0 12px 34px rgba(20,33,61,.08);padding:24px;margin-bottom:18px}.eyebrow{color:#155dfc;font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}.meta,.muted{color:#5f6f89}.media{position:relative;border-radius:16px;overflow:hidden;background:#f1f5fb;border:1px solid #d8e2ef}.media img{display:block;width:100%;max-height:620px;object-fit:contain;background:#0f172a}.note{background:rgba(15,23,42,.86);bottom:0;color:white;left:0;padding:14px 18px;position:absolute;right:0}.note p{margin:6px 0 0}.finding{margin-top:16px}.finding h3{margin-bottom:8px}dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}dl div{background:#f1f5fb;border:1px solid #d8e2ef;border-radius:12px;padding:10px}dt{font-weight:800}dd{margin:4px 0 0}.video-still{align-items:center;aspect-ratio:16/9;background:#14213d;color:white;display:flex;font-size:24px;font-weight:800;justify-content:center}.video-link{padding:12px 16px}.toolbar{margin-bottom:16px}.print-help{color:#5f6f89;font-size:13px;margin:8px 0 0}.service-section h2{border-bottom:1px solid #d8e2ef;padding-bottom:8px}.signature-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.signature-block{background:#f8fafc;border:1px solid #d8e2ef;border-radius:14px;padding:14px}.signature-image{background:white;border:1px solid #d8e2ef;border-radius:10px;display:block;max-height:120px;max-width:100%;object-fit:contain;padding:8px}.premium-cover{background:linear-gradient(135deg,#fff,#eef4ff)}.finding-card,.reference-card{border:1px solid #d8e2ef;border-radius:14px;margin:12px 0;padding:14px}.severity{background:#fff7ed;border:1px solid #fed7aa;border-radius:999px;display:inline-block;font-weight:800;padding:7px 10px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #d8e2ef;padding:10px;text-align:left}th{background:#f1f5fb}@media (max-width:700px){body{padding:14px}dl{grid-template-columns:1fr}.header,.item{border-radius:14px;padding:16px}}@media print{body{background:white;padding:0}.toolbar{display:none}.header,.item{break-inside:avoid;box-shadow:none}.note{position:static;background:#14213d}a{color:#13213a}}
   `
 
 export async function GET(_request: Request, { params }: RouteContext) {
@@ -417,12 +501,14 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const reviewDocument = buildNonDuplicatedReviewDocument({ captures: captureItems, sections: formSections, draftSections: visibleReportSections, measurements: reportDraft?.measurements ?? [], findings: reportDraft?.findings ?? [] })
   const unattachedDetails = reviewDocument.unattachedDetails
   const unattachedHtml = unattachedDetails.length > 0 ? `<section class="item service-section"><h2>Supporting Evidence</h2>${renderDefinitionRows(unattachedDetails.map((detail) => ({ label: detail.label, value: detail.value })))}</section>` : ''
-  const itemsHtml = [buildEvidenceSectionHtml('Inspection Findings', reviewDocument.findings, signedUrls), buildEvidenceSectionHtml('Reference Documents', reviewDocument.referenceDocuments, signedUrls), buildEvidenceSectionHtml('Additional Notes', reviewDocument.additionalNotes, signedUrls), buildEvidenceSectionHtml('Supporting Evidence', reviewDocument.supportingEvidence, signedUrls)].join('')
+  const findingModels = getFindingModels(reviewDocument.findings)
+  const summaryHtml = buildExecutiveSummaryHtml({ reportTitle, organizationName, dateLabel: new Date().toLocaleDateString(), findings: findingModels, referenceCount: reviewDocument.referenceDocuments.length, evidenceCount: captureItems.length })
+  const itemsHtml = [buildFindingCardsHtml(reviewDocument.findings), buildRecommendedActionsHtml(findingModels), buildReferenceDocumentsHtml(reviewDocument.referenceDocuments, signedUrls), buildEvidenceSectionHtml('Additional Notes', reviewDocument.additionalNotes.filter((entry) => isMeaningfulReportText([entry.capture.technician_note, entry.capture.transcript, ...entry.group.findings, ...entry.group.recommendations].filter(Boolean).join(' '))), signedUrls), buildEvidenceSectionHtml('Supporting Evidence', reviewDocument.supportingEvidence, signedUrls)].join('')
 
 
   const toolbarHtml = previewOnly ? '' : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>'
   const html = `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Printable Report</p><h1>${escapeHtml(reportTitle)}</h1><p>${escapeHtml(organizationName)}</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'No asset details')} · ${escapeHtml(new Date().toLocaleDateString())}</p></header>${customerAssetHtml ? `<section class="item service-section"><h2>Customer / Asset Details</h2>${customerAssetHtml}</section>` : ''}${formSectionsHtml || generatedReportHtml}${unattachedHtml}${itemsHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile, reportSignatures, signatureUrls)}</main></body></html>`
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Report Header</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'No asset details')} · ${escapeHtml(new Date().toLocaleDateString())}</p></header>${summaryHtml}${customerAssetHtml ? `<section class="item service-section"><h2>Customer / Asset Details</h2>${customerAssetHtml}</section>` : ''}${formSectionsHtml || generatedReportHtml}${unattachedHtml}${itemsHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile, reportSignatures, signatureUrls)}</main></body></html>`
 
   return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
 }
