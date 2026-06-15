@@ -9,3 +9,4 @@ export { ProcessPendingEvidenceButton } from './components/ProcessPendingEvidenc
 export { CAPTURE_TYPES, CAPTURE_TYPE_LABELS, getCaptureProcessingLabel, getCaptureProcessingStatus } from './types'
 export type { CaptureItem, CaptureType, CaptureProcessingStatus } from './types'
 export { WORKFLOW_LABELS, getRequiredEvidenceCompletion, getWorkflow } from './guided-workflow'
+export { getInspectionProgress } from './inspection-progress'

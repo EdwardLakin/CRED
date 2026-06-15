@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import {
   getCaptureProcessingStatus,
   getRequiredEvidenceCompletion,
+  getInspectionProgress,
 } from "@/features/capture";
 import {
   buildCustomerAssetRows,
@@ -270,6 +271,7 @@ export default async function SessionReportPreviewPage({
     findings: currentReport?.findings ?? [],
   });
   const evidencePackages = buildEvidencePackages(visibleCaptures, reviewDocument.findings.map((entry) => entry.group));
+  const progress = getInspectionProgress(visibleCaptures, session.session_type, template?.required_evidence ?? null, (signatures ?? []).length);
   const photoEvidence = supportingEvidence.filter(
     (item) => item.kind === "photo",
   );
@@ -368,6 +370,7 @@ export default async function SessionReportPreviewPage({
             saveReportEditsAction={saveReportEditsAction}
             sourceFieldEntries={sourceFieldEntries}
             visibleCaptureCount={visibleCaptures.length}
+            progress={progress}
             facilityName={profile.company_profile?.facility_name ?? profile.company_profile?.company_name ?? profile.organization.name}
             facilityLocation={[profile.company_profile?.facility_city, profile.company_profile?.facility_region].filter(Boolean).join(", ")}
             timeZone={profile.timezone}
@@ -420,6 +423,7 @@ function GeneratedReportReview({
   saveReportEditsAction,
   sourceFieldEntries,
   visibleCaptureCount,
+  progress,
   facilityName,
   facilityLocation,
   timeZone,
@@ -442,6 +446,7 @@ function GeneratedReportReview({
   saveReportEditsAction: ServerAction | null;
   sourceFieldEntries: [string, unknown][];
   visibleCaptureCount: number;
+  progress: ReturnType<typeof getInspectionProgress>;
   facilityName: string;
   facilityLocation: string;
   timeZone: string | null;
@@ -499,6 +504,15 @@ function GeneratedReportReview({
           <div><span>Reference Documents Captured</span><strong>{reviewDocument.referenceDocuments.length}</strong></div>
           <div><span>Evidence Items Captured</span><strong>{includedEvidenceCount}</strong></div>
         </div>
+        <div className="inspection-metric-grid">
+          <div><span>Evidence Completeness</span><strong>{progress.evidenceCompleteness}%</strong></div>
+          <div><span>Finding Confidence</span><strong>{progress.findingConfidence}%</strong></div>
+          <div><span>Report Readiness</span><strong>{progress.reportReadiness}%</strong></div>
+          <div><span>Remaining Required Items</span><strong>{progress.remainingRequiredItems}</strong></div>
+        </div>
+        {progress.missingReadinessItems.length > 0 ? (
+          <p className="notice info">Final verification remaining: {progress.missingReadinessItems.join(', ')}. AI cannot auto approve, certify, or sign this report.</p>
+        ) : null}
         <div className="summary-columns">
           <div>
             <h4>Findings Identified</h4>
