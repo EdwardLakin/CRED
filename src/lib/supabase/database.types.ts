@@ -1,4 +1,10 @@
-export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[]
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
 
 export interface Database {
   public: {
@@ -490,6 +496,7 @@ export interface Database {
           ai_status: string | null
           ai_summary: string | null
           ocr_text: string | null
+          capture_ai_analysis: Json
           extracted_data: Json
           captured_at: string
           created_at: string
@@ -515,6 +522,7 @@ export interface Database {
           ai_status?: string | null
           ai_summary?: string | null
           ocr_text?: string | null
+          capture_ai_analysis?: Json
           extracted_data?: Json
           captured_at?: string
           created_at?: string
@@ -540,6 +548,7 @@ export interface Database {
           ai_status?: string | null
           ai_summary?: string | null
           ocr_text?: string | null
+          capture_ai_analysis?: Json
           extracted_data?: Json
           captured_at?: string
           created_at?: string
@@ -562,7 +571,6 @@ export interface Database {
           },
         ]
       }
-
 
       template_imports: {
         Row: {
@@ -656,21 +664,119 @@ export interface Database {
         Relationships: []
       }
       template_required_evidence: {
-        Row: { id: string; template_id: string; organization_id: string | null; label: string; evidence_key: string; requirement_type: string; match_terms: string[]; sort_order: number; created_at: string }
-        Insert: { id?: string; template_id: string; organization_id?: string | null; label: string; evidence_key: string; requirement_type?: string; match_terms?: string[]; sort_order?: number; created_at?: string }
-        Update: { id?: string; template_id?: string; organization_id?: string | null; label?: string; evidence_key?: string; requirement_type?: string; match_terms?: string[]; sort_order?: number; created_at?: string }
+        Row: {
+          id: string
+          template_id: string
+          organization_id: string | null
+          label: string
+          evidence_key: string
+          requirement_type: string
+          match_terms: string[]
+          sort_order: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          template_id: string
+          organization_id?: string | null
+          label: string
+          evidence_key: string
+          requirement_type?: string
+          match_terms?: string[]
+          sort_order?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          template_id?: string
+          organization_id?: string | null
+          label?: string
+          evidence_key?: string
+          requirement_type?: string
+          match_terms?: string[]
+          sort_order?: number
+          created_at?: string
+        }
         Relationships: []
       }
       signature_captures: {
-        Row: { id: string; documentation_session_id: string; organization_id: string; signature_type: string; signer_name: string; signature_image_path: string; signed_at: string; created_by: string | null; created_at: string }
-        Insert: { id?: string; documentation_session_id: string; organization_id: string; signature_type: string; signer_name: string; signature_image_path: string; signed_at?: string; created_by?: string | null; created_at?: string }
-        Update: { id?: string; documentation_session_id?: string; organization_id?: string; signature_type?: string; signer_name?: string; signature_image_path?: string; signed_at?: string; created_by?: string | null; created_at?: string }
+        Row: {
+          id: string
+          documentation_session_id: string
+          organization_id: string
+          signature_type: string
+          signer_name: string
+          signature_image_path: string
+          signed_at: string
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          documentation_session_id: string
+          organization_id: string
+          signature_type: string
+          signer_name: string
+          signature_image_path: string
+          signed_at?: string
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          documentation_session_id?: string
+          organization_id?: string
+          signature_type?: string
+          signer_name?: string
+          signature_image_path?: string
+          signed_at?: string
+          created_by?: string | null
+          created_at?: string
+        }
         Relationships: []
       }
       report_share_tokens: {
-        Row: { id: string; documentation_session_id: string; organization_id: string; token: string; expires_at: string | null; disabled_at: string | null; view_count: number; last_viewed_at: string | null; created_by: string | null; created_at: string; documentation_sessions?: { id: string; title: string; organization_id: string } | null }
-        Insert: { id?: string; documentation_session_id: string; organization_id: string; token: string; expires_at?: string | null; disabled_at?: string | null; view_count?: number; last_viewed_at?: string | null; created_by?: string | null; created_at?: string }
-        Update: { id?: string; documentation_session_id?: string; organization_id?: string; token?: string; expires_at?: string | null; disabled_at?: string | null; view_count?: number; last_viewed_at?: string | null; created_by?: string | null; created_at?: string }
+        Row: {
+          id: string
+          documentation_session_id: string
+          organization_id: string
+          token: string
+          expires_at: string | null
+          disabled_at: string | null
+          view_count: number
+          last_viewed_at: string | null
+          created_by: string | null
+          created_at: string
+          documentation_sessions?: {
+            id: string
+            title: string
+            organization_id: string
+          } | null
+        }
+        Insert: {
+          id?: string
+          documentation_session_id: string
+          organization_id: string
+          token: string
+          expires_at?: string | null
+          disabled_at?: string | null
+          view_count?: number
+          last_viewed_at?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          documentation_session_id?: string
+          organization_id?: string
+          token?: string
+          expires_at?: string | null
+          disabled_at?: string | null
+          view_count?: number
+          last_viewed_at?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
         Relationships: []
       }
 

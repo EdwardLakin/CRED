@@ -3,7 +3,11 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
-import { formatBytes, getPlanLimits, requireActiveBillingAccess } from '@/features/billing'
+import {
+  formatBytes,
+  getPlanLimits,
+  requireActiveBillingAccess,
+} from '@/features/billing'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import {
@@ -15,6 +19,7 @@ import {
   type CaptureClassificationType,
 } from '@/lib/openai/capture-classifier'
 import {
+  buildCaptureAiAnalysis,
   buildExtractedCaptureData,
   extractCaptureImageDetails,
   getCaptureExtractionSummary,
@@ -244,7 +249,6 @@ function logCaptureFailure(details: SafeFailureDetails) {
   console.error('Capture batch upload failed', details)
 }
 
-
 export async function validateCaptureBillingAccess(
   sessionId: string,
   files: { size: number; mimeType: string }[] = [],
@@ -278,10 +282,15 @@ export async function validateCaptureBillingAccess(
     const mimeType = file.mimeType.trim().toLowerCase()
     const isVideoUpload = mimeTypeIsVideo(mimeType)
     const limits = getPlanLimits(billingAccess.access.plan)
-    const maxAllowedFileSize = isVideoUpload ? limits.maxVideoFileSizeBytes : limits.maxCaptureFileSizeBytes
+    const maxAllowedFileSize = isVideoUpload
+      ? limits.maxVideoFileSizeBytes
+      : limits.maxCaptureFileSizeBytes
 
     if (!Number.isFinite(size) || size <= 0) {
-      return captureError('One selected file is empty. Choose another file.', session.id)
+      return captureError(
+        'One selected file is empty. Choose another file.',
+        session.id,
+      )
     }
 
     if (size > maxAllowedFileSize) {
@@ -292,7 +301,10 @@ export async function validateCaptureBillingAccess(
     }
   }
 
-  const totalUploadBytes = files.reduce((total, file) => total + Number(file.size || 0), 0)
+  const totalUploadBytes = files.reduce(
+    (total, file) => total + Number(file.size || 0),
+    0,
+  )
 
   if (totalUploadBytes > 0) {
     const storageAllowance = await requireUsageAllowance({
@@ -357,7 +369,10 @@ export type CreateTextNoteCaptureRecordResult =
   | CaptureActionFailure
   | (CaptureActionSuccess & { captureItemId: string })
 
-function getTextNoteExtractedData(noteLength: number, guidance: { workflow: string; step: string; label: string } | null): Json {
+function getTextNoteExtractedData(
+  noteLength: number,
+  guidance: { workflow: string; step: string; label: string } | null,
+): Json {
   const baseData = getInitialExtractedData('text_note')
   const baseObject = isRecord(baseData) ? baseData : {}
 
@@ -415,7 +430,6 @@ async function removeUploadedObject(
   }
 }
 
-
 export async function createTextNoteCaptureRecord(
   input: CreateTextNoteCaptureRecordInput,
 ): Promise<CreateTextNoteCaptureRecordResult> {
@@ -472,7 +486,10 @@ export async function createTextNoteCaptureRecord(
       ? input.reportOrder
       : (existingCaptureCount ?? 0) + 1
   const capturedAt = new Date().toISOString()
-  const extractedData = getTextNoteExtractedData(technicianNote.length, guidance)
+  const extractedData = getTextNoteExtractedData(
+    technicianNote.length,
+    guidance,
+  )
 
   const { data: captureItem, error: captureErrorResult } = await supabase
     .from('capture_items')
@@ -486,7 +503,10 @@ export async function createTextNoteCaptureRecord(
       ai_summary: 'Text note saved as evidence.',
       extracted_data: extractedData,
       technician_note: technicianNote,
-      transcript: noteSource === 'voice' || noteSource === 'edited' ? technicianNote : null,
+      transcript:
+        noteSource === 'voice' || noteSource === 'edited'
+          ? technicianNote
+          : null,
       transcript_status: 'completed',
       note_source: noteSource,
       media_kind: 'note',
@@ -537,7 +557,11 @@ export async function createTextNoteCaptureRecord(
       supabase,
       organizationId: profile.organization_id,
       eventType: 'capture_uploaded',
-      metadata: { session_id: session.id, capture_id: captureItem.id, capture_type: 'text_note' },
+      metadata: {
+        session_id: session.id,
+        capture_id: captureItem.id,
+        capture_type: 'text_note',
+      },
       createdBy: profile.id,
     })
   } catch (usageError) {
@@ -619,9 +643,10 @@ export async function createCaptureRecordFromUploadedFile(
     return captureError('Choose a valid source document type.', sessionId)
   }
 
-  const sourceDocument = sourceDocumentType && sourceDocumentLabel
-    ? { type: sourceDocumentType, label: sourceDocumentLabel }
-    : null
+  const sourceDocument =
+    sourceDocumentType && sourceDocumentLabel
+      ? { type: sourceDocumentType, label: sourceDocumentLabel }
+      : null
 
   const manualCaptureType =
     input.manualType && isCaptureType(input.manualType)
@@ -684,8 +709,13 @@ export async function createCaptureRecordFromUploadedFile(
   }
 
   const limits = getPlanLimits(billingAccess.access.plan)
-  const isVideoUpload = mimeTypeIsVideo(mimeType) || captureType === 'video' || captureType === 'evidence_video'
-  const maxAllowedFileSize = isVideoUpload ? limits.maxVideoFileSizeBytes : limits.maxCaptureFileSizeBytes
+  const isVideoUpload =
+    mimeTypeIsVideo(mimeType) ||
+    captureType === 'video' ||
+    captureType === 'evidence_video'
+  const maxAllowedFileSize = isVideoUpload
+    ? limits.maxVideoFileSizeBytes
+    : limits.maxCaptureFileSizeBytes
 
   if (size > maxAllowedFileSize) {
     return captureError(
@@ -731,14 +761,15 @@ export async function createCaptureRecordFromUploadedFile(
     itemMediaKind === 'video'
       ? getInitialExtractedData('video')
       : captureMetadata.extractedData
-  const uploadExtractedData = getUploadFileMetadata(baseExtractedData, { filename, mimeType, size })
+  const uploadExtractedData = getUploadFileMetadata(baseExtractedData, {
+    filename,
+    mimeType,
+    size,
+  })
   const sourceExtractedData = sourceDocument
     ? addSourceDocumentMetadata(uploadExtractedData, sourceDocument)
     : uploadExtractedData
-  const itemExtractedData = mergeGuidance(
-    sourceExtractedData,
-    guidance,
-  )
+  const itemExtractedData = mergeGuidance(sourceExtractedData, guidance)
 
   const { count: existingCaptureCount } = await supabase
     .from('capture_items')
@@ -760,7 +791,10 @@ export async function createCaptureRecordFromUploadedFile(
       type: itemCaptureType,
       storage_path: storagePath,
       captured_at: capturedAt,
-      ai_status: sourceDocument || itemMediaKind !== 'video' ? 'pending' : 'needs_review',
+      ai_status:
+        sourceDocument || itemMediaKind !== 'video'
+          ? 'pending'
+          : 'needs_review',
       extracted_data: itemExtractedData,
       technician_note: technicianNote || null,
       transcript:
@@ -827,7 +861,13 @@ export async function createCaptureRecordFromUploadedFile(
       supabase,
       organizationId: profile.organization_id,
       eventType: 'capture_uploaded',
-      metadata: { session_id: session.id, capture_id: captureItem.id, filename, mime_type: mimeType, size },
+      metadata: {
+        session_id: session.id,
+        capture_id: captureItem.id,
+        filename,
+        mime_type: mimeType,
+        size,
+      },
       createdBy: profile.id,
     })
     await recordUsageEvent({
@@ -835,7 +875,12 @@ export async function createCaptureRecordFromUploadedFile(
       organizationId: profile.organization_id,
       eventType: 'storage_bytes_added',
       quantity: size,
-      metadata: { session_id: session.id, capture_id: captureItem.id, filename, mime_type: mimeType },
+      metadata: {
+        session_id: session.id,
+        capture_id: captureItem.id,
+        filename,
+        mime_type: mimeType,
+      },
       createdBy: profile.id,
     })
   } catch (usageError) {
@@ -908,11 +953,24 @@ async function updateCaptureClassification(
   supabase: Awaited<ReturnType<typeof requireSessionWorkspace>>['supabase'],
 ) {
   const status = getClassificationStatus(classification)
+  const analyzedAt = new Date().toISOString()
+
   const { error } = await supabase
     .from('capture_items')
     .update({
       ai_status: status,
       ai_summary: getCaptureClassificationSummary(classification),
+      capture_ai_analysis: {
+        classification: classification.detected_type,
+        confidence: classification.confidence,
+        extracted_text: null,
+        extracted_values: {},
+        generated_note: null,
+        generated_observation: null,
+        generated_recommendation: null,
+        ai_status: status,
+        analyzed_at: analyzedAt,
+      },
       extracted_data: buildClassifiedImageData(
         capture.extracted_data,
         classification,
@@ -972,7 +1030,10 @@ function getGuidanceContext(extractedData: Json | null) {
 
 function captureNeedsClassification(
   capture: PendingCaptureItem & { ai_status: string | null },
-): capture is PendingCaptureItem & { ai_status: string | null; storage_path: string } {
+): capture is PendingCaptureItem & {
+  ai_status: string | null
+  storage_path: string
+} {
   if (!capture.storage_path) return false
   const extractedData = isRecord(capture.extracted_data)
     ? capture.extracted_data
@@ -1012,7 +1073,13 @@ function mergeProcessingState(
 async function updateCaptureProcessingState(
   capture: PendingCaptureItem,
   supabase: Awaited<ReturnType<typeof requireSessionWorkspace>>['supabase'],
-  status: 'pending' | 'processing' | 'extracted' | 'needs_review' | 'failed' | 'blocked_by_limit',
+  status:
+    | 'pending'
+    | 'processing'
+    | 'extracted'
+    | 'needs_review'
+    | 'failed'
+    | 'blocked_by_limit',
   stage: string,
   message?: string,
 ) {
@@ -1425,7 +1492,8 @@ function captureNeedsExtraction(capture: ExtractionCaptureItem) {
 
   if (
     (capture.type === 'document' || capture.media_kind === 'video') &&
-    (!capture.storage_path || !IMAGE_STORAGE_PATH_PATTERN.test(capture.storage_path))
+    (!capture.storage_path ||
+      !IMAGE_STORAGE_PATH_PATTERN.test(capture.storage_path))
   ) {
     return false
   }
@@ -1588,6 +1656,12 @@ async function updateCaptureExtraction(
     .update({
       ai_status: status,
       ai_summary: getCaptureExtractionSummary(extraction),
+      ocr_text: extraction.extracted_text,
+      capture_ai_analysis: buildCaptureAiAnalysis(
+        capture.extracted_data,
+        extraction,
+        status,
+      ),
       extracted_data: buildExtractedCaptureData(
         capture.extracted_data,
         extraction,
@@ -1841,7 +1915,6 @@ export async function extractCaptureDetails(
   }
 }
 
-
 export type BackgroundCaptureProcessingSummary = {
   ok: boolean
   message: string
@@ -1852,17 +1925,31 @@ export type BackgroundCaptureProcessingSummary = {
   blockedByLimit: number
 }
 
-type ProcessableCaptureItem = ExtractionCaptureItem & { deleted_at: string | null }
+type ProcessableCaptureItem = ExtractionCaptureItem & {
+  deleted_at: string | null
+}
 
 function captureAlreadyExtracted(capture: ProcessableCaptureItem) {
-  const extractedData = isRecord(capture.extracted_data) ? capture.extracted_data : null
-  const extraction = extractedData && isRecord(extractedData.extraction) ? extractedData.extraction : null
-  const extractionStatus = typeof extraction?.status === 'string' ? extraction.status : null
+  const extractedData = isRecord(capture.extracted_data)
+    ? capture.extracted_data
+    : null
+  const extraction =
+    extractedData && isRecord(extractedData.extraction)
+      ? extractedData.extraction
+      : null
+  const extractionStatus =
+    typeof extraction?.status === 'string' ? extraction.status : null
   return capture.ai_status === 'extracted' || extractionStatus === 'extracted'
 }
 
 function captureHasImageFile(capture: ProcessableCaptureItem) {
-  return capture.media_kind === 'image' || Boolean(capture.storage_path && IMAGE_STORAGE_PATH_PATTERN.test(capture.storage_path))
+  return (
+    capture.media_kind === 'image' ||
+    Boolean(
+      capture.storage_path &&
+      IMAGE_STORAGE_PATH_PATTERN.test(capture.storage_path),
+    )
+  )
 }
 
 async function markCaptureUnsupportedForBackground(
@@ -1870,10 +1957,18 @@ async function markCaptureUnsupportedForBackground(
   supabase: Awaited<ReturnType<typeof requireSessionWorkspace>>['supabase'],
   reason: string,
 ) {
-  await updateCaptureProcessingState(capture, supabase, 'needs_review', 'unsupported', reason)
+  await updateCaptureProcessingState(
+    capture,
+    supabase,
+    'needs_review',
+    'unsupported',
+    reason,
+  )
 }
 
-export async function processPendingCapturesForSession(sessionId: string): Promise<BackgroundCaptureProcessingSummary> {
+export async function processPendingCapturesForSession(
+  sessionId: string,
+): Promise<BackgroundCaptureProcessingSummary> {
   const trimmedSessionId = sessionId.trim()
   const summary: BackgroundCaptureProcessingSummary = {
     ok: true,
@@ -1904,12 +1999,18 @@ export async function processPendingCapturesForSession(sessionId: string): Promi
     .single()
 
   if (sessionError || !session) {
-    return { ...summary, ok: false, message: 'Documentation session not found.' }
+    return {
+      ...summary,
+      ok: false,
+      message: 'Documentation session not found.',
+    }
   }
 
   const { data: captures, error: capturesError } = await supabase
     .from('capture_items')
-    .select('id, documentation_session_id, organization_id, type, storage_path, extracted_data, ai_status, technician_note, transcript, media_kind, deleted_at')
+    .select(
+      'id, documentation_session_id, organization_id, type, storage_path, extracted_data, ai_status, technician_note, transcript, media_kind, deleted_at',
+    )
     .eq('documentation_session_id', session.id)
     .eq('organization_id', profile.organization_id)
     .order('captured_at', { ascending: true })
@@ -1920,23 +2021,36 @@ export async function processPendingCapturesForSession(sessionId: string): Promi
       step: 'background_capture_processing_query',
       ...getSafeErrorDetails(capturesError),
     })
-    return { ...summary, ok: false, message: 'Unable to load pending evidence.' }
+    return {
+      ...summary,
+      ok: false,
+      message: 'Unable to load pending evidence.',
+    }
   }
 
   const processableCaptures = (captures ?? [])
-    .filter((capture): capture is ProcessableCaptureItem => !capture.deleted_at && !captureAlreadyExtracted(capture as ProcessableCaptureItem))
+    .filter(
+      (capture): capture is ProcessableCaptureItem =>
+        !capture.deleted_at &&
+        !captureAlreadyExtracted(capture as ProcessableCaptureItem),
+    )
     .slice(0, MAX_CLASSIFICATION_BATCH_SIZE)
 
   if (processableCaptures.length === 0) {
     return summary
   }
 
-  let suggestedDetails = isRecord(session.suggested_details) ? (session.suggested_details as Json) : {}
+  let suggestedDetails = isRecord(session.suggested_details)
+    ? (session.suggested_details as Json)
+    : {}
 
   for (const capture of processableCaptures) {
     const sourceDocument = getSourceDocumentMetadata(capture.extracted_data)
 
-    if (!EXTRACTABLE_CAPTURE_TYPES.includes(capture.type) || !captureHasImageFile(capture)) {
+    if (
+      !EXTRACTABLE_CAPTURE_TYPES.includes(capture.type) ||
+      !captureHasImageFile(capture)
+    ) {
       await markCaptureUnsupportedForBackground(
         capture,
         supabase,
@@ -1949,7 +2063,12 @@ export async function processPendingCapturesForSession(sessionId: string): Promi
     }
 
     try {
-      await updateCaptureProcessingState(capture, supabase, 'processing', sourceDocument ? 'extraction' : 'classification')
+      await updateCaptureProcessingState(
+        capture,
+        supabase,
+        'processing',
+        sourceDocument ? 'extraction' : 'classification',
+      )
 
       let workingCapture: ProcessableCaptureItem = capture
       if (!sourceDocument && captureNeedsClassification(capture)) {
@@ -1962,14 +2081,24 @@ export async function processPendingCapturesForSession(sessionId: string): Promi
         })
 
         if (!classificationAllowance.ok) {
-          await updateCaptureProcessingState(capture, supabase, 'blocked_by_limit', 'classification', classificationAllowance.message)
+          await updateCaptureProcessingState(
+            capture,
+            supabase,
+            'blocked_by_limit',
+            'classification',
+            classificationAllowance.message,
+          )
           summary.blockedByLimit += 1
           continue
         }
 
-        const { data: signedData, error: signedUrlError } = await supabase.storage
-          .from(CAPTURE_BUCKET)
-          .createSignedUrl(capture.storage_path, SIGNED_CLASSIFICATION_URL_SECONDS)
+        const { data: signedData, error: signedUrlError } =
+          await supabase.storage
+            .from(CAPTURE_BUCKET)
+            .createSignedUrl(
+              capture.storage_path,
+              SIGNED_CLASSIFICATION_URL_SECONDS,
+            )
 
         if (signedUrlError || !signedData?.signedUrl) {
           logCaptureFailure({
@@ -1977,7 +2106,11 @@ export async function processPendingCapturesForSession(sessionId: string): Promi
             captureId: capture.id,
             ...getSafeErrorDetails(signedUrlError),
           })
-          await markCaptureNeedsReview(capture, supabase, 'Unable to prepare image for classification.')
+          await markCaptureNeedsReview(
+            capture,
+            supabase,
+            'Unable to prepare image for classification.',
+          )
           summary.failed += 1
           continue
         }
@@ -1993,13 +2126,21 @@ export async function processPendingCapturesForSession(sessionId: string): Promi
           organizationId: profile.organization_id,
           eventType: 'ai_classification',
           quantity: 1,
-          metadata: { session_id: session.id, capture_id: capture.id, background: true },
+          metadata: {
+            session_id: session.id,
+            capture_id: capture.id,
+            background: true,
+          },
           createdBy: profile.id,
         })
         workingCapture = {
           ...capture,
           ai_status: getClassificationStatus(classification),
-          extracted_data: buildClassifiedImageData(capture.extracted_data, classification, getClassificationStatus(classification)),
+          extracted_data: buildClassifiedImageData(
+            capture.extracted_data,
+            classification,
+            getClassificationStatus(classification),
+          ),
         }
       }
 
@@ -2019,22 +2160,40 @@ export async function processPendingCapturesForSession(sessionId: string): Promi
       })
 
       if (!extractionAllowance.ok) {
-        await updateCaptureProcessingState(workingCapture, supabase, 'blocked_by_limit', 'extraction', extractionAllowance.message)
+        await updateCaptureProcessingState(
+          workingCapture,
+          supabase,
+          'blocked_by_limit',
+          'extraction',
+          extractionAllowance.message,
+        )
         summary.blockedByLimit += 1
         continue
       }
 
       if (!workingCapture.storage_path) {
-        await markCaptureExtractionFailed(workingCapture, supabase, 'No media file is available for report detail processing.')
+        await markCaptureExtractionFailed(
+          workingCapture,
+          supabase,
+          'No media file is available for report detail processing.',
+        )
         summary.failed += 1
         continue
       }
 
-      await updateCaptureProcessingState(workingCapture, supabase, 'processing', 'extraction')
+      await updateCaptureProcessingState(
+        workingCapture,
+        supabase,
+        'processing',
+        'extraction',
+      )
 
       const { data: signedData, error: signedUrlError } = await supabase.storage
         .from(CAPTURE_BUCKET)
-        .createSignedUrl(workingCapture.storage_path, SIGNED_EXTRACTION_URL_SECONDS)
+        .createSignedUrl(
+          workingCapture.storage_path,
+          SIGNED_EXTRACTION_URL_SECONDS,
+        )
 
       if (signedUrlError || !signedData?.signedUrl) {
         logCaptureFailure({
@@ -2042,7 +2201,11 @@ export async function processPendingCapturesForSession(sessionId: string): Promi
           captureId: workingCapture.id,
           ...getSafeErrorDetails(signedUrlError),
         })
-        await markCaptureExtractionFailed(workingCapture, supabase, 'Unable to prepare image for report detail processing.')
+        await markCaptureExtractionFailed(
+          workingCapture,
+          supabase,
+          'Unable to prepare image for report detail processing.',
+        )
         summary.failed += 1
         continue
       }
@@ -2054,26 +2217,47 @@ export async function processPendingCapturesForSession(sessionId: string): Promi
         getSourceDocumentMetadata(workingCapture.extracted_data),
       )
       await updateCaptureExtraction(workingCapture, extraction, supabase)
-      suggestedDetails = mergeSessionSuggestions(suggestedDetails, workingCapture, detectedType, extraction)
+      suggestedDetails = mergeSessionSuggestions(
+        suggestedDetails,
+        workingCapture,
+        detectedType,
+        extraction,
+      )
       await recordUsageEvent({
         supabase,
         organizationId: profile.organization_id,
         eventType: 'ai_extraction',
         quantity: 1,
-        metadata: { session_id: session.id, capture_id: workingCapture.id, background: true },
+        metadata: {
+          session_id: session.id,
+          capture_id: workingCapture.id,
+          background: true,
+        },
         createdBy: profile.id,
       })
       summary.processed += 1
     } catch (error) {
       if (isMissingOpenAiKeyError(error)) {
-        await updateCaptureProcessingState(capture, supabase, 'failed', 'configuration', 'AI processing is not configured yet.')
+        await updateCaptureProcessingState(
+          capture,
+          supabase,
+          'failed',
+          'configuration',
+          'AI processing is not configured yet.',
+        )
       } else {
         logCaptureFailure({
           step: 'background_capture_processing',
           captureId: capture.id,
           ...getSafeErrorDetails(error),
         })
-        await updateCaptureProcessingState(capture, supabase, 'failed', 'processing', 'AI processing failed. Retry from the session or report page.')
+        await updateCaptureProcessingState(
+          capture,
+          supabase,
+          'failed',
+          'processing',
+          'AI processing failed. Retry from the session or report page.',
+        )
       }
       summary.failed += 1
     }
@@ -2081,7 +2265,10 @@ export async function processPendingCapturesForSession(sessionId: string): Promi
 
   const { error: suggestionsError } = await supabase
     .from('documentation_sessions')
-    .update({ suggested_details: suggestedDetails, updated_at: new Date().toISOString() })
+    .update({
+      suggested_details: suggestedDetails,
+      updated_at: new Date().toISOString(),
+    })
     .eq('id', session.id)
     .eq('organization_id', profile.organization_id)
 
@@ -2102,9 +2289,10 @@ export async function processPendingCapturesForSession(sessionId: string): Promi
 
   summary.pending = pendingCount ?? 0
   summary.ok = summary.failed === 0
-  summary.message = summary.blockedByLimit > 0
-    ? 'AI usage limit reached. Evidence is saved and can be retried after allowance resets.'
-    : `Processed ${summary.processed} capture${summary.processed === 1 ? '' : 's'} in the background.`
+  summary.message =
+    summary.blockedByLimit > 0
+      ? 'AI usage limit reached. Evidence is saved and can be retried after allowance resets.'
+      : `Processed ${summary.processed} capture${summary.processed === 1 ? '' : 's'} in the background.`
 
   revalidatePath(`/dashboard/sessions/${session.id}`)
   revalidatePath(`/dashboard/sessions/${session.id}/capture`)
@@ -2131,7 +2319,9 @@ async function getAuthorizedCapture(captureId: string) {
   const { supabase, profile } = await requireSessionWorkspace()
   const { data: capture, error } = await supabase
     .from('capture_items')
-    .select('id, documentation_session_id, organization_id, storage_path')
+    .select(
+      'id, documentation_session_id, organization_id, storage_path, extracted_data, capture_ai_analysis',
+    )
     .eq('id', captureId)
     .eq('organization_id', profile.organization_id)
     .single()
@@ -2150,6 +2340,13 @@ export async function updateCaptureReview(
   const captureId = getString(formData, 'capture_id')
   const note = getString(formData, 'technician_note').slice(0, 2000)
   const includeInReport = getString(formData, 'include_in_report') === 'on'
+  const aiSuggestionEnabled =
+    getString(formData, 'ai_suggestion_enabled') !== 'off'
+  const generatedNote = getString(formData, 'ai_generated_note').slice(0, 600)
+  const extractedValuesRaw = getString(formData, 'ai_extracted_values').slice(
+    0,
+    4000,
+  )
   const reportOrderValue = Number(getString(formData, 'report_order'))
   const reportOrder =
     Number.isFinite(reportOrderValue) && reportOrderValue > 0
@@ -2171,6 +2368,35 @@ export async function updateCaptureReview(
     return { ok: false, message: 'Capture not found.' }
   }
 
+  const currentAnalysis = isRecord(capture.capture_ai_analysis)
+    ? capture.capture_ai_analysis
+    : isRecord(capture.extracted_data) &&
+        isRecord(capture.extracted_data.capture_ai_analysis)
+      ? capture.extracted_data.capture_ai_analysis
+      : {}
+  let parsedExtractedValues: Json = isRecord(currentAnalysis.extracted_values)
+    ? currentAnalysis.extracted_values
+    : {}
+
+  if (extractedValuesRaw) {
+    try {
+      const parsed = JSON.parse(extractedValuesRaw)
+      parsedExtractedValues = isRecord(parsed)
+        ? (parsed as Json)
+        : parsedExtractedValues
+    } catch {
+      return { ok: false, message: 'Extracted values must be valid JSON.' }
+    }
+  }
+
+  const updatedAnalysis: Json = {
+    ...currentAnalysis,
+    extracted_values: parsedExtractedValues,
+    generated_note: generatedNote || null,
+    suggestion_disabled: !aiSuggestionEnabled,
+    reviewed_at: new Date().toISOString(),
+  }
+
   const { error } = await supabase
     .from('capture_items')
     .update({
@@ -2180,6 +2406,7 @@ export async function updateCaptureReview(
       note_source: 'edited',
       include_in_report: includeInReport,
       report_order: reportOrder,
+      capture_ai_analysis: updatedAnalysis,
       updated_at: new Date().toISOString(),
     })
     .eq('id', capture.id)

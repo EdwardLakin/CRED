@@ -64,10 +64,22 @@ const DETECTED_TYPE_LABELS: Record<string, string> = {
   info_plate: 'Info Plate',
   brake_measurement: 'Brake Measurement',
   tire_tread_measurement: 'Tire Tread Measurement',
+  battery_tester: 'Battery Tester',
   battery_test: 'Battery Test',
+  multimeter: 'Multimeter',
+  amp_clamp: 'Amp Clamp',
+  oscilloscope: 'Oscilloscope',
+  diagnostic_scan_report: 'Diagnostic Scan Report',
   battery_condition: 'Battery Condition',
+  vehicle_component: 'Vehicle Component',
+  corrosion: 'Corrosion',
+  fluid_leak: 'Fluid Leak',
   fluid_level: 'Fluid Level',
+  tire: 'Tire',
+  brake_component: 'Brake Component',
+  suspension_component: 'Suspension Component',
   defect_photo: 'Defect Photo',
+  general_equipment_photo: 'General Equipment Photo',
   general_evidence: 'General Evidence',
   supporting_photo: 'Supporting Photo',
   unknown: 'Unknown',
@@ -103,7 +115,9 @@ const APPLIABLE_SESSION_FIELD_SET = new Set<string>(APPLIABLE_SESSION_FIELDS)
 
 type AppliableSessionField = (typeof APPLIABLE_SESSION_FIELDS)[number]
 
-type SessionEvidenceValues = Partial<Record<AppliableSessionField, string | null>>
+type SessionEvidenceValues = Partial<
+  Record<AppliableSessionField, string | null>
+>
 
 type EvidenceFieldRow = {
   field: string
@@ -124,7 +138,9 @@ type EvidenceCapture = {
   fields: EvidenceFieldRow[]
 }
 
-function isRecord(value: Json | null | undefined): value is { [key: string]: Json | undefined } {
+function isRecord(
+  value: Json | null | undefined,
+): value is { [key: string]: Json | undefined } {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
@@ -163,11 +179,25 @@ function getSourceLabel(extractedData: Json | null) {
     return 'Capture'
   }
 
-  const classification = isRecord(extractedData.classification) ? extractedData.classification : null
-  const label = typeof classification?.label === 'string' && classification.label.trim() ? classification.label.trim() : null
-  const detectedType = typeof classification?.detected_type === 'string' && classification.detected_type.trim() ? classification.detected_type.trim() : null
+  const classification = isRecord(extractedData.classification)
+    ? extractedData.classification
+    : null
+  const label =
+    typeof classification?.label === 'string' && classification.label.trim()
+      ? classification.label.trim()
+      : null
+  const detectedType =
+    typeof classification?.detected_type === 'string' &&
+    classification.detected_type.trim()
+      ? classification.detected_type.trim()
+      : null
 
-  return label ?? (detectedType ? DETECTED_TYPE_LABELS[detectedType] ?? titleCase(detectedType) : 'Capture')
+  return (
+    label ??
+    (detectedType
+      ? (DETECTED_TYPE_LABELS[detectedType] ?? titleCase(detectedType))
+      : 'Capture')
+  )
 }
 
 function getText(value: Json | undefined, maxLength = 400) {
@@ -197,7 +227,9 @@ function formatFieldValue(value: Json | undefined): string | null {
   }
 
   if (Array.isArray(value)) {
-    const values = value.map((item) => formatFieldValue(item)).filter((item): item is string => Boolean(item))
+    const values = value
+      .map((item) => formatFieldValue(item))
+      .filter((item): item is string => Boolean(item))
     return values.length > 0 ? values.join(', ') : null
   }
 
@@ -220,12 +252,23 @@ function getNotes(value: Json | undefined) {
     return []
   }
 
-  return value.map((note) => formatFieldValue(note)).filter((note): note is string => Boolean(note)).slice(0, 6)
+  return value
+    .map((note) => formatFieldValue(note))
+    .filter((note): note is string => Boolean(note))
+    .slice(0, 6)
 }
 
-function getEvidenceCapture(capture: CaptureItem, signedUrl: string | undefined): EvidenceCapture | null {
-  const extractedData = isRecord(capture.extracted_data) ? capture.extracted_data : null
-  const extraction = extractedData && isRecord(extractedData.extraction) ? extractedData.extraction : null
+function getEvidenceCapture(
+  capture: CaptureItem,
+  signedUrl: string | undefined,
+): EvidenceCapture | null {
+  const extractedData = isRecord(capture.extracted_data)
+    ? capture.extracted_data
+    : null
+  const extraction =
+    extractedData && isRecord(extractedData.extraction)
+      ? extractedData.extraction
+      : null
 
   if (!extraction) {
     return null
@@ -290,12 +333,16 @@ export function ExtractedEvidencePanel({
     <section className="card detail-card extracted-evidence-card form-stack">
       <div>
         <h2>Extracted Details</h2>
-        <p className="muted">Source Documents and evidence produce Report Details for review. Apply trusted values directly to Session Details.</p>
+        <p className="muted">
+          Source Documents and evidence produce Report Details for review. Apply
+          trusted values directly to Session Details.
+        </p>
       </div>
 
       {evidenceCaptures.length === 0 ? (
         <div className="empty-state extracted-evidence-empty-state">
-          No extracted details yet. Capture Source Documents whenever it fits the job, then prepare report details to review values from VIN plates,
+          No extracted details yet. Capture Source Documents whenever it fits
+          the job, then prepare report details to review values from VIN plates,
           registrations, work orders, and data plates.
         </div>
       ) : (
@@ -304,34 +351,73 @@ export function ExtractedEvidencePanel({
             <article key={capture.id} className="extracted-evidence-item">
               <div className="extracted-evidence-header">
                 <div>
-                  <span className="classification-pill evidence-source-pill">From {capture.sourceLabel}</span>
-                  <p className="muted evidence-captured-at">Captured {formatDateTime(capture.capturedAt)}</p>
+                  <span className="classification-pill evidence-source-pill">
+                    From {capture.sourceLabel}
+                  </span>
+                  <p className="muted evidence-captured-at">
+                    Captured {formatDateTime(capture.capturedAt)}
+                  </p>
                 </div>
-                {capture.confidence ? <span className="evidence-confidence">{capture.confidence}</span> : null}
+                {capture.confidence ? (
+                  <span className="evidence-confidence">
+                    {capture.confidence}
+                  </span>
+                ) : null}
               </div>
 
-              {capture.summary ? <p className="capture-summary evidence-summary">{capture.summary}</p> : null}
+              {capture.summary ? (
+                <p className="capture-summary evidence-summary">
+                  {capture.summary}
+                </p>
+              ) : null}
 
               <div className="evidence-field-list">
                 {capture.fields.map((field) => {
                   const applied =
                     field.canApply &&
-                    sessionValues[field.field as AppliableSessionField]?.trim().toLowerCase() === field.value.trim().toLowerCase()
-                  const applyAction = applyExtractedEvidenceField.bind(null, sessionId)
+                    sessionValues[field.field as AppliableSessionField]
+                      ?.trim()
+                      .toLowerCase() === field.value.trim().toLowerCase()
+                  const applyAction = applyExtractedEvidenceField.bind(
+                    null,
+                    sessionId,
+                  )
 
                   return (
                     <div key={field.field} className="evidence-field-row">
-                      <span className="evidence-field-label">{field.label}</span>
-                      <span className="evidence-field-value">{field.value}</span>
+                      <span className="evidence-field-label">
+                        {field.label}
+                      </span>
+                      <span className="evidence-field-value">
+                        {field.value}
+                      </span>
                       {field.canApply ? (
                         applied ? (
                           <span className="applied-badge">Applied</span>
                         ) : (
-                          <form action={applyAction} className="evidence-apply-form">
-                            <input type="hidden" name="capture_id" value={capture.id} />
-                            <input type="hidden" name="field" value={field.field} />
-                            <input type="hidden" name="value" value={field.value} />
-                            <button className="secondary-link evidence-apply-button" type="submit">
+                          <form
+                            action={applyAction}
+                            className="evidence-apply-form"
+                          >
+                            <input
+                              type="hidden"
+                              name="capture_id"
+                              value={capture.id}
+                            />
+                            <input
+                              type="hidden"
+                              name="field"
+                              value={field.field}
+                            />
+                            <input
+                              type="hidden"
+                              name="value"
+                              value={field.value}
+                            />
+                            <button
+                              className="secondary-link evidence-apply-button"
+                              type="submit"
+                            >
                               Apply to Session
                             </button>
                           </form>
@@ -354,11 +440,18 @@ export function ExtractedEvidencePanel({
               ) : null}
 
               {capture.sourceUrl ? (
-                <a href={capture.sourceUrl} target="_blank" rel="noreferrer" className="secondary-link capture-file-link touch-target">
+                <a
+                  href={capture.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="secondary-link capture-file-link touch-target"
+                >
                   Open source file
                 </a>
               ) : (
-                <p className="muted capture-storage-path">Stored at {capture.storagePath}</p>
+                <p className="muted capture-storage-path">
+                  Stored at {capture.storagePath}
+                </p>
               )}
             </article>
           ))}
