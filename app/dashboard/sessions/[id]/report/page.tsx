@@ -501,7 +501,7 @@ function GeneratedReportReview({
           </div>
           <div>
             <h4>Recommended Actions</h4>
-            {actions.length > 0 ? <ul>{actions.slice(0, 4).map((item) => <li key={item.action}>{item.action}</li>)}</ul> : <p className="muted">No recommended actions captured.</p>}
+            {actions.length > 0 ? <ul>{actions.map((item) => <li key={item.action}>{item.action}</li>)}</ul> : <p className="muted">No recommended actions captured.</p>}
           </div>
         </div>
       </section>

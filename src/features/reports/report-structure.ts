@@ -176,15 +176,13 @@ function hasDeterministicDefectNote(capture: CaptureLike) {
 function getDeterministicReferenceTitle(capture: CaptureLike) {
   if (hasDeterministicDefectNote(capture)) return null
   const text = captureDeterministicRuleText(capture)
-  const isLicencePlate = /\b(?:licen[cs]e plate|licen[cs]e number|plate number|registration plate|cps 0368)\b/.test(text)
-  const isManufacturerPlate = /\b(?:manufacturer|data plate|info plate|vehicle info plate|gvwr|gawr|tire size|tyre size|weight ratings?)\b/.test(text)
-  const isVinPlate = isManufacturerPlate || /\b(?:vin|vehicle identification number)\b/.test(text)
-  const isWorkOrder = /\b(?:work order|workorder|repair order|repairorder|ro number|ro no|r o|complaint|correction|cause|customer|engine model)\b/.test(text)
-  if (isLicencePlate && !isWorkOrder) return 'Licence Plate'
-  if (isManufacturerPlate || (isVinPlate && !isWorkOrder)) return 'VIN / Manufacturer Plate'
-  if (isWorkOrder) return 'Work Order'
+  const isLicencePlate = /\b(?:licen[cs]e plate|licen[cs]e number|plate number|registration plate|plate photo|cps 0368)\b/.test(text)
+  const isManufacturerPlate = /\b(?:manufacturer|data plate|info plate|vehicle info plate|manufacturer plate|manufacturer label|compliance label|compliance plate|gvwr|gawr|tire size|tyre size|weight ratings?)\b/.test(text)
+  const isVinPlate = isManufacturerPlate || /\b(?:vin|vehicle identification number|serial plate)\b/.test(text)
+  const isWorkOrder = /\b(?:work order|workorder|repair order|repairorder|ro number|ro no|r o|job number|work order number|purchase order)\b/.test(text)
   if (isLicencePlate) return 'Licence Plate'
   if (isVinPlate) return 'VIN / Manufacturer Plate'
+  if (isWorkOrder) return 'Work Order'
   return null
 }
 
@@ -1114,6 +1112,45 @@ function buildFindingTitle(details: EvidenceDetail[], observations: string[], en
   return `Inspection finding ${index + 1}`
 }
 
+
+function isPreferredBatteryAction(value: string) {
+  const text = normalizeForMatch(value)
+  return /clean corrosion/.test(text) && /passenger side battery positive post/.test(text) && /inspect for damage/.test(text)
+}
+
+function isBatteryCleanInspectAction(value: string) {
+  const text = normalizeForMatch(value)
+  return /clean corrosion/.test(text) && /inspect for damage/.test(text)
+}
+
+function isBatteryTerminalMaintenanceAction(value: string) {
+  const text = normalizeForMatch(value)
+  return /battery/.test(text) && /terminal/.test(text) && /maint|inspect|clean/.test(text)
+}
+
+function selectFinalFindingRecommendations(recommendations: string[], scope: string[]) {
+  if (!scope.includes('battery')) return recommendations
+  const preferred = recommendations.find(isPreferredBatteryAction)
+  if (preferred) return [preferred]
+  const cleanInspect = recommendations.find(isBatteryCleanInspectAction)
+  if (cleanInspect) return [cleanInspect]
+  const terminalMaintenance = recommendations.find(isBatteryTerminalMaintenanceAction)
+  if (terminalMaintenance) return [terminalMaintenance]
+  return recommendations
+}
+
+function filterGeneratedObservationNarrative(observations: string[], title: string, details: EvidenceDetail[]) {
+  const detailValues = details.map((detail) => detail.value)
+  return observations.filter((observation) => {
+    const normalized = normalizeForMatch(observation)
+    if (!normalized) return false
+    const repeatsTitle = isSemanticDuplicateText(observation, title)
+    const repeatsDetail = detailValues.some((detail) => isSemanticDuplicateText(observation, detail))
+    const generatedNarrative = normalized.split(' ').length >= 12 || /recommend|should|requires|inspection revealed|observed condition/.test(normalized)
+    return !(generatedNarrative && (repeatsTitle || repeatsDetail))
+  })
+}
+
 export function getNormalizedFindingModels<TCapture extends CaptureLike>(items: ReviewDocument<TCapture>['findings']): NormalizedFindingModel<TCapture>[] {
   return items.map((entry, index) => {
     const renderedText: string[] = []
@@ -1127,11 +1164,15 @@ export function getNormalizedFindingModels<TCapture extends CaptureLike>(items: 
       if (visible) renderedText.push(detail.value)
       return visible
     })
-    const recommendations = dedupeSemanticReportText(filterFindingScopedRecommendations([...entry.group.recommendations.flatMap(splitRecommendationText), ...detailRecommendations], scope).filter((recommendation) => shouldRenderDetail('Recommendation', recommendation, renderedText)))
-    recommendations.forEach((recommendation) => renderedText.push(recommendation))
-    const severity = normalizeReportSeverity([...observations, ...recommendations, ...scopedDetails.map((detail) => `${detail.label} ${detail.value}`)])
     const title = buildFindingTitle(details, observations, entry, index)
-    return { id: entry.group.capture_id, title, severity, observations, recommendations, details, evidenceCount: 1, entry }
+    const finalObservations = filterGeneratedObservationNarrative(observations, title, details)
+    const recommendations = selectFinalFindingRecommendations(
+      dedupeSemanticReportText(filterFindingScopedRecommendations([...entry.group.recommendations.flatMap(splitRecommendationText), ...detailRecommendations], scope).filter((recommendation) => shouldRenderDetail('Recommendation', recommendation, renderedText))),
+      scope,
+    )
+    recommendations.forEach((recommendation) => renderedText.push(recommendation))
+    const severity = normalizeReportSeverity([...finalObservations, ...recommendations, ...scopedDetails.map((detail) => `${detail.label} ${detail.value}`)])
+    return { id: entry.group.capture_id, title, severity, observations: finalObservations, recommendations, details, evidenceCount: 1, entry }
   })
 }
 
