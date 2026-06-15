@@ -47,17 +47,37 @@ export async function queueCaptureAnalysisJobs(params: {
   }))
 
   const client = params.supabase as SupabaseClient
-  await client.from('capture_processing_jobs').upsert(rows, {
+  const { error: queueError } = await client.from('capture_processing_jobs').upsert(rows, {
     onConflict: 'organization_id,documentation_session_id,capture_item_id,job_type',
     ignoreDuplicates: true,
   })
 
-  await client
+  if (queueError) {
+    console.error('Failed to queue capture analysis jobs', {
+      captureItemId: params.captureItemId,
+      sessionId: params.sessionId,
+      organizationId: params.organizationId,
+      error: queueError,
+    })
+    throw queueError
+  }
+
+  const { error: statusError } = await client
     .from('capture_items')
     .update({ processing_status: 'queued', ai_status: 'queued' })
     .eq('id', params.captureItemId)
     .eq('organization_id', params.organizationId)
     .eq('documentation_session_id', params.sessionId)
+
+  if (statusError) {
+    console.error('Failed to mark capture item queued', {
+      captureItemId: params.captureItemId,
+      sessionId: params.sessionId,
+      organizationId: params.organizationId,
+      error: statusError,
+    })
+    throw statusError
+  }
 }
 
 export async function queueSessionProcessingJobs(params: {
@@ -76,8 +96,17 @@ export async function queueSessionProcessingJobs(params: {
     metadata: params.metadata ?? {},
   }))
 
-  await (params.supabase as SupabaseClient).from('capture_processing_jobs').upsert(rows, {
+  const { error } = await (params.supabase as SupabaseClient).from('capture_processing_jobs').upsert(rows, {
     onConflict: 'organization_id,documentation_session_id,job_type',
     ignoreDuplicates: true,
   })
+
+  if (error) {
+    console.error('Failed to queue session processing jobs', {
+      sessionId: params.sessionId,
+      organizationId: params.organizationId,
+      error,
+    })
+    throw error
+  }
 }

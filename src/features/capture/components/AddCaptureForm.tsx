@@ -207,7 +207,7 @@ function SubmitButton({
         ? 'Saving…'
         : retryOnly
           ? 'Retry failed upload'
-          : 'Done — save evidence'}
+          : 'Save note'}
     </Button>
   )
 }
@@ -276,6 +276,7 @@ export function AddCaptureForm({
   const voiceNoteBaseRef = useRef('')
   const selectedFilesRef = useRef<SelectedEvidenceFile[]>([])
   const isSavingRef = useRef(false)
+  const uploadStartedFileIdsRef = useRef(new Set<string>())
   const [actionError, setActionError] = useState<string | null>(null)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -335,6 +336,11 @@ export function AddCaptureForm({
     selectedFilesRef.current.forEach((file) =>
       URL.revokeObjectURL(file.previewUrl),
     )
+    uploadStartedFileIdsRef.current = new Set(
+      files
+        .filter((file) => file.status === 'uploading' || file.status === 'saved')
+        .map((file) => file.id),
+    )
     selectedFilesRef.current = files
     setSelectedFiles(files)
   }
@@ -372,7 +378,7 @@ export function AddCaptureForm({
     })
   }
 
-  function validateFileSelection() {
+  async function validateFileSelection() {
     const files = Array.from(fileInputRef.current?.files ?? [])
 
     if (files.length === 0) {
@@ -413,8 +419,13 @@ export function AddCaptureForm({
       return
     }
 
-    replaceSelectedFiles(buildSelectedEvidenceFiles(files))
+    const evidenceFiles = buildSelectedEvidenceFiles(files)
+    replaceSelectedFiles(evidenceFiles)
     setClientError(null)
+
+    if (captureIntent === 'auto_image' || captureIntent === 'auto_evidence') {
+      await autoSaveSelectedMedia(evidenceFiles)
+    }
   }
 
   function removeSelectedFile(fileId: string) {
@@ -464,6 +475,51 @@ export function AddCaptureForm({
     }).catch((error: unknown) => {
       console.warn('Background capture processing trigger failed', error)
     })
+  }
+
+  async function autoSaveSelectedMedia(filesToSave: SelectedEvidenceFile[]) {
+    const pendingFiles = filesToSave.filter((file) => {
+      if (uploadStartedFileIdsRef.current.has(file.id)) {
+        return false
+      }
+
+      uploadStartedFileIdsRef.current.add(file.id)
+      return true
+    })
+
+    if (pendingFiles.length === 0) {
+      return
+    }
+
+    setActionError(null)
+    setSaveMessage(`Uploading ${pendingFiles.length} file${pendingFiles.length === 1 ? '' : 's'}…`)
+    isSavingRef.current = true
+    setIsSaving(true)
+
+    try {
+      const result = await uploadSelectedFiles(pendingFiles)
+
+      if (result.savedCount > 0) {
+        cleanupRecognition()
+        setSaveMessage(`${result.savedCount} capture${result.savedCount === 1 ? '' : 's'} saved and queued for AI.`)
+        triggerBackgroundProcessing()
+        router.refresh()
+      }
+
+      if (result.failedCount > 0) {
+        pendingFiles
+          .filter((file) => selectedFilesRef.current.find((current) => current.id === file.id)?.status === 'failed')
+          .forEach((file) => uploadStartedFileIdsRef.current.delete(file.id))
+        setActionError(
+          result.savedCount > 0
+            ? 'Some files were saved. Failed files are still here — retry them when your connection is better.'
+            : 'Upload failed — retry when your connection is better.',
+        )
+      }
+    } finally {
+      isSavingRef.current = false
+      setIsSaving(false)
+    }
   }
 
   async function uploadSelectedFiles(filesToUpload: SelectedEvidenceFile[]) {
@@ -1114,7 +1170,7 @@ export function AddCaptureForm({
           rows={4}
         />
         <p className="muted note-helper-text">
-          For photos or gallery images, this note is saved on the same evidence record. Skip it if the media stands alone.
+          Photos and gallery selections save and queue immediately. Notes are optional and can be saved separately when there is no media.
         </p>
         {isVoiceSupported === false ? (
           <p className="muted capture-upload-hint" role="status">

@@ -772,6 +772,44 @@ export async function createCaptureRecordFromUploadedFile(
     : uploadExtractedData
   const itemExtractedData = mergeGuidance(sourceExtractedData, guidance)
 
+  const { data: existingCapture, error: existingCaptureError } = await supabase
+    .from('capture_items')
+    .select('id')
+    .eq('documentation_session_id', session.id)
+    .eq('organization_id', profile.organization_id)
+    .eq('storage_path', storagePath)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (existingCaptureError) {
+    logCaptureFailure({
+      step: 'capture_item_duplicate_check',
+      ...getSafeErrorDetails(existingCaptureError),
+    })
+    return captureError(existingCaptureError.message, session.id)
+  }
+
+  if (existingCapture) {
+    try {
+      await queueCaptureAnalysisJobs({
+        supabase,
+        organizationId: profile.organization_id,
+        sessionId: session.id,
+        captureItemId: existingCapture.id,
+        metadata: { filename, mime_type: mimeType, capture_intent: rawCaptureIntent, repaired_duplicate: true },
+      })
+    } catch (queueError) {
+      logCaptureFailure({
+        step: 'capture_processing_queue_duplicate_repair',
+        captureId: existingCapture.id,
+        ...getSafeErrorDetails(queueError),
+      })
+      return captureError('Capture already exists, but AI queueing failed. Please retry or contact support.', session.id)
+    }
+
+    return { ok: true, sessionId: session.id, captureItemId: existingCapture.id }
+  }
+
   const { count: existingCaptureCount } = await supabase
     .from('capture_items')
     .select('id', { count: 'exact', head: true })
@@ -792,14 +830,8 @@ export async function createCaptureRecordFromUploadedFile(
       type: itemCaptureType,
       storage_path: storagePath,
       captured_at: capturedAt,
-      ai_status:
-        sourceDocument || itemMediaKind !== 'video'
-          ? 'queued'
-          : 'needs_review',
-      processing_status:
-        sourceDocument || itemMediaKind !== 'video'
-          ? 'queued'
-          : 'needs_review',
+      ai_status: 'queued',
+      processing_status: 'queued',
       extracted_data: itemExtractedData,
       technician_note: technicianNote || null,
       transcript:
@@ -863,21 +895,20 @@ export async function createCaptureRecordFromUploadedFile(
 
 
   try {
-    if (sourceDocument || itemMediaKind !== 'video') {
-      await queueCaptureAnalysisJobs({
-        supabase,
-        organizationId: profile.organization_id,
-        sessionId: session.id,
-        captureItemId: captureItem.id,
-        metadata: { filename, mime_type: mimeType, capture_intent: rawCaptureIntent },
-      })
-    }
+    await queueCaptureAnalysisJobs({
+      supabase,
+      organizationId: profile.organization_id,
+      sessionId: session.id,
+      captureItemId: captureItem.id,
+      metadata: { filename, mime_type: mimeType, capture_intent: rawCaptureIntent },
+    })
   } catch (queueError) {
     logCaptureFailure({
       step: 'capture_processing_queue_insert',
       captureId: captureItem.id,
       ...getSafeErrorDetails(queueError),
     })
+    return captureError('Capture saved, but AI queueing failed. Please retry or contact support.', session.id)
   }
 
   try {
