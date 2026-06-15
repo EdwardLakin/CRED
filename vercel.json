@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/internal/capture-processing/tick",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}

@@ -226,10 +226,10 @@ export function getCaptureProcessingStatus(capture: CaptureItem): CaptureProcess
 export function getCaptureProcessingLabel(status: CaptureProcessingStatus) {
   switch (status) {
     case 'queued':
-      return 'AI queued'
+      return 'Queued for AI'
     case 'analyzing':
     case 'processing':
-      return 'AI analysis in progress'
+      return 'Analyzing'
     case 'analyzed':
       return 'AI complete'
     case 'grouped':
@@ -238,13 +238,13 @@ export function getCaptureProcessingLabel(status: CaptureProcessingStatus) {
       return 'AI complete'
     case 'analysis_failed':
     case 'grouping_failed':
-      return 'AI analysis unavailable — manual review still available'
+      return 'AI unavailable — manual review available'
     case 'ignored':
       return 'Ignored'
     case 'extracted':
       return 'Ready for review'
     case 'needs_review':
-      return 'Low confidence, verify reading'
+      return 'Needs review'
     case 'failed':
       return 'Retry needed'
     case 'blocked_by_limit':
@@ -253,6 +253,6 @@ export function getCaptureProcessingLabel(status: CaptureProcessingStatus) {
       return 'Ready for review'
     case 'pending':
     default:
-      return 'Saved'
+      return 'Uploaded'
   }
 }
