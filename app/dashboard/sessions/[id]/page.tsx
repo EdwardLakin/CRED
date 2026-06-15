@@ -33,7 +33,7 @@ export default async function SessionDetailPage({
     .eq('organization_id', profile.organization_id)
     .is('deleted_at', null)
 
-  const isArchived = session.status === 'archived'
+  const isArchived = Boolean(session.archived_at)
   const archiveAction = archiveDocumentationSession.bind(null, session.id)
   const restoreAction = restoreDocumentationSession.bind(null, session.id)
 
@@ -46,7 +46,7 @@ export default async function SessionDetailPage({
           </Link>
           <div className="title-row">
             <h1>{session.title}</h1>
-            <SessionStatusBadge status={session.status} />
+            <SessionStatusBadge status={isArchived ? 'archived' : session.status} />
           </div>
           <p className="muted">Updated {formatDateTime(session.updated_at ?? session.created_at, profile.timezone)} · {evidenceCount ?? 0} saved</p>
         </div>

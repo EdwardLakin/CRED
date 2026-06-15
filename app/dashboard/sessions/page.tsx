@@ -17,8 +17,15 @@ function getCaptureCounts(captures: Array<{ documentation_session_id: string }> 
   return captureCountBySession
 }
 
-export default async function SessionsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
-  const { q } = await searchParams
+type SessionFilter = 'active' | 'completed' | 'archived'
+
+function normalizeFilter(value: string | undefined): SessionFilter {
+  return value === 'completed' || value === 'archived' ? value : 'active'
+}
+
+export default async function SessionsPage({ searchParams }: { searchParams: Promise<{ q?: string; filter?: string }> }) {
+  const { q, filter } = await searchParams
+  const sessionFilter = normalizeFilter(filter)
   const searchTerm = q?.trim() ?? ''
   const { supabase, profile } = await requireSessionWorkspace()
 
@@ -27,6 +34,17 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
     .select('*')
     .eq('organization_id', profile.organization_id)
     .order('updated_at', { ascending: false })
+
+  if (sessionFilter === 'archived') {
+    query = query.not('archived_at', 'is', null)
+  } else {
+    query = query.is('archived_at', null)
+    if (sessionFilter === 'completed') {
+      query = query.or('status.eq.finalized,review_status.eq.ready_for_delivery')
+    } else {
+      query = query.not('status', 'eq', 'finalized').not('review_status', 'eq', 'ready_for_delivery')
+    }
+  }
 
   if (searchTerm) {
     query = query.ilike('title', `%${searchTerm}%`)
@@ -67,7 +85,18 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
         </div>
       </div>
 
+      <nav className="tab-row" aria-label="Session filters">
+        {[
+          ['active', 'Active'],
+          ['completed', 'Completed'],
+          ['archived', 'Archived'],
+        ].map(([value, label]) => (
+          <Link key={value} href={`/dashboard/sessions?filter=${value}${searchTerm ? `&q=${encodeURIComponent(searchTerm)}` : ''}`} className={sessionFilter === value ? 'button button-primary touch-target' : 'button button-secondary touch-target'}>{label}</Link>
+        ))}
+      </nav>
+
       <form action="/dashboard/sessions" className="search-card">
+        <input type="hidden" name="filter" value={sessionFilter} />
         <label className="label" htmlFor="q">
           Find a session
         </label>
@@ -85,14 +114,15 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
               session={session}
               evidenceCount={captureCountBySession.get(session.id)}
               showOperationalAction
+              showArchiveAction
               timeZone={profile.timezone}
             />
           ))}
         </div>
       ) : (
         <EmptyState
-          title={searchTerm ? 'No matching sessions' : 'No sessions yet'}
-          description={searchTerm ? 'Try a different search or start a new session.' : 'Press New Session and start capturing evidence.'}
+          title={searchTerm ? 'No matching sessions' : sessionFilter === 'archived' ? 'No archived sessions' : sessionFilter === 'completed' ? 'No completed sessions' : 'No active sessions yet'}
+          description={searchTerm ? 'Try a different search or start a new session.' : sessionFilter === 'archived' ? 'Archived sessions will appear here.' : sessionFilter === 'completed' ? 'Approved and exported sessions will appear here.' : 'Press New Session and start capturing evidence.'}
           actionHref="/dashboard/sessions/new"
           actionLabel="New Session"
         />

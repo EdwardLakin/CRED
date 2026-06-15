@@ -259,6 +259,10 @@ const COMPONENT_GROUPS: Record<string, string[]> = {
   documentation: ['vin', 'plate', 'license', 'licence', 'work order'],
 }
 
+function isFindingDraftSection(section: DraftSectionLike) {
+  return /findings?|inspection findings?|observed conditions?|defects?|issues?/i.test(`${section.section_key} ${section.title}`)
+}
+
 const INTERNAL_DETAIL_LABEL = /^(document type|source document|confidence|classification|ocr|ai summary|transcript status|detected type|workflow|template)$/i
 
 function componentHits(text: string) {
@@ -514,7 +518,8 @@ export function buildEvidenceGroups(captures: CaptureLike[], sections: DraftSect
 
   for (const section of sections) {
     const titleAndBody = `${section.title} ${section.body ?? ''}`
-    const isRecommendation = /recommend|replace|repair|correct/i.test(titleAndBody)
+    const isRecommendation = /recommend|replace|repair|correct/i.test(titleAndBody) && !isFindingDraftSection(section)
+    const isFindingSection = isFindingDraftSection(section)
     const sectionSourceIds = section.source_capture_ids ?? []
     for (const id of sectionSourceIds) {
       const group = groups.get(id)
@@ -523,11 +528,18 @@ export function buildEvidenceGroups(captures: CaptureLike[], sections: DraftSect
       // Draft sections can contain broad/global source_capture_ids. Only attach
       // section copy to a card when it is uniquely sourced or clearly matches
       // that capture's own extracted text, note, transcript, or summary.
-      if (sectionSourceIds.length > 1 && !belongsToCapture(titleAndBody, capture)) continue
+      if (sectionSourceIds.length > 1 && !isFindingSection && !belongsToCapture(titleAndBody, capture)) continue
       if (isRecommendation) {
         const recommendation = splitRecommendationByEvidence(section.body, capture)
         if (recommendation) pushUnique(group.recommendations, recommendation)
-      } else if (belongsToCapture(section.body, capture)) pushUnique(group.findings, section.body)
+      } else if (isFindingSection || belongsToCapture(section.body, capture)) pushUnique(group.findings, section.body)
+    }
+    if (sectionSourceIds.length === 0 && isFindingSection && section.body) {
+      for (const capture of captures) {
+        if (!belongsToCapture(titleAndBody, capture)) continue
+        const group = groups.get(capture.id)
+        if (group) pushUnique(group.findings, section.body)
+      }
     }
   }
   return Array.from(groups.values()).map((group) => ({ ...group, details: dedupeEvidenceDetails(group.details) }))
@@ -696,7 +708,7 @@ export function isCustomerAssetSection(section: NormalizedReportSection) {
 
 
 export const REPORT_SEVERITY_PRESENTATION = [
-  { key: 'critical', label: '🔴 Critical', priority: 5, patterns: [/\b(?:red|critical|danger|fail|failed|urgent)\b/i, /\breplace\b/i, /wear\s*limit/i, /at\s+wear\s+limit/i, /\b2\s*mm\b/i, /immediate|unsafe|out of service/i] },
+  { key: 'critical', label: '🔴 Critical', priority: 5, patterns: [/\b(?:red|critical|danger|fail|failed|urgent)\b/i, /replace\s+front\s+brake\s+pads?/i, /\breplace\b/i, /wear\s*limit/i, /at\s+wear\s+limit/i, /\b2\s*mm\b.*\bbrake\s*pads?\b/i, /\bbrake\s*pads?\b.*\b2\s*mm\b/i, /\b2\s*mm\b/i, /immediate|unsafe|out of service/i] },
   { key: 'advisory', label: '🟡 Advisory', priority: 3, patterns: [/\b(?:yellow|warning|advisory|monitor|attention|medium)\b/i] },
   { key: 'informational', label: '🟢 Informational', priority: 1, patterns: [/\b(?:green|pass|ok|info|informational)\b/i] },
 ] as const

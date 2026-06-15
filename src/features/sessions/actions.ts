@@ -164,7 +164,7 @@ export async function archiveDocumentationSession(sessionId: string) {
   }
   const { error } = await supabase
     .from('documentation_sessions')
-    .update({ status: 'archived', updated_at: new Date().toISOString() })
+    .update({ archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq('id', sessionId)
     .eq('organization_id', profile.organization_id)
 
@@ -187,7 +187,7 @@ export async function restoreDocumentationSession(sessionId: string) {
   }
   const { error } = await supabase
     .from('documentation_sessions')
-    .update({ status: 'draft', updated_at: new Date().toISOString() })
+    .update({ status: 'draft', archived_at: null, updated_at: new Date().toISOString() })
     .eq('id', sessionId)
     .eq('organization_id', profile.organization_id)
 
