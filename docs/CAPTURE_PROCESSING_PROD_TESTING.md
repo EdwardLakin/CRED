@@ -6,6 +6,8 @@ Required environment variables:
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY` (server-only; used by the worker to bypass RLS safely)
 - `INTERNAL_CAPTURE_WORKER_SECRET` (shared secret for `/api/internal/capture-processing/tick`)
+- Backward-compatible alias: `CAPTURE_PROCESSING_INTERNAL_SECRET`
+- Optional Vercel Cron compatibility: set `CRON_SECRET` to the same value if the deployment relies on Vercel's `Authorization: Bearer $CRON_SECRET` cron header.
 
 ## Upload and queue
 
@@ -17,25 +19,89 @@ Required environment variables:
    - `extract_capture`
    - `generate_capture_note`
 
-## Trigger the worker
+## Manually trigger the worker
 
-Vercel Cron may call the GET endpoint. Manual testing can use either GET or POST:
+Vercel Cron calls the GET endpoint configured in `vercel.json`. Manual testing can use either GET or POST with a Bearer token or `x-internal-secret` header:
 
 ```bash
+export APP_URL="https://<deployment-host>"
+export INTERNAL_CAPTURE_WORKER_SECRET="<shared-secret>"
+
 curl -sS \
   -H "Authorization: Bearer $INTERNAL_CAPTURE_WORKER_SECRET" \
-  "https://<deployment-host>/api/internal/capture-processing/tick?batch_size=10"
+  "$APP_URL/api/internal/capture-processing/tick?batch_size=10" | jq
 ```
 
-The endpoint returns `ok: true` with `processed: 0` when no eligible jobs exist, so repeated ticks are safe.
+```bash
+curl -sS -X POST \
+  -H "x-internal-secret: $INTERNAL_CAPTURE_WORKER_SECRET" \
+  "$APP_URL/api/internal/capture-processing/tick?batch_size=10" | jq
+```
 
-## Inspect results
+A safe diagnostic response includes `jobs_found`, `jobs_processed`, `jobs_succeeded`, `jobs_failed`, `jobs_retried`, `jobs_remaining`, `batch_size`, and `no_op`. The endpoint returns `ok: true` with `no_op: true` when no eligible jobs exist, so repeated ticks are safe.
 
-1. Re-check `capture_processing_jobs`; processed jobs should move to `succeeded`, while transient failures become `retrying` with `scheduled_for` set.
-2. Re-check `capture_items`; processed captures should update `capture_ai_analysis`, `ai_summary`, and `processing_status` (`analyzed`, `needs_review`, or `analysis_failed`).
-3. Once capture-level jobs are complete, session-level jobs should appear for grouping/report readiness:
-   - `group_evidence`
-   - `normalize_report_fields`
-   - `generate_findings`
-   - `update_report_readiness`
-4. Open `/dashboard/sessions/<session-id>/report` and confirm evidence groups, duplicate warnings, editable extracted values, signature status, and readiness messages reflect the latest state.
+## Check queued jobs
+
+```bash
+export SUPABASE_DB_URL="postgresql://<user>:<password>@<host>:5432/postgres"
+export SESSION_ID="<documentation-session-id>"
+
+psql "$SUPABASE_DB_URL" -c "
+select id, capture_item_id, job_type, status, attempts, scheduled_for, locked_at, left(coalesce(last_error, ''), 160) as last_error
+from public.capture_processing_jobs
+where documentation_session_id = '$SESSION_ID'
+  and status in ('queued', 'retrying', 'running')
+order by priority, created_at;
+"
+```
+
+## Check failed jobs
+
+```bash
+psql "$SUPABASE_DB_URL" -c "
+select id, capture_item_id, job_type, status, attempts, max_attempts, completed_at, left(coalesce(last_error, ''), 300) as last_error
+from public.capture_processing_jobs
+where documentation_session_id = '$SESSION_ID'
+  and status = 'failed'
+order by completed_at desc nulls last, updated_at desc;
+"
+```
+
+## Confirm captures updated
+
+```bash
+psql "$SUPABASE_DB_URL" -c "
+select id, type, ai_status, processing_status, ai_summary is not null as has_ai_summary, capture_ai_analysis is not null as has_ai_analysis, updated_at
+from public.capture_items
+where documentation_session_id = '$SESSION_ID'
+  and deleted_at is null
+order by captured_at desc;
+"
+```
+
+Expected lifecycle for uploaded photos: `queued` → `analyzing` → `analyzed` or `needs_review`; if AI is unavailable after retries, the capture should move to `analysis_failed` with manual review available.
+
+## Confirm report readiness updated
+
+```bash
+psql "$SUPABASE_DB_URL" -c "
+select job_type, status, attempts, completed_at
+from public.capture_processing_jobs
+where documentation_session_id = '$SESSION_ID'
+  and job_type in ('group_evidence', 'normalize_report_fields', 'generate_findings', 'update_report_readiness')
+order by priority, created_at;
+"
+```
+
+```bash
+psql "$SUPABASE_DB_URL" -c "
+select processing_status, count(*)
+from public.capture_items
+where documentation_session_id = '$SESSION_ID'
+  and deleted_at is null
+group by processing_status
+order by processing_status;
+"
+```
+
+After capture-level jobs finish, session-level jobs should be queued and processed. Open `/dashboard/sessions/<session-id>/report` and confirm evidence groups, duplicate warnings, editable extracted values, signature status, and readiness messages reflect the latest state.

@@ -102,6 +102,7 @@ export async function processCaptureProcessingTick(batchSize = 5) {
 
   if (queryError) throw queryError
 
+  const jobsFound = ((availableJobs ?? []) as Job[]).length
   const results = []
   for (const job of (availableJobs ?? []) as Job[]) {
     const { data: locked, error: lockError } = await db(supabase)
@@ -156,7 +157,32 @@ export async function processCaptureProcessingTick(batchSize = 5) {
     }
   }
 
-  return { workerId, processed: results.length, results, batchSize: safeBatchSize }
+  const { count: remainingCount } = await db(supabase)
+    .from('capture_processing_jobs')
+    .select('id', { count: 'exact', head: true })
+    .in('status', ['queued', 'retrying'])
+    .lte('scheduled_for', new Date().toISOString())
+
+  const jobsSucceeded = results.filter((result) => result.status === 'succeeded').length
+  const jobsFailed = results.filter((result) => result.status === 'failed').length
+  const jobsRetried = results.filter((result) => result.status === 'retrying').length
+
+  return {
+    workerId,
+    processed: results.length,
+    results,
+    batchSize: safeBatchSize,
+    diagnostics: {
+      jobs_found: jobsFound,
+      jobs_processed: results.length,
+      jobs_succeeded: jobsSucceeded,
+      jobs_failed: jobsFailed,
+      jobs_retried: jobsRetried,
+      jobs_remaining: remainingCount ?? 0,
+      batch_size: safeBatchSize,
+      no_op: jobsFound === 0,
+    },
+  }
 }
 
 async function processJob(supabase: ReturnType<typeof createAdminClient>, job: Job) {
@@ -166,7 +192,7 @@ async function processJob(supabase: ReturnType<typeof createAdminClient>, job: J
       .update({ processing_status: job.job_type === 'update_report_readiness' ? 'report_ready' : 'grouped' })
       .eq('organization_id', job.organization_id)
       .eq('documentation_session_id', job.documentation_session_id)
-      .in('processing_status', ['analyzed', 'grouped', 'queued'])
+      .in('processing_status', ['analyzed', 'grouped', 'needs_review', 'analysis_failed'])
     return
   }
 

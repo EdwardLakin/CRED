@@ -6,12 +6,12 @@ export const dynamic = 'force-dynamic'
 const DEFAULT_BATCH_SIZE = 5
 const MAX_BATCH_SIZE = 25
 
-function getWorkerSecret() {
-  return (
-    process.env.INTERNAL_CAPTURE_WORKER_SECRET?.trim() ||
-    process.env.CAPTURE_PROCESSING_INTERNAL_SECRET?.trim() ||
-    ''
-  )
+function getAcceptedWorkerSecrets() {
+  return [
+    process.env.INTERNAL_CAPTURE_WORKER_SECRET?.trim(),
+    process.env.CAPTURE_PROCESSING_INTERNAL_SECRET?.trim(),
+    process.env.CRON_SECRET?.trim(),
+  ].filter((secret): secret is string => Boolean(secret))
 }
 
 function getProvidedSecret(request: Request) {
@@ -32,12 +32,12 @@ function getBatchSize(request: Request) {
 }
 
 async function handleTick(request: Request) {
-  const secret = getWorkerSecret()
+  const secrets = getAcceptedWorkerSecrets()
   const provided = getProvidedSecret(request)
 
-  if (!secret || provided !== secret) {
+  if (secrets.length === 0 || !provided || !secrets.includes(provided)) {
     console.warn('capture-processing tick unauthorized', {
-      hasConfiguredSecret: Boolean(secret),
+      hasConfiguredSecret: secrets.length > 0,
       hasProvidedSecret: Boolean(provided),
     })
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
@@ -55,7 +55,7 @@ async function handleTick(request: Request) {
     })
   }
 
-  return Response.json({ ok: true, ...result })
+  return Response.json({ ok: true, workerId: result.workerId, processed: result.processed, batchSize: result.batchSize, ...result.diagnostics })
 }
 
 // Vercel Cron can invoke GET endpoints. Manual/testing callers may use POST.

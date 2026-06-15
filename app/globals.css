@@ -3879,3 +3879,51 @@ a:focus-visible {
   flex-wrap: wrap;
   gap: 10px;
 }
+
+.capture-analysis-status-card {
+  display: grid;
+  gap: 10px;
+}
+
+.capture-analysis-status-card p {
+  margin: 0;
+}
+
+.capture-analysis-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.capture-analysis-counts span {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--foreground);
+  font-weight: 800;
+  padding: 6px 10px;
+}
+
+@media (max-width: 760px) {
+  .focused-capture-shell {
+    padding-bottom: calc(184px + env(safe-area-inset-bottom));
+  }
+
+  .focused-capture-card {
+    margin-bottom: calc(92px + env(safe-area-inset-bottom));
+  }
+
+  .focused-capture-done-actions {
+    background: color-mix(in srgb, var(--surface) 96%, transparent);
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 22px 22px 0 0;
+    border-right: 0;
+    bottom: 0;
+    box-shadow: 0 -12px 34px rgba(20, 33, 61, 0.12);
+    left: 0;
+    padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+    right: 0;
+    width: 100%;
+  }
+}
