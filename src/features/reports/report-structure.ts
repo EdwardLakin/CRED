@@ -71,6 +71,98 @@ export type FormStructureSummary = {
   guidance: string[]
 }
 
+
+const HEADER_FIELD_ALIASES = {
+  customer: ['customer', 'customer_name', 'client', 'client_name', 'company', 'company_name', 'contact', 'owner'],
+  customer_contact: ['customer_contact', 'contact', 'contact_name', 'phone', 'email'],
+  work_order: ['work_order', 'work_order_number', 'repair_order', 'ro_number'],
+  po_number: ['po', 'po_number', 'purchase_order', 'purchase_order_number', 'purchase order'],
+  unit_number: ['unit', 'unit_number', 'unit_id', 'asset_id'],
+  asset: ['asset', 'asset_label', 'equipment', 'equipment_name', 'vehicle'],
+  make: ['make', 'manufacturer'],
+  model: ['model'],
+  serial: ['serial', 'serial_number'],
+  vin: ['vin', 'vehicle_identification_number'],
+  licence_plate: ['plate', 'licence_plate', 'license_plate', 'licence_number', 'license_number', 'plate_number'],
+  odometer: ['odometer', 'mileage', 'kilometres', 'kilometers', 'miles'],
+  hours: ['hours', 'hour_meter', 'engine_hours'],
+} as const
+
+type HeaderFieldKey = keyof typeof HEADER_FIELD_ALIASES
+
+const HEADER_FIELD_LABELS: Record<HeaderFieldKey, string> = {
+  customer: 'Customer', customer_contact: 'Customer contact', work_order: 'Work order number', po_number: 'PO number',
+  unit_number: 'Unit number', asset: 'Equipment / asset name', make: 'Make', model: 'Model', serial: 'Serial number', vin: 'VIN',
+  licence_plate: 'Licence plate', odometer: 'Odometer', hours: 'Hours',
+}
+
+function normalizeAliasText(value: string) {
+  return value.toLowerCase().replace(/#/g, ' number ').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+}
+
+export function normalizeCanonicalReportField(label: string): HeaderFieldKey | null {
+  const normalized = normalizeAliasText(label)
+  for (const [field, aliases] of Object.entries(HEADER_FIELD_ALIASES) as Array<[HeaderFieldKey, readonly string[]]>) {
+    if (aliases.some((alias) => {
+      const normalizedAlias = normalizeAliasText(alias)
+      return normalized === normalizedAlias || normalized.includes(`_${normalizedAlias}`) || normalized.includes(`${normalizedAlias}_`)
+    })) return field
+  }
+  return null
+}
+
+function looksLikeFindingValue(value: string) {
+  const normalized = normalizeForMatch(value)
+  if (!normalized) return true
+  if (/\b(corrosion present|recommend|recommended|replace|repair|requires|required|inspect|inspection|condition|finding|observed|severity|fail|failed|pass|passed|worn|wear|leak|crack|broken|damage|rust|loose|missing|defect|unsafe|attention)\b/i.test(value)) return true
+  return /[.!?]/.test(value) && value.split(/\s+/).length > 4
+}
+
+function isVinLike(value: string) {
+  const compact = value.toUpperCase().replace(/[^A-Z0-9]/g, '')
+  return /^[A-HJ-NPR-Z0-9]{11,17}$/.test(compact)
+}
+
+function isPlateLike(value: string) {
+  const compact = value.toUpperCase().replace(/[^A-Z0-9]/g, '')
+  return /^[A-Z0-9]{2,10}$/.test(compact)
+}
+
+function isNumericReading(value: string) {
+  return /^\d{1,7}(?:[,.]\d{1,2})?\s*(?:km|kilometres|kilometers|mi|miles|hrs?|hours?)?$/i.test(value.trim())
+}
+
+export function isValidHeaderFieldValue(fieldKey: HeaderFieldKey, label: string, value: string) {
+  const cleaned = clean(value, 300)
+  if (!cleaned || /^(not captured|pending|unknown|n\/a)$/i.test(cleaned)) return false
+  const labelKey = normalizeCanonicalReportField(label)
+  if (labelKey !== fieldKey) return false
+  if (looksLikeFindingValue(cleaned)) return false
+  if (fieldKey === 'vin') return isVinLike(cleaned) || /\bvin\b/i.test(label)
+  if (fieldKey === 'licence_plate') return isPlateLike(cleaned) && /plate|licen[cs]e/i.test(label)
+  if (fieldKey === 'odometer' || fieldKey === 'hours') return isNumericReading(cleaned)
+  return true
+}
+
+export function classifyReferenceDocumentTitle(capture: CaptureLike) {
+  const text = textForCapture(capture)
+  if (/work[_\s-]?order|repair[_\s-]?order|\bro\s*(?:number|#)?\b/.test(text)) return 'Work Order'
+  if (/licen[cs]e\s*plate|plate\s*(?:number|#)|registration plate/.test(text)) return 'Licence Plate'
+  if (/\bvin\b|manufacturer|data[_\s-]?plate|info[_\s-]?plate|serial plate/.test(text)) return 'VIN / Manufacturer Plate'
+  if (/registration/.test(text)) return 'Registration'
+  if (/compliance|certificate|certification/.test(text)) return 'Compliance Document'
+  if (/manual|manufacturer|specification/.test(text)) return 'Manufacturer Document'
+  if (/form|sheet|checklist/.test(text)) return 'Captured Form'
+  return 'Reference Document'
+}
+
+export function hasMeaningfulSectionContent(values: Array<string | null | undefined>) {
+  return values.some((value) => {
+    const cleaned = clean(value, 1000)
+    return cleaned && !/^(not captured|pending|unknown|no .* captured|standalone text and voice notes\.?|work orders, plates, forms, and documents captured for context\.?)$/i.test(cleaned)
+  })
+}
+
 const FORM_SECTION_KEYWORDS = [
   'customer', 'contact', 'unit', 'equipment', 'vehicle', 'asset', 'travel', 'work', 'repair', 'complaint',
   'cause', 'correction', 'time', 'labour', 'labor', 'charge', 'misc', 'acceptance', 'signature', 'header',
@@ -564,24 +656,22 @@ export function splitRecommendationText(value: string) {
 
 
 export function buildCustomerAssetRows(sections: NormalizedReportSection[], session: Record<string, unknown> = {}) {
-  const wanted: Array<[string, string[]]> = [
-    ['Customer', ['customer_name', 'customer', 'client', 'owner']],
-    ['Customer contact', ['customer_contact', 'contact', 'phone', 'email']],
-    ['Work order number', ['work_order_number', 'work_order', 'wo']],
-    ['PO number', ['purchase_order_number', 'po_number', 'po']],
-    ['Unit number', ['unit_number', 'unit']],
-    ['Equipment / asset name', ['asset_label', 'asset', 'equipment']],
-    ['Make', ['make']], ['Model', ['model']], ['Serial number', ['serial_number', 'serial']], ['VIN', ['vin']],
-    ['Licence plate', ['licence_plate', 'license_plate', 'plate', 'licence_number']],
-    ['Odometer', ['odometer', 'mileage']], ['Hours', ['hours', 'hour_meter']], ['Date', ['date']],
-  ]
   const rows: EvidenceDetail[] = []
   const source = sections.flatMap((section) => section.fields)
-  for (const [label, keys] of wanted) {
-    const sessionValue = keys.map((key) => session[key]).find((value) => typeof value === 'string' && value.trim())
-    const field = source.find((item) => keys.some((key) => normalizeForMatch(`${item.key} ${item.label}`) === normalizeForMatch(key) || normalizeForMatch(`${item.key} ${item.label}`).includes(normalizeForMatch(key))))
-    const value = clean(sessionValue || field?.value, 300)
-    if (value) pushUniqueDetail(rows, { label, value })
+  const sessionAliases: Partial<Record<HeaderFieldKey, string[]>> = {
+    customer: ['customer_name'], unit_number: ['unit_number'], asset: ['asset_label'], vin: ['vin'], odometer: ['odometer'],
+  }
+  for (const fieldKey of Object.keys(HEADER_FIELD_ALIASES) as HeaderFieldKey[]) {
+    const sessionValue = (sessionAliases[fieldKey] ?? [])
+      .map((key) => session[key])
+      .find((value) => typeof value === 'string' && value.trim())
+    const matchedField = source.find((item) => isValidHeaderFieldValue(fieldKey, `${item.key} ${item.label}`, item.value))
+    const label = HEADER_FIELD_LABELS[fieldKey]
+    const candidateValue = clean(sessionValue || matchedField?.value, 300)
+    const candidateLabel = sessionValue ? (HEADER_FIELD_ALIASES[fieldKey][0] ?? fieldKey) : `${matchedField?.key ?? ''} ${matchedField?.label ?? ''}`
+    if (isValidHeaderFieldValue(fieldKey, candidateLabel, candidateValue) || (sessionValue && !looksLikeFindingValue(candidateValue))) {
+      pushUniqueDetail(rows, { label, value: candidateValue })
+    }
   }
   return rows
 }

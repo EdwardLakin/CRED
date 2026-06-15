@@ -10,7 +10,7 @@ import {
   isFieldServiceSessionType,
   normalizeFieldServiceDetails,
 } from '@/features/field-service'
-import { buildCustomerAssetRows, buildNonDuplicatedReviewDocument, dedupeEvidenceDetails, deriveFormSectionsFromCaptures, isCustomerAssetSection, normalizeDraftSections, shouldRenderDetail, splitRecommendationText, stripConfidenceText } from '@/features/reports/report-structure'
+import { buildCustomerAssetRows, buildNonDuplicatedReviewDocument, classifyReferenceDocumentTitle, dedupeEvidenceDetails, deriveFormSectionsFromCaptures, isCustomerAssetSection, normalizeDraftSections, shouldRenderDetail, splitRecommendationText, stripConfidenceText } from '@/features/reports/report-structure'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { recordUsageEvent } from '@/features/usage'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -61,7 +61,12 @@ function buildGeneratedReportHtml(draft: ReportDraft | null, sections: ReportDra
   if (!draft) return ''
   const headerRows = getDisplayHeaderRows(draft.header_fields)
   const visibleSections = sections.filter((section) => !isHiddenFromReport(section.metadata))
-  return `${draft.summary ? `<section class="item service-section"><h2>Summary</h2><p>${escapeHtml(draft.summary)}</p></section>` : ''}${headerRows.length > 0 ? `<section class="item service-section"><h2>Report details</h2>${renderDefinitionRows(headerRows)}</section>` : ''}${visibleSections.map((section) => `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2>${section.body ? `<p>${escapeHtml(section.body)}</p>` : ''}</section>`).join('')}`
+  return `${draft.summary ? `<section class="item service-section"><h2>Summary</h2><p>${escapeHtml(draft.summary)}</p></section>` : ''}${headerRows.length > 0 ? `<section class="item service-section"><h2>Report details</h2>${renderDefinitionRows(headerRows)}</section>` : ''}${visibleSections.map((section) => {
+    const title = /supporting details/i.test(section.title) ? 'Supporting Evidence' : section.title
+    const isRecommendations = /recommend/i.test(title)
+    const bodyHtml = section.body ? (isRecommendations ? `<ul>${splitRecommendationText(section.body).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : `<p>${escapeHtml(section.body)}</p>`) : ''
+    return bodyHtml ? `<section class="item service-section"><h2>${escapeHtml(title)}</h2>${bodyHtml}</section>` : ''
+  }).join('')}`
 }
 
 function getDetailValue(details: Record<string, unknown>, fieldName: string) {
@@ -109,18 +114,11 @@ function buildInspectorFacilityHtml(profile: { full_name?: string | null; inspec
   return `<section class="item service-section"><h2>Inspector / Facility Details</h2>${renderDefinitionRows(rows)}${signatureHtml}</section>`
 }
 
-function buildSignaturesHtml(signatures: ReportSignature[], signatureUrls: Record<string, string>) {
-  if (signatures.length === 0) return '<section class="item service-section"><h2>Signatures</h2><p class="muted">No signatures captured.</p></section>'
-  return `<section class="item service-section"><h2>Signatures</h2><div class="signature-grid">${signatures.map((signature) => {
-    const url = signatureUrls[signature.id]
-    return `<div class="signature-block"><strong>${escapeHtml(signature.signature_type)}</strong><p>Signed By: ${escapeHtml(signature.signer_name)}</p><p>Date: ${escapeHtml(new Date(signature.signed_at).toLocaleString())}</p>${url ? `<img class="signature-image" src="${escapeHtml(url)}" alt="${escapeHtml(signature.signature_type)}" />` : '<p>Signature image saved.</p>'}</div>`
-  }).join('')}</div></section>`
-}
-
 function getEvidenceTitle(capture: ReportCapture, index: number) {
+  const referenceTitle = classifyReferenceDocumentTitle(capture)
+  if (referenceTitle !== 'Reference Document' || capture.media_kind === 'document') return referenceTitle
   if (capture.type === 'text_note' || capture.media_kind === 'note') return `Technician note ${index + 1}`
   if (capture.media_kind === 'audio' || capture.type === 'voice_note') return `Voice note ${index + 1}`
-  if (capture.media_kind === 'document') return `Supporting document ${index + 1}`
   if (capture.media_kind === 'image' || capture.type === 'photo') return `Photo ${index + 1}`
   return `Evidence ${index + 1}`
 }
@@ -141,7 +139,8 @@ function buildEvidenceItemsHtml(
     const capture = entry.capture
     const signedUrl = signedUrls[capture.id]
     const mediaKind = capture.media_kind || (capture.type === 'text_note' ? 'note' : capture.type === 'video' ? 'video' : 'image')
-    const title = `${headingPrefix} ${index + 1}: ${getEvidenceTitle(capture, index)}`
+    const evidenceTitle = getEvidenceTitle(capture, index)
+    const title = headingPrefix === 'Reference' ? evidenceTitle : `${headingPrefix} ${index + 1}: ${evidenceTitle}`
     const mediaHtml = mediaKind === 'note'
       ? `<div class="video-still">${escapeHtml(stripConfidenceText(capture.technician_note || capture.transcript || 'Technician note'))}</div>`
       : signedUrl && mediaKind === 'image'
@@ -172,7 +171,7 @@ function buildEvidenceItemsHtml(
 
 function buildEvidenceSectionHtml(title: string, items: ReturnType<typeof buildNonDuplicatedReviewDocument<ReportCapture>>['findings'], signedUrls: Record<string, string>) {
   if (items.length === 0) return ''
-  return `<section class="item service-section"><h2>${escapeHtml(title)}</h2><p class="muted">${title === 'Reference Documents' ? 'Work orders, plates, forms, and documents captured for context.' : title === 'Additional Notes' ? 'Standalone text and voice notes.' : 'Evidence directly tied to inspection findings.'}</p></section>${buildEvidenceItemsHtml(items, signedUrls, title === 'Inspection Findings' ? 'Finding' : 'Photo')}`
+  return `<section class="item service-section"><h2>${escapeHtml(title)}</h2><p class="muted">${title === 'Reference Documents' ? 'Work orders, plates, forms, and documents captured for context.' : title === 'Additional Notes' ? 'Standalone text and voice notes.' : 'Evidence directly tied to inspection findings.'}</p></section>${buildEvidenceItemsHtml(items, signedUrls, title === 'Inspection Findings' ? 'Finding' : title === 'Reference Documents' ? 'Reference' : 'Evidence')}`
 }
 
 function buildFieldServiceReportHtml({
@@ -221,13 +220,12 @@ function buildFieldServiceReportHtml({
     .map((fieldName) => ({ label: FIELD_SERVICE_FIELD_LABELS[fieldName] ?? fieldName, value: getDetailValue(details, fieldName) }))
   const reviewDocument = buildNonDuplicatedReviewDocument({ captures: captureItems, sections: [], draftSections: reportSections, measurements: reportDraft?.measurements ?? [], findings: reportDraft?.findings ?? [] })
   const evidenceHtml = [buildEvidenceSectionHtml('Inspection Findings', reviewDocument.findings, signedUrls), buildEvidenceSectionHtml('Reference Documents', reviewDocument.referenceDocuments, signedUrls), buildEvidenceSectionHtml('Additional Notes', reviewDocument.additionalNotes, signedUrls), buildEvidenceSectionHtml('Supporting Evidence', reviewDocument.supportingEvidence, signedUrls)].join('')
-  const signaturesHtml = buildSignaturesHtml(signatures, signatureUrls)
   const generatedReportHtml = buildGeneratedReportHtml(reportDraft, reportSections)
   const reportTitle = reportDraft?.title || session.title
   const toolbarHtml = showToolbar ? '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>' : ''
 
   return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(reportTitle)} printable field service report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Printable Report</p><h1>${escapeHtml(reportTitle)}</h1><p>${escapeHtml(organizationName)}</p><p class="meta">Documentation-only service report · ${escapeHtml(new Date().toLocaleDateString())}</p>${renderDefinitionRows(headerRows)}</header>${generatedReportHtml}${renderFieldServiceSection(details, 'equipment')}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work performed</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Evidence</h2><p class="muted">Evidence items reference captured photos, videos, documents, and technician notes.</p></section>${evidenceHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges / documentation only</h2>${renderDefinitionRows(chargeRows)}</section><section class="item service-section"><h2>Signature requirements</h2>${renderDefinitionRows(signatureRows)}</section>${buildInspectorFacilityHtml(null, null, signatures, signatureUrls)}${signaturesHtml}</main></body></html>`
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Printable Report</p><h1>${escapeHtml(reportTitle)}</h1><p>${escapeHtml(organizationName)}</p><p class="meta">Documentation-only service report · ${escapeHtml(new Date().toLocaleDateString())}</p>${renderDefinitionRows(headerRows)}</header>${generatedReportHtml}${renderFieldServiceSection(details, 'equipment')}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work performed</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Evidence</h2><p class="muted">Evidence items reference captured photos, videos, documents, and technician notes.</p></section>${evidenceHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges / documentation only</h2>${renderDefinitionRows(chargeRows)}</section><section class="item service-section"><h2>Signature requirements</h2>${renderDefinitionRows(signatureRows)}</section>${buildInspectorFacilityHtml(null, null, signatures, signatureUrls)}</main></body></html>`
 }
 
 const REPORT_STYLES = `
@@ -411,16 +409,21 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const derivedFormSections = deriveFormSectionsFromCaptures(captureItems)
   const formSections = documentSections.length > 0 ? documentSections : derivedFormSections
   const customerAssetHtml = renderDefinitionRows(buildCustomerAssetRows(formSections, session as unknown as Record<string, unknown>))
-  const formSectionsHtml = formSections.length > 0 ? formSections.filter((section) => !isCustomerAssetSection(section)).map((section) => `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2>${section.body ? `<p>${escapeHtml(section.body)}</p>` : ''}${section.fields.length > 0 ? renderDefinitionRows(section.fields.map((field) => ({ label: field.label, value: field.value }))) : ''}</section>`).join('') : ''
+  const formSectionsHtml = formSections.length > 0 ? formSections.filter((section) => !isCustomerAssetSection(section)).map((section) => {
+    const title = /supporting details/i.test(section.title) ? 'Supporting Evidence' : section.title
+    const rowsHtml = section.fields.length > 0 ? renderDefinitionRows(section.fields.map((field) => ({ label: field.label, value: field.value }))) : ''
+    const bodyHtml = section.body ? (/recommend/i.test(title) ? `<ul>${splitRecommendationText(section.body).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : `<p>${escapeHtml(section.body)}</p>`) : ''
+    return bodyHtml || rowsHtml ? `<section class="item service-section"><h2>${escapeHtml(title)}</h2>${bodyHtml}${rowsHtml}</section>` : ''
+  }).join('') : ''
   const reviewDocument = buildNonDuplicatedReviewDocument({ captures: captureItems, sections: formSections, draftSections: visibleReportSections, measurements: reportDraft?.measurements ?? [], findings: reportDraft?.findings ?? [] })
   const unattachedDetails = reviewDocument.unattachedDetails
-  const unattachedHtml = unattachedDetails.length > 0 ? `<section class="item service-section"><h2>Supporting details</h2>${renderDefinitionRows(unattachedDetails.map((detail) => ({ label: detail.label, value: detail.value })))}</section>` : ''
+  const unattachedHtml = unattachedDetails.length > 0 ? `<section class="item service-section"><h2>Supporting Evidence</h2>${renderDefinitionRows(unattachedDetails.map((detail) => ({ label: detail.label, value: detail.value })))}</section>` : ''
   const itemsHtml = [buildEvidenceSectionHtml('Inspection Findings', reviewDocument.findings, signedUrls), buildEvidenceSectionHtml('Reference Documents', reviewDocument.referenceDocuments, signedUrls), buildEvidenceSectionHtml('Additional Notes', reviewDocument.additionalNotes, signedUrls), buildEvidenceSectionHtml('Supporting Evidence', reviewDocument.supportingEvidence, signedUrls)].join('')
 
 
   const toolbarHtml = previewOnly ? '' : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>'
   const html = `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Printable Report</p><h1>${escapeHtml(reportTitle)}</h1><p>${escapeHtml(organizationName)}</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'No asset details')} · ${escapeHtml(new Date().toLocaleDateString())}</p></header>${customerAssetHtml ? `<section class="item service-section"><h2>Customer / Asset Details</h2>${customerAssetHtml}</section>` : ''}${formSectionsHtml || generatedReportHtml}${unattachedHtml}${itemsHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile, reportSignatures, signatureUrls)}${buildSignaturesHtml(reportSignatures, signatureUrls)}</main></body></html>`
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Printable Report</p><h1>${escapeHtml(reportTitle)}</h1><p>${escapeHtml(organizationName)}</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'No asset details')} · ${escapeHtml(new Date().toLocaleDateString())}</p></header>${customerAssetHtml ? `<section class="item service-section"><h2>Customer / Asset Details</h2>${customerAssetHtml}</section>` : ''}${formSectionsHtml || generatedReportHtml}${unattachedHtml}${itemsHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile, reportSignatures, signatureUrls)}</main></body></html>`
 
   return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
 }
