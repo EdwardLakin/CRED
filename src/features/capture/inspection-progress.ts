@@ -27,7 +27,14 @@ function countCriticalFindings(captures: CaptureItem[]) {
   return captures.filter((capture) => /\b(critical|unsafe|out of service|fail|failed|red tag|do not operate|requires immediate)\b/i.test(captureText(capture))).length
 }
 
+function getProcessingStatus(capture: CaptureItem) {
+  return capture.processing_status ?? capture.ai_status ?? 'uploaded'
+}
+
 function getConfidence(capture: CaptureItem) {
+  const status = getProcessingStatus(capture)
+  if (['queued', 'analyzing'].includes(status)) return 0.35
+  if (['analysis_failed', 'grouping_failed', 'failed'].includes(status)) return 0.25
   const data = capture.extracted_data
   if (!isRecord(data)) return null
   const candidates = [data.confidence, isRecord(data.classification) ? data.classification.confidence : null, isRecord(data.extraction) ? data.extraction.confidence : null]
@@ -41,8 +48,11 @@ export function getInspectionProgress(captures: CaptureItem[], sessionType: stri
   const evidenceCompleteness = Math.round((evidence.completedCount / requiredTotal) * 100)
   const confidences = captures.map(getConfidence).filter((value): value is number => value !== null)
   const findingConfidence = confidences.length > 0 ? Math.round((confidences.reduce((sum, value) => sum + value, 0) / confidences.length) * 100) : captures.length > 0 ? 72 : 0
-  const signatureReady = signatureCount > 0 ? 100 : 80
-  const reportReadiness = Math.round((evidenceCompleteness * 0.55) + (findingConfidence * 0.30) + (signatureReady * 0.15))
+  const pendingAiCount = captures.filter((capture) => ['queued', 'analyzing'].includes(getProcessingStatus(capture))).length
+  const failedAiCount = captures.filter((capture) => ['analysis_failed', 'grouping_failed', 'failed'].includes(getProcessingStatus(capture))).length
+  const signatureReady = signatureCount > 0 ? 100 : 0
+  const aiReadinessPenalty = Math.min(25, pendingAiCount * 10 + failedAiCount * 5)
+  const reportReadiness = Math.max(0, Math.round((evidenceCompleteness * 0.55) + (findingConfidence * 0.30) + (signatureReady * 0.15) - aiReadinessPenalty))
   const criticalFindings = countCriticalFindings(captures)
   const nextMissing = evidence.missing[0]?.rule.label ?? null
 
@@ -57,6 +67,8 @@ export function getInspectionProgress(captures: CaptureItem[], sessionType: stri
     reportReadiness,
     missingReadinessItems: [
       ...evidence.missing.slice(0, 3).map((row) => row.rule.label),
+      ...(pendingAiCount > 0 ? ['AI analysis still running'] : []),
+      ...(failedAiCount > 0 ? ['AI analysis failed — verify manually'] : []),
       ...(signatureCount === 0 ? ['Customer/inspector signature'] : []),
     ],
     nextStep: nextMissing ? `Capture ${nextMissing} evidence.` : 'Review draft report and collect required signoff.',
