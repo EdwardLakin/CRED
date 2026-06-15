@@ -197,7 +197,7 @@ export function getCaptureEventTitle(type: CaptureType, intent: CaptureIntent = 
   }
 }
 
-export type CaptureProcessingStatus = 'pending' | 'processing' | 'extracted' | 'needs_review' | 'failed' | 'blocked_by_limit' | 'ready_for_review'
+export type CaptureProcessingStatus = 'pending' | 'processing' | 'extracted' | 'needs_review' | 'failed' | 'blocked_by_limit' | 'ready_for_review' | 'queued' | 'analyzing' | 'analyzed' | 'grouped' | 'report_ready' | 'analysis_failed' | 'grouping_failed' | 'ignored'
 
 export function getCaptureProcessingStatus(capture: CaptureItem): CaptureProcessingStatus {
   const extractedData = isRecord(capture.extracted_data) ? capture.extracted_data : null
@@ -206,6 +206,14 @@ export function getCaptureProcessingStatus(capture: CaptureItem): CaptureProcess
   const extraction = extractedData && isRecord(extractedData.extraction) ? extractedData.extraction : null
   const extractionStatus = typeof extraction?.status === 'string' ? extraction.status : null
 
+  if (capture.processing_status === 'queued' || capture.ai_status === 'queued') return 'queued'
+  if (capture.processing_status === 'analyzing') return 'analyzing'
+  if (capture.processing_status === 'analyzed') return 'analyzed'
+  if (capture.processing_status === 'grouped') return 'grouped'
+  if (capture.processing_status === 'report_ready') return 'report_ready'
+  if (capture.processing_status === 'analysis_failed') return 'analysis_failed'
+  if (capture.processing_status === 'grouping_failed') return 'grouping_failed'
+  if (capture.processing_status === 'ignored') return 'ignored'
   if (processingStatus === 'blocked_by_limit') return 'blocked_by_limit'
   if (capture.ai_status === 'processing' || processingStatus === 'processing') return 'processing'
   if (capture.ai_status === 'failed' || processingStatus === 'failed' || extractionStatus === 'failed') return 'failed'
@@ -217,8 +225,22 @@ export function getCaptureProcessingStatus(capture: CaptureItem): CaptureProcess
 
 export function getCaptureProcessingLabel(status: CaptureProcessingStatus) {
   switch (status) {
+    case 'queued':
+      return 'AI analysis in progress'
+    case 'analyzing':
     case 'processing':
-      return 'Saving'
+      return 'AI analysis in progress'
+    case 'analyzed':
+      return 'Analyzed'
+    case 'grouped':
+      return 'Evidence grouped'
+    case 'report_ready':
+      return 'Report ready'
+    case 'analysis_failed':
+    case 'grouping_failed':
+      return 'AI analysis unavailable — manual review still available'
+    case 'ignored':
+      return 'Ignored'
     case 'extracted':
       return 'Ready for review'
     case 'needs_review':

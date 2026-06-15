@@ -494,6 +494,7 @@ export interface Database {
           include_in_report: boolean
           deleted_at: string | null
           ai_status: string | null
+          processing_status: string
           ai_summary: string | null
           ocr_text: string | null
           capture_ai_analysis: Json
@@ -520,6 +521,7 @@ export interface Database {
           include_in_report?: boolean
           deleted_at?: string | null
           ai_status?: string | null
+          processing_status?: string
           ai_summary?: string | null
           ocr_text?: string | null
           capture_ai_analysis?: Json
@@ -546,6 +548,7 @@ export interface Database {
           include_in_report?: boolean
           deleted_at?: string | null
           ai_status?: string | null
+          processing_status?: string
           ai_summary?: string | null
           ocr_text?: string | null
           capture_ai_analysis?: Json

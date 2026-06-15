@@ -199,9 +199,9 @@ function getClassificationSummary(extractedData: Json | null) {
 }
 
 function getCaptureStatusVariant(status: string) {
-  if (status === 'failed' || status === 'blocked_by_limit') return 'danger'
+  if (status === 'failed' || status === 'blocked_by_limit' || status === 'analysis_failed' || status === 'grouping_failed') return 'danger'
   if (status === 'needs_review') return 'attention'
-  if (status === 'processing' || status === 'ready_for_review') return 'info'
+  if (['processing', 'ready_for_review', 'queued', 'analyzing', 'analyzed', 'grouped', 'report_ready'].includes(status)) return 'info'
   if (status === 'extracted') return 'success'
   return 'neutral'
 }
@@ -230,13 +230,15 @@ function formatExtractedDataSummary(type: string, extractedData: Json | null) {
     return `${extractionStatusRaw === 'extracted' ? 'Extracted' : 'Needs review'}: ${extractedFieldsSummary}${extractionConfidence ? ` · ${extractionConfidence}` : ''}`
   }
 
-  if (extractionStatusRaw === 'failed')
-    return `Report detail processing failed${typeof extraction?.summary === 'string' ? `: ${extraction.summary}` : ''}`
+  if (extractionStatusRaw === 'failed' || extractedData?.processing_status === 'analysis_failed')
+    return `AI analysis unavailable — manual review still available${typeof extraction?.summary === 'string' ? `: ${extraction.summary}` : ''}`
   if (type === 'text_note')
     return 'Text note evidence · No media upload required'
   if (type === 'video')
     return `${classification.label} · Video still/thumbnail used for report output`
-  return `${classification.label} · Report details ${extractionStatusRaw?.replace(/_/g, ' ') ?? 'not started'}`
+  if (extractionStatusRaw === 'not_started' || extractionStatusRaw === 'pending' || !extractionStatusRaw)
+    return 'AI analysis in progress'
+  return `${classification.label} · Report details ${extractionStatusRaw.replace(/_/g, ' ')}`
 }
 
 function SaveButton() {
