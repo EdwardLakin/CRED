@@ -27,9 +27,10 @@ import {
   saveReport,
   saveReportEdits,
 } from "@/features/reports/actions";
-import { formatDateTime } from "@/features/sessions";
+import { formatDate, formatDateTime } from "@/features/sessions";
 import { requireSessionWorkspace } from "@/features/sessions/data";
 import { SignatureCaptureForm } from "@/features/signatures";
+import { useSavedSignature } from "@/features/signatures/actions";
 import type { Database } from "@/lib/supabase/database.types";
 
 type Tables = Database["public"]["Tables"];
@@ -338,7 +339,7 @@ export default async function SessionReportPreviewPage({
   });
   const isReadyForExport = session.review_status === "ready_for_delivery";
   const reviewedLabel = session.reviewed_at
-    ? formatDateTime(session.reviewed_at)
+    ? formatDateTime(session.reviewed_at, profile.timezone)
     : null;
   const markReviewedAction = markReportReviewed.bind(null, session.id);
   const saveAction = saveReport.bind(null, session.id);
@@ -417,6 +418,7 @@ export default async function SessionReportPreviewPage({
             visibleCaptureCount={visibleCaptures.length}
             facilityName={profile.company_profile?.facility_name ?? profile.company_profile?.company_name ?? profile.organization.name}
             facilityLocation={[profile.company_profile?.facility_city, profile.company_profile?.facility_region].filter(Boolean).join(", ")}
+            timeZone={profile.timezone}
           />
 
           <InspectorFacilityPanel profile={profile} sessionId={session.id} signatures={signatures ?? []} signatureUrls={signatureUrls} />
@@ -440,6 +442,7 @@ export default async function SessionReportPreviewPage({
           sessionId={session.id}
           shareAction={shareAction}
           shareTokens={shareTokens ?? []}
+          timeZone={profile.timezone}
         />
       </div>
     </main>
@@ -466,6 +469,7 @@ function GeneratedReportReview({
   visibleCaptureCount,
   facilityName,
   facilityLocation,
+  timeZone,
 }: {
   reportSections: AiReportDraftSection[];
   currentReport: AiReportDraft | null;
@@ -486,6 +490,7 @@ function GeneratedReportReview({
   visibleCaptureCount: number;
   facilityName: string;
   facilityLocation: string;
+  timeZone: string | null;
 }) {
   const editableSections = reportSections;
   const includedEvidenceCount = [
@@ -529,7 +534,7 @@ function GeneratedReportReview({
         <div className="report-section-title-row">
           <div>
             <p className="eyebrow">Inspection Summary</p>
-            <h3>Inspection completed on {new Date().toLocaleDateString()}</h3>
+            <h3>Inspection completed on {formatDate(new Date().toISOString(), timeZone)}</h3>
           </div>
           <span className="status-pill attention">{getInspectionStatus(findings)}</span>
         </div>
@@ -858,6 +863,8 @@ function InspectorFacilityPanel({
   const facility = profile.company_profile;
   const address = [facility?.facility_address_line_1, facility?.facility_address_line_2, facility?.facility_city, facility?.facility_region, facility?.facility_postal_code, facility?.facility_country].filter(Boolean).join(', ');
   const latestSignature = signatures.find((signature) => /inspector|technician/i.test(signature.signature_type)) ?? signatures[0];
+  const canUseSavedSignature = Boolean(profile.use_default_signature && profile.default_signature_path && !latestSignature);
+  const useSavedSignatureAction = useSavedSignature.bind(null, sessionId);
   const rows = [
     ['Inspector name', profile.full_name],
     ['Role/title', profile.inspector_role_or_title],
@@ -872,6 +879,8 @@ function InspectorFacilityPanel({
     <section className="card detail-card report-command-card form-stack signature-review-panel">
       <div className="report-section-heading generated-report-heading"><div><p className="eyebrow">Report details</p><h2>Inspector / Facility Details</h2><p className="muted">Autofilled from Settings and included in the export.</p></div></div>
       {rows.length > 0 ? <div className="report-field-grid">{rows.map(([label, value]) => <div key={label} className="report-field-card"><span>{label}</span><strong>{value}</strong></div>)}</div> : <p className="muted">No inspector or facility details saved yet.</p>}
+      <p className="muted">Saved default signature: {profile.default_signature_path ? (profile.use_default_signature ? "Available and enabled" : "Available but disabled") : "Not saved"}.</p>
+      {canUseSavedSignature ? <form action={useSavedSignatureAction}><button className="button button-secondary touch-target">Use saved signature</button></form> : null}
       {latestSignature && signatureUrls[latestSignature.id] ? (
         <div className="saved-signature-card">
           <strong>Signature</strong>
@@ -1191,6 +1200,7 @@ function ExportPanel({
   sessionId,
   shareAction,
   shareTokens,
+  timeZone,
 }: {
   emailAction: ServerAction;
   isReadyForExport: boolean;
@@ -1200,6 +1210,7 @@ function ExportPanel({
   sessionId: string;
   shareAction: ServerAction;
   shareTokens: ReportShareToken[];
+  timeZone: string | null;
 }) {
   const activeShareTokens = shareTokens.filter((token) => !token.disabled_at);
 
@@ -1355,7 +1366,7 @@ function ExportPanel({
                   <strong>{shareUrl}</strong>
                   <p className="muted">
                     {token.expires_at
-                      ? `Expires ${formatDateTime(token.expires_at)}`
+                      ? `Expires ${formatDateTime(token.expires_at, timeZone)}`
                       : "No expiration"}
                   </p>
                 </div>

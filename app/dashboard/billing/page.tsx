@@ -3,6 +3,7 @@ import { BILLING_PLANS, getOrganizationBillingAccess, getPlanDisplayName, parseB
 import { BillingCheckoutButton } from '@/features/billing/components/BillingCheckoutButton'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { UsageSummaryCard } from '@/features/usage'
+import { formatDateInTimeZone } from '@/lib/date-format'
 
 interface BillingPageProps {
   searchParams: Promise<{ billing?: string; checkout?: string; error?: string }>
@@ -18,9 +19,8 @@ export default async function BillingPage({ searchParams }: BillingPageProps) {
   const subscriptionStatus = profile.organization.subscription_status ?? 'not started'
   const selectedCheckoutPlan = checkoutPlan ?? billingPlan
   const billingButtonLabel = subscriptionStatus === 'active' ? 'Manage Billing' : 'Subscribe Now'
-  const dateFormatter = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' })
   const trialEndsAt = profile.organization.trial_ends_at
-    ? dateFormatter.format(new Date(profile.organization.trial_ends_at))
+    ? formatDateInTimeZone(profile.organization.trial_ends_at, profile.timezone)
     : 'Expired'
 
   return (

@@ -3,15 +3,17 @@ import Link from 'next/link'
 import { signOut } from '../actions'
 import { ThemeToggle } from '@/components/theme'
 import { Button, Card } from '@/components/ui'
-import { saveInspectorFacilitySettings } from '@/features/settings/actions'
+import { BrowserTimeZoneInput, SignaturePad } from '@/components/ui/SignaturePad'
+import { clearDefaultSignature, saveDefaultSignature, saveInspectorFacilitySettings } from '@/features/settings/actions'
 import { hasInternalAdminAccess, requireSessionWorkspace } from '@/features/sessions/data'
 
 export default async function SettingsPage() {
-  const { profile } = await requireSessionWorkspace()
+  const { supabase, profile } = await requireSessionWorkspace()
   const organization = profile.organization
   const industry = organization.industry || 'Not set'
   const canManageInternalTools = hasInternalAdminAccess(profile)
   const settingsSaved = false
+  const { data: defaultSignatureUrl } = profile.default_signature_path ? await supabase.storage.from('documentation-signatures').createSignedUrl(profile.default_signature_path, 60 * 10) : { data: null }
   const fields = [
     ['inspector_name', 'Inspector name', profile.full_name],
     ['inspector_role_or_title', 'Role/title', profile.inspector_role_or_title ?? ''],
@@ -40,10 +42,20 @@ export default async function SettingsPage() {
       <Card className="dashboard-card workspace-card">
         <form action={saveInspectorFacilitySettings} className="form-stack">
           <div><p className="eyebrow">Reports</p><h2>Inspector / Facility Details</h2><p className="muted">Saved details autofill Review and exported reports. You can still capture a report-specific signature.</p></div>
+          <label className="field-stack"><span className="label">Timezone</span><BrowserTimeZoneInput name="timezone" defaultValue={profile.timezone ?? 'UTC'} /></label>
           <div className="field-grid">{fields.map(([name, label, value]) => <label key={name} className="field-stack"><span className="label">{label}</span><input className="input" name={name} defaultValue={value} /></label>)}</div>
+          
+          <div className="signature-review-panel form-stack">
+            <div><h3>Reusable user signature</h3><p className="muted">Save a default signature that can be applied to individual reports from Review.</p></div>
+            {defaultSignatureUrl?.signedUrl ? <div className="saved-signature-card"><strong>Saved signature preview</strong>
+              {/* eslint-disable-next-line @next/next/no-img-element -- signed signature URLs are short-lived Supabase links and should render exactly as captured. */}
+              <img className="saved-signature-image" src={defaultSignatureUrl.signedUrl} alt="Saved default signature" /></div> : <p className="muted">No reusable signature saved yet.</p>}
+          </div>
           <label className="report-visibility-toggle"><input type="checkbox" name="use_default_signature" defaultChecked={profile.use_default_signature} /><span>Use saved default signature in reports when no report-specific signature is captured</span></label>
           <div className="form-actions"><Button type="submit">Save Inspector / Facility Details</Button></div>
         </form>
+        <form action={saveDefaultSignature} className="form-stack signature-capture-form"><SignaturePad /><div className="form-actions"><Button type="submit">Save / Replace Default Signature</Button></div></form>
+        {profile.default_signature_path ? <form action={clearDefaultSignature}><Button type="submit" variant="secondary">Clear Default Signature</Button></form> : null}
       </Card>
       <section className="settings-link-grid" aria-label="Settings areas">
         {canManageInternalTools ? <Link href="/dashboard/templates" className="card settings-link-card touch-target"><span className="eyebrow">Internal / Admin</span><h2>Report context library</h2><p className="muted">Admin-only compatibility tools for reusable report context. Normal evidence capture does not require setup.</p></Link> : null}

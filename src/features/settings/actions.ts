@@ -5,6 +5,14 @@ import { redirect } from 'next/navigation'
 
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
+const SIGNATURE_BUCKET = 'documentation-signatures'
+
+function decodeDataUrl(dataUrl: string) {
+  const match = dataUrl.match(/^data:image\/(png|jpeg|webp);base64,(.+)$/)
+  if (!match) return null
+  return { extension: match[1] === 'jpeg' ? 'jpg' : match[1], bytes: Buffer.from(match[2], 'base64'), mimeType: `image/${match[1]}` }
+}
+
 function getString(formData: FormData, field: string) {
   const value = formData.get(field)
   return typeof value === 'string' ? value.trim() || null : null
@@ -21,6 +29,7 @@ export async function saveInspectorFacilitySettings(formData: FormData) {
       technician_license_number: getString(formData, 'technician_license_number'),
       inspector_phone: getString(formData, 'inspector_phone'),
       inspector_email: getString(formData, 'inspector_email'),
+      timezone: getString(formData, 'timezone') ?? profile.timezone ?? 'UTC',
       use_default_signature: formData.get('use_default_signature') === 'on',
     })
     .eq('id', profile.id)
@@ -55,4 +64,27 @@ export async function saveInspectorFacilitySettings(formData: FormData) {
 
   revalidatePath('/dashboard/settings')
   redirect('/dashboard/settings?saved=inspector-facility')
+}
+
+
+export async function saveDefaultSignature(formData: FormData) {
+  const signatureDataUrl = getString(formData, 'signature_data_url') ?? ''
+  const decoded = decodeDataUrl(signatureDataUrl)
+  const { supabase, profile } = await requireSessionWorkspace()
+  if (!decoded || decoded.bytes.byteLength < 100) redirect(`/dashboard/settings?error=${encodeURIComponent('Capture a signature before saving.')}`)
+  const storagePath = `organizations/${profile.organization_id}/profiles/${profile.id}/default-signature-${Date.now()}.${decoded.extension}`
+  const { error: uploadError } = await supabase.storage.from(SIGNATURE_BUCKET).upload(storagePath, decoded.bytes, { contentType: decoded.mimeType, upsert: false })
+  if (uploadError) redirect(`/dashboard/settings?error=${encodeURIComponent(uploadError.message)}`)
+  const { error } = await supabase.from('profiles').update({ default_signature_path: storagePath, use_default_signature: true }).eq('id', profile.id).eq('organization_id', profile.organization_id)
+  if (error) redirect(`/dashboard/settings?error=${encodeURIComponent(error.message)}`)
+  revalidatePath('/dashboard/settings')
+  redirect('/dashboard/settings?saved=signature')
+}
+
+export async function clearDefaultSignature() {
+  const { supabase, profile } = await requireSessionWorkspace()
+  const { error } = await supabase.from('profiles').update({ default_signature_path: null, use_default_signature: false }).eq('id', profile.id).eq('organization_id', profile.organization_id)
+  if (error) redirect(`/dashboard/settings?error=${encodeURIComponent(error.message)}`)
+  revalidatePath('/dashboard/settings')
+  redirect('/dashboard/settings?saved=signature-cleared')
 }

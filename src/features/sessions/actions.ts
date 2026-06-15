@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
 import { requireActiveBillingAccess } from '@/features/billing'
+import { formatDateTimeInTimeZone } from '@/lib/date-format'
 import {
   FIELD_SERVICE_FIELD_LABELS,
   FIELD_SERVICE_FIELD_NAMES,
@@ -36,7 +37,7 @@ function isAllowedSessionType(sessionType: string) {
 }
 
 function getDefaultSessionTitle() {
-  return `New Session ${new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date())}`
+  return `New Session ${formatDateTimeInTimeZone(new Date(), null)}`
 }
 
 function buildFieldServiceDetails(formData: FormData, existingDetails: Json | null | undefined): Json {

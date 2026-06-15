@@ -1,4 +1,5 @@
 import { applyExtractedEvidenceField } from '@/features/sessions/actions'
+import { formatDateTimeInTimeZone } from '@/lib/date-format'
 import type { Json } from '@/lib/supabase/database.types'
 
 import { getSourceDocumentMetadata, type CaptureItem } from '../types'
@@ -128,17 +129,7 @@ function isRecord(value: Json | null | undefined): value is { [key: string]: Jso
 }
 
 function formatDateTime(value: string | null) {
-  if (!value) {
-    return 'Not available'
-  }
-
-  return new Intl.DateTimeFormat('en', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(new Date(value))
+  return formatDateTimeInTimeZone(value, null)
 }
 
 function formatConfidence(value: Json | undefined) {

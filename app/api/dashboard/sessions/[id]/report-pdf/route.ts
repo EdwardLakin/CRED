@@ -13,6 +13,7 @@ import {
 import { buildCustomerAssetRows, buildNonDuplicatedReviewDocument, classifyReferenceDocumentTitle, dedupeEvidenceDetails, deriveFormSectionsFromCaptures, isCustomerAssetSection, normalizeDraftSections, shouldRenderDetail, splitRecommendationText, stripConfidenceText } from '@/features/reports/report-structure'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { recordUsageEvent } from '@/features/usage'
+import { formatDateInTimeZone } from '@/lib/date-format'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { Database, Json } from '@/lib/supabase/database.types'
 
@@ -265,6 +266,7 @@ function buildFieldServiceReportHtml({
   reportDraft,
   reportSections,
   showToolbar = true,
+  timeZone,
 }: {
   session: ReportSession
   organizationName: string
@@ -275,6 +277,7 @@ function buildFieldServiceReportHtml({
   reportDraft: ReportDraft | null
   reportSections: ReportDraftSection[]
   showToolbar?: boolean
+  timeZone: string | null
 }) {
   const details = normalizeFieldServiceDetails(session.field_service_details)
   const headerRows = [
@@ -286,7 +289,7 @@ function buildFieldServiceReportHtml({
     { label: 'PO #', value: getDetailValue(details, 'purchase_order_number') },
     { label: 'Unit #', value: getDetailValue(details, 'unit_number') || session.unit_number || '' },
     { label: 'Licence #', value: getDetailValue(details, 'licence_number') },
-    { label: 'Date', value: new Date().toLocaleDateString() },
+    { label: 'Date', value: formatDateInTimeZone(new Date(), timeZone) },
     { label: 'Job completed', value: getDetailValue(details, 'job_completed') },
   ]
   const travelRows = ['travel_start_location', 'travel_end_location', 'travel_start_odometer', 'travel_end_odometer', 'kilometers_traveled', 'travel_started_at', 'travel_ended_at', 'gps_distance_km', 'gps_distance_source']
@@ -302,7 +305,7 @@ function buildFieldServiceReportHtml({
   const reviewDocument = buildNonDuplicatedReviewDocument({ captures: captureItems, sections: [], draftSections: reportSections, measurements: reportDraft?.measurements ?? [], findings: reportDraft?.findings ?? [] })
   const reportTitle = reportDraft?.title || session.title
   const findingModels = getFindingModels(reviewDocument.findings)
-  const summaryHtml = buildExecutiveSummaryHtml({ reportTitle, organizationName, dateLabel: new Date().toLocaleDateString(), findings: findingModels, referenceCount: reviewDocument.referenceDocuments.length, evidenceCount: captureItems.length })
+  const summaryHtml = buildExecutiveSummaryHtml({ reportTitle, organizationName, dateLabel: formatDateInTimeZone(new Date(), timeZone), findings: findingModels, referenceCount: reviewDocument.referenceDocuments.length, evidenceCount: captureItems.length })
   const evidenceHtml = [buildFindingCardsHtml(reviewDocument.findings), buildRecommendedActionsHtml(findingModels), buildReferenceDocumentsHtml(reviewDocument.referenceDocuments, signedUrls), buildEvidenceSectionHtml('Additional Notes', reviewDocument.additionalNotes.filter((entry) => isMeaningfulReportText([entry.capture.technician_note, entry.capture.transcript, ...entry.group.findings, ...entry.group.recommendations].filter(Boolean).join(' '))), signedUrls), buildEvidenceSectionHtml('Supporting Evidence', reviewDocument.supportingEvidence, signedUrls)].join('')
   const generatedReportHtml = buildGeneratedReportHtml(reportDraft, reportSections)
   const toolbarHtml = showToolbar ? '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>' : ''
@@ -326,6 +329,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
   let session: ReportSession
   let organizationId: string
   let createdBy: string | null = null
+  let timeZone: string | null = null
 
   if (shareTokenValue) {
     supabase = createAdminClient()
@@ -353,11 +357,13 @@ export async function GET(_request: Request, { params }: RouteContext) {
 
     session = sharedSession as ReportSession
     organizationId = shareToken.organization_id
+    createdBy = typeof sharedSession.created_by === 'string' ? sharedSession.created_by : null
   } else {
     const workspace = await requireSessionWorkspace()
     supabase = workspace.supabase
     organizationId = workspace.profile.organization_id
     createdBy = workspace.profile.id
+    timeZone = workspace.profile.timezone
 
     const billingAccess = requireActiveBillingAccess(workspace.profile)
 
@@ -413,10 +419,11 @@ export async function GET(_request: Request, { params }: RouteContext) {
 
   const { data: reportProfile } = await supabase
     .from('profiles')
-    .select('full_name, inspector_role_or_title, technician_license_number')
+    .select('full_name, inspector_role_or_title, technician_license_number, timezone')
     .eq('id', session.created_by)
     .eq('organization_id', organizationId)
     .maybeSingle()
+  timeZone = timeZone ?? reportProfile?.timezone ?? 'UTC'
 
   const { data: reportCompanyProfile } = await supabase
     .from('company_profiles')
@@ -476,7 +483,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     : 'CRED'
   if (isFieldServiceSessionType(session.session_type)) {
     const visibleReportSections = reportSections.filter((section) => !isHiddenFromReport(section.metadata))
-    const html = buildFieldServiceReportHtml({ session, organizationName, captureItems, signedUrls, signatures: reportSignatures, signatureUrls, reportDraft, reportSections: visibleReportSections, showToolbar: !previewOnly })
+    const html = buildFieldServiceReportHtml({ session, organizationName, captureItems, signedUrls, signatures: reportSignatures, signatureUrls, reportDraft, reportSections: visibleReportSections, showToolbar: !previewOnly, timeZone })
     return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
   }
 
@@ -502,13 +509,13 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const unattachedDetails = reviewDocument.unattachedDetails
   const unattachedHtml = unattachedDetails.length > 0 ? `<section class="item service-section"><h2>Supporting Evidence</h2>${renderDefinitionRows(unattachedDetails.map((detail) => ({ label: detail.label, value: detail.value })))}</section>` : ''
   const findingModels = getFindingModels(reviewDocument.findings)
-  const summaryHtml = buildExecutiveSummaryHtml({ reportTitle, organizationName, dateLabel: new Date().toLocaleDateString(), findings: findingModels, referenceCount: reviewDocument.referenceDocuments.length, evidenceCount: captureItems.length })
+  const summaryHtml = buildExecutiveSummaryHtml({ reportTitle, organizationName, dateLabel: formatDateInTimeZone(new Date(), timeZone), findings: findingModels, referenceCount: reviewDocument.referenceDocuments.length, evidenceCount: captureItems.length })
   const itemsHtml = [buildFindingCardsHtml(reviewDocument.findings), buildRecommendedActionsHtml(findingModels), buildReferenceDocumentsHtml(reviewDocument.referenceDocuments, signedUrls), buildEvidenceSectionHtml('Additional Notes', reviewDocument.additionalNotes.filter((entry) => isMeaningfulReportText([entry.capture.technician_note, entry.capture.transcript, ...entry.group.findings, ...entry.group.recommendations].filter(Boolean).join(' '))), signedUrls), buildEvidenceSectionHtml('Supporting Evidence', reviewDocument.supportingEvidence, signedUrls)].join('')
 
 
   const toolbarHtml = previewOnly ? '' : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>'
   const html = `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Report Header</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'No asset details')} · ${escapeHtml(new Date().toLocaleDateString())}</p></header>${summaryHtml}${customerAssetHtml ? `<section class="item service-section"><h2>Customer / Asset Details</h2>${customerAssetHtml}</section>` : ''}${formSectionsHtml || generatedReportHtml}${unattachedHtml}${itemsHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile, reportSignatures, signatureUrls)}</main></body></html>`
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Report Header</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'No asset details')} · ${escapeHtml(formatDateInTimeZone(new Date(), timeZone))}</p></header>${summaryHtml}${customerAssetHtml ? `<section class="item service-section"><h2>Customer / Asset Details</h2>${customerAssetHtml}</section>` : ''}${formSectionsHtml || generatedReportHtml}${unattachedHtml}${itemsHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile, reportSignatures, signatureUrls)}</main></body></html>`
 
   return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
 }
