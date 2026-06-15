@@ -708,7 +708,7 @@ export function isCustomerAssetSection(section: NormalizedReportSection) {
 
 
 export const REPORT_SEVERITY_PRESENTATION = [
-  { key: 'critical', label: '🔴 Critical', priority: 5, patterns: [/\b(?:red|critical|danger|fail|failed|urgent)\b/i, /replace\s+front\s+brake\s+pads?/i, /\breplace\b/i, /wear\s*limit/i, /at\s+wear\s+limit/i, /\b2\s*mm\b.*\bbrake\s*pads?\b/i, /\bbrake\s*pads?\b.*\b2\s*mm\b/i, /\b2\s*mm\b/i, /immediate|unsafe|out of service/i] },
+  { key: 'critical', label: '🔴 Critical', priority: 5, patterns: [/\b(?:red|critical|danger|fail|failed|urgent)\b/i, /replace\s+(?:front\s+)?brake\s+pads?/i, /brake\s+pads?.*replace/i, /wear\s*limit/i, /at\s+wear\s+limit/i, /\b2\s*mm\b.*\bbrake\s*pads?\b/i, /\bbrake\s*pads?\b.*\b2\s*mm\b/i, /immediate|unsafe|out of service/i] },
   { key: 'advisory', label: '🟡 Advisory', priority: 3, patterns: [/\b(?:yellow|warning|advisory|monitor|attention|medium)\b/i] },
   { key: 'informational', label: '🟢 Informational', priority: 1, patterns: [/\b(?:green|pass|ok|info|informational)\b/i] },
 ] as const
@@ -754,6 +754,92 @@ export function isMeaningfulCustomerReportText(value: string) {
   return text.length >= 8 && !/^(?:n\/?a|none|null|test|testing|just testing(?: this)?\.?|placeholder|sample|lorem ipsum|generated filler|empty notes?|no notes?|additional notes?)$/i.test(text)
 }
 
+
+function splitFindingText(value: string) {
+  const cleaned = clean(value, 2000)
+  if (!cleaned) return []
+  const numbered = cleaned
+    .replace(/\s*(?:^|\n)\s*\d+[.)]\s+/g, '\n')
+    .replace(/\s+(\d+[.)]\s+)/g, '\n$1')
+    .split(/\n+/)
+    .map((item) => clean(item.replace(/^\d+[.)]\s*/, ''), 700))
+    .filter(Boolean)
+  const source = numbered.length > 1 ? numbered : [cleaned]
+  return dedupeReportText(source).filter((item) => looksLikeFindingValue(item))
+}
+
+function stronglyLooksLikeFindingValue(value: string) {
+  return /\b(corrosion present|wear limit|at wear limit|2\s*mm|replace\s+(?:front\s+)?brake\s+pads?|fail|failed|red|critical|urgent|unsafe|danger|defect|damage|crack|broken|leak|rust)\b/i.test(value)
+}
+
+function isFindingLikeField(field: NormalizedFormField) {
+  const labelText = `${field.key} ${field.label}`
+  return /findings?|issues?|defects?|observed|condition|severity|fail|failed|wear|worn|corrosion|damage|unsafe/i.test(labelText) || stronglyLooksLikeFindingValue(field.value)
+}
+
+function collectDraftFindingFallbackItems<TCapture extends CaptureLike>(params: Parameters<typeof buildNonDuplicatedReviewDocument<TCapture>>[0], existing: ReviewDocument<TCapture>['findings']): ReviewDocument<TCapture>['findings'] {
+  const fallbackCapture = params.captures[0]
+  if (!fallbackCapture) return []
+  const existingText = existing.flatMap((item) => [...item.group.findings, ...item.group.recommendations, ...item.group.details.map((detail) => detail.value)])
+  const sections = params.sections
+  const globalRecommendations = dedupeReportText(sections.flatMap((section) => {
+    const sectionLabel = `${section.key} ${section.title}`
+    return [
+      ...(/recommend|repair|replace|correct|maintenance/i.test(sectionLabel) && section.body ? splitRecommendationText(section.body) : []),
+      ...section.fields.filter((field) => /recommend|repair|replace|correct|maintenance/i.test(`${field.key} ${field.label}`)).flatMap((field) => splitRecommendationText(field.value)),
+    ]
+  }))
+  const candidates: Array<{ finding: string; recommendations: string[]; details: EvidenceDetail[] }> = []
+
+  for (const section of sections) {
+    const sectionLabel = `${section.key} ${section.title}`
+    const findingSection = /findings?|issues?|defects?|observed\s+conditions?/i.test(sectionLabel)
+    const recommendationSection = /recommend|repair|replace|correct|maintenance/i.test(sectionLabel)
+    const sectionRecommendations = section.fields
+      .filter((field) => /recommend|repair|replace|correct|maintenance/i.test(`${field.key} ${field.label}`))
+      .flatMap((field) => splitRecommendationText(field.value))
+    if (recommendationSection && section.body) sectionRecommendations.push(...splitRecommendationText(section.body))
+
+    const findingTexts = [
+      ...(findingSection && section.body ? splitFindingText(section.body) : []),
+      ...section.fields.filter(isFindingLikeField).flatMap((field) => splitFindingText(field.value)),
+    ]
+
+    for (const finding of findingTexts) {
+      const findingComponents = componentHits(finding)
+      const recommendations = dedupeReportText([
+        ...sectionRecommendations,
+        ...globalRecommendations.filter((recommendation) => {
+          const recommendationComponents = componentHits(recommendation)
+          return recommendationComponents.length === 0 || findingComponents.length === 0 || recommendationComponents.some((component) => findingComponents.includes(component))
+        }),
+      ])
+      const details = section.fields
+        .filter((field) => !/recommend/i.test(`${field.key} ${field.label}`) && shouldRenderDetail(field.label, field.value, [finding]))
+        .slice(0, 4)
+        .map((field) => ({ label: field.label, value: field.value }))
+      candidates.push({ finding, recommendations, details })
+    }
+  }
+
+  const seen = new Set(existingText.map(normalizeForMatch))
+  return candidates.flatMap((candidate, index) => {
+    const key = normalizeForMatch(candidate.finding)
+    if (!key || existingText.some((text) => {
+      const existingKey = normalizeForMatch(text)
+      return existingKey === key || existingKey.includes(key) || key.includes(existingKey)
+    }) || seen.has(key)) return []
+    seen.add(key)
+    const group: EvidenceGroup = {
+      capture_id: `draft-finding-${index + 1}`,
+      details: dedupeEvidenceDetails(candidate.details),
+      findings: [candidate.finding],
+      recommendations: dedupeReportText(candidate.recommendations),
+    }
+    return [{ capture: fallbackCapture, group, purpose: 'finding' as const }]
+  })
+}
+
 export function getNormalizedFindingModels<TCapture extends CaptureLike>(items: ReviewDocument<TCapture>['findings']): NormalizedFindingModel<TCapture>[] {
   return items.map((entry, index) => {
     const renderedText: string[] = []
@@ -786,11 +872,14 @@ export function getNormalizedInspectionStatus<TCapture = CaptureLike>(findings: 
 
 export function buildNormalizedReportModel<TCapture extends CaptureLike>(params: Parameters<typeof buildNonDuplicatedReviewDocument<TCapture>>[0]): NormalizedReportModel<TCapture> {
   const document = buildNonDuplicatedReviewDocument(params)
-  const findingModels = getNormalizedFindingModels(document.findings)
+  const fallbackFindings = collectDraftFindingFallbackItems(params, document.findings)
+  const allFindings = [...document.findings, ...fallbackFindings]
+  const findingModels = getNormalizedFindingModels(allFindings)
   const recommendedActions = getNormalizedRecommendedActions(findingModels)
   const severityBreakdown = ['critical', 'advisory', 'informational'].map((key) => ({ key, count: findingModels.filter((finding) => finding.severity.key === key).length, label: findingModels.find((finding) => finding.severity.key === key)?.severity.label ?? ({ critical: '🔴 Critical', advisory: '🟡 Advisory', informational: '🟢 Informational' } as Record<string, string>)[key] })).filter((item) => item.count > 0)
   return {
     ...document,
+    findings: allFindings,
     findingModels,
     recommendedActions,
     summary: {

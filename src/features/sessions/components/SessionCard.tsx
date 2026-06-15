@@ -18,7 +18,10 @@ function getOperationalAction(session: DocumentationSession) {
 }
 
 function canArchiveFromCard(session: DocumentationSession) {
-  return !session.archived_at && (session.status === 'review' || session.status === 'finalized' || session.review_status === 'ready_for_delivery')
+  const reviewableStatuses = new Set(['review', 'ready', 'finalized', 'completed'])
+  const reviewableReviewStatuses = new Set(['review_required', 'ready_for_delivery', 'approved', 'completed', 'finalized'])
+  const activelyCapturing = session.status === 'draft' || session.status === 'capturing' || session.status === 'active'
+  return !session.archived_at && (!activelyCapturing || reviewableStatuses.has(session.status) || reviewableReviewStatuses.has(session.review_status ?? ''))
 }
 
 export function SessionCard({

@@ -110,6 +110,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 session={session}
                 evidenceCount={captureCountBySession.get(session.id)}
                 showOperationalAction
+                showArchiveAction
                 timeZone={profile.timezone}
               />
             ))}
