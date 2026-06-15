@@ -10,7 +10,7 @@ import {
   isFieldServiceSessionType,
   normalizeFieldServiceDetails,
 } from '@/features/field-service'
-import { buildCustomerAssetRows, buildNonDuplicatedReviewDocument, classifyReferenceDocumentTitle, dedupeEvidenceDetails, deriveFormSectionsFromCaptures, isCustomerAssetSection, normalizeDraftSections, shouldRenderDetail, splitRecommendationText, stripConfidenceText } from '@/features/reports/report-structure'
+import { buildCustomerAssetRows, buildNormalizedReportModel, classifyReferenceDocumentTitle, dedupeEvidenceDetails, deriveFormSectionsFromCaptures, getNormalizedFindingModels, getNormalizedInspectionStatus, getNormalizedRecommendedActions, isCustomerAssetSection, isMeaningfulCustomerReportText, normalizeDraftSections, shouldRenderDetail, splitRecommendationText, stripConfidenceText } from '@/features/reports/report-structure'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { recordUsageEvent } from '@/features/usage'
 import { formatDateInTimeZone } from '@/lib/date-format'
@@ -31,33 +31,6 @@ type ReportSession = Database['public']['Tables']['documentation_sessions']['Row
   organizations: { name: string } | null
 }
 
-
-const SEVERITY_PRESENTATION = [
-  { key: 'critical', label: '🔴 Critical', priority: 5, patterns: [/\bcritical\b/i, /\bred\b/i, /immediate|unsafe|out of service/i] },
-  { key: 'high', label: '🟠 High', priority: 4, patterns: [/\bhigh\b/i, /priority/i, /repair|required|replace/i] },
-  { key: 'medium', label: '🟡 Medium', priority: 3, patterns: [/\bmedium\b/i, /\byellow\b/i, /maintenance|service/i] },
-  { key: 'low', label: '🟢 Low', priority: 2, patterns: [/\blow\b/i, /\bgreen\b/i, /monitor/i] },
-] as const
-
-function normalizeSeverityPresentation(values: string[]) {
-  const text = values.join(' ')
-  return SEVERITY_PRESENTATION.find((severity) => severity.patterns.some((pattern) => pattern.test(text))) ?? { key: 'info', label: '⚪ Information', priority: 1 }
-}
-
-function dedupeText(values: string[]) {
-  const seen = new Set<string>()
-  return values.map((value) => stripConfidenceText(value).trim()).filter((value) => {
-    const key = value.toLowerCase().replace(/\s+/g, ' ')
-    if (!value || seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
-}
-
-function isMeaningfulReportText(value: string) {
-  const text = stripConfidenceText(value).trim()
-  return text.length >= 8 && !/^(n\/?a|none|null|test|testing|placeholder|sample|lorem ipsum|generated filler|empty notes?|no notes?|additional notes?)$/i.test(text)
-}
 
 function escapeHtml(value: unknown) {
   return stripConfidenceText(String(value ?? ''))
@@ -160,67 +133,38 @@ function renderTextList(title: string, values: string[], existingRenderedText: s
 }
 
 
-function getFindingModels(items: ReturnType<typeof buildNonDuplicatedReviewDocument<ReportCapture>>['findings']) {
-  return items.map((entry, index) => {
-    const renderedText: string[] = []
-    const details = dedupeEvidenceDetails(entry.group.details).filter((detail) => {
-      const visible = shouldRenderDetail(detail.label, detail.value, renderedText)
-      if (visible) renderedText.push(detail.value)
-      return visible
-    })
-    const observations = dedupeText(entry.group.findings.filter((finding) => shouldRenderDetail('Observed condition', finding, renderedText)))
-    observations.forEach((finding) => renderedText.push(finding))
-    const recommendations = dedupeText(entry.group.recommendations.flatMap(splitRecommendationText).filter((recommendation) => shouldRenderDetail('Recommendation', recommendation, renderedText)))
-    recommendations.forEach((recommendation) => renderedText.push(recommendation))
-    const severity = normalizeSeverityPresentation([...observations, ...recommendations, ...details.map((detail) => `${detail.label} ${detail.value}`)])
-    const title = stripConfidenceText(details.find((detail) => /title|component|system|item|area|location/i.test(detail.label))?.value ?? observations[0]?.split(/[.;]/)[0] ?? `Finding ${index + 1}`)
-    return { id: entry.group.capture_id, title, severity, observations, recommendations, details, entry }
-  })
+function buildExecutiveSummaryHtml(params: { reportTitle: string; organizationName: string; dateLabel: string; findings: ReturnType<typeof getNormalizedFindingModels<ReportCapture>>; referenceCount: number; evidenceCount: number }) {
+  const actions = getNormalizedRecommendedActions(params.findings)
+  const breakdown = ['critical', 'advisory', 'informational'].map((key) => ({ key, count: params.findings.filter((finding) => finding.severity.key === key).length, label: params.findings.find((finding) => finding.severity.key === key)?.severity.label ?? ({ critical: '🔴 Critical', advisory: '🟡 Advisory', informational: '🟢 Informational' } as Record<string, string>)[key] })).filter((item) => item.count > 0)
+  return `<section class="item premium-cover"><p class="eyebrow">Professional Inspection Report</p><h1>${escapeHtml(params.reportTitle)}</h1><p class="meta">${escapeHtml(params.organizationName)}</p></section><section class="item service-section"><h2>Inspection Summary</h2><p>Inspection completed on ${escapeHtml(params.dateLabel)}.</p><dl><div><dt>Total Findings</dt><dd>${params.findings.length}</dd></div><div><dt>Critical Findings</dt><dd>${params.findings.filter((finding) => finding.severity.key === 'critical').length}</dd></div><div><dt>Reference Documents Captured</dt><dd>${params.referenceCount}</dd></div><div><dt>Evidence Items Captured</dt><dd>${params.evidenceCount}</dd></div></dl><h3>Findings Identified</h3>${breakdown.length ? `<ul>${breakdown.map((item) => `<li>${item.count} ${escapeHtml(item.label)}</li>`).join('')}</ul>` : '<p class="muted">No findings identified from included evidence.</p>'}<h3>Recommended Actions</h3>${actions.length ? `<ul>${actions.slice(0, 5).map((item) => `<li>${escapeHtml(item.action)}</li>`).join('')}</ul>` : '<p class="muted">No recommended actions captured.</p>'}<h3>Inspection Status</h3><p><strong>${escapeHtml(getNormalizedInspectionStatus(params.findings))}</strong></p></section>`
 }
 
-function getRecommendedActions(findings: ReturnType<typeof getFindingModels>) {
-  return findings.flatMap((finding) => finding.recommendations.map((action) => ({ priority: finding.severity.label.replace(/^[^ ]+ /, ''), priorityScore: finding.severity.priority, action })))
-    .filter((item, index, items) => items.findIndex((candidate) => candidate.action.toLowerCase() === item.action.toLowerCase()) === index)
-    .sort((a, b) => b.priorityScore - a.priorityScore || a.action.localeCompare(b.action))
-}
-
-function getInspectionStatus(findings: ReturnType<typeof getFindingModels>) {
-  if (findings.some((finding) => finding.severity.key === 'critical' || finding.severity.key === 'high')) return '⚠ Repairs Recommended'
-  if (findings.some((finding) => finding.severity.key === 'medium')) return '⚠ Maintenance Recommended'
-  return findings.length > 0 ? 'ℹ Review Findings' : '✅ No Findings Identified'
-}
-
-function buildExecutiveSummaryHtml(params: { reportTitle: string; organizationName: string; dateLabel: string; findings: ReturnType<typeof getFindingModels>; referenceCount: number; evidenceCount: number }) {
-  const actions = getRecommendedActions(params.findings)
-  const breakdown = ['critical', 'high', 'medium', 'low', 'info'].map((key) => ({ key, count: params.findings.filter((finding) => finding.severity.key === key).length, label: params.findings.find((finding) => finding.severity.key === key)?.severity.label ?? ({ critical: '🔴 Critical', high: '🟠 High', medium: '🟡 Medium', low: '🟢 Low', info: '⚪ Information' } as Record<string, string>)[key] })).filter((item) => item.count > 0)
-  return `<section class="item premium-cover"><p class="eyebrow">Professional Inspection Report</p><h1>${escapeHtml(params.reportTitle)}</h1><p class="meta">${escapeHtml(params.organizationName)}</p></section><section class="item service-section"><h2>Inspection Summary</h2><p>Inspection completed on ${escapeHtml(params.dateLabel)}.</p><dl><div><dt>Total Findings</dt><dd>${params.findings.length}</dd></div><div><dt>Critical Findings</dt><dd>${params.findings.filter((finding) => finding.severity.key === 'critical').length}</dd></div><div><dt>Reference Documents Captured</dt><dd>${params.referenceCount}</dd></div><div><dt>Evidence Items Captured</dt><dd>${params.evidenceCount}</dd></div></dl><h3>Findings Identified</h3>${breakdown.length ? `<ul>${breakdown.map((item) => `<li>${item.count} ${escapeHtml(item.label)}</li>`).join('')}</ul>` : '<p class="muted">No findings identified from included evidence.</p>'}<h3>Recommended Actions</h3>${actions.length ? `<ul>${actions.slice(0, 5).map((item) => `<li>${escapeHtml(item.action)}</li>`).join('')}</ul>` : '<p class="muted">No recommended actions captured.</p>'}<h3>Inspection Status</h3><p><strong>${escapeHtml(getInspectionStatus(params.findings))}</strong></p></section>`
-}
-
-function buildFindingCardsHtml(items: ReturnType<typeof buildNonDuplicatedReviewDocument<ReportCapture>>['findings']) {
-  const findings = getFindingModels(items)
+function buildFindingCardsHtml(items: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>['findings']) {
+  const findings = getNormalizedFindingModels(items)
   if (findings.length === 0) return ''
   return `<section class="item service-section"><h2>Findings</h2>${findings.map((finding, index) => `<article class="finding-card"><p class="eyebrow">Finding ${index + 1}</p><h3>Finding ${index + 1} — ${escapeHtml(finding.title)}</h3><p class="severity">${escapeHtml(finding.severity.label)}</p><h4>Observed Condition</h4>${finding.observations.length ? finding.observations.map((item) => `<p>${escapeHtml(item)}</p>`).join('') : '<p class="muted">Condition documented in supporting evidence.</p>'}<h4>Recommendation</h4>${finding.recommendations.length ? `<ul>${finding.recommendations.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : '<p class="muted">No recommendation captured.</p>'}<p><strong>Supporting Evidence:</strong> 1 item attached.</p></article>`).join('')}</section>`
 }
 
-function buildRecommendedActionsHtml(findings: ReturnType<typeof getFindingModels>) {
-  const actions = getRecommendedActions(findings)
+function buildRecommendedActionsHtml(findings: ReturnType<typeof getNormalizedFindingModels<ReportCapture>>) {
+  const actions = getNormalizedRecommendedActions(findings)
   if (!actions.length) return ''
   return `<section class="item service-section"><h2>Recommended Actions</h2><table><thead><tr><th>Priority</th><th>Action</th></tr></thead><tbody>${actions.map((item) => `<tr><td>${escapeHtml(item.priority)}</td><td>${escapeHtml(item.action)}</td></tr>`).join('')}</tbody></table></section>`
 }
 
-function buildReferenceDocumentsHtml(items: ReturnType<typeof buildNonDuplicatedReviewDocument<ReportCapture>>['findings'], signedUrls: Record<string, string>) {
+function buildReferenceDocumentsHtml(items: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>['findings'], signedUrls: Record<string, string>) {
   if (!items.length) return ''
-  return `<section class="item service-section"><h2>Reference Documents</h2>${items.map((entry) => { const details = dedupeEvidenceDetails(entry.group.details).filter((detail) => isMeaningfulReportText(detail.value)); return `<article class="reference-card"><h3>${escapeHtml(getEvidenceTitle(entry.capture))}</h3>${details.length ? renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value }))) : '<p class="muted">Reference captured for inspection support.</p>'}<details><summary>View Original Reference</summary>${buildEvidenceItemsHtml([entry], signedUrls)}</details></article>` }).join('')}</section>`
+  return `<section class="item service-section"><h2>Reference Documents</h2>${items.map((entry) => { const details = dedupeEvidenceDetails(entry.group.details).filter((detail) => isMeaningfulCustomerReportText(detail.value)); return `<article class="reference-card"><h3>${escapeHtml(getEvidenceTitle(entry.capture))}</h3>${details.length ? renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value }))) : '<p class="muted">Reference captured for inspection support.</p>'}<details><summary>View Original Reference</summary>${buildEvidenceItemsHtml([entry], signedUrls)}</details></article>` }).join('')}</section>`
 }
 
 function buildEvidenceItemsHtml(
-  items: ReturnType<typeof buildNonDuplicatedReviewDocument<ReportCapture>>['findings'],
+  items: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>['findings'],
   signedUrls: Record<string, string>,
 ) {
   return items.map((entry) => {
     const capture = entry.capture
     const signedUrl = signedUrls[capture.id]
-    const mediaKind = capture.media_kind || (capture.type === 'text_note' ? 'note' : capture.type === 'video' ? 'video' : 'image')
+    const isImageFile = Boolean(capture.storage_path?.match(/\.(jpg|jpeg|png|webp|gif|heic)$/i))
+    const mediaKind = isImageFile ? 'image' : (capture.media_kind || (capture.type === 'text_note' ? 'note' : capture.type === 'video' ? 'video' : 'image'))
     const evidenceTitle = getEvidenceTitle(capture)
     const title = evidenceTitle
     const mediaHtml = mediaKind === 'note'
@@ -251,7 +195,7 @@ function buildEvidenceItemsHtml(
   }).join('')
 }
 
-function buildEvidenceSectionHtml(title: string, items: ReturnType<typeof buildNonDuplicatedReviewDocument<ReportCapture>>['findings'], signedUrls: Record<string, string>) {
+function buildEvidenceSectionHtml(title: string, items: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>['findings'], signedUrls: Record<string, string>) {
   if (items.length === 0) return ''
   return `<section class="item service-section"><h2>${escapeHtml(title)}</h2><div class="evidence-children">${buildEvidenceItemsHtml(items, signedUrls)}</div></section>`
 }
@@ -302,11 +246,11 @@ function buildFieldServiceReportHtml({
     .map((fieldName) => ({ label: FIELD_SERVICE_FIELD_LABELS[fieldName] ?? fieldName, value: getDetailValue(details, fieldName) }))
   const chargeRows = ['labour_charge', 'parts_charge', 'mileage_charge', 'expenses_charge', 'misc_charges', 'subtotal', 'tax', 'total']
     .map((fieldName) => ({ label: FIELD_SERVICE_FIELD_LABELS[fieldName] ?? fieldName, value: getDetailValue(details, fieldName) }))
-  const reviewDocument = buildNonDuplicatedReviewDocument({ captures: captureItems, sections: [], draftSections: reportSections, measurements: reportDraft?.measurements ?? [], findings: reportDraft?.findings ?? [] })
+  const reviewDocument = buildNormalizedReportModel({ captures: captureItems, sections: [], draftSections: reportSections, measurements: reportDraft?.measurements ?? [], findings: reportDraft?.findings ?? [] })
   const reportTitle = reportDraft?.title || session.title
-  const findingModels = getFindingModels(reviewDocument.findings)
+  const findingModels = reviewDocument.findingModels
   const summaryHtml = buildExecutiveSummaryHtml({ reportTitle, organizationName, dateLabel: formatDateInTimeZone(new Date(), timeZone), findings: findingModels, referenceCount: reviewDocument.referenceDocuments.length, evidenceCount: captureItems.length })
-  const evidenceHtml = [buildFindingCardsHtml(reviewDocument.findings), buildRecommendedActionsHtml(findingModels), buildReferenceDocumentsHtml(reviewDocument.referenceDocuments, signedUrls), buildEvidenceSectionHtml('Additional Notes', reviewDocument.additionalNotes.filter((entry) => isMeaningfulReportText([entry.capture.technician_note, entry.capture.transcript, ...entry.group.findings, ...entry.group.recommendations].filter(Boolean).join(' '))), signedUrls), buildEvidenceSectionHtml('Supporting Evidence', reviewDocument.supportingEvidence, signedUrls)].join('')
+  const evidenceHtml = [buildFindingCardsHtml(reviewDocument.findings), buildRecommendedActionsHtml(findingModels), buildReferenceDocumentsHtml(reviewDocument.referenceDocuments, signedUrls), buildEvidenceSectionHtml('Additional Notes', reviewDocument.additionalNotes.filter((entry) => isMeaningfulCustomerReportText([entry.capture.technician_note, entry.capture.transcript, ...entry.group.findings, ...entry.group.recommendations].filter(Boolean).join(' '))), signedUrls), buildEvidenceSectionHtml('Supporting Evidence', reviewDocument.supportingEvidence, signedUrls)].join('')
   const generatedReportHtml = buildGeneratedReportHtml(reportDraft, reportSections)
   const toolbarHtml = showToolbar ? '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>' : ''
 
@@ -505,12 +449,12 @@ export async function GET(_request: Request, { params }: RouteContext) {
     const bodyHtml = section.body ? (/recommend/i.test(title) ? `<ul>${splitRecommendationText(section.body).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : `<p>${escapeHtml(section.body)}</p>`) : ''
     return bodyHtml || rowsHtml ? `<section class="item service-section"><h2>${escapeHtml(title)}</h2>${bodyHtml}${rowsHtml}</section>` : ''
   }).join('') : ''
-  const reviewDocument = buildNonDuplicatedReviewDocument({ captures: captureItems, sections: formSections, draftSections: visibleReportSections, measurements: reportDraft?.measurements ?? [], findings: reportDraft?.findings ?? [] })
+  const reviewDocument = buildNormalizedReportModel({ captures: captureItems, sections: formSections, draftSections: visibleReportSections, measurements: reportDraft?.measurements ?? [], findings: reportDraft?.findings ?? [] })
   const unattachedDetails = reviewDocument.unattachedDetails
   const unattachedHtml = unattachedDetails.length > 0 ? `<section class="item service-section"><h2>Supporting Evidence</h2>${renderDefinitionRows(unattachedDetails.map((detail) => ({ label: detail.label, value: detail.value })))}</section>` : ''
-  const findingModels = getFindingModels(reviewDocument.findings)
+  const findingModels = reviewDocument.findingModels
   const summaryHtml = buildExecutiveSummaryHtml({ reportTitle, organizationName, dateLabel: formatDateInTimeZone(new Date(), timeZone), findings: findingModels, referenceCount: reviewDocument.referenceDocuments.length, evidenceCount: captureItems.length })
-  const itemsHtml = [buildFindingCardsHtml(reviewDocument.findings), buildRecommendedActionsHtml(findingModels), buildReferenceDocumentsHtml(reviewDocument.referenceDocuments, signedUrls), buildEvidenceSectionHtml('Additional Notes', reviewDocument.additionalNotes.filter((entry) => isMeaningfulReportText([entry.capture.technician_note, entry.capture.transcript, ...entry.group.findings, ...entry.group.recommendations].filter(Boolean).join(' '))), signedUrls), buildEvidenceSectionHtml('Supporting Evidence', reviewDocument.supportingEvidence, signedUrls)].join('')
+  const itemsHtml = [buildFindingCardsHtml(reviewDocument.findings), buildRecommendedActionsHtml(findingModels), buildReferenceDocumentsHtml(reviewDocument.referenceDocuments, signedUrls), buildEvidenceSectionHtml('Additional Notes', reviewDocument.additionalNotes.filter((entry) => isMeaningfulCustomerReportText([entry.capture.technician_note, entry.capture.transcript, ...entry.group.findings, ...entry.group.recommendations].filter(Boolean).join(' '))), signedUrls), buildEvidenceSectionHtml('Supporting Evidence', reviewDocument.supportingEvidence, signedUrls)].join('')
 
 
   const toolbarHtml = previewOnly ? '' : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>'

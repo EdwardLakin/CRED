@@ -693,3 +693,101 @@ export function buildCustomerAssetRows(sections: NormalizedReportSection[], sess
 export function isCustomerAssetSection(section: NormalizedReportSection) {
   return /customer|contact|unit|equipment|vehicle|asset|vin|serial|model|odometer|hour|plate|license|licence/i.test(`${section.key} ${section.title}`)
 }
+
+
+export const REPORT_SEVERITY_PRESENTATION = [
+  { key: 'critical', label: '🔴 Critical', priority: 5, patterns: [/\b(?:red|critical|danger|fail|failed|urgent)\b/i, /\breplace\b/i, /wear\s*limit/i, /at\s+wear\s+limit/i, /\b2\s*mm\b/i, /immediate|unsafe|out of service/i] },
+  { key: 'advisory', label: '🟡 Advisory', priority: 3, patterns: [/\b(?:yellow|warning|advisory|monitor|attention|medium)\b/i] },
+  { key: 'informational', label: '🟢 Informational', priority: 1, patterns: [/\b(?:green|pass|ok|info|informational)\b/i] },
+] as const
+
+export type NormalizedReportSeverity = (typeof REPORT_SEVERITY_PRESENTATION)[number] | { key: 'informational'; label: '🟢 Informational'; priority: 1 }
+
+export type NormalizedFindingModel<TCapture = CaptureLike> = {
+  id: string
+  title: string
+  severity: NormalizedReportSeverity
+  observations: string[]
+  recommendations: string[]
+  details: EvidenceDetail[]
+  evidenceCount: number
+  entry: ReviewEvidenceItem<TCapture>
+}
+
+export type NormalizedRecommendedAction = { priority: string; priorityScore: number; action: string }
+
+export type NormalizedReportModel<TCapture = CaptureLike> = ReviewDocument<TCapture> & {
+  findingModels: NormalizedFindingModel<TCapture>[]
+  recommendedActions: NormalizedRecommendedAction[]
+  summary: { totalFindings: number; criticalFindings: number; referenceDocumentCount: number; evidenceItemCount: number; inspectionStatus: string; severityBreakdown: Array<{ key: string; count: number; label: string }> }
+}
+
+export function normalizeReportSeverity(values: string[]) {
+  const text = values.join(' ')
+  return REPORT_SEVERITY_PRESENTATION.find((severity) => severity.patterns.some((pattern) => pattern.test(text))) ?? REPORT_SEVERITY_PRESENTATION[2]
+}
+
+export function dedupeReportText(values: string[]) {
+  const seen = new Set<string>()
+  return values.map((value) => stripConfidenceText(value).trim()).filter((value) => {
+    const key = normalizeForMatch(value)
+    if (!value || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+export function isMeaningfulCustomerReportText(value: string) {
+  const text = stripConfidenceText(value).trim()
+  return text.length >= 8 && !/^(?:n\/?a|none|null|test|testing|just testing(?: this)?\.?|placeholder|sample|lorem ipsum|generated filler|empty notes?|no notes?|additional notes?)$/i.test(text)
+}
+
+export function getNormalizedFindingModels<TCapture extends CaptureLike>(items: ReviewDocument<TCapture>['findings']): NormalizedFindingModel<TCapture>[] {
+  return items.map((entry, index) => {
+    const renderedText: string[] = []
+    const details = dedupeEvidenceDetails(entry.group.details).filter((detail) => {
+      const visible = shouldRenderDetail(detail.label, detail.value, renderedText)
+      if (visible) renderedText.push(detail.value)
+      return visible
+    })
+    const observations = dedupeReportText(entry.group.findings.filter((finding) => shouldRenderDetail('Observed condition', finding, renderedText)))
+    observations.forEach((finding) => renderedText.push(finding))
+    const recommendations = dedupeReportText(entry.group.recommendations.flatMap(splitRecommendationText).filter((recommendation) => shouldRenderDetail('Recommendation', recommendation, renderedText)))
+    recommendations.forEach((recommendation) => renderedText.push(recommendation))
+    const severity = normalizeReportSeverity([...observations, ...recommendations, ...details.map((detail) => `${detail.label} ${detail.value}`)])
+    const title = stripConfidenceText(details.find((detail) => /title|component|system|item|area|location/i.test(detail.label))?.value ?? observations[0]?.split(/[.;]/)[0] ?? `Finding ${index + 1}`)
+    return { id: entry.group.capture_id, title, severity, observations, recommendations, details, evidenceCount: 1, entry }
+  })
+}
+
+export function getNormalizedRecommendedActions<TCapture = CaptureLike>(findings: NormalizedFindingModel<TCapture>[]) {
+  return findings.flatMap((finding) => finding.recommendations.map((action) => ({ priority: finding.severity.label.replace(/^[^ ]+ /, ''), priorityScore: finding.severity.priority, action })))
+    .filter((item, index, items) => items.findIndex((candidate) => normalizeForMatch(candidate.action) === normalizeForMatch(item.action)) === index)
+    .sort((a, b) => b.priorityScore - a.priorityScore || a.action.localeCompare(b.action))
+}
+
+export function getNormalizedInspectionStatus<TCapture = CaptureLike>(findings: NormalizedFindingModel<TCapture>[]) {
+  if (findings.some((finding) => finding.severity.key === 'critical')) return '⚠ Repairs Recommended'
+  if (findings.some((finding) => finding.severity.key === 'advisory')) return '⚠ Maintenance Recommended'
+  return findings.length > 0 ? 'ℹ Review Findings' : '✅ No Findings Identified'
+}
+
+export function buildNormalizedReportModel<TCapture extends CaptureLike>(params: Parameters<typeof buildNonDuplicatedReviewDocument<TCapture>>[0]): NormalizedReportModel<TCapture> {
+  const document = buildNonDuplicatedReviewDocument(params)
+  const findingModels = getNormalizedFindingModels(document.findings)
+  const recommendedActions = getNormalizedRecommendedActions(findingModels)
+  const severityBreakdown = ['critical', 'advisory', 'informational'].map((key) => ({ key, count: findingModels.filter((finding) => finding.severity.key === key).length, label: findingModels.find((finding) => finding.severity.key === key)?.severity.label ?? ({ critical: '🔴 Critical', advisory: '🟡 Advisory', informational: '🟢 Informational' } as Record<string, string>)[key] })).filter((item) => item.count > 0)
+  return {
+    ...document,
+    findingModels,
+    recommendedActions,
+    summary: {
+      totalFindings: findingModels.length,
+      criticalFindings: findingModels.filter((finding) => finding.severity.key === 'critical').length,
+      referenceDocumentCount: document.referenceDocuments.length,
+      evidenceItemCount: params.captures.length,
+      inspectionStatus: getNormalizedInspectionStatus(findingModels),
+      severityBreakdown,
+    },
+  }
+}
