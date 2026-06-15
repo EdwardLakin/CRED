@@ -48,6 +48,64 @@ type SupportingEvidenceItem = {
   kind: "photo" | "video" | "audio" | "note" | "document" | "file";
 };
 
+
+const SEVERITY_PRESENTATION = [
+  { key: "critical", label: "🔴 Critical", priority: 5, patterns: [/\bcritical\b/i, /\bred\b/i, /immediate|unsafe|out of service/i] },
+  { key: "high", label: "🟠 High", priority: 4, patterns: [/\bhigh\b/i, /priority/i, /repair|required|replace/i] },
+  { key: "medium", label: "🟡 Medium", priority: 3, patterns: [/\bmedium\b/i, /\byellow\b/i, /maintenance|service/i] },
+  { key: "low", label: "🟢 Low", priority: 2, patterns: [/\blow\b/i, /\bgreen\b/i, /monitor/i] },
+] as const;
+
+function normalizeSeverityPresentation(values: string[]) {
+  const text = values.join(" ");
+  return SEVERITY_PRESENTATION.find((severity) => severity.patterns.some((pattern) => pattern.test(text))) ?? { key: "info", label: "⚪ Information", priority: 1 };
+}
+
+function dedupeText(values: string[]) {
+  const seen = new Set<string>();
+  return values.map((value) => stripConfidenceText(value).trim()).filter((value) => {
+    const key = value.toLowerCase().replace(/\s+/g, " ");
+    if (!value || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function isMeaningfulReportText(value: string) {
+  const text = stripConfidenceText(value).trim();
+  return text.length >= 8 && !/^(n\/?a|none|null|test|testing|placeholder|sample|lorem ipsum|generated filler|empty notes?|no notes?|additional notes?)$/i.test(text);
+}
+
+function getFindingModels(items: ReturnType<typeof buildNonDuplicatedReviewDocument<CaptureItem>>["findings"]) {
+  return items.map((entry, index) => {
+    const renderedText: string[] = [];
+    const details = entry.group.details.filter((detail) => {
+      const visible = shouldRenderDetail(detail.label, detail.value, renderedText);
+      if (visible) renderedText.push(detail.value);
+      return visible;
+    });
+    const observations = dedupeText(entry.group.findings.filter((finding) => shouldRenderDetail("Observed condition", finding, renderedText)));
+    observations.forEach((finding) => renderedText.push(finding));
+    const recommendations = dedupeText(entry.group.recommendations.flatMap(splitRecommendationText).filter((recommendation) => shouldRenderDetail("Recommendation", recommendation, renderedText)));
+    recommendations.forEach((recommendation) => renderedText.push(recommendation));
+    const severity = normalizeSeverityPresentation([...observations, ...recommendations, ...details.map((detail) => `${detail.label} ${detail.value}`)]);
+    const title = stripConfidenceText(details.find((detail) => /title|component|system|item|area|location/i.test(detail.label))?.value ?? observations[0]?.split(/[.;]/)[0] ?? `Finding ${index + 1}`);
+    return { id: entry.group.capture_id, title, severity, observations, recommendations, details, evidenceCount: 1 };
+  });
+}
+
+function getRecommendedActions(findings: ReturnType<typeof getFindingModels>) {
+  return findings.flatMap((finding) => finding.recommendations.map((action) => ({ priority: finding.severity.label.replace(/^[^ ]+ /, ""), priorityScore: finding.severity.priority, action })))
+    .filter((item, index, items) => items.findIndex((candidate) => candidate.action.toLowerCase() === item.action.toLowerCase()) === index)
+    .sort((a, b) => b.priorityScore - a.priorityScore || a.action.localeCompare(b.action));
+}
+
+function getInspectionStatus(findings: ReturnType<typeof getFindingModels>) {
+  if (findings.some((finding) => finding.severity.key === "critical" || finding.severity.key === "high")) return "⚠ Repairs Recommended";
+  if (findings.some((finding) => finding.severity.key === "medium")) return "⚠ Maintenance Recommended";
+  return findings.length > 0 ? "ℹ Review Findings" : "✅ No Findings Identified";
+}
+
 function getReportOrigin(headersList: Headers) {
   const configuredUrl =
     process.env.NEXT_PUBLIC_APP_URL?.trim() ??
@@ -357,6 +415,8 @@ export default async function SessionReportPreviewPage({
             saveReportEditsAction={saveReportEditsAction}
             sourceFieldEntries={sourceFieldEntries}
             visibleCaptureCount={visibleCaptures.length}
+            facilityName={profile.company_profile?.facility_name ?? profile.company_profile?.company_name ?? profile.organization.name}
+            facilityLocation={[profile.company_profile?.facility_city, profile.company_profile?.facility_region].filter(Boolean).join(", ")}
           />
 
           <InspectorFacilityPanel profile={profile} sessionId={session.id} signatures={signatures ?? []} signatureUrls={signatureUrls} />
@@ -404,6 +464,8 @@ function GeneratedReportReview({
   saveReportEditsAction,
   sourceFieldEntries,
   visibleCaptureCount,
+  facilityName,
+  facilityLocation,
 }: {
   reportSections: AiReportDraftSection[];
   currentReport: AiReportDraft | null;
@@ -422,6 +484,8 @@ function GeneratedReportReview({
   saveReportEditsAction: ServerAction | null;
   sourceFieldEntries: [string, unknown][];
   visibleCaptureCount: number;
+  facilityName: string;
+  facilityLocation: string;
 }) {
   const editableSections = reportSections;
   const includedEvidenceCount = [
@@ -429,6 +493,9 @@ function GeneratedReportReview({
     ...noteEvidence,
     ...otherEvidence,
   ].filter((item) => item.capture.include_in_report).length;
+  const findings = getFindingModels(reviewDocument.findings);
+  const actions = getRecommendedActions(findings);
+  const severityBreakdown = ["critical", "high", "medium", "low", "info"].map((key) => ({ key, count: findings.filter((finding) => finding.severity.key === key).length, label: findings.find((finding) => finding.severity.key === key)?.severity.label ?? ({ critical: "🔴 Critical", high: "🟠 High", medium: "🟡 Medium", low: "🟢 Low", info: "⚪ Information" } as Record<string, string>)[key] })).filter((item) => item.count > 0);
 
   return (
     <section className="card detail-card report-command-card form-stack generated-report-card">
@@ -449,24 +516,47 @@ function GeneratedReportReview({
         )}
       </div>
 
-      <div className="report-story-card">
-        <p className="eyebrow">Summary</p>
-        <h3>{stripConfidenceText(currentReport?.title ?? session.title)}</h3>
-        {currentReport?.summary ? (
-          <p>{stripConfidenceText(currentReport.summary)}</p>
-        ) : (
-          <p className="muted">
-            Building your report… Your evidence is saved. CRED is preparing the
-            report so you can review it here.
-          </p>
-        )}
-        {hasPendingEvidence ? (
-          <p className="notice info compact-report-notice">
-            Your evidence is saved. CRED is preparing the report. You can
-            continue capturing while this finishes.
-          </p>
-        ) : null}
+      <div className="report-cover-card">
+        <div className="report-logo-mark" aria-hidden="true">{facilityName.slice(0, 1).toUpperCase()}</div>
+        <div>
+          <p className="eyebrow">Professional Inspection Report</p>
+          <h3>{stripConfidenceText(currentReport?.title ?? session.title)}</h3>
+          <p className="muted">{facilityName}{facilityLocation ? ` · ${facilityLocation}` : ""}</p>
+        </div>
       </div>
+
+      <section className="inspection-summary-card">
+        <div className="report-section-title-row">
+          <div>
+            <p className="eyebrow">Inspection Summary</p>
+            <h3>Inspection completed on {new Date().toLocaleDateString()}</h3>
+          </div>
+          <span className="status-pill attention">{getInspectionStatus(findings)}</span>
+        </div>
+        {currentReport?.summary ? <p>{stripConfidenceText(currentReport.summary)}</p> : null}
+        <div className="inspection-metric-grid">
+          <div><span>Total Findings</span><strong>{findings.length}</strong></div>
+          <div><span>Critical Findings</span><strong>{findings.filter((finding) => finding.severity.key === "critical").length}</strong></div>
+          <div><span>Reference Documents Captured</span><strong>{reviewDocument.referenceDocuments.length}</strong></div>
+          <div><span>Evidence Items Captured</span><strong>{includedEvidenceCount}</strong></div>
+        </div>
+        <div className="summary-columns">
+          <div>
+            <h4>Findings Identified</h4>
+            {severityBreakdown.length > 0 ? <ul>{severityBreakdown.map((item) => <li key={item.key}>{item.count} {item.label}</li>)}</ul> : <p className="muted">No findings identified from included evidence.</p>}
+          </div>
+          <div>
+            <h4>Recommended Actions</h4>
+            {actions.length > 0 ? <ul>{actions.slice(0, 4).map((item) => <li key={item.action}>{item.action}</li>)}</ul> : <p className="muted">No recommended actions captured.</p>}
+          </div>
+        </div>
+      </section>
+      {hasPendingEvidence ? (
+        <p className="notice info compact-report-notice">
+          Your evidence is saved. CRED is preparing the report. You can
+          continue capturing while this finishes.
+        </p>
+      ) : null}
 
       {!currentReport ? (
         <form action={generateReportAction} className="empty-report-shell">
@@ -728,9 +818,10 @@ function GeneratedReportReview({
                 </div>
                 <span className="status-pill neutral compact">{includedEvidenceCount} included</span>
               </div>
-              <EvidenceGroupList items={reviewDocument.findings} supportingEvidence={supportingEvidence} emptyMessage="No inspection findings attached yet." />
-              {reviewDocument.referenceDocuments.length > 0 ? <><h3>Reference Documents</h3><EvidenceGroupList items={reviewDocument.referenceDocuments} supportingEvidence={supportingEvidence} /></> : null}
-              {reviewDocument.additionalNotes.length > 0 ? <><h3>Additional Notes</h3><EvidenceGroupList items={reviewDocument.additionalNotes} supportingEvidence={supportingEvidence} /></> : null}
+              <FindingCardList items={reviewDocument.findings} supportingEvidence={supportingEvidence} />
+              <RecommendedActionsTable findings={findings} />
+              {reviewDocument.referenceDocuments.length > 0 ? <><h3>Reference Documents</h3><ReferenceDocumentList items={reviewDocument.referenceDocuments} supportingEvidence={supportingEvidence} /></> : null}
+              {reviewDocument.additionalNotes.some((entry) => isMeaningfulReportText([entry.capture.technician_note, entry.capture.transcript, ...entry.group.findings, ...entry.group.recommendations].filter(Boolean).join(" "))) ? <><h3>Additional Notes</h3><EvidenceGroupList items={reviewDocument.additionalNotes.filter((entry) => isMeaningfulReportText([entry.capture.technician_note, entry.capture.transcript, ...entry.group.findings, ...entry.group.recommendations].filter(Boolean).join(" ")))} supportingEvidence={supportingEvidence} /></> : null}
               {reviewDocument.supportingEvidence.length > 0 ? <><h3>Supporting Evidence</h3><EvidenceGroupList items={reviewDocument.supportingEvidence} supportingEvidence={supportingEvidence} /></> : null}
               {reviewDocument.unattachedDetails.length > 0 ? (
                 <div className="evidence-first-card">
@@ -797,6 +888,45 @@ function getProfessionalFields<T extends { value: string }>(fields: T[]) {
   const captured = fields.filter((field) => field.value && !/^(not captured|pending|unknown)$/i.test(field.value.trim()));
   if (captured.length > 0) return captured;
   return fields.filter((field) => field.value).slice(0, 4);
+}
+
+
+function FindingCardList({
+  items,
+  supportingEvidence,
+}: {
+  items: ReturnType<typeof buildNonDuplicatedReviewDocument<CaptureItem>>["findings"];
+  supportingEvidence: SupportingEvidenceItem[];
+}) {
+  const evidenceById = new Map(supportingEvidence.map((item) => [item.capture.id, item]));
+  const findings = getFindingModels(items);
+  if (findings.length === 0) return <p className="muted">No inspection findings attached yet.</p>;
+  return <div className="finding-card-list">{findings.map((finding, index) => {
+    const evidence = evidenceById.get(finding.id);
+    return <article key={finding.id} className="professional-finding-card">
+      <div className="finding-card-header"><div><p className="eyebrow">Finding {index + 1}</p><h4>Finding {index + 1} — {finding.title}</h4></div><span className="severity-badge">{finding.severity.label}</span></div>
+      <div className="finding-card-grid">
+        <div><strong>Observed Condition</strong>{finding.observations.length > 0 ? finding.observations.map((item) => <p key={item}>{item}</p>) : <p className="muted">Condition documented in supporting evidence.</p>}</div>
+        <div><strong>Recommendation</strong>{finding.recommendations.length > 0 ? <ul>{finding.recommendations.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="muted">No recommendation captured.</p>}</div>
+      </div>
+      <details className="finding-evidence-details"><summary>Supporting Evidence · {finding.evidenceCount} item{finding.evidenceCount === 1 ? "" : "s"}</summary>{evidence ? <EvidenceGroupList items={items.filter((entry) => entry.group.capture_id === finding.id)} supportingEvidence={supportingEvidence} /> : <p className="muted">Evidence item captured.</p>}</details>
+    </article>;
+  })}</div>;
+}
+
+function RecommendedActionsTable({ findings }: { findings: ReturnType<typeof getFindingModels> }) {
+  const actions = getRecommendedActions(findings);
+  if (actions.length === 0) return null;
+  return <section className="recommended-actions-card"><h3>Recommended Actions</h3><div className="actions-table"><div><strong>Priority</strong><strong>Action</strong></div>{actions.map((item) => <div key={item.action}><span>{item.priority}</span><span>{item.action}</span></div>)}</div></section>;
+}
+
+function ReferenceDocumentList({ items, supportingEvidence }: { items: ReturnType<typeof buildNonDuplicatedReviewDocument<CaptureItem>>["findings"]; supportingEvidence: SupportingEvidenceItem[] }) {
+  const evidenceById = new Map(supportingEvidence.map((item) => [item.capture.id, item]));
+  return <div className="reference-document-list">{items.map((entry) => {
+    const item = evidenceById.get(entry.group.capture_id);
+    const details = entry.group.details.filter((detail) => isMeaningfulReportText(detail.value));
+    return <article key={entry.group.capture_id} className="reference-document-card"><h4>{item?.title ?? "Reference Document"}</h4>{details.length > 0 ? <div className="report-field-grid">{details.map((detail, index) => <div key={`${detail.label}-${index}`} className="report-field-card"><span>{detail.label}</span><strong>{stripConfidenceText(detail.value)}</strong></div>)}</div> : <p className="muted">Reference captured for inspection support.</p>}<details><summary>View Original Reference</summary><EvidenceGroupList items={[entry]} supportingEvidence={supportingEvidence} /></details></article>;
+  })}</div>;
 }
 
 function EvidenceGroupList({
