@@ -328,6 +328,28 @@ function normalizeForMatch(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
+function normalizeForSemanticDedupe(value: string) {
+  return normalizeForMatch(value.replace(/[.!?]+$/g, ''))
+}
+
+function hasDistinctNumericValue(candidate: string, existing: string) {
+  const numericTokens = (value: string) => new Set(Array.from(value.matchAll(/\b\d+(?:\.\d+)?\s*(?:mm|in|psi|volt|volts|v|%|percent)?\b/gi)).map((match) => normalizeForMatch(match[0])))
+  const candidateNumbers = numericTokens(candidate)
+  if (candidateNumbers.size === 0) return false
+  const existingNumbers = numericTokens(existing)
+  return Array.from(candidateNumbers).some((token) => !existingNumbers.has(token))
+}
+
+function isSemanticDuplicateText(candidate: string, existing: string) {
+  const candidateKey = normalizeForSemanticDedupe(candidate)
+  const existingKey = normalizeForSemanticDedupe(existing)
+  if (!candidateKey || !existingKey) return false
+  if (candidateKey === existingKey) return true
+  if (candidateKey.includes(existingKey)) return !hasDistinctNumericValue(existing, candidate)
+  if (existingKey.includes(candidateKey)) return !hasDistinctNumericValue(candidate, existing)
+  return false
+}
+
 function textClearlyMatchesCapture(text: string, capture: CaptureLike) {
   const source = normalizeForMatch(textForCapture(capture))
   const target = normalizeForMatch(text)
@@ -391,8 +413,7 @@ export function shouldRenderDetail(label: string, value: string, existingRendere
   const normalizedValue = normalizeForMatch(cleanedValue)
   if (!normalizedValue || /^(not captured|pending|unknown)$/i.test(cleanedValue)) return false
   return !existingRenderedText.some((existing) => {
-    const normalizedExisting = normalizeForMatch(existing)
-    return normalizedExisting === normalizedValue || normalizedExisting.includes(normalizedValue) || normalizedValue.includes(normalizedExisting)
+    return isSemanticDuplicateText(cleanedValue, existing)
   })
 }
 
@@ -906,6 +927,18 @@ export function dedupeReportText(values: string[]) {
   })
 }
 
+export function dedupeSemanticReportText(values: string[]) {
+  const cleanedValues = values.map((value) => stripConfidenceText(value).trim()).filter(Boolean)
+  return cleanedValues
+    .map((value, index) => ({ value, index }))
+    .sort((a, b) => normalizeForSemanticDedupe(b.value).length - normalizeForSemanticDedupe(a.value).length || a.index - b.index)
+    .reduce<string[]>((result, item) => {
+      if (!result.some((existing) => isSemanticDuplicateText(item.value, existing))) result.push(item.value)
+      return result
+    }, [])
+    .sort((a, b) => cleanedValues.findIndex((value) => value === a) - cleanedValues.findIndex((value) => value === b))
+}
+
 export function isMeaningfulCustomerReportText(value: string) {
   const text = stripConfidenceText(value).trim()
   return text.length >= 8 && !/^(?:n\/?a|none|null|test|testing|just testing(?: this)?\.?|placeholder|sample|lorem ipsum|generated filler|empty notes?|no notes?|additional notes?)$/i.test(text)
@@ -1087,14 +1120,14 @@ export function getNormalizedFindingModels<TCapture extends CaptureLike>(items: 
     const scope = findingComponentScope(entry)
     const scopedDetails = filterFindingScopedDetails(dedupeEvidenceDetails(entry.group.details), scope)
     const detailRecommendations = scopedDetails.filter(isRecommendationDetail).flatMap((detail) => splitRecommendationText(detail.value))
+    const observations = dedupeSemanticReportText(entry.group.findings.filter((finding) => shouldRenderDetail('Observed condition', finding, renderedText)))
+    observations.forEach((finding) => renderedText.push(finding))
     const details = scopedDetails.filter((detail) => !isRecommendationDetail(detail) && !isSeverityDetail(detail)).filter((detail) => {
       const visible = shouldRenderDetail(detail.label, detail.value, renderedText)
       if (visible) renderedText.push(detail.value)
       return visible
     })
-    const observations = dedupeReportText(entry.group.findings.filter((finding) => shouldRenderDetail('Observed condition', finding, renderedText)))
-    observations.forEach((finding) => renderedText.push(finding))
-    const recommendations = dedupeReportText(filterFindingScopedRecommendations([...entry.group.recommendations.flatMap(splitRecommendationText), ...detailRecommendations], scope).filter((recommendation) => shouldRenderDetail('Recommendation', recommendation, renderedText)))
+    const recommendations = dedupeSemanticReportText(filterFindingScopedRecommendations([...entry.group.recommendations.flatMap(splitRecommendationText), ...detailRecommendations], scope).filter((recommendation) => shouldRenderDetail('Recommendation', recommendation, renderedText)))
     recommendations.forEach((recommendation) => renderedText.push(recommendation))
     const severity = normalizeReportSeverity([...observations, ...recommendations, ...scopedDetails.map((detail) => `${detail.label} ${detail.value}`)])
     const title = buildFindingTitle(details, observations, entry, index)
@@ -1104,7 +1137,8 @@ export function getNormalizedFindingModels<TCapture extends CaptureLike>(items: 
 
 export function getNormalizedRecommendedActions<TCapture = CaptureLike>(findings: NormalizedFindingModel<TCapture>[]) {
   return findings.flatMap((finding) => finding.recommendations.map((action) => ({ priority: finding.severity.label.replace(/^[^ ]+ /, ''), priorityScore: finding.severity.priority, action })))
-    .filter((item, index, items) => items.findIndex((candidate) => normalizeForMatch(candidate.action) === normalizeForMatch(item.action)) === index)
+    .sort((a, b) => normalizeForSemanticDedupe(b.action).length - normalizeForSemanticDedupe(a.action).length)
+    .filter((item, index, items) => items.findIndex((candidate) => isSemanticDuplicateText(candidate.action, item.action)) === index)
     .sort((a, b) => b.priorityScore - a.priorityScore || a.action.localeCompare(b.action))
 }
 
