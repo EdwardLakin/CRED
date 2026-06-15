@@ -9,6 +9,7 @@ import {
 import {
   buildCustomerAssetRows,
   buildNonDuplicatedReviewDocument,
+  classifyReferenceDocumentTitle,
   deriveFormSectionsFromCaptures,
   getFormStructureSummary,
   isCustomerAssetSection,
@@ -97,6 +98,8 @@ function getEvidenceKind(capture: CaptureItem): SupportingEvidenceItem["kind"] {
 }
 
 function getEvidenceTitle(item: CaptureItem, index: number) {
+  const referenceTitle = classifyReferenceDocumentTitle(item);
+  if (referenceTitle !== "Reference Document" || item.media_kind === "document") return referenceTitle;
   if (item.type === "text_note" || item.media_kind === "note")
     return `Technician note ${index + 1}`;
   if (isPhotoCapture(item)) return `Photo ${index + 1}`;
@@ -355,13 +358,8 @@ export default async function SessionReportPreviewPage({
             visibleCaptureCount={visibleCaptures.length}
           />
 
-          <InspectorFacilityPanel profile={profile} signatures={signatures ?? []} signatureUrls={signatureUrls} />
+          <InspectorFacilityPanel profile={profile} sessionId={session.id} signatures={signatures ?? []} signatureUrls={signatureUrls} />
 
-          <SignaturePanel
-            sessionId={session.id}
-            signatures={signatures ?? []}
-            signatureUrls={signatureUrls}
-          />
         </div>
 
         <InlineReviewPanel
@@ -696,8 +694,8 @@ function GeneratedReportReview({
               <div className="report-document-flow">
                 {documentSections.filter((section) => !isCustomerAssetSection(section)).map((section) => (
                   <article key={section.key} className="report-document-card">
-                    <h4>{stripConfidenceText(section.title)}</h4>
-                    {section.body ? <p>{stripConfidenceText(section.body)}</p> : null}
+                    <h4>{stripConfidenceText(/supporting details/i.test(section.title) ? "Supporting Evidence" : section.title)}</h4>
+                    {section.body ? (/recommend/i.test(section.title) ? <ul>{splitRecommendationText(section.body).map((item, index) => <li key={index}>{stripConfidenceText(item)}</li>)}</ul> : <p>{stripConfidenceText(section.body)}</p>) : null}
                     {getProfessionalFields(section.fields).length > 0 ? (
                       <div className="report-field-grid">
                         {getProfessionalFields(section.fields).map((field) => (
@@ -736,7 +734,7 @@ function GeneratedReportReview({
               {reviewDocument.unattachedDetails.length > 0 ? (
                 <div className="evidence-first-card">
                   <div className="evidence-first-body">
-                    <h4>Supporting details</h4>
+                    <h4>Supporting Evidence</h4>
                     {reviewDocument.unattachedDetails.map((detail, index) => (
                       <p key={`${detail.label}-${index}`}><strong>{detail.label}:</strong> {stripConfidenceText(detail.value)}</p>
                     ))}
@@ -756,10 +754,12 @@ function GeneratedReportReview({
 
 function InspectorFacilityPanel({
   profile,
+  sessionId,
   signatures,
   signatureUrls,
 }: {
   profile: Awaited<ReturnType<typeof requireSessionWorkspace>>["profile"];
+  sessionId: string;
   signatures: SignatureCapture[];
   signatureUrls: Record<string, string>;
 }) {
@@ -787,66 +787,10 @@ function InspectorFacilityPanel({
           <img className="saved-signature-image" src={signatureUrls[latestSignature.id]} alt="Saved report signature" />
         </div>
       ) : <p className="muted">No report-specific signature captured.</p>}
-    </section>
-  );
-}
-
-function SignaturePanel({
-  sessionId,
-  signatures,
-  signatureUrls,
-}: {
-  sessionId: string;
-  signatures: SignatureCapture[];
-  signatureUrls: Record<string, string>;
-}) {
-  return (
-    <section className="card detail-card report-command-card form-stack signature-review-panel">
-      <div className="report-section-heading generated-report-heading">
-        <div>
-          <p className="eyebrow">Signatures</p>
-          <h2>Signatures</h2>
-          <p className="muted">
-            Capture a customer, technician, inspector, or supervisor signature before approval and export.
-          </p>
-        </div>
-        <span className={signatures.length > 0 ? "status-pill success" : "status-pill neutral"}>
-          {signatures.length > 0 ? `${signatures.length} saved` : "Not signed"}
-        </span>
-      </div>
-
-      {signatures.length > 0 ? (
-        <div className="signature-list saved-signature-list">
-          {signatures.map((signature) => (
-            <article key={signature.id} className="signature-list-item saved-signature-card">
-              <div>
-                <strong>{signature.signature_type}</strong>
-                <p className="muted">
-                  {signature.signer_name} · {formatDateTime(signature.signed_at)}
-                </p>
-              </div>
-              {signatureUrls[signature.id] ? (
-                // eslint-disable-next-line @next/next/no-img-element -- signed signature URLs are short-lived Supabase links and should render exactly as captured.
-                <img
-                  className="saved-signature-image"
-                  src={signatureUrls[signature.id]}
-                  alt={`${signature.signature_type} by ${signature.signer_name}`}
-                />
-              ) : (
-                <span className="status-pill neutral compact">Signature saved</span>
-              )}
-            </article>
-          ))}
-        </div>
-      ) : (
-        <p className="muted">No signatures captured.</p>
-      )}
-
       <SignatureCaptureForm sessionId={sessionId} />
     </section>
   );
 }
-
 
 function getProfessionalFields<T extends { value: string }>(fields: T[]) {
   const captured = fields.filter((field) => field.value && !/^(not captured|pending|unknown)$/i.test(field.value.trim()));
