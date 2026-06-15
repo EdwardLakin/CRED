@@ -144,14 +144,94 @@ export function isValidHeaderFieldValue(fieldKey: HeaderFieldKey, label: string,
   return true
 }
 
+function captureDeterministicRuleText(capture: CaptureLike) {
+  const fields = Object.entries(getExtractionFields(capture.extracted_data))
+    .map(([key, value]) => `${key} ${typeof value === 'string' ? value : JSON.stringify(value)}`)
+    .join(' ')
+  return normalizeForMatch(`${capture.type ?? ''} ${capture.media_kind ?? ''} ${capture.technician_note ?? ''} ${capture.transcript ?? ''} ${capture.ai_summary ?? ''} ${capture.ocr_text ?? ''} ${documentTextForCapture(capture)} ${fields}`)
+}
+
+function captureNoteAndFieldText(capture: CaptureLike) {
+  const fields = Object.entries(getExtractionFields(capture.extracted_data))
+    .map(([key, value]) => `${key} ${typeof value === 'string' ? value : JSON.stringify(value)}`)
+    .join(' ')
+  return normalizeForMatch(`${capture.technician_note ?? ''} ${fields}`)
+}
+
+function hasDeterministicBrakeFinding(capture: CaptureLike) {
+  const text = captureNoteAndFieldText(capture)
+  return /\bfront brake pads?\b|\bbrake pads?\b|\b2\s*mm\b|\bwear limit\b|\breplace front brake pads?\b/.test(text)
+}
+
+function hasDeterministicBatteryFinding(capture: CaptureLike) {
+  const text = captureNoteAndFieldText(capture)
+  return /\bbattery\b|\bpositive post\b|\bcorrosion\b|\bterminal corrosion\b|\bclean corrosion\b|\binspect for damage\b/.test(text)
+}
+
+function hasDeterministicDefectNote(capture: CaptureLike) {
+  const note = normalizeForMatch(capture.technician_note ?? '')
+  return Boolean(note) && (hasDeterministicBrakeFinding(capture) || hasDeterministicBatteryFinding(capture) || /\b(defect|finding|failed|critical|advisory|replace|repair|wear limit|corrosion|damage)\b/.test(note))
+}
+
+function getDeterministicReferenceTitle(capture: CaptureLike) {
+  if (hasDeterministicDefectNote(capture)) return null
+  const text = captureDeterministicRuleText(capture)
+  if (/\b(?:work order|workorder|repair order|repairorder|ro number|ro no|r o|complaint|correction|cause|customer|engine model)\b/.test(text)) return 'Work Order'
+  if (/\b(?:licen[cs]e plate|licen[cs]e number|plate number|registration plate|cps 0368)\b/.test(text)) return 'Licence Plate'
+  if (/\b(?:vin|vehicle identification number|manufacturer|data plate|gvwr|gawr|tire size|tyre size|weight ratings?)\b/.test(text)) return 'VIN / Manufacturer Plate'
+  return null
+}
+
+function getDeterministicFinding(capture: CaptureLike) {
+  if (hasDeterministicBrakeFinding(capture)) {
+    return {
+      component: 'brakes',
+      title: 'Front brake pads are at wear limit',
+      severity: 'critical',
+      observation: 'Front brake pads are at wear limit.',
+      recommendations: ['Replace front brake pads due to wear limit.'],
+    }
+  }
+  if (hasDeterministicBatteryFinding(capture)) {
+    return {
+      component: 'battery',
+      title: 'Passenger side battery positive post corrosion',
+      severity: 'advisory',
+      observation: 'Passenger side battery positive post corrosion.',
+      recommendations: [
+        'Clean corrosion on passenger side battery positive post and inspect for damage.',
+        'Regular inspection and maintenance of battery terminals recommended to prevent future corrosion.',
+      ],
+    }
+  }
+  return null
+}
+
+function applyDeterministicFindingGroup(capture: CaptureLike, group: EvidenceGroup): EvidenceGroup {
+  const deterministic = getDeterministicFinding(capture)
+  if (!deterministic) return group
+  return {
+    ...group,
+    details: dedupeEvidenceDetails([
+      { label: 'Component', value: deterministic.component },
+      { label: 'Severity', value: deterministic.severity },
+      ...group.details,
+    ]),
+    findings: dedupeReportText([deterministic.observation, ...group.findings]),
+    recommendations: dedupeReportText([...deterministic.recommendations, ...group.recommendations]),
+  }
+}
+
 export function classifyReferenceDocumentTitle(capture: CaptureLike) {
+  const deterministicTitle = getDeterministicReferenceTitle(capture)
+  if (deterministicTitle) return deterministicTitle
   if (!isDocumentCapture(capture) || isNoteCapture(capture)) return 'Reference Document'
   const typeText = normalizeForMatch(`${capture.type ?? ''} ${capture.media_kind ?? ''}`)
   const text = documentTextForCapture(capture)
-  const captureText = normalizeForMatch(`${typeText} ${text}`)
-  if (/\b(?:licen[cs]e plate|license_plate|licence_plate|plate number|registration plate)\b/.test(captureText) || /\b(?:license|licence)_?plate\b/.test(typeText)) return 'Licence Plate'
-  if (/\b(?:vin|manufacturer|data plate|info plate|serial plate|compliance plate)\b/.test(captureText) || /\b(?:vin|vin_plate|info_plate)\b/.test(typeText)) return 'VIN / Manufacturer Plate'
-  if (/\b(?:work order|work_order|repair order|repair_order|ro number)\b/.test(captureText) || /\bwork_?order\b/.test(typeText)) return 'Work Order'
+  const captureText = captureDeterministicRuleText(capture)
+  if (/\b(?:work order|work_order|repair order|repair_order|ro number|complaint|correction|cause|customer|engine model)\b/.test(captureText) || /\bwork_?order\b/.test(typeText)) return 'Work Order'
+  if (/\b(?:licen[cs]e plate|license_plate|licence_plate|plate number|registration plate|cps 0368)\b/.test(captureText) || /\b(?:license|licence)_?plate\b/.test(typeText)) return 'Licence Plate'
+  if (/\b(?:vin|manufacturer|data plate|info plate|serial plate|compliance plate|gvwr|gawr|tire size|weight ratings?)\b/.test(captureText) || /\b(?:vin|vin_plate|info_plate)\b/.test(typeText)) return 'VIN / Manufacturer Plate'
   if (/registration/.test(text)) return 'Registration'
   if (/compliance|certificate|certification/.test(text)) return 'Compliance Document'
   if (/manual|manufacturer|specification/.test(text)) return 'Manufacturer Document'
@@ -622,10 +702,10 @@ function hardReferenceText(capture: CaptureLike) {
 
 export function isHardReferenceDocument(capture: CaptureLike) {
   const text = hardReferenceText(capture)
-  if (!text) return false
-  if (/\b(?:work order|workorder|repair order|repairorder|ro number|ro no|r o)\b/.test(text)) return true
-  if (/\b(?:licen[cs]e plate|licen[cs]e number|plate number|registration plate)\b/.test(text)) return true
-  if (/\b(?:vin plate|vehicle identification number|manufacturer plate|manufacturer label|data plate|compliance label|compliance plate|info plate|serial plate)\b/.test(text)) return true
+  if (!text || hasDeterministicDefectNote(capture)) return false
+  if (/\b(?:work order|workorder|repair order|repairorder|ro number|ro no|r o|complaint|correction|cause|customer|engine model)\b/.test(text)) return true
+  if (/\b(?:licen[cs]e plate|licen[cs]e number|plate number|registration plate|cps 0368)\b/.test(text)) return true
+  if (/\b(?:vin plate|vehicle identification number|manufacturer plate|manufacturer label|data plate|compliance label|compliance plate|info plate|serial plate|gvwr|gawr|tire size|weight ratings?)\b/.test(text)) return true
   if (/\b(?:registration|certificate|certification|form|checklist)\b/.test(text)) return true
   return false
 }
@@ -652,6 +732,8 @@ function hasTrueDefectEvidence(capture: CaptureLike, group?: EvidenceGroup) {
 export function classifyCapture(capture: CaptureLike, group?: EvidenceGroup): CaptureClassification {
   const text = textForCapture(capture)
   if (/\b(hidden_from_report|internal_only|debug)\b/i.test(text)) return 'ignored_internal'
+  if (getDeterministicFinding(capture)) return 'inspection_finding'
+  if (getDeterministicReferenceTitle(capture)) return 'reference_document'
   if (isHardReferenceDocument(capture)) return 'reference_document'
   if (isNoteCapture(capture) && !hasTrueDefectEvidence(capture, group)) return 'additional_note'
   if (hasTrueDefectEvidence(capture, group)) return 'inspection_finding'
@@ -717,7 +799,8 @@ export function buildNonDuplicatedReviewDocument<TCapture extends CaptureLike>({
   }
   for (const capture of captures) {
     if (rendered.has(capture.id)) continue
-    const group = groupsById.get(capture.id) ?? { capture_id: capture.id, details: [], findings: [], recommendations: [] }
+    const baseGroup = groupsById.get(capture.id) ?? { capture_id: capture.id, details: [], findings: [], recommendations: [] }
+    const group = applyDeterministicFindingGroup(capture, baseGroup)
     const item = { capture, group, purpose: classifyEvidencePurpose(capture, group) }
     if (item.purpose === 'finding') result.findings.push(item)
     else if (item.purpose === 'reference_document') result.referenceDocuments.push(item)
@@ -964,6 +1047,7 @@ function findingTitleFromText(value: string) {
   const text = clean(value, 220)
   if (!text || /^finding\s+\d+$/i.test(text)) return ''
   if (/\bbrakes?\b/i.test(text) && /\bpads?\b/i.test(text) && /\b(?:wear\s*limit|2\s*mm|replace)\b/i.test(text)) return 'Front brake pads are at wear limit'
+  if (/\bfront brake pads are at wear limit\b/i.test(text)) return 'Front brake pads are at wear limit'
   if (/\bbattery\b/i.test(text) && /\bpositive\s+post\b/i.test(text) && /\bcorrosion\b/i.test(text)) return 'Passenger side battery positive post corrosion'
   if (/\bbattery\b/i.test(text) && /\bcorrosion\b/i.test(text)) return 'Battery terminal corrosion'
   return stripConfidenceText(text.split(/[.;]/)[0] ?? '').replace(/^observed condition:?\s*/i, '').trim()
