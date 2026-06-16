@@ -218,6 +218,22 @@ function buildEvidenceSectionHtml(title: string, items: ReturnType<typeof buildN
   return `<section class="item service-section"><h2>${escapeHtml(title)}</h2><div class="evidence-children">${buildEvidenceItemsHtml(items, signedUrls)}</div></section>`
 }
 
+function buildEvidenceAppendixHtml(captures: ReportCapture[], signedUrls: Record<string, string>, timeZone: string | null) {
+  if (captures.length === 0) return '<section class="item service-section"><h2>Evidence Appendix</h2><p class="muted">No included evidence selected for this report.</p></section>'
+  return `<section class="item service-section"><h2>Evidence Appendix</h2><p class="muted">All included captures are listed here independent of AI draft references.</p><div class="evidence-children">${captures.map((capture) => {
+    const signedUrl = signedUrls[capture.id]
+    const isImageFile = Boolean(capture.storage_path?.match(/\.(jpg|jpeg|png|webp|gif|heic)$/i))
+    const mediaKind = isImageFile ? 'image' : (capture.media_kind || (capture.type === 'text_note' ? 'note' : capture.type === 'video' ? 'video' : 'file'))
+    const primaryNote = capture.technician_note?.trim() || capture.transcript?.trim() || 'No technician note provided.'
+    const mediaHtml = signedUrl && mediaKind === 'image'
+      ? `<img src="${escapeHtml(signedUrl)}" alt="${escapeHtml(getEvidenceTitle(capture))}" />`
+      : signedUrl
+        ? `<p><a href="${escapeHtml(signedUrl)}">Open ${escapeHtml(mediaKind)} evidence</a></p>`
+        : `<div class="video-still">${escapeHtml(getEvidenceTitle(capture))}</div>`
+    return `<article class="item"><h2>${escapeHtml(getEvidenceTitle(capture))}</h2><div class="media">${mediaHtml}</div><section class="finding"><h3>Primary evidence description</h3><p>${escapeHtml(primaryNote)}</p></section>${renderDefinitionRows([{ label: 'Media kind', value: String(capture.media_kind ?? mediaKind) }, { label: 'Captured', value: formatDateInTimeZone(new Date(capture.captured_at), timeZone) }])}</article>`
+  }).join('')}</div></section>`
+}
+
 
 function getDiagnosticProcedureInfo(draft: ReportDraft | null) {
   if (!draft || !isRecord(draft.report_structure) || draft.report_structure.mode !== 'diagnostic_procedure') return null
@@ -267,6 +283,7 @@ function buildDiagnosticProcedureReportHtml(params: { session: ReportSession; or
     const evidenceHtml = stepCaptures.length ? Array.from(new Set(stepCaptures.map(getDiagnosticEvidenceRole))).map((role) => `<div><p class="muted">${escapeHtml(formatDiagnosticEvidenceRole(role))}</p><ul>${stepCaptures.filter((capture) => getDiagnosticEvidenceRole(capture) === role).map((capture) => `<li>${escapeHtml(getEvidenceTitle(capture))}${capture.technician_note ? ` — ${escapeHtml(capture.technician_note)}` : ''}</li>`).join('')}</ul></div>`).join('') : '<p class="muted">No step evidence attached.</p>'
     return `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2>${typeof metadata.source_page_start === 'number' ? `<p class="muted">Source page${typeof metadata.source_page_end === 'number' && metadata.source_page_end !== metadata.source_page_start ? `s ${metadata.source_page_start}-${metadata.source_page_end}` : ` ${metadata.source_page_start}`}</p>` : ''}${Array.isArray(metadata.extraction_warnings) && metadata.extraction_warnings.length ? `<p class="notice warning">${escapeHtml(metadata.extraction_warnings.map(String).join('; '))}</p>` : ''}<p><strong>Status:</strong> ${escapeHtml(typeof metadata.technician_status === 'string' ? metadata.technician_status.replace(/_/g, ' ') : 'not tested')}</p><p><strong>Completeness:</strong> ${escapeHtml(completeness.badges.length ? completeness.badges.join(', ') : 'Incomplete')}</p>${typeof metadata.technician_selected_branch === 'string' && metadata.technician_selected_branch ? `<p><strong>Technician-selected branch:</strong> ${escapeHtml(metadata.technician_selected_branch)}</p>` : ''}<h3>OEM instruction text</h3><p>${escapeHtml(String(metadata.instruction ?? section.body ?? ''))}</p>${typeof metadata.oem_flow_text === 'string' && metadata.oem_flow_text ? `<p><strong>OEM flow text:</strong> ${escapeHtml(metadata.oem_flow_text)}</p>` : ''}<h3>Technician-entered readings</h3>${readingsHtml}${typeof metadata.technician_notes === 'string' && metadata.technician_notes ? `<h3>Technician notes</h3><p>${escapeHtml(metadata.technician_notes)}</p>` : ''}${typeof metadata.technician_conclusion === 'string' && metadata.technician_conclusion ? `<h3>Technician conclusion</h3><p>${escapeHtml(metadata.technician_conclusion)}</p>` : ''}<h3>Attached evidence</h3>${evidenceHtml}</section>`
   }).join('')
+  const appendixHtml = buildEvidenceAppendixHtml(params.captureItems, params.signedUrls, params.timeZone)
   const details = [
     { label: 'Organization', value: params.organizationName },
     { label: 'Session', value: params.session.title },
@@ -285,7 +302,7 @@ function buildDiagnosticProcedureReportHtml(params: { session: ReportSession; or
     { label: 'Missing readings/evidence/branches', value: String(progress.missingRequiredDocumentationCount) },
     { label: 'Warnings', value: String(progress.warningCount) },
     { label: 'Documentation ready', value: progress.reportReady ? 'Yes' : 'No' },
-  ])}</section>`}${stepHtml || '<section class="item"><h2>No visible procedure steps documented.</h2><p class="notice warning">All extracted steps may be hidden or unavailable.</p></section>'}</main></body></html>`
+  ])}</section>`}${stepHtml || '<section class="item"><h2>No visible procedure steps documented.</h2><p class="notice warning">All extracted steps may be hidden or unavailable.</p></section>'}${appendixHtml}</main></body></html>`
 }
 
 function buildFieldServiceReportHtml({
@@ -336,12 +353,13 @@ function buildFieldServiceReportHtml({
   const reportTitle = reportDraft?.title || session.title
   const findingModels = reviewDocument.findingModels
   const summaryHtml = buildExecutiveSummaryHtml({ reportTitle, organizationName, dateLabel: formatDateInTimeZone(new Date(), timeZone), findings: findingModels, referenceCount: reviewDocument.referenceDocuments.length, evidenceCount: captureItems.length })
+  const appendixHtml = buildEvidenceAppendixHtml(captureItems, signedUrls, timeZone)
   const evidenceHtml = [buildFindingCardsHtml(reviewDocument.findings, signedUrls), buildRecommendedActionsHtml(findingModels), buildReferenceDocumentsHtml(reviewDocument.referenceDocuments, signedUrls), buildEvidenceSectionHtml('Additional Notes', reviewDocument.additionalNotes.filter((entry) => isMeaningfulCustomerReportText([entry.capture.technician_note, entry.capture.transcript, ...entry.group.findings, ...entry.group.recommendations].filter(Boolean).join(' '))), signedUrls), buildEvidenceSectionHtml('Supporting Evidence', reviewDocument.supportingEvidence, signedUrls)].join('')
   const generatedReportHtml = buildGeneratedReportHtml(reportDraft, reportSections)
   const toolbarHtml = showToolbar ? '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>' : ''
 
   return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(reportTitle)} printable field service report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Report Header</p>${renderDefinitionRows(headerRows)}</header>${summaryHtml}${generatedReportHtml}${renderFieldServiceSection(details, 'equipment')}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work performed</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Evidence</h2><p class="muted">Evidence items reference captured photos, videos, documents, and technician notes.</p></section>${buildFinalNotesHtml(session)}${evidenceHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges / documentation only</h2>${renderDefinitionRows(chargeRows)}</section>${buildInspectorFacilityHtml(null, null, signatures, signatureUrls)}</main></body></html>`
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Report Header</p>${renderDefinitionRows(headerRows)}</header>${summaryHtml}${generatedReportHtml}${renderFieldServiceSection(details, 'equipment')}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work performed</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Evidence</h2><p class="muted">Evidence items reference captured photos, videos, documents, and technician notes.</p></section>${buildFinalNotesHtml(session)}${evidenceHtml}${appendixHtml}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges / documentation only</h2>${renderDefinitionRows(chargeRows)}</section>${buildInspectorFacilityHtml(null, null, signatures, signatureUrls)}</main></body></html>`
 }
 
 const REPORT_STYLES = `
@@ -433,9 +451,10 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const captureItems = sanitizeCapturesForImageAiAssist(captures ?? [], imageAiAssistEnabled) as ReportCapture[]
   const signedUrls: Record<string, string> = {}
   await Promise.all(captureItems.map(async (capture) => {
-    if (!capture.storage_path) return
+    const path = capture.storage_path ?? capture.thumbnail_path
+    if (!path) return
 
-    const { data } = await supabase.storage.from('documentation-captures').createSignedUrl(capture.storage_path, 60 * 20)
+    const { data } = await supabase.storage.from('documentation-captures').createSignedUrl(path, 60 * 20)
     if (data?.signedUrl) signedUrls[capture.id] = data.signedUrl
   }))
 
@@ -547,12 +566,16 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const unattachedHtml = unattachedDetails.length > 0 ? `<section class="item service-section"><h2>Supporting Evidence</h2>${renderDefinitionRows(unattachedDetails.map((detail) => ({ label: detail.label, value: detail.value })))}</section>` : ''
   const findingModels = reviewDocument.findingModels
   const summaryHtml = buildExecutiveSummaryHtml({ reportTitle, organizationName, dateLabel: formatDateInTimeZone(new Date(), timeZone), findings: findingModels, referenceCount: reviewDocument.referenceDocuments.length, evidenceCount: captureItems.length })
+  const appendixHtml = buildEvidenceAppendixHtml(captureItems, signedUrls, timeZone)
+  const draftReferencedCaptureCount = new Set(visibleReportSections.flatMap((section) => section.source_capture_ids ?? []).filter((id) => captureItems.some((capture) => capture.id === id))).size
+  const evidenceSectionIsEmpty = reviewDocument.findings.length === 0 && reviewDocument.referenceDocuments.length === 0 && reviewDocument.additionalNotes.length === 0 && reviewDocument.supportingEvidence.length === 0 && reviewDocument.unattachedDetails.length === 0
+  if (captureItems.length > 0 && draftReferencedCaptureCount === 0 && evidenceSectionIsEmpty) console.warn('[report-evidence-check] Included captures have no draft references; Evidence Appendix will render all included captures.', { session_id: session.id, included_capture_count: captureItems.length })
   const itemsHtml = [buildFindingCardsHtml(reviewDocument.findings, signedUrls), buildRecommendedActionsHtml(findingModels), buildReferenceDocumentsHtml(reviewDocument.referenceDocuments, signedUrls), buildEvidenceSectionHtml('Additional Notes', reviewDocument.additionalNotes.filter((entry) => isMeaningfulCustomerReportText([entry.capture.technician_note, entry.capture.transcript, ...entry.group.findings, ...entry.group.recommendations].filter(Boolean).join(' '))), signedUrls), buildEvidenceSectionHtml('Supporting Evidence', reviewDocument.supportingEvidence, signedUrls)].join('')
 
 
   const toolbarHtml = previewOnly ? '' : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>'
   const html = `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Report Header</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'No asset details')} · ${escapeHtml(formatDateInTimeZone(new Date(), timeZone))}</p></header>${summaryHtml}${customerAssetHtml ? `<section class="item service-section"><h2>Customer / Asset Details</h2>${customerAssetHtml}</section>` : ''}${formSectionsHtml || generatedReportHtml}${unattachedHtml}${buildFinalNotesHtml(session)}${itemsHtml || '<section class="item"><h2>No report evidence selected.</h2></section>'}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile, reportSignatures, signatureUrls)}</main></body></html>`
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Report Header</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'No asset details')} · ${escapeHtml(formatDateInTimeZone(new Date(), timeZone))}</p></header>${summaryHtml}${customerAssetHtml ? `<section class="item service-section"><h2>Customer / Asset Details</h2>${customerAssetHtml}</section>` : ''}${formSectionsHtml || generatedReportHtml}${unattachedHtml}${buildFinalNotesHtml(session)}${itemsHtml}${appendixHtml}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile, reportSignatures, signatureUrls)}</main></body></html>`
 
   return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
 }

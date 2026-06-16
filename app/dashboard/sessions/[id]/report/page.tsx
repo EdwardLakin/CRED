@@ -187,6 +187,8 @@ function DiagnosticProcedureReport({
   const info = getDiagnosticProcedureInfo(currentReport)
   const steps = sections.filter((section) => { const metadata = getDiagnosticStepMetadata(section); return metadata.section_type === 'diagnostic_procedure_step' && metadata.visible !== false })
   const progress = getDiagnosticProcedureProgress(steps, captures)
+  const referencedCaptureCount = new Set(sections.flatMap((section) => section.source_capture_ids ?? []).filter((id) => captures.some((capture) => capture.id === id))).size
+  const hasUnlinkedIncludedEvidence = captures.length > referencedCaptureCount
   return (
     <main className="page-shell dashboard-shell report-preview-shell report-review-shell">
       <div className="section-header page-header report-preview-header report-review-header">
@@ -217,6 +219,17 @@ function DiagnosticProcedureReport({
             <div><span>Missing readings/evidence/branches</span><strong>{progress.missingRequiredDocumentationCount}</strong></div>
           </div>
         </section>
+        <section className="inspection-summary-card">
+          <div className="report-section-title-row"><div><p className="eyebrow">Evidence diagnostics</p><h3>Capture coverage</h3></div></div>
+          <div className="inspection-metric-grid">
+            <div><span>Captures saved</span><strong>{captures.length}</strong></div>
+            <div><span>Included in report</span><strong>{captures.length}</strong></div>
+            <div><span>Referenced by draft</span><strong>{referencedCaptureCount}</strong></div>
+            <div><span>Hidden from report</span><strong>0</strong></div>
+          </div>
+          {hasUnlinkedIncludedEvidence ? <p className="notice warning">Some evidence is not linked to generated sections. It will still appear in the Evidence Appendix.</p> : null}
+        </section>
+        <EvidenceAppendix supportingEvidence={supportingEvidence} timeZone={null} />
         <div className="report-document-flow">
           {steps.length === 0 ? <p className="notice warning">No visible procedure steps are included in this diagnostic report.</p> : null}
           {steps.map((section) => {
@@ -364,7 +377,7 @@ export default async function SessionReportPreviewPage({
     template?.required_evidence ?? null,
   );
   const allCaptures = sanitizeCapturesForImageAiAssist(captures ?? [], profile.organization.image_ai_assist_enabled);
-  const visibleCaptures = allCaptures;
+  const visibleCaptures = allCaptures.filter((capture) => capture.include_in_report);
   const signedEvidenceUrls: Record<string, string> = {};
   await Promise.all(
     visibleCaptures.map(async (capture) => {
@@ -384,6 +397,13 @@ export default async function SessionReportPreviewPage({
     kind: getEvidenceKind(capture),
   }));
   const visibleReportSections = (reportSections ?? []).filter((section) => !isHiddenFromReport(section.metadata));
+  const draftReferencedCaptureIds = new Set(visibleReportSections.flatMap((section) => section.source_capture_ids ?? []).filter((id) => visibleCaptures.some((capture) => capture.id === id)));
+  const reportEvidenceDiagnostics = {
+    capturesSaved: allCaptures.length,
+    includedInReport: visibleCaptures.length,
+    referencedByDraft: draftReferencedCaptureIds.size,
+    hiddenFromReport: allCaptures.filter((capture) => !capture.include_in_report).length,
+  };
   const normalizedReportSections = normalizeDraftSections(visibleReportSections, visibleCaptures);
   const derivedFormSections = deriveFormSectionsFromCaptures(visibleCaptures);
   const documentSections = normalizedReportSections.length > 0 ? normalizedReportSections : derivedFormSections;
@@ -510,6 +530,7 @@ export default async function SessionReportPreviewPage({
             evidencePackages={evidencePackages}
             customerAssetRows={buildCustomerAssetRows(documentSections, session as unknown as Record<string, unknown>)}
             supportingEvidence={supportingEvidence}
+            reportEvidenceDiagnostics={reportEvidenceDiagnostics}
             session={session}
             saveReportEditsAction={saveReportEditsAction}
             sourceFieldEntries={sourceFieldEntries}
@@ -571,6 +592,7 @@ function GeneratedReportReview({
   evidencePackages,
   customerAssetRows,
   supportingEvidence,
+  reportEvidenceDiagnostics,
   session,
   saveReportEditsAction,
   sourceFieldEntries,
@@ -594,6 +616,7 @@ function GeneratedReportReview({
   evidencePackages: ReturnType<typeof buildEvidencePackages>;
   customerAssetRows: ReturnType<typeof buildCustomerAssetRows>;
   supportingEvidence: SupportingEvidenceItem[];
+  reportEvidenceDiagnostics: { capturesSaved: number; includedInReport: number; referencedByDraft: number; hiddenFromReport: number };
   session: Pick<DocumentationSession, "id" | "title">;
   saveReportEditsAction: ServerAction | null;
   sourceFieldEntries: [string, unknown][];
@@ -612,6 +635,7 @@ function GeneratedReportReview({
   const findings = reviewDocument.findingModels;
   const actions = reviewDocument.recommendedActions;
   const severityBreakdown = reviewDocument.summary.severityBreakdown;
+  const hasUnlinkedIncludedEvidence = reportEvidenceDiagnostics.includedInReport > reportEvidenceDiagnostics.referencedByDraft;
 
   return (
     <section className="card detail-card report-command-card form-stack generated-report-card">
@@ -687,6 +711,22 @@ function GeneratedReportReview({
           </div>
         </div>
       </section>
+      <section className="inspection-summary-card">
+        <div className="report-section-title-row">
+          <div>
+            <p className="eyebrow">Evidence diagnostics</p>
+            <h3>Capture coverage</h3>
+          </div>
+        </div>
+        <div className="inspection-metric-grid">
+          <div><span>Captures saved</span><strong>{reportEvidenceDiagnostics.capturesSaved}</strong></div>
+          <div><span>Included in report</span><strong>{reportEvidenceDiagnostics.includedInReport}</strong></div>
+          <div><span>Referenced by draft</span><strong>{reportEvidenceDiagnostics.referencedByDraft}</strong></div>
+          <div><span>Hidden from report</span><strong>{reportEvidenceDiagnostics.hiddenFromReport}</strong></div>
+        </div>
+        {hasUnlinkedIncludedEvidence ? <p className="notice warning">Some evidence is not linked to generated sections. It will still appear in the Evidence Appendix.</p> : null}
+      </section>
+
       {hasPendingEvidence ? (
         <p className="notice info compact-report-notice">
           Your evidence is saved. CRED is preparing the report. You can
@@ -946,6 +986,8 @@ function GeneratedReportReview({
             )}
           </section>
 
+          <EvidenceAppendix supportingEvidence={supportingEvidence} timeZone={timeZone} />
+
           {documentSections.length > 0 ? (
             <section className="report-subsection report-supporting-section">
               <div className="report-section-title-row">
@@ -1165,6 +1207,44 @@ function EvidenceGroupList({
         );
       })}
     </div>
+  );
+}
+
+function EvidenceAppendix({ supportingEvidence, timeZone }: { supportingEvidence: SupportingEvidenceItem[]; timeZone: string | null }) {
+  return (
+    <section className="report-subsection report-supporting-section">
+      <div className="report-section-title-row">
+        <div>
+          <p className="eyebrow">Evidence Appendix</p>
+          <h3>Evidence Captured</h3>
+          <p className="muted">All included captures appear here whether or not generated draft sections reference them.</p>
+        </div>
+        <span className="status-pill neutral compact">{supportingEvidence.length} included</span>
+      </div>
+      {supportingEvidence.length > 0 ? (
+        <div className="evidence-first-list">
+          {supportingEvidence.map((item) => (
+            <article key={item.capture.id} className="evidence-first-card">
+              <div className="evidence-first-media">
+                {item.kind === "photo" && item.signedUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured.
+                  <img src={item.signedUrl} alt={item.title} />
+                ) : item.signedUrl ? (
+                  <div className="review-evidence-placeholder"><a href={item.signedUrl}>Open {item.kind} evidence</a></div>
+                ) : (
+                  <div className="review-evidence-placeholder">{item.title}</div>
+                )}
+              </div>
+              <div className="evidence-first-body">
+                <h4>{item.title}</h4>
+                <p><strong>Primary evidence description:</strong> {stripConfidenceText(item.note ?? "No technician note provided.")}</p>
+                <p className="muted">Media kind: {item.capture.media_kind ?? item.kind} · Captured {formatDateTime(item.capture.captured_at, timeZone)}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : <p className="muted">No included evidence selected for this report.</p>}
+    </section>
   );
 }
 
