@@ -226,6 +226,19 @@ export async function markReportReviewed(sessionId: string, formData: FormData) 
     )
   }
 
+  const { data: reportDrafts } = await supabase
+    .from('ai_report_drafts')
+    .select('report_structure')
+    .eq('documentation_session_id', session.id)
+    .eq('organization_id', profile.organization_id)
+    .not('status', 'eq', 'superseded')
+    .order('generated_at', { ascending: false })
+
+  const reportStructure = (reportDrafts ?? []).map((draft) => draft.report_structure).find((structure) => isRecord(structure) && structure.mode === 'diagnostic_procedure')
+  if (isRecord(reportStructure) && reportStructure.signed_off !== true) {
+    redirect(getReportRedirectPath(session.id, { error: 'Technician sign-off is required before approving diagnostic documentation for export.' }))
+  }
+
   const { error } = await supabase
     .from('documentation_sessions')
     .update({

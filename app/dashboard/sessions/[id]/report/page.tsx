@@ -7,7 +7,7 @@ import {
   getRequiredEvidenceCompletion,
   getInspectionProgress,
 } from "@/features/capture";
-import { getDiagnosticProcedureProgress, getDiagnosticStepCompleteness } from "@/features/diagnostic-procedures/progress";
+import { asDiagnosticRecordArray, getDiagnosticProcedureProgress, getDiagnosticStepCompleteness } from "@/features/diagnostic-procedures/progress";
 import {
   buildCustomerAssetRows,
   buildEvidencePackages,
@@ -217,10 +217,11 @@ function DiagnosticProcedureReport({
           </div>
         </section>
         <div className="report-document-flow">
+          {steps.length === 0 ? <p className="notice warning">No visible procedure steps are included in this diagnostic report.</p> : null}
           {steps.map((section) => {
             const metadata = getDiagnosticStepMetadata(section)
             const stepId = typeof metadata.step_id === 'string' ? metadata.step_id : section.section_key
-            const readings = Array.isArray(metadata.technician_readings) ? metadata.technician_readings.filter(isRecord) : []
+            const readings = asDiagnosticRecordArray(metadata.technician_readings)
             const stepCaptures = captures.filter((capture) => captureMatchesDiagnosticStep(capture, stepId))
             const completeness = getDiagnosticStepCompleteness(section, captures)
             return (
@@ -239,7 +240,7 @@ function DiagnosticProcedureReport({
             )
           })}
         </div>
-        <form action={markReviewedAction} className="form-actions report-inline-actions"><button className="button button-primary touch-target">Approve documentation for export</button></form>
+        {info?.signedOff ? <form action={markReviewedAction} className="form-actions report-inline-actions"><button className="button button-primary touch-target">Approve documentation for export</button></form> : <p className="notice warning"><strong>Export approval blocked:</strong> technician sign-off is required before approving diagnostic documentation for export.</p>}
       </section>
     </main>
   )
