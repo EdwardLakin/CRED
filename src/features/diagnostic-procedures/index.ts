@@ -1,1 +1,1 @@
-export { uploadAndExtractDiagnosticProcedure, updateDiagnosticStep, attachCaptureToDiagnosticStep } from './actions'
+export { uploadAndExtractDiagnosticProcedure, updateDiagnosticStep, updateDiagnosticProcedureStepExtraction, approveDiagnosticProcedureStructure, attachCaptureToDiagnosticStep } from './actions'
