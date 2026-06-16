@@ -186,7 +186,7 @@ function getMediaKind(
 
 function mergeGuidance(
   extractedData: Json,
-  guidance: { workflow: string; step: string; label: string } | null,
+  guidance: { workflow: string; step: string; label: string; evidenceRole?: DiagnosticEvidenceRole | null } | null,
 ): Json {
   if (!guidance) {
     return extractedData
@@ -333,7 +333,12 @@ export type CreateTextNoteCaptureRecordInput = {
   noteSource?: 'manual' | 'voice' | 'edited'
   reportOrder?: number | null
   includeInReport?: boolean
+  diagnosticEvidenceRole?: DiagnosticEvidenceRole | null
 }
+
+const DIAGNOSTIC_EVIDENCE_ROLES = new Set(['meter_reading_photo', 'scan_tool_screenshot', 'connector_photo', 'wiring_reference', 'voice_note', 'technician_note', 'other'])
+
+export type DiagnosticEvidenceRole = 'meter_reading_photo' | 'scan_tool_screenshot' | 'connector_photo' | 'wiring_reference' | 'voice_note' | 'technician_note' | 'other'
 
 export type CreateUploadedCaptureRecordInput = {
   sessionId: string
@@ -360,6 +365,7 @@ export type CreateUploadedCaptureRecordInput = {
   sourceDocumentLabel?: string | null
   source_document_type?: string | null
   source_document_label?: string | null
+  diagnosticEvidenceRole?: DiagnosticEvidenceRole | null
 }
 
 export type CreateUploadedCaptureRecordResult =
@@ -372,7 +378,7 @@ export type CreateTextNoteCaptureRecordResult =
 
 function getTextNoteExtractedData(
   noteLength: number,
-  guidance: { workflow: string; step: string; label: string } | null,
+  guidance: { workflow: string; step: string; label: string; evidenceRole?: DiagnosticEvidenceRole | null } | null,
 ): Json {
   const baseData = getInitialExtractedData('text_note')
   const baseObject = isRecord(baseData) ? baseData : {}
@@ -420,7 +426,7 @@ function getUploadFileMetadata(
 
 function addDiagnosticStepMetadata(
   extractedData: Json,
-  guidance: { workflow: string; step: string; label: string } | null,
+  guidance: { workflow: string; step: string; label: string; evidenceRole?: DiagnosticEvidenceRole | null } | null,
 ): Json {
   if (!guidance || guidance.workflow !== 'diagnostic_procedure') {
     return extractedData
@@ -434,6 +440,7 @@ function addDiagnosticStepMetadata(
       step_id: guidance.step,
       label: guidance.label,
       documentation_support_only: true,
+      ...(guidance.evidenceRole ? { evidence_role: guidance.evidenceRole } : {}),
     },
   }
 }
@@ -466,9 +473,10 @@ export async function createTextNoteCaptureRecord(
     input.noteSource && ['voice', 'manual', 'edited'].includes(input.noteSource)
       ? input.noteSource
       : 'manual'
+  const evidenceRole = input.diagnosticEvidenceRole && DIAGNOSTIC_EVIDENCE_ROLES.has(input.diagnosticEvidenceRole) ? input.diagnosticEvidenceRole : null
   const guidance =
     guidedStep && guidedLabel && sessionWorkflow
-      ? { workflow: sessionWorkflow, step: guidedStep, label: guidedLabel }
+      ? { workflow: sessionWorkflow, step: guidedStep, label: guidedLabel, evidenceRole }
       : null
 
   if (!sessionId) {
@@ -687,9 +695,10 @@ export async function createCaptureRecordFromUploadedFile(
   }
 
   const captureType = captureMetadata.type
+  const evidenceRole = input.diagnosticEvidenceRole && DIAGNOSTIC_EVIDENCE_ROLES.has(input.diagnosticEvidenceRole) ? input.diagnosticEvidenceRole : null
   const guidance =
     guidedStep && guidedLabel && sessionWorkflow
-      ? { workflow: sessionWorkflow, step: guidedStep, label: guidedLabel }
+      ? { workflow: sessionWorkflow, step: guidedStep, label: guidedLabel, evidenceRole }
       : null
 
   if (

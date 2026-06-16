@@ -233,6 +233,16 @@ function getDiagnosticStepMetadata(section: ReportDraftSection) {
   return isRecord(section.metadata) ? section.metadata as Record<string, unknown> : {}
 }
 
+function getDiagnosticEvidenceRole(capture: ReportCapture) {
+  if (!isRecord(capture.extracted_data) || !isRecord(capture.extracted_data.diagnostic_step)) return 'other'
+  const role = capture.extracted_data.diagnostic_step.evidence_role
+  return typeof role === 'string' ? role : 'other'
+}
+
+function formatDiagnosticEvidenceRole(role: string) {
+  return role.replace(/_/g, ' ')
+}
+
 function captureMatchesDiagnosticStep(capture: ReportCapture, stepId: string) {
   return isRecord(capture.extracted_data) && isRecord(capture.extracted_data.diagnostic_step) && capture.extracted_data.diagnostic_step.step_id === stepId
 }
@@ -247,8 +257,8 @@ function buildDiagnosticProcedureReportHtml(params: { session: ReportSession; or
     const readings = Array.isArray(metadata.technician_readings) ? metadata.technician_readings.filter(isRecord) : []
     const stepCaptures = params.captureItems.filter((capture) => captureMatchesDiagnosticStep(capture, stepId))
     const readingsHtml = readings.length ? renderDefinitionRows(readings.map((reading, index) => ({ label: String(reading.label ?? `Reading ${index + 1}`), value: `${String(reading.value ?? '')}${reading.unit ? ` ${String(reading.unit)}` : ''}` }))) : '<p class="muted">No technician readings entered.</p>'
-    const evidenceHtml = stepCaptures.length ? `<ul>${stepCaptures.map((capture) => { const url = params.signedUrls[capture.id]; return `<li>${escapeHtml(getEvidenceTitle(capture))}${capture.technician_note ? ` — ${escapeHtml(capture.technician_note)}` : ''}${url ? ` — <a href="${escapeHtml(url)}">Open attachment</a>` : ''}</li>` }).join('')}</ul>` : '<p class="muted">No step evidence attached.</p>'
-    return `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2><p><strong>Status:</strong> ${escapeHtml(typeof metadata.technician_status === 'string' ? metadata.technician_status.replace(/_/g, ' ') : 'not tested')}</p><h3>OEM instruction text</h3><p>${escapeHtml(String(metadata.instruction ?? section.body ?? ''))}</p>${typeof metadata.oem_flow_text === 'string' && metadata.oem_flow_text ? `<p><strong>OEM flow text:</strong> ${escapeHtml(metadata.oem_flow_text)}</p>` : ''}<h3>Technician-entered readings</h3>${readingsHtml}${typeof metadata.technician_notes === 'string' && metadata.technician_notes ? `<h3>Technician notes</h3><p>${escapeHtml(metadata.technician_notes)}</p>` : ''}${typeof metadata.technician_conclusion === 'string' && metadata.technician_conclusion ? `<h3>Technician conclusion</h3><p>${escapeHtml(metadata.technician_conclusion)}</p>` : ''}<h3>Attached evidence</h3>${evidenceHtml}</section>`
+    const evidenceHtml = stepCaptures.length ? Array.from(new Set(stepCaptures.map(getDiagnosticEvidenceRole))).map((role) => `<div><p class="muted">${escapeHtml(formatDiagnosticEvidenceRole(role))}</p><ul>${stepCaptures.filter((capture) => getDiagnosticEvidenceRole(capture) === role).map((capture) => { const url = params.signedUrls[capture.id]; return `<li>${escapeHtml(getEvidenceTitle(capture))}${capture.technician_note ? ` — ${escapeHtml(capture.technician_note)}` : ''}${url ? ` — <a href="${escapeHtml(url)}">Open attachment</a>` : ''}</li>` }).join('')}</ul></div>`).join('') : '<p class="muted">No step evidence attached.</p>'
+    return `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2>${typeof metadata.source_page_start === 'number' ? `<p class="muted">Source page${typeof metadata.source_page_end === 'number' && metadata.source_page_end !== metadata.source_page_start ? `s ${metadata.source_page_start}-${metadata.source_page_end}` : ` ${metadata.source_page_start}`}</p>` : ''}${Array.isArray(metadata.extraction_warnings) && metadata.extraction_warnings.length ? `<p class="notice warning">${escapeHtml(metadata.extraction_warnings.map(String).join('; '))}</p>` : ''}<p><strong>Status:</strong> ${escapeHtml(typeof metadata.technician_status === 'string' ? metadata.technician_status.replace(/_/g, ' ') : 'not tested')}</p><h3>OEM instruction text</h3><p>${escapeHtml(String(metadata.instruction ?? section.body ?? ''))}</p>${typeof metadata.oem_flow_text === 'string' && metadata.oem_flow_text ? `<p><strong>OEM flow text:</strong> ${escapeHtml(metadata.oem_flow_text)}</p>` : ''}<h3>Technician-entered readings</h3>${readingsHtml}${typeof metadata.technician_notes === 'string' && metadata.technician_notes ? `<h3>Technician notes</h3><p>${escapeHtml(metadata.technician_notes)}</p>` : ''}${typeof metadata.technician_conclusion === 'string' && metadata.technician_conclusion ? `<h3>Technician conclusion</h3><p>${escapeHtml(metadata.technician_conclusion)}</p>` : ''}<h3>Attached evidence</h3>${evidenceHtml}</section>`
   }).join('')
   const details = [
     { label: 'Organization', value: params.organizationName },

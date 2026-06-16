@@ -28,6 +28,17 @@ const MAX_BATCH_FILES = 10
 const VOICE_NOTE_TIMEOUT_MS = 60_000
 
 type UploadStatus = 'queued' | 'uploading' | 'saved' | 'failed'
+type DiagnosticEvidenceRole = 'meter_reading_photo' | 'scan_tool_screenshot' | 'connector_photo' | 'wiring_reference' | 'voice_note' | 'technician_note' | 'other'
+
+const DIAGNOSTIC_EVIDENCE_ROLE_OPTIONS: Array<{ value: DiagnosticEvidenceRole; label: string }> = [
+  { value: 'meter_reading_photo', label: 'Meter reading photo' },
+  { value: 'scan_tool_screenshot', label: 'Scan tool screenshot' },
+  { value: 'connector_photo', label: 'Connector photo' },
+  { value: 'wiring_reference', label: 'Wiring reference' },
+  { value: 'voice_note', label: 'Voice note' },
+  { value: 'technician_note', label: 'Technician note' },
+  { value: 'other', label: 'Other' },
+]
 
 type SelectedEvidenceFile = {
   id: string
@@ -287,6 +298,7 @@ export function AddCaptureForm({
   const [clientError, setClientError] = useState<string | null>(null)
   const [captureIntent, setCaptureIntent] =
     useState<CaptureIntent>('auto_evidence')
+  const [diagnosticEvidenceRole, setDiagnosticEvidenceRole] = useState<DiagnosticEvidenceRole>('other')
   const manualType: CaptureType = 'document'
   const [preferCameraCapture, setPreferCameraCapture] = useState(true)
   const [selectedFiles, setSelectedFiles] = useState<SelectedEvidenceFile[]>([])
@@ -622,6 +634,7 @@ export function AddCaptureForm({
           includeInReport: true,
           sourceDocumentType: null,
           sourceDocumentLabel: null,
+          diagnosticEvidenceRole: isDiagnosticProcedureAttachment ? diagnosticEvidenceRole : null,
         })
 
         if (!result.ok) {
@@ -655,6 +668,7 @@ export function AddCaptureForm({
       noteSource,
       reportOrder: null,
       includeInReport: true,
+      diagnosticEvidenceRole: isDiagnosticProcedureAttachment ? diagnosticEvidenceRole : null,
     })
 
     if (!result.ok) {
@@ -1000,6 +1014,14 @@ export function AddCaptureForm({
       ) : null}
       {returnPath ? (
         <input type="hidden" name="return_path" value={returnPath} />
+      ) : null}
+      {isDiagnosticProcedureAttachment ? (
+        <label className="field-stack capture-secondary-panel">
+          <span className="label">Evidence role for this step attachment</span>
+          <select className="input" value={diagnosticEvidenceRole} onChange={(event) => setDiagnosticEvidenceRole(event.target.value as DiagnosticEvidenceRole)} disabled={isSaving || hasActiveUploads}>
+            {DIAGNOSTIC_EVIDENCE_ROLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </label>
       ) : null}
 
       {clientError || actionError ? (

@@ -6,6 +6,7 @@ export const DIAGNOSTIC_PROCEDURE_PROMPT_VERSION = 'diagnostic-procedure-structu
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const MAX_STEPS = 60
 const MAX_WARNINGS = 12
+const MAX_SOURCE_CHUNKS = 24
 
 export type DiagnosticProcedureDocumentType =
   | 'pinpoint_test'
@@ -37,7 +38,17 @@ export type DiagnosticProcedureStep = {
   required_measurements: DiagnosticRequiredMeasurement[]
   required_evidence: DiagnosticRequiredEvidence[]
   oem_flow_text: string | null
+  source_page_start: number | null
+  source_page_end: number | null
+  extraction_confidence: number | null
   extraction_warnings: string[]
+}
+
+export type DiagnosticProcedureSourceChunk = {
+  page_start: number
+  page_end: number
+  text: string
+  warnings: string[]
 }
 
 export type DiagnosticProcedureExtractionResult = {
@@ -110,9 +121,12 @@ export const DIAGNOSTIC_PROCEDURE_EXTRACTION_SCHEMA = {
             },
           },
           oem_flow_text: NULLABLE_STRING,
+          source_page_start: { type: ['number', 'null'] },
+          source_page_end: { type: ['number', 'null'] },
+          extraction_confidence: { type: ['number', 'null'] },
           extraction_warnings: { type: 'array', items: { type: 'string' } },
         },
-        required: ['step_id', 'step_number', 'step_key', 'title', 'instruction', 'required_measurements', 'required_evidence', 'oem_flow_text', 'extraction_warnings'],
+        required: ['step_id', 'step_number', 'step_key', 'title', 'instruction', 'required_measurements', 'required_evidence', 'oem_flow_text', 'source_page_start', 'source_page_end', 'extraction_confidence', 'extraction_warnings'],
       },
     },
     extraction_warnings: { type: 'array', items: { type: 'string' } },
@@ -130,7 +144,8 @@ Hard rules:
 - Do not identify a failed component.
 - Do not override OEM flow logic.
 - Do not tell the technician what repair to perform or what branch applies.
-Extract only the document structure: title, manufacturer if visible, document type, ordered steps, step numbers/keys, step titles, OEM instruction text, required technician-entered measurements, requested evidence, OEM flow/branch text, and extraction warnings.
+Extract only the document structure: title, manufacturer if visible, document type, ordered steps, step numbers/keys, step titles, OEM instruction text, required technician-entered measurements, requested evidence, OEM flow/branch text, and source page ranges, confidence, extraction warnings.
+If page-numbered source text chunks are provided, use them as the primary source and preserve page references on each step.
 If OEM text says "if X then go to Y", preserve it as oem_flow_text without deciding whether X is true.
 Never return fields named diagnosis, root_cause, repair_action, failed_component, recommendation, or generated_recommendation.
 Return JSON only.`
@@ -152,6 +167,17 @@ function sanitizeText(value: unknown, maxLength: number) {
 function sanitizeKey(value: unknown, fallback: string) {
   const text = sanitizeText(value, 80)?.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
   return text || fallback
+}
+
+function sanitizePageNumber(value: unknown) {
+  const numberValue = Number(value)
+  return Number.isInteger(numberValue) && numberValue > 0 ? numberValue : null
+}
+
+function sanitizeConfidence(value: unknown) {
+  const numberValue = Number(value)
+  if (!Number.isFinite(numberValue)) return null
+  return Math.max(0, Math.min(1, numberValue))
 }
 
 function sanitizeArray<T>(value: unknown, mapper: (entry: unknown, index: number) => T | null, limit: number) {
@@ -186,6 +212,9 @@ function fallbackExtraction(filename: string): DiagnosticProcedureExtractionResu
         required_measurements: [],
         required_evidence: [{ label: 'Technician documentation', evidence_type: 'note' }],
         oem_flow_text: null,
+        source_page_start: null,
+        source_page_end: null,
+        extraction_confidence: 0.1,
         extraction_warnings: ['Automatic step extraction was unavailable or incomplete. Enter or edit documentation manually.'],
       },
     ],
@@ -228,6 +257,9 @@ export function validateDiagnosticProcedureExtraction(value: unknown, filename =
         return { label, evidence_type: evidenceType }
       }, 12),
       oem_flow_text: sanitizeText(entry.oem_flow_text, 1200),
+      source_page_start: sanitizePageNumber(entry.source_page_start),
+      source_page_end: sanitizePageNumber(entry.source_page_end) ?? sanitizePageNumber(entry.source_page_start),
+      extraction_confidence: sanitizeConfidence(entry.extraction_confidence),
       extraction_warnings: sanitizeArray(entry.extraction_warnings, (warning) => sanitizeText(warning, 240), MAX_WARNINGS),
     }
   }, MAX_STEPS)
@@ -243,7 +275,7 @@ export function validateDiagnosticProcedureExtraction(value: unknown, filename =
   }
 }
 
-export async function extractDiagnosticProcedure(input: { signedUrl: string; filename: string; mimeType: string }): Promise<DiagnosticProcedureExtractionResult> {
+export async function extractDiagnosticProcedure(input: { signedUrl: string; filename: string; mimeType: string; sourceChunks?: DiagnosticProcedureSourceChunk[]; extractionWarnings?: string[] }): Promise<DiagnosticProcedureExtractionResult> {
   const apiKey = getOpenAiApiKey()
   if (!apiKey) return fallbackExtraction(input.filename)
 
@@ -253,6 +285,18 @@ export async function extractDiagnosticProcedure(input: { signedUrl: string; fil
       text: `Uploaded diagnostic procedure file: ${input.filename} (${input.mimeType}). Extract the procedure workspace structure only. If the file cannot be read, return one review step with extraction warnings.`,
     },
   ]
+
+  const sourceChunks = (input.sourceChunks ?? []).slice(0, MAX_SOURCE_CHUNKS)
+  if (sourceChunks.length > 0) {
+    content.push({
+      type: 'input_text',
+      text: `Pre-extracted source text by page. Use this before file vision/retrieval and preserve page ranges on steps.\n${sourceChunks.map((chunk) => `[Pages ${chunk.page_start}-${chunk.page_end}]\n${chunk.text}`).join('\n\n')}`,
+    })
+  }
+  const extractionWarnings = (input.extractionWarnings ?? []).filter(Boolean).slice(0, MAX_WARNINGS)
+  if (extractionWarnings.length > 0) {
+    content.push({ type: 'input_text', text: `Extraction pipeline warnings to preserve where relevant: ${extractionWarnings.join('; ')}` })
+  }
 
   if (input.mimeType.startsWith('image/')) {
     content.push({ type: 'input_image', image_url: input.signedUrl })

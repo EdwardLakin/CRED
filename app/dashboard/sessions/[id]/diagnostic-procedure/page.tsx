@@ -25,6 +25,9 @@ type StepMetadata = {
   external_references?: Array<{ label?: string; text?: string; url?: string }>
   visible?: boolean
   extraction_review_status?: string
+  source_page_start?: number | null
+  source_page_end?: number | null
+  extraction_confidence?: number | null
   extraction_warnings?: string[]
   technician_status?: string
   technician_readings?: Array<{ key?: string; label?: string; value?: string; unit?: string | null }>
@@ -58,6 +61,19 @@ function getProcedureInfo(draft: AiReportDraft | null) {
 function captureHasStep(capture: CaptureItem, stepId: string) {
   if (!isRecord(capture.extracted_data) || !isRecord(capture.extracted_data.diagnostic_step)) return false
   return capture.extracted_data.diagnostic_step.step_id === stepId
+}
+
+function formatEvidenceRole(capture: CaptureItem) {
+  if (!isRecord(capture.extracted_data) || !isRecord(capture.extracted_data.diagnostic_step)) return null
+  const role = capture.extracted_data.diagnostic_step.evidence_role
+  return typeof role === 'string' ? role.replace(/_/g, ' ') : null
+}
+
+function formatSourcePage(metadata: StepMetadata) {
+  if (!metadata.source_page_start) return null
+  return metadata.source_page_end && metadata.source_page_end !== metadata.source_page_start
+    ? `Source pages ${metadata.source_page_start}-${metadata.source_page_end}`
+    : `Source page ${metadata.source_page_start}`
 }
 
 function getCaptureLabel(capture: CaptureItem) {
@@ -109,12 +125,14 @@ function StepCard({
           <p className="eyebrow">OEM procedure step</p>
           <h2>{title}</h2>
           <p className="muted">Documentation support only. Follow OEM procedure. Technician owns all conclusions.</p>
+          {formatSourcePage(metadata) ? <p className="muted">{formatSourcePage(metadata)}{typeof metadata.extraction_confidence === 'number' ? ` · Extraction confidence ${Math.round(metadata.extraction_confidence * 100)}%` : ''}</p> : null}
         </div>
         <span className="status-pill neutral">{metadata.technician_status?.replace(/_/g, ' ') ?? 'not tested'}</span>
       </div>
 
       <form action={extractionUpdateAction} className="form-stack notice warning">
         <strong>Technician extraction review required</strong>
+        {metadata.extraction_warnings && metadata.extraction_warnings.length > 0 ? <ul>{metadata.extraction_warnings.map((warning, index) => <li key={`${stepId}-warning-${index}`}>{warning}</li>)}</ul> : null}
         <p>Correct OEM text only. Do not add diagnosis, repair recommendations, or inferred next steps.</p>
         <label className="field-stack"><span className="label">Visible in procedure/report</span><input type="checkbox" name="visible" defaultChecked={metadata.visible !== false} /></label>
         <div className="inspection-metric-grid">
@@ -217,7 +235,7 @@ function StepCard({
         <h3>Attached step evidence</h3>
         {stepCaptures.length > 0 ? (
           <ul className="muted">
-            {stepCaptures.map((capture) => <li key={capture.id}>{getCaptureLabel(capture)} · {capture.technician_note || capture.ai_summary || 'Saved evidence'}</li>)}
+            {stepCaptures.map((capture) => <li key={capture.id}>{formatEvidenceRole(capture) ? `${formatEvidenceRole(capture)} · ` : ''}{getCaptureLabel(capture)} · {capture.technician_note || capture.ai_summary || 'Saved evidence'}</li>)}
           </ul>
         ) : <p className="muted">No evidence attached to this step yet.</p>}
         <AddCaptureForm
