@@ -13,7 +13,7 @@ import { FINAL_NOTES_MODEL, FINAL_NOTES_PROMPT_VERSION, generateFinalNotes } fro
 import { AI_REPORT_DRAFT_MODEL, AI_REPORT_DRAFT_PROMPT_VERSION, generateReportDraft } from '@/lib/openai/report-draft-generator'
 import type { OrganizationPlan } from '@/lib/stripe'
 import { buildEvidenceGroups, buildEvidencePackages,
-  sanitizeReportStructureForSession, buildNormalizedReportFields, deriveFormSectionsFromCaptures, scoreFormReferenceCapture, selectPrimaryFormCaptures, stripConfidenceText, GENERIC_REPORT_SECTION_TITLES, getReportStructureSourceMetadata } from '@/features/reports/report-structure'
+  sanitizeReportStructureForSession, buildNormalizedReportFields, deriveFormSectionsFromCaptures, scoreFormReferenceCapture, selectPrimaryFormCaptures, stripConfidenceText, GENERIC_REPORT_SECTION_TITLES, getReportStructureSourceMetadata, sanitizeCapturesForImageAiAssist } from '@/features/reports/report-structure'
 import type { Json } from '@/lib/supabase/database.types'
 
 const REPORT_SHARE_EXPIRATION_DAYS = 30
@@ -180,7 +180,7 @@ export async function generateFinalNotesForSession(sessionId: string) {
   try {
     notes = await generateFinalNotes({
       session: fullSession,
-      captures: captures ?? [],
+      captures: sanitizeCapturesForImageAiAssist(captures ?? [], profile.organization.image_ai_assist_enabled),
       findings: currentDraft?.findings ?? [],
       recommendations: currentDraft?.measurements ?? [],
     })
@@ -639,7 +639,7 @@ export async function generateAiReportDraft(sessionId: string) {
         suggested_details: fullSession.suggested_details,
         field_service_details: fullSession.field_service_details,
       },
-      captures: (captures ?? []).map((capture) => ({
+      captures: sanitizeCapturesForImageAiAssist((captures ?? []).map((capture) => ({
         id: capture.id,
         type: capture.type,
         media_kind: capture.media_kind,
@@ -650,14 +650,14 @@ export async function generateAiReportDraft(sessionId: string) {
         technician_note: capture.technician_note,
         transcript: capture.transcript,
         extracted_data: capture.extracted_data,
-      })),
+      })), profile.organization.image_ai_assist_enabled),
       signatures: signatures ?? [],
     })
   } catch (error) {
     redirect(getReportRedirectPath(session.id, { error: getReportDraftErrorMessage(error) }))
   }
 
-  const normalizedCaptures = (captures ?? []).map((capture) => ({
+  const normalizedCaptures = sanitizeCapturesForImageAiAssist((captures ?? []).map((capture) => ({
     id: capture.id,
     type: capture.type,
     media_kind: capture.media_kind,
@@ -666,7 +666,7 @@ export async function generateAiReportDraft(sessionId: string) {
     technician_note: capture.technician_note,
     transcript: capture.transcript,
     extracted_data: capture.extracted_data,
-  }))
+  })), profile.organization.image_ai_assist_enabled)
   const structureSourceMetadata = getReportStructureSourceMetadata(normalizedCaptures)
   const formSections = deriveFormSectionsFromCaptures(normalizedCaptures)
   const formCaptureIds = selectPrimaryFormCaptures(normalizedCaptures).map((capture) => capture.id)

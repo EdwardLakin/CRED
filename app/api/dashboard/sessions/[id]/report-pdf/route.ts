@@ -10,7 +10,7 @@ import {
   isFieldServiceSessionType,
   normalizeFieldServiceDetails,
 } from '@/features/field-service'
-import { buildCustomerAssetRows, buildNormalizedReportModel, classifyReferenceDocumentTitle, dedupeEvidenceDetails, deriveFormSectionsFromCaptures, getNormalizedFindingModels, getNormalizedInspectionStatus, getNormalizedRecommendedActions, isCustomerAssetSection, isMeaningfulCustomerReportText, normalizeDraftSections, shouldRenderDetail, shouldRenderDraftSectionStandalone, splitRecommendationText, stripConfidenceText } from '@/features/reports/report-structure'
+import { buildCustomerAssetRows, buildNormalizedReportModel, classifyReferenceDocumentTitle, dedupeEvidenceDetails, deriveFormSectionsFromCaptures, getNormalizedFindingModels, getNormalizedInspectionStatus, getNormalizedRecommendedActions, isCustomerAssetSection, isMeaningfulCustomerReportText, normalizeDraftSections, shouldRenderDetail, shouldRenderDraftSectionStandalone, splitRecommendationText, stripConfidenceText, sanitizeCapturesForImageAiAssist } from '@/features/reports/report-structure'
 import { asDiagnosticRecordArray, getDiagnosticProcedureProgress, getDiagnosticStepCompleteness } from '@/features/diagnostic-procedures/progress'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { recordUsageEvent } from '@/features/usage'
@@ -29,7 +29,7 @@ type ReportSignature = Database['public']['Tables']['signature_captures']['Row']
 type ReportDraft = Database['public']['Tables']['ai_report_drafts']['Row']
 type ReportDraftSection = Database['public']['Tables']['ai_report_draft_sections']['Row']
 type ReportSession = Database['public']['Tables']['documentation_sessions']['Row'] & {
-  organizations: { name: string } | null
+  organizations: { name: string; image_ai_assist_enabled?: boolean | null } | null
 }
 
 
@@ -365,7 +365,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     supabase = createAdminClient()
     const { data: shareToken, error: shareError } = await supabase
       .from('report_share_tokens')
-      .select('*, documentation_sessions(*, organizations(name))')
+      .select('*, documentation_sessions(*, organizations(name, image_ai_assist_enabled))')
       .eq('token', shareTokenValue)
       .maybeSingle()
 
@@ -403,7 +403,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
 
     const { data: ownedSession, error: sessionError } = await supabase
       .from('documentation_sessions')
-      .select('*, organizations(name)')
+      .select('*, organizations(name, image_ai_assist_enabled)')
       .eq('id', id)
       .eq('organization_id', organizationId)
       .single()
@@ -429,7 +429,8 @@ export async function GET(_request: Request, { params }: RouteContext) {
     .order('report_order', { ascending: true, nullsFirst: false })
     .order('captured_at', { ascending: true })
 
-  const captureItems = captures ?? []
+  const imageAiAssistEnabled = isRecord(session.organizations) && session.organizations.image_ai_assist_enabled === true
+  const captureItems = sanitizeCapturesForImageAiAssist(captures ?? [], imageAiAssistEnabled) as ReportCapture[]
   const signedUrls: Record<string, string> = {}
   await Promise.all(captureItems.map(async (capture) => {
     if (!capture.storage_path) return

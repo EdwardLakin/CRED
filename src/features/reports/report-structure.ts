@@ -11,6 +11,37 @@ type CaptureLike = {
   extracted_data: Json | null
 }
 
+function isImageDerivedCapture(capture: CaptureLike) {
+  return capture.media_kind === 'image' || capture.type === 'photo' || capture.type === 'vin_plate' || capture.type === 'info_plate'
+}
+
+function preserveTechnicianOnlyExtractedData(extractedData: Json | null): Json | null {
+  if (!isRecord(extractedData)) return extractedData
+
+  const preserved = Object.fromEntries(
+    Object.entries(extractedData).filter(([key]) =>
+      ['upload', 'guidance', 'diagnostic_step', 'source_document', 'note'].includes(key),
+    ),
+  )
+
+  return preserved as Json
+}
+
+export function sanitizeCaptureForImageAiAssist(capture: CaptureLike, imageAiAssistEnabled: boolean): CaptureLike {
+  if (imageAiAssistEnabled || !isImageDerivedCapture(capture)) return capture
+
+  return {
+    ...capture,
+    ai_summary: null,
+    ocr_text: null,
+    extracted_data: preserveTechnicianOnlyExtractedData(capture.extracted_data),
+  }
+}
+
+export function sanitizeCapturesForImageAiAssist<T extends CaptureLike>(captures: T[], imageAiAssistEnabled: boolean): T[] {
+  return captures.map((capture) => sanitizeCaptureForImageAiAssist(capture, imageAiAssistEnabled) as T)
+}
+
 type DraftSectionLike = {
   id?: string
   section_key: string
