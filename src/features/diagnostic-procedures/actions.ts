@@ -39,15 +39,6 @@ type SectionMetadata = {
   instruction?: string
   required_measurements?: Json
   required_evidence?: Json
-  notes_preconditions?: Json
-  technician_actions?: Json
-  decision_question?: string | null
-  branches?: Json
-  dtc_branches?: Json
-  external_references?: Json
-  terminal_outcomes?: Json
-  selected_branch_id?: string | null
-  selected_branch_label?: string | null
   oem_flow_text?: string | null
   extraction_warnings?: Json
   technician_status?: string
@@ -114,8 +105,6 @@ function buildReportStructure(params: {
       sort_order: index + 1,
       technician_status: 'not_tested',
       technician_readings: [],
-      selected_branch_id: null,
-      selected_branch_label: null,
       technician_notes: null,
       technician_conclusion: null,
       attached_capture_ids: [],
@@ -278,17 +267,8 @@ async function saveDiagnosticProcedureDraft(input: {
         step_key: step.step_key,
         title: step.title,
         instruction: step.instruction,
-        notes_preconditions: step.notes_preconditions,
-        technician_actions: step.technician_actions,
         required_measurements: step.required_measurements,
         required_evidence: step.required_evidence,
-        decision_question: step.decision_question,
-        branches: step.branches,
-        dtc_branches: step.dtc_branches,
-        external_references: step.external_references,
-        terminal_outcomes: step.terminal_outcomes,
-        selected_branch_id: null,
-        selected_branch_label: null,
         oem_flow_text: step.oem_flow_text,
         extraction_warnings: step.extraction_warnings,
         technician_status: 'not_tested',
@@ -355,7 +335,6 @@ export async function updateDiagnosticStep(sectionId: string, formData: FormData
   const technicianStatus = STEP_STATUSES.has(requestedStatus) ? requestedStatus : 'not_tested'
   const technicianNotes = getString(formData, 'technician_notes').slice(0, 3000) || null
   const technicianConclusion = getString(formData, 'technician_conclusion').slice(0, 2000) || null
-  const selectedBranchId = getString(formData, 'selected_branch_id').slice(0, 120) || null
   const readingCount = Number(getString(formData, 'reading_count') || 0)
   const technicianReadings = Array.from({ length: Math.max(0, Math.min(20, readingCount)) }).map((_, index) => ({
     key: getString(formData, `reading_key_${index}`) || `reading_${index + 1}`,
@@ -367,22 +346,10 @@ export async function updateDiagnosticStep(sectionId: string, formData: FormData
   })).filter((reading) => reading.value || reading.label)
 
   const metadata = section.metadata as SectionMetadata
-  const allBranches = [
-    ...(Array.isArray(metadata.branches) ? metadata.branches : []),
-    ...(Array.isArray(metadata.dtc_branches) ? metadata.dtc_branches : []),
-  ].flatMap((branch): Record<string, unknown>[] => isRecord(branch) ? [branch] : [])
-  const selectedBranch = selectedBranchId
-    ? allBranches.find((branch) => branch.branch_id === selectedBranchId) ?? null
-    : null
-  const selectedBranchLabel = selectedBranch
-    ? String(selectedBranch.condition_label ?? selectedBranch.condition_text ?? selectedBranchId).slice(0, 500)
-    : null
   const patch: SectionMetadata = {
     technician_status: technicianStatus,
     technician_notes: technicianNotes,
     technician_conclusion: technicianConclusion,
-    selected_branch_id: selectedBranchId,
-    selected_branch_label: selectedBranchLabel,
     technician_readings: safeJson(technicianReadings),
     updated_by: profile.id,
     updated_at: new Date().toISOString(),

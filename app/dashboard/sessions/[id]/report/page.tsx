@@ -149,32 +149,6 @@ function captureMatchesDiagnosticStep(capture: CaptureItem, stepId: string) {
   return isRecord(capture.extracted_data) && isRecord(capture.extracted_data.diagnostic_step) && capture.extracted_data.diagnostic_step.step_id === stepId
 }
 
-
-function getDiagnosticBranchLabel(branch: Record<string, unknown>) {
-  const target = typeof branch.target_step_number === 'string' && branch.target_step_number
-    ? branch.target_step_number
-    : typeof branch.target_step_id === 'string'
-      ? branch.target_step_id
-      : null
-  const condition = typeof branch.condition_label === 'string' && branch.condition_label
-    ? branch.condition_label
-    : typeof branch.condition_text === 'string'
-      ? branch.condition_text
-      : 'Branch'
-  const destination = target
-    ? `Go to ${target}`
-    : typeof branch.reference_text === 'string' && branch.reference_text
-      ? branch.reference_text
-      : branch.is_terminal === true && typeof branch.terminal_outcome === 'string'
-        ? branch.terminal_outcome
-        : 'OEM reference'
-  return `${condition} → ${destination}`
-}
-
-function getDiagnosticBranches(metadata: Record<string, unknown>) {
-  return [...(Array.isArray(metadata.branches) ? metadata.branches : []), ...(Array.isArray(metadata.dtc_branches) ? metadata.dtc_branches : [])].filter(isRecord)
-}
-
 function DiagnosticProcedureReport({
   session,
   currentReport,
@@ -222,7 +196,6 @@ function DiagnosticProcedureReport({
             const metadata = getDiagnosticStepMetadata(section)
             const stepId = typeof metadata.step_id === 'string' ? metadata.step_id : section.section_key
             const readings = Array.isArray(metadata.technician_readings) ? metadata.technician_readings.filter(isRecord) : []
-            const branches = getDiagnosticBranches(metadata)
             const stepCaptures = captures.filter((capture) => captureMatchesDiagnosticStep(capture, stepId))
             return (
               <article key={section.id} className="report-document-card">
@@ -230,9 +203,6 @@ function DiagnosticProcedureReport({
                 <p><strong>Status:</strong> {typeof metadata.technician_status === 'string' ? metadata.technician_status.replace(/_/g, ' ') : 'not tested'}</p>
                 <p>{stripConfidenceText(String(metadata.instruction ?? section.body ?? ''))}</p>
                 {typeof metadata.oem_flow_text === 'string' && metadata.oem_flow_text ? <p><strong>OEM flow text:</strong> {metadata.oem_flow_text}</p> : null}
-                {typeof metadata.decision_question === 'string' && metadata.decision_question ? <p><strong>Decision question:</strong> {metadata.decision_question}</p> : null}
-                {branches.length > 0 ? <ul>{branches.map((branch, index) => <li key={`${section.id}-branch-${index}`}>OEM branch: {getDiagnosticBranchLabel(branch)}</li>)}</ul> : null}
-                {typeof metadata.selected_branch_label === 'string' && metadata.selected_branch_label ? <p><strong>Technician-selected branch/result:</strong> {metadata.selected_branch_label}</p> : null}
                 {readings.length > 0 ? <div className="report-field-grid">{readings.map((reading, index) => <div key={`${section.id}-reading-${index}`} className="report-field-card"><span>{String(reading.label ?? `Reading ${index + 1}`)}</span><strong>{String(reading.value ?? '')}{reading.unit ? ` ${String(reading.unit)}` : ''}</strong></div>)}</div> : null}
                 {typeof metadata.technician_notes === 'string' && metadata.technician_notes ? <p><strong>Technician notes:</strong> {metadata.technician_notes}</p> : null}
                 {typeof metadata.technician_conclusion === 'string' && metadata.technician_conclusion ? <p><strong>Technician conclusion:</strong> {metadata.technician_conclusion}</p> : null}

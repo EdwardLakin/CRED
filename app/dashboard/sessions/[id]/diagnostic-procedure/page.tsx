@@ -11,18 +11,6 @@ type AiReportDraft = Database['public']['Tables']['ai_report_drafts']['Row']
 type AiReportDraftSection = Database['public']['Tables']['ai_report_draft_sections']['Row']
 type CaptureItem = Database['public']['Tables']['capture_items']['Row']
 
-type DiagnosticBranchMetadata = {
-  branch_id?: string
-  condition_label?: string
-  condition_type?: string
-  condition_text?: string
-  target_step_id?: string | null
-  target_step_number?: string | null
-  reference_text?: string | null
-  is_terminal?: boolean
-  terminal_outcome?: string | null
-}
-
 type StepMetadata = {
   section_type?: string
   step_id?: string
@@ -30,17 +18,8 @@ type StepMetadata = {
   step_key?: string
   title?: string | null
   instruction?: string
-  notes_preconditions?: string[]
-  technician_actions?: string[]
-  required_measurements?: Array<{ key?: string; label?: string; measurement_point?: string | null; unit?: string | null; expected_text?: string | null; expected_min?: string | null; expected_max?: string | null }>
+  required_measurements?: Array<{ key?: string; label?: string; unit?: string | null; expected_text?: string | null }>
   required_evidence?: Array<{ label?: string; evidence_type?: string }>
-  decision_question?: string | null
-  branches?: DiagnosticBranchMetadata[]
-  dtc_branches?: DiagnosticBranchMetadata[]
-  external_references?: Array<{ label?: string; reference_text?: string }>
-  terminal_outcomes?: Array<{ label?: string; outcome_text?: string }>
-  selected_branch_id?: string | null
-  selected_branch_label?: string | null
   oem_flow_text?: string | null
   extraction_warnings?: string[]
   technician_status?: string
@@ -69,23 +48,6 @@ function getProcedureInfo(draft: AiReportDraft | null) {
     documentType: typeof procedure.document_type === 'string' ? procedure.document_type.replace(/_/g, ' ') : null,
     sourceFile: typeof procedure.source_file_name === 'string' ? procedure.source_file_name : null,
   }
-}
-
-
-function getBranchLabel(branch: DiagnosticBranchMetadata) {
-  const target = branch.target_step_number || branch.target_step_id
-  const destination = target
-    ? `Go to ${target}`
-    : branch.reference_text
-      ? branch.reference_text
-      : branch.is_terminal && branch.terminal_outcome
-        ? branch.terminal_outcome
-        : 'OEM reference'
-  return `${branch.condition_label || branch.condition_text || 'Branch'} → ${destination}`
-}
-
-function getAllBranches(metadata: StepMetadata) {
-  return [...(metadata.branches ?? []), ...(metadata.dtc_branches ?? [])]
 }
 
 function captureHasStep(capture: CaptureItem, stepId: string) {
@@ -120,7 +82,6 @@ function StepCard({
   const stepId = metadata.step_id ?? section.section_key
   const readings = metadata.technician_readings ?? []
   const requiredMeasurements = metadata.required_measurements ?? []
-  const branches = getAllBranches(metadata)
   const stepCaptures = captures.filter((capture) => captureHasStep(capture, stepId))
   const updateAction = async (formData: FormData) => {
     'use server'
@@ -147,26 +108,12 @@ function StepCard({
         ) : null}
       </section>
 
-      {metadata.notes_preconditions && metadata.notes_preconditions.length > 0 ? (
-        <div className="field-stack">
-          <h3>Notes / preconditions</h3>
-          <ul className="muted">{metadata.notes_preconditions.map((note, index) => <li key={`${stepId}-note-${index}`}>{note}</li>)}</ul>
-        </div>
-      ) : null}
-
-      {metadata.technician_actions && metadata.technician_actions.length > 0 ? (
-        <div className="field-stack">
-          <h3>Technician actions from OEM procedure</h3>
-          <ul className="muted">{metadata.technician_actions.map((action, index) => <li key={`${stepId}-action-${index}`}>{action}</li>)}</ul>
-        </div>
-      ) : null}
-
       {requiredMeasurements.length > 0 ? (
         <div className="field-stack">
           <h3>Required technician-entered measurements</h3>
           <ul className="muted">
             {requiredMeasurements.map((measurement, index) => (
-              <li key={`${measurement.key ?? index}`}>{measurement.label}{measurement.measurement_point ? ` at ${measurement.measurement_point}` : ''}{measurement.unit ? ` (${measurement.unit})` : ''}{measurement.expected_text ? ` — Expected: ${measurement.expected_text}` : ''}{measurement.expected_min || measurement.expected_max ? ` — Range: ${measurement.expected_min ?? 'min not shown'} to ${measurement.expected_max ?? 'max not shown'}` : ''}</li>
+              <li key={`${measurement.key ?? index}`}>{measurement.label}{measurement.unit ? ` (${measurement.unit})` : ''}{measurement.expected_text ? ` — OEM reference: ${measurement.expected_text}` : ''}</li>
             ))}
           </ul>
         </div>
@@ -181,33 +128,6 @@ function StepCard({
         </div>
       ) : null}
 
-      {(metadata.decision_question || branches.length > 0 || (metadata.external_references && metadata.external_references.length > 0) || (metadata.terminal_outcomes && metadata.terminal_outcomes.length > 0)) ? (
-        <section className="notice info">
-          <strong>OEM branch references</strong>
-          <p>Technician must select the result/branch. AI does not choose the next step.</p>
-          {metadata.decision_question ? <p><strong>Decision question:</strong> {metadata.decision_question}</p> : null}
-          {branches.length > 0 ? (
-            <ul>
-              {branches.map((branch, index) => (
-                <li key={branch.branch_id ?? `${stepId}-branch-${index}`}>
-                  OEM branch: {getBranchLabel(branch)}{branch.condition_text ? ` — ${branch.condition_text}` : ''}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {metadata.external_references && metadata.external_references.length > 0 ? (
-            <ul>
-              {metadata.external_references.map((reference, index) => <li key={`${stepId}-reference-${index}`}>OEM procedure reference: {reference.reference_text ?? reference.label}</li>)}
-            </ul>
-          ) : null}
-          {metadata.terminal_outcomes && metadata.terminal_outcomes.length > 0 ? (
-            <ul>
-              {metadata.terminal_outcomes.map((outcome, index) => <li key={`${stepId}-outcome-${index}`}>Terminal outcome: {outcome.outcome_text ?? outcome.label}</li>)}
-            </ul>
-          ) : null}
-        </section>
-      ) : null}
-
       <form action={updateAction} className="form-stack">
         <label className="field-stack">
           <span className="label">Technician status</span>
@@ -219,20 +139,6 @@ function StepCard({
             <option value="not_applicable">Not applicable</option>
           </select>
         </label>
-
-        {branches.length > 0 ? (
-          <label className="field-stack">
-            <span className="label">Technician-selected OEM branch/result</span>
-            <select name="selected_branch_id" className="input" defaultValue={metadata.selected_branch_id ?? ''}>
-              <option value="">No branch selected</option>
-              {branches.map((branch, index) => {
-                const label = getBranchLabel(branch)
-                return <option key={branch.branch_id ?? `${stepId}-branch-option-${index}`} value={branch.branch_id ?? label}>{label}</option>
-              })}
-            </select>
-            <p className="muted">Select only after performing the OEM step. This records the technician-selected branch; AI does not choose it.</p>
-          </label>
-        ) : null}
 
         <input type="hidden" name="reading_count" value={Math.max(requiredMeasurements.length, readings.length, 1)} />
         <div className="field-stack">

@@ -237,32 +237,6 @@ function captureMatchesDiagnosticStep(capture: ReportCapture, stepId: string) {
   return isRecord(capture.extracted_data) && isRecord(capture.extracted_data.diagnostic_step) && capture.extracted_data.diagnostic_step.step_id === stepId
 }
 
-
-function getDiagnosticBranchLabel(branch: Record<string, unknown>) {
-  const target = typeof branch.target_step_number === 'string' && branch.target_step_number
-    ? branch.target_step_number
-    : typeof branch.target_step_id === 'string'
-      ? branch.target_step_id
-      : null
-  const condition = typeof branch.condition_label === 'string' && branch.condition_label
-    ? branch.condition_label
-    : typeof branch.condition_text === 'string'
-      ? branch.condition_text
-      : 'Branch'
-  const destination = target
-    ? `Go to ${target}`
-    : typeof branch.reference_text === 'string' && branch.reference_text
-      ? branch.reference_text
-      : branch.is_terminal === true && typeof branch.terminal_outcome === 'string'
-        ? branch.terminal_outcome
-        : 'OEM reference'
-  return `${condition} → ${destination}`
-}
-
-function getDiagnosticBranches(metadata: Record<string, unknown>) {
-  return [...(Array.isArray(metadata.branches) ? metadata.branches : []), ...(Array.isArray(metadata.dtc_branches) ? metadata.dtc_branches : [])].filter(isRecord)
-}
-
 function buildDiagnosticProcedureReportHtml(params: { session: ReportSession; organizationName: string; reportDraft: ReportDraft; reportSections: ReportDraftSection[]; captureItems: ReportCapture[]; signedUrls: Record<string, string>; showToolbar: boolean; timeZone: string | null }) {
   const info = getDiagnosticProcedureInfo(params.reportDraft)
   const steps = params.reportSections.filter((section) => getDiagnosticStepMetadata(section).section_type === 'diagnostic_procedure_step')
@@ -271,13 +245,10 @@ function buildDiagnosticProcedureReportHtml(params: { session: ReportSession; or
     const metadata = getDiagnosticStepMetadata(section)
     const stepId = typeof metadata.step_id === 'string' ? metadata.step_id : section.section_key
     const readings = Array.isArray(metadata.technician_readings) ? metadata.technician_readings.filter(isRecord) : []
-    const branches = getDiagnosticBranches(metadata)
     const stepCaptures = params.captureItems.filter((capture) => captureMatchesDiagnosticStep(capture, stepId))
     const readingsHtml = readings.length ? renderDefinitionRows(readings.map((reading, index) => ({ label: String(reading.label ?? `Reading ${index + 1}`), value: `${String(reading.value ?? '')}${reading.unit ? ` ${String(reading.unit)}` : ''}` }))) : '<p class="muted">No technician readings entered.</p>'
-    const branchesHtml = branches.length ? `<h3>OEM branch references</h3><ul>${branches.map((branch) => `<li>OEM branch: ${escapeHtml(getDiagnosticBranchLabel(branch))}</li>`).join('')}</ul>` : ''
-    const selectedBranchHtml = typeof metadata.selected_branch_label === 'string' && metadata.selected_branch_label ? `<p><strong>Technician-selected branch/result:</strong> ${escapeHtml(metadata.selected_branch_label)}</p>` : ''
     const evidenceHtml = stepCaptures.length ? `<ul>${stepCaptures.map((capture) => { const url = params.signedUrls[capture.id]; return `<li>${escapeHtml(getEvidenceTitle(capture))}${capture.technician_note ? ` — ${escapeHtml(capture.technician_note)}` : ''}${url ? ` — <a href="${escapeHtml(url)}">Open attachment</a>` : ''}</li>` }).join('')}</ul>` : '<p class="muted">No step evidence attached.</p>'
-    return `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2><p><strong>Status:</strong> ${escapeHtml(typeof metadata.technician_status === 'string' ? metadata.technician_status.replace(/_/g, ' ') : 'not tested')}</p><h3>OEM instruction text</h3><p>${escapeHtml(String(metadata.instruction ?? section.body ?? ''))}</p>${typeof metadata.oem_flow_text === 'string' && metadata.oem_flow_text ? `<p><strong>OEM flow text:</strong> ${escapeHtml(metadata.oem_flow_text)}</p>` : ''}${typeof metadata.decision_question === 'string' && metadata.decision_question ? `<p><strong>Decision question:</strong> ${escapeHtml(metadata.decision_question)}</p>` : ''}${branchesHtml}${selectedBranchHtml}<h3>Technician-entered readings</h3>${readingsHtml}${typeof metadata.technician_notes === 'string' && metadata.technician_notes ? `<h3>Technician notes</h3><p>${escapeHtml(metadata.technician_notes)}</p>` : ''}${typeof metadata.technician_conclusion === 'string' && metadata.technician_conclusion ? `<h3>Technician conclusion</h3><p>${escapeHtml(metadata.technician_conclusion)}</p>` : ''}<h3>Attached evidence</h3>${evidenceHtml}</section>`
+    return `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2><p><strong>Status:</strong> ${escapeHtml(typeof metadata.technician_status === 'string' ? metadata.technician_status.replace(/_/g, ' ') : 'not tested')}</p><h3>OEM instruction text</h3><p>${escapeHtml(String(metadata.instruction ?? section.body ?? ''))}</p>${typeof metadata.oem_flow_text === 'string' && metadata.oem_flow_text ? `<p><strong>OEM flow text:</strong> ${escapeHtml(metadata.oem_flow_text)}</p>` : ''}<h3>Technician-entered readings</h3>${readingsHtml}${typeof metadata.technician_notes === 'string' && metadata.technician_notes ? `<h3>Technician notes</h3><p>${escapeHtml(metadata.technician_notes)}</p>` : ''}${typeof metadata.technician_conclusion === 'string' && metadata.technician_conclusion ? `<h3>Technician conclusion</h3><p>${escapeHtml(metadata.technician_conclusion)}</p>` : ''}<h3>Attached evidence</h3>${evidenceHtml}</section>`
   }).join('')
   const details = [
     { label: 'Organization', value: params.organizationName },
