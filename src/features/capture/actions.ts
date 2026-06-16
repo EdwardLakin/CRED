@@ -377,14 +377,17 @@ function getTextNoteExtractedData(
   const baseData = getInitialExtractedData('text_note')
   const baseObject = isRecord(baseData) ? baseData : {}
 
-  return mergeGuidance(
-    {
-      ...baseObject,
-      note: {
-        length: noteLength,
-        saved_without_media: true,
+  return addDiagnosticStepMetadata(
+    mergeGuidance(
+      {
+        ...baseObject,
+        note: {
+          length: noteLength,
+          saved_without_media: true,
+        },
       },
-    },
+      guidance,
+    ),
     guidance,
   )
 }
@@ -411,6 +414,26 @@ function getUploadFileMetadata(
       filename: file.filename,
       mime_type: file.mimeType,
       size: file.size,
+    },
+  }
+}
+
+function addDiagnosticStepMetadata(
+  extractedData: Json,
+  guidance: { workflow: string; step: string; label: string } | null,
+): Json {
+  if (!guidance || guidance.workflow !== 'diagnostic_procedure') {
+    return extractedData
+  }
+
+  const existingObject = isRecord(extractedData) ? extractedData : {}
+  return {
+    ...existingObject,
+    diagnostic_step: {
+      workflow: 'diagnostic_procedure',
+      step_id: guidance.step,
+      label: guidance.label,
+      documentation_support_only: true,
     },
   }
 }
@@ -770,7 +793,10 @@ export async function createCaptureRecordFromUploadedFile(
   const sourceExtractedData = sourceDocument
     ? addSourceDocumentMetadata(uploadExtractedData, sourceDocument)
     : uploadExtractedData
-  const itemExtractedData = mergeGuidance(sourceExtractedData, guidance)
+  const itemExtractedData = addDiagnosticStepMetadata(
+    mergeGuidance(sourceExtractedData, guidance),
+    guidance,
+  )
 
   const { data: existingCapture, error: existingCaptureError } = await supabase
     .from('capture_items')
@@ -1507,7 +1533,7 @@ function getSourceDocumentDetectedType(
     return 'info_plate'
   }
 
-  if (sourceDocument.type === 'other') {
+  if (sourceDocument.type === 'other' || sourceDocument.type === 'diagnostic_procedure') {
     return 'other'
   }
 

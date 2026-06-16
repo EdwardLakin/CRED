@@ -18,6 +18,7 @@ export const SESSION_TYPES = [
   { value: 'Inspection', label: 'Inspection' },
   { value: 'field_service_report', label: 'Service Report' },
   { value: 'General Documentation', label: 'General Documentation' },
+  { value: 'diagnostic_procedure', label: 'Diagnostic Procedure Workspace' },
 ] as const
 
 export type SessionType = (typeof SESSION_TYPES)[number]['value']

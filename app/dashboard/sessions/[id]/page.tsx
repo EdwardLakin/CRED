@@ -68,6 +68,9 @@ export default async function SessionDetailPage({
           <Link href={`/dashboard/sessions/${session.id}/report`} className="button button-primary touch-target">
             Review Report
           </Link>
+          <Link href={`/dashboard/sessions/${session.id}/diagnostic-procedure`} className="button button-secondary touch-target">
+            Diagnostic Procedure Workspace
+          </Link>
           <form action={isArchived ? restoreAction : archiveAction}>
             <button className="button button-secondary touch-target">
               {isArchived ? 'Restore Session' : 'Archive Session'}

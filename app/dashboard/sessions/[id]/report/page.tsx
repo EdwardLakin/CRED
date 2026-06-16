@@ -129,6 +129,94 @@ function getEvidenceNote(capture: CaptureItem) {
   return capture.technician_note?.trim() || capture.transcript?.trim() || null;
 }
 
+
+function getDiagnosticStepMetadata(section: AiReportDraftSection) {
+  return isRecord(section.metadata) ? section.metadata as Record<string, unknown> : {}
+}
+
+function getDiagnosticProcedureInfo(draft: AiReportDraft | null) {
+  if (!draft || !isRecord(draft.report_structure) || draft.report_structure.mode !== 'diagnostic_procedure') return null
+  const procedure = isRecord(draft.report_structure.procedure) ? draft.report_structure.procedure : {}
+  return {
+    title: typeof procedure.title === 'string' ? procedure.title : draft.title ?? 'Diagnostic Procedure Workspace',
+    manufacturer: typeof procedure.manufacturer === 'string' ? procedure.manufacturer : null,
+    documentType: typeof procedure.document_type === 'string' ? procedure.document_type.replace(/_/g, ' ') : null,
+    sourceFile: typeof procedure.source_file_name === 'string' ? procedure.source_file_name : null,
+  }
+}
+
+function captureMatchesDiagnosticStep(capture: CaptureItem, stepId: string) {
+  return isRecord(capture.extracted_data) && isRecord(capture.extracted_data.diagnostic_step) && capture.extracted_data.diagnostic_step.step_id === stepId
+}
+
+function DiagnosticProcedureReport({
+  session,
+  currentReport,
+  sections,
+  captures,
+  supportingEvidence,
+  reportPath,
+  origin,
+  isReadyForExport,
+  markReviewedAction,
+}: {
+  session: Pick<DocumentationSession, 'id' | 'title'>
+  currentReport: AiReportDraft
+  sections: AiReportDraftSection[]
+  captures: CaptureItem[]
+  supportingEvidence: SupportingEvidenceItem[]
+  reportPath: string
+  origin: string
+  isReadyForExport: boolean
+  markReviewedAction: ServerAction
+}) {
+  const info = getDiagnosticProcedureInfo(currentReport)
+  const steps = sections.filter((section) => getDiagnosticStepMetadata(section).section_type === 'diagnostic_procedure_step')
+  return (
+    <main className="page-shell dashboard-shell report-preview-shell report-review-shell">
+      <div className="section-header page-header report-preview-header report-review-header">
+        <div>
+          <p className="eyebrow guided-eyebrow">Diagnostic Procedure Workspace</p>
+          <h1>{info?.title ?? session.title}</h1>
+          <p className="notice info"><strong>Documentation support only.</strong> Follow OEM procedure. Technician owns all conclusions and recommendations. AI does not diagnose, determine root cause, or recommend repair.</p>
+          <p className="muted">{[info?.manufacturer, info?.documentType, info?.sourceFile].filter(Boolean).join(' · ')}</p>
+        </div>
+        <div className="page-actions report-preview-actions compact-report-actions">
+          <Link href={`/dashboard/sessions/${session.id}/diagnostic-procedure`} className="button button-secondary touch-target">Edit procedure documentation</Link>
+          <a className="button button-primary touch-target" href={`${origin}${reportPath}?preview=1`} target="_blank" rel="noreferrer">Printable documentation</a>
+        </div>
+      </div>
+      <section className="card detail-card report-command-card form-stack">
+        <div className="report-section-heading generated-report-heading">
+          <div><p className="eyebrow">Step documentation</p><h2>OEM procedure steps</h2><p className="muted">Statuses, readings, notes, and attachments are technician-entered documentation. OEM flow text is reference text only.</p></div>
+          <span className={isReadyForExport ? 'status-pill success' : 'status-pill neutral'}>{isReadyForExport ? 'Ready' : 'Review Required'}</span>
+        </div>
+        <div className="report-document-flow">
+          {steps.map((section) => {
+            const metadata = getDiagnosticStepMetadata(section)
+            const stepId = typeof metadata.step_id === 'string' ? metadata.step_id : section.section_key
+            const readings = Array.isArray(metadata.technician_readings) ? metadata.technician_readings.filter(isRecord) : []
+            const stepCaptures = captures.filter((capture) => captureMatchesDiagnosticStep(capture, stepId))
+            return (
+              <article key={section.id} className="report-document-card">
+                <h3>{section.title}</h3>
+                <p><strong>Status:</strong> {typeof metadata.technician_status === 'string' ? metadata.technician_status.replace(/_/g, ' ') : 'not tested'}</p>
+                <p>{stripConfidenceText(String(metadata.instruction ?? section.body ?? ''))}</p>
+                {typeof metadata.oem_flow_text === 'string' && metadata.oem_flow_text ? <p><strong>OEM flow text:</strong> {metadata.oem_flow_text}</p> : null}
+                {readings.length > 0 ? <div className="report-field-grid">{readings.map((reading, index) => <div key={`${section.id}-reading-${index}`} className="report-field-card"><span>{String(reading.label ?? `Reading ${index + 1}`)}</span><strong>{String(reading.value ?? '')}{reading.unit ? ` ${String(reading.unit)}` : ''}</strong></div>)}</div> : null}
+                {typeof metadata.technician_notes === 'string' && metadata.technician_notes ? <p><strong>Technician notes:</strong> {metadata.technician_notes}</p> : null}
+                {typeof metadata.technician_conclusion === 'string' && metadata.technician_conclusion ? <p><strong>Technician conclusion:</strong> {metadata.technician_conclusion}</p> : null}
+                {stepCaptures.length > 0 ? <div><strong>Attached evidence</strong><ul>{stepCaptures.map((capture) => { const item = supportingEvidence.find((entry) => entry.capture.id === capture.id); return <li key={capture.id}>{item?.title ?? 'Evidence'}{capture.technician_note ? ` — ${capture.technician_note}` : ''}</li> })}</ul></div> : <p className="muted">No step evidence attached.</p>}
+              </article>
+            )
+          })}
+        </div>
+        <form action={markReviewedAction} className="form-actions report-inline-actions"><button className="button button-primary touch-target">Approve documentation for export</button></form>
+      </section>
+    </main>
+  )
+}
+
 export default async function SessionReportPreviewPage({
   params,
   searchParams,
@@ -314,6 +402,21 @@ export default async function SessionReportPreviewPage({
     : null;
   const sourceFieldEntries = getDisplayEntries(currentReport?.header_fields);
   const isEditingReport = Boolean(currentReport);
+  if (currentReport && getDiagnosticProcedureInfo(currentReport)) {
+    return (
+      <DiagnosticProcedureReport
+        session={session}
+        currentReport={currentReport}
+        sections={visibleReportSections}
+        captures={visibleCaptures}
+        supportingEvidence={supportingEvidence}
+        reportPath={reportPath}
+        origin={origin}
+        isReadyForExport={isReadyForExport}
+        markReviewedAction={markReviewedAction}
+      />
+    );
+  }
   return (
     <main className="page-shell dashboard-shell report-preview-shell report-review-shell">
       <div className="section-header page-header report-preview-header report-review-header">
