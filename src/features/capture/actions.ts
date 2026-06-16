@@ -115,6 +115,7 @@ type CaptureActionFailure = {
 type CaptureActionSuccess = {
   ok: true
   sessionId: string
+  processingStatus?: 'saved' | 'queued' | 'needs_queue_retry'
 }
 
 type SafeFailureDetails = {
@@ -610,7 +611,7 @@ export async function createTextNoteCaptureRecord(
   revalidatePath(`/dashboard/sessions/${session.id}/capture`)
   revalidatePath(`/dashboard/sessions/${session.id}/report`)
 
-  return { ok: true, sessionId: session.id, captureItemId: captureItem.id }
+  return { ok: true, sessionId: session.id, captureItemId: captureItem.id, processingStatus: 'saved' }
 }
 
 export async function createCaptureRecordFromUploadedFile(
@@ -826,7 +827,7 @@ export async function createCaptureRecordFromUploadedFile(
 
   if (existingCapture) {
     if (!profile.organization.image_ai_assist_enabled || !mimeTypeIsImage(mimeType)) {
-      return { ok: true, sessionId: session.id, captureItemId: existingCapture.id }
+      return { ok: true, sessionId: session.id, captureItemId: existingCapture.id, processingStatus: 'saved' }
     }
 
     try {
@@ -837,16 +838,20 @@ export async function createCaptureRecordFromUploadedFile(
         captureItemId: existingCapture.id,
         metadata: { filename, mime_type: mimeType, capture_intent: rawCaptureIntent, repaired_duplicate: true },
       })
+      return { ok: true, sessionId: session.id, captureItemId: existingCapture.id, processingStatus: 'queued' }
     } catch (queueError) {
       logCaptureFailure({
         step: 'capture_processing_queue_duplicate_repair',
         captureId: existingCapture.id,
         ...getSafeErrorDetails(queueError),
       })
-      return captureError('Capture already exists, but AI queueing failed. Please retry or contact support.', session.id)
+      await supabase
+        .from('capture_items')
+        .update({ processing_status: 'needs_queue_retry', ai_status: 'needs_review', ai_summary: 'Saved. AI processing needs retry.' })
+        .eq('id', existingCapture.id)
+        .eq('organization_id', profile.organization_id)
+      return { ok: true, sessionId: session.id, captureItemId: existingCapture.id, processingStatus: 'needs_queue_retry' }
     }
-
-    return { ok: true, sessionId: session.id, captureItemId: existingCapture.id }
   }
 
   const { count: existingCaptureCount } = await supabase
@@ -870,7 +875,7 @@ export async function createCaptureRecordFromUploadedFile(
       storage_path: storagePath,
       captured_at: capturedAt,
       ai_status: profile.organization.image_ai_assist_enabled && itemMediaKind === 'image' ? 'queued' : 'needs_review',
-      processing_status: profile.organization.image_ai_assist_enabled && itemMediaKind === 'image' ? 'queued' : 'not_started',
+      processing_status: profile.organization.image_ai_assist_enabled && itemMediaKind === 'image' ? 'uploaded' : 'needs_review',
       extracted_data: itemExtractedData,
       technician_note: technicianNote || null,
       transcript:
@@ -932,7 +937,6 @@ export async function createCaptureRecordFromUploadedFile(
     return captureError(timelineError.message, session.id)
   }
 
-
   if (profile.organization.image_ai_assist_enabled && itemMediaKind === 'image') {
     try {
       await queueCaptureAnalysisJobs({
@@ -943,12 +947,18 @@ export async function createCaptureRecordFromUploadedFile(
         metadata: { filename, mime_type: mimeType, capture_intent: rawCaptureIntent },
       })
     } catch (queueError) {
-    logCaptureFailure({
-      step: 'capture_processing_queue_insert',
-      captureId: captureItem.id,
-      ...getSafeErrorDetails(queueError),
-    })
-      return captureError('Capture saved, but AI queueing failed. Please retry or contact support.', session.id)
+      logCaptureFailure({
+        step: 'capture_processing_queue_insert',
+        captureId: captureItem.id,
+        ...getSafeErrorDetails(queueError),
+      })
+      await supabase
+        .from('capture_items')
+        .update({ processing_status: 'needs_queue_retry', ai_status: 'needs_review', ai_summary: 'Saved. AI processing needs retry.' })
+        .eq('id', captureItem.id)
+        .eq('organization_id', profile.organization_id)
+      // The file and capture row are durable. Queue repair/backfill will pick this up later.
+      return { ok: true, sessionId: session.id, captureItemId: captureItem.id, processingStatus: 'needs_queue_retry' }
     }
   }
 
@@ -992,7 +1002,7 @@ export async function createCaptureRecordFromUploadedFile(
   revalidatePath(`/dashboard/sessions/${session.id}`)
   revalidatePath(`/dashboard/sessions/${session.id}/capture`)
 
-  return { ok: true, sessionId: session.id, captureItemId: captureItem.id }
+  return { ok: true, sessionId: session.id, captureItemId: captureItem.id, processingStatus: profile.organization.image_ai_assist_enabled && itemMediaKind === 'image' ? 'queued' : 'saved' }
 }
 
 export type CaptureClassificationActionState = {
