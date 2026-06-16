@@ -13,6 +13,7 @@ export type SourceDocumentType =
   | 'licence_plate'
   | 'unit_number'
   | 'other'
+  | 'diagnostic_procedure'
 
 export type SourceDocumentMetadata = {
   type: SourceDocumentType
@@ -29,6 +30,7 @@ export const SOURCE_DOCUMENT_OPTIONS: Array<{ type: SourceDocumentType; label: s
   { type: 'licence_plate', label: 'Licence Plate' },
   { type: 'unit_number', label: 'Unit Number' },
   { type: 'other', label: 'Other Source Document' },
+  { type: 'diagnostic_procedure', label: 'Diagnostic Procedure / OEM Pinpoint Test' },
 ]
 
 export const SOURCE_DOCUMENT_LABELS: Record<SourceDocumentType, string> = Object.fromEntries(

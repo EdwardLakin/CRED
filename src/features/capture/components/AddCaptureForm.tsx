@@ -300,6 +300,7 @@ export function AddCaptureForm({
   const [voiceNoteStatus, setVoiceNoteStatus] =
     useState<VoiceNoteStatus>('idle')
   const [isVoiceSupported, setIsVoiceSupported] = useState<boolean | null>(null)
+  const isDiagnosticProcedureAttachment = workflow === 'diagnostic_procedure'
   const activeType =
     captureIntent === 'auto_evidence' || captureIntent === 'auto_image'
       ? 'auto_evidence'
@@ -541,7 +542,7 @@ export function AddCaptureForm({
 
       if (result.savedCount > 0) {
         cleanupRecognition()
-        setSaveMessage(`${result.savedCount} capture${result.savedCount === 1 ? '' : 's'} saved and queued for AI.`)
+        setSaveMessage(isDiagnosticProcedureAttachment ? `${result.savedCount} attachment${result.savedCount === 1 ? '' : 's'} saved for this procedure step.` : `${result.savedCount} capture${result.savedCount === 1 ? '' : 's'} saved and queued for AI.`)
         triggerBackgroundProcessing()
         router.refresh()
       }
@@ -1209,7 +1210,7 @@ export function AddCaptureForm({
           name="technician_note"
           className="input note-textarea prominent-note-textarea"
           value={note}
-          placeholder="Speak or type what matters: location, component, measurement, condition, recommendation."
+          placeholder={isDiagnosticProcedureAttachment ? 'Speak or type step documentation: reading, connector/pin context, scan screenshot context, or technician note.' : 'Speak or type what matters: location, component, measurement, condition, recommendation.'}
           onChange={(event) => {
             setNote(event.target.value)
             setNoteSource(noteSource === 'voice' ? 'edited' : 'manual')
@@ -1220,7 +1221,7 @@ export function AddCaptureForm({
           rows={4}
         />
         <p className="muted note-helper-text">
-          Photos and gallery selections save and queue immediately. Notes are optional and can be saved separately when there is no media.
+          {isDiagnosticProcedureAttachment ? 'Attachments save to this OEM procedure step. Documentation support only; follow OEM procedure.' : 'Photos and gallery selections save and queue immediately. Notes are optional and can be saved separately when there is no media.'}
         </p>
         {isVoiceSupported === false ? (
           <p className="muted capture-upload-hint" role="status">
