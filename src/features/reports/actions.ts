@@ -18,7 +18,9 @@ import type { Json } from '@/lib/supabase/database.types'
 
 const REPORT_SHARE_EXPIRATION_DAYS = 30
 
-function genericFallbackDraftSections(draftOutput: Awaited<ReturnType<typeof generateReportDraft>>) {
+function genericFallbackDraftSections(draftOutput: Awaited<ReturnType<typeof generateReportDraft>>, captures: Array<{ id: string; technician_note?: string | null; transcript?: string | null; media_kind?: string | null; type?: string | null }> = []) {
+  const allCaptureIds = captures.map((capture) => capture.id)
+  const noteCaptureIds = captures.filter((capture) => capture.technician_note?.trim() || capture.transcript?.trim() || capture.type === 'text_note' || capture.media_kind === 'note' || capture.media_kind === 'audio').map((capture) => capture.id)
   return GENERIC_REPORT_SECTION_TITLES.map((title, index) => {
     const matchingSection = draftOutput.sections.find((section) => {
       const normalizedTitle = section.title.toLowerCase()
@@ -39,7 +41,7 @@ function genericFallbackDraftSections(draftOutput: Awaited<ReturnType<typeof gen
       body: matchingSection?.body ?? (title === 'Report Summary' ? draftOutput.summary : null),
       status: matchingSection?.status ?? 'informational' as const,
       confidence: matchingSection?.confidence ?? draftOutput.confidence,
-      source_capture_ids: matchingSection?.source_capture_ids ?? [],
+      source_capture_ids: getSectionSourceCaptureIds(title, matchingSection?.source_capture_ids, allCaptureIds, noteCaptureIds),
       sort_order: index,
       metadata: {
         source_field_group: title,
@@ -49,6 +51,22 @@ function genericFallbackDraftSections(draftOutput: Awaited<ReturnType<typeof gen
       } as Json,
     }
   })
+}
+
+function getSectionSourceCaptureIds(title: string, existingIds: string[] | null | undefined, allCaptureIds: string[], noteCaptureIds: string[]) {
+  if (existingIds?.length) return existingIds.filter((id) => allCaptureIds.includes(id))
+  if (title === 'Technician Notes') return noteCaptureIds
+  if (title === 'Evidence Captured' || title === 'Report Summary' || title === 'Findings' || title === 'Recommendations') return allCaptureIds
+  return []
+}
+
+function ensureDraftSectionsReferenceCaptures<T extends { title: string; source_capture_ids: string[] }>(sections: T[], captures: Array<{ id: string; technician_note?: string | null; transcript?: string | null; media_kind?: string | null; type?: string | null }>) {
+  const allCaptureIds = captures.map((capture) => capture.id)
+  const noteCaptureIds = captures.filter((capture) => capture.technician_note?.trim() || capture.transcript?.trim() || capture.type === 'text_note' || capture.media_kind === 'note' || capture.media_kind === 'audio').map((capture) => capture.id)
+  return sections.map((section) => ({
+    ...section,
+    source_capture_ids: getSectionSourceCaptureIds(section.title, section.source_capture_ids, allCaptureIds, noteCaptureIds),
+  }))
 }
 
 function getString(formData: FormData, field: string) {
@@ -673,9 +691,10 @@ export async function generateAiReportDraft(sessionId: string) {
   if (structureSourceMetadata.report_structure_source === 'generic_fallback') {
     draftOutput = {
       ...draftOutput,
-      sections: genericFallbackDraftSections(draftOutput),
+      sections: genericFallbackDraftSections(draftOutput, normalizedCaptures),
     }
   }
+  draftOutput = { ...draftOutput, sections: ensureDraftSectionsReferenceCaptures(draftOutput.sections, normalizedCaptures) }
   const evidenceGroups = buildEvidenceGroups(normalizedCaptures, draftOutput.sections, draftOutput.measurements, draftOutput.findings)
   const formDebug = normalizedCaptures.map((capture, index) => ({ id: capture.id, score: Number(scoreFormReferenceCapture(capture, index).toFixed(2)) }))
   if (process.env.NODE_ENV !== 'production') {
