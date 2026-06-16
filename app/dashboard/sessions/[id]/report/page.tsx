@@ -145,6 +145,16 @@ function getDiagnosticProcedureInfo(draft: AiReportDraft | null) {
   }
 }
 
+function getDiagnosticEvidenceRole(capture: CaptureItem) {
+  if (!isRecord(capture.extracted_data) || !isRecord(capture.extracted_data.diagnostic_step)) return 'other'
+  const role = capture.extracted_data.diagnostic_step.evidence_role
+  return typeof role === 'string' ? role : 'other'
+}
+
+function formatDiagnosticEvidenceRole(role: string) {
+  return role.replace(/_/g, ' ')
+}
+
 function captureMatchesDiagnosticStep(capture: CaptureItem, stepId: string) {
   return isRecord(capture.extracted_data) && isRecord(capture.extracted_data.diagnostic_step) && capture.extracted_data.diagnostic_step.step_id === stepId
 }
@@ -206,7 +216,7 @@ function DiagnosticProcedureReport({
                 {readings.length > 0 ? <div className="report-field-grid">{readings.map((reading, index) => <div key={`${section.id}-reading-${index}`} className="report-field-card"><span>{String(reading.label ?? `Reading ${index + 1}`)}</span><strong>{String(reading.value ?? '')}{reading.unit ? ` ${String(reading.unit)}` : ''}</strong></div>)}</div> : null}
                 {typeof metadata.technician_notes === 'string' && metadata.technician_notes ? <p><strong>Technician notes:</strong> {metadata.technician_notes}</p> : null}
                 {typeof metadata.technician_conclusion === 'string' && metadata.technician_conclusion ? <p><strong>Technician conclusion:</strong> {metadata.technician_conclusion}</p> : null}
-                {stepCaptures.length > 0 ? <div><strong>Attached evidence</strong><ul>{stepCaptures.map((capture) => { const item = supportingEvidence.find((entry) => entry.capture.id === capture.id); return <li key={capture.id}>{item?.title ?? 'Evidence'}{capture.technician_note ? ` — ${capture.technician_note}` : ''}</li> })}</ul></div> : <p className="muted">No step evidence attached.</p>}
+                {stepCaptures.length > 0 ? <div><strong>Attached evidence</strong>{Array.from(new Set(stepCaptures.map(getDiagnosticEvidenceRole))).map((role) => <div key={`${section.id}-${role}`}><p className="muted">{formatDiagnosticEvidenceRole(role)}</p><ul>{stepCaptures.filter((capture) => getDiagnosticEvidenceRole(capture) === role).map((capture) => { const item = supportingEvidence.find((entry) => entry.capture.id === capture.id); return <li key={capture.id}>{item?.title ?? 'Evidence'}{capture.technician_note ? ` — ${capture.technician_note}` : ''}</li> })}</ul></div>)}</div> : <p className="muted">No step evidence attached.</p>}
               </article>
             )
           })}

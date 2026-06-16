@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 
 import { requireActiveBillingAccess } from '@/features/billing'
 import { createCaptureRecordFromUploadedFile } from '@/features/capture/actions'
+import { extractDiagnosticProcedureSource } from '@/features/diagnostic-procedures/source-extraction'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import {
@@ -44,6 +45,9 @@ type SectionMetadata = {
   external_references?: Json
   visible?: boolean
   extraction_review_status?: string
+  source_page_start?: number | null
+  source_page_end?: number | null
+  extraction_confidence?: number | null
   extraction_warnings?: Json
   technician_status?: string
   technician_readings?: Json
@@ -104,6 +108,7 @@ function buildReportStructure(params: {
       source_capture_id: params.sourceCaptureId,
       source_file_name: params.sourceFilename,
       source_storage_path: params.sourceStoragePath,
+      source_pages_extracted: params.procedure.steps.some((step) => step.source_page_start !== null),
       prompt_version: DIAGNOSTIC_PROCEDURE_PROMPT_VERSION,
     },
     steps: params.procedure.steps.map((step, index) => ({
@@ -187,8 +192,9 @@ export async function uploadAndExtractDiagnosticProcedure(sessionId: string, for
     redirect(getRedirectPath(session.id, { error: captureResult.error }))
   }
 
+  const sourceExtraction = await extractDiagnosticProcedureSource(file, mimeType)
   const { data: signed } = await supabase.storage.from(CAPTURE_BUCKET).createSignedUrl(storagePath, 60 * 10)
-  const extraction = await extractDiagnosticProcedure({ signedUrl: signed?.signedUrl ?? '', filename: file.name, mimeType })
+  const extraction = await extractDiagnosticProcedure({ signedUrl: signed?.signedUrl ?? '', filename: file.name, mimeType, sourceChunks: sourceExtraction.chunks, extractionWarnings: sourceExtraction.warnings })
   await saveDiagnosticProcedureDraft({
     sessionId: session.id,
     sourceCaptureId: captureResult.captureItemId,
@@ -278,6 +284,9 @@ async function saveDiagnosticProcedureDraft(input: {
         required_measurements: step.required_measurements,
         required_evidence: step.required_evidence,
         oem_flow_text: step.oem_flow_text,
+        source_page_start: step.source_page_start,
+        source_page_end: step.source_page_end,
+        extraction_confidence: step.extraction_confidence,
         extraction_warnings: step.extraction_warnings,
         visible: true,
         extraction_review_status: 'technician_review_required',
