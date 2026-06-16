@@ -53,6 +53,7 @@ type SectionMetadata = {
   technician_readings?: Json
   technician_notes?: string | null
   technician_conclusion?: string | null
+  technician_selected_branch?: string | null
   attached_capture_ids?: string[]
   updated_by?: string
   updated_at?: string
@@ -446,6 +447,7 @@ export async function updateDiagnosticStep(sectionId: string, formData: FormData
   const technicianStatus = STEP_STATUSES.has(requestedStatus) ? requestedStatus : 'not_tested'
   const technicianNotes = getString(formData, 'technician_notes').slice(0, 3000) || null
   const technicianConclusion = getString(formData, 'technician_conclusion').slice(0, 2000) || null
+  const technicianSelectedBranch = getString(formData, 'technician_selected_branch').slice(0, 240) || null
   const readingCount = Number(getString(formData, 'reading_count') || 0)
   const technicianReadings = Array.from({ length: Math.max(0, Math.min(20, readingCount)) }).map((_, index) => ({
     key: getString(formData, `reading_key_${index}`) || `reading_${index + 1}`,
@@ -461,6 +463,7 @@ export async function updateDiagnosticStep(sectionId: string, formData: FormData
     technician_status: technicianStatus,
     technician_notes: technicianNotes,
     technician_conclusion: technicianConclusion,
+    technician_selected_branch: technicianSelectedBranch,
     technician_readings: safeJson(technicianReadings),
     updated_by: profile.id,
     updated_at: new Date().toISOString(),
@@ -534,6 +537,7 @@ export async function attachCaptureToDiagnosticStep(sectionId: string, captureIt
     .from('ai_report_draft_sections')
     .update({ metadata: safeJson(nextMetadata), source_capture_ids: attachedCaptureIds, updated_at: new Date().toISOString() })
     .eq('id', section.id)
+    .eq('documentation_session_id', section.documentation_session_id)
     .eq('organization_id', profile.organization_id)
 
   if (sectionError) return { ok: false, error: sectionError.message }

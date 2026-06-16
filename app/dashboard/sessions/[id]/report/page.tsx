@@ -7,6 +7,7 @@ import {
   getRequiredEvidenceCompletion,
   getInspectionProgress,
 } from "@/features/capture";
+import { getDiagnosticProcedureProgress, getDiagnosticStepCompleteness } from "@/features/diagnostic-procedures/progress";
 import {
   buildCustomerAssetRows,
   buildEvidencePackages,
@@ -167,7 +168,6 @@ function DiagnosticProcedureReport({
   supportingEvidence,
   reportPath,
   origin,
-  isReadyForExport,
   markReviewedAction,
 }: {
   session: Pick<DocumentationSession, 'id' | 'title'>
@@ -177,11 +177,11 @@ function DiagnosticProcedureReport({
   supportingEvidence: SupportingEvidenceItem[]
   reportPath: string
   origin: string
-  isReadyForExport: boolean
   markReviewedAction: ServerAction
 }) {
   const info = getDiagnosticProcedureInfo(currentReport)
   const steps = sections.filter((section) => { const metadata = getDiagnosticStepMetadata(section); return metadata.section_type === 'diagnostic_procedure_step' && metadata.visible !== false })
+  const progress = getDiagnosticProcedureProgress(steps, captures)
   return (
     <main className="page-shell dashboard-shell report-preview-shell report-review-shell">
       <div className="section-header page-header report-preview-header report-review-header">
@@ -199,18 +199,31 @@ function DiagnosticProcedureReport({
       <section className="card detail-card report-command-card form-stack">
         <div className="report-section-heading generated-report-heading">
           <div><p className="eyebrow">Step documentation</p><h2>OEM procedure steps</h2><p className="muted">Statuses, readings, notes, and attachments are technician-entered documentation. OEM flow text is reference text only.</p></div>
-          <span className={isReadyForExport ? 'status-pill success' : 'status-pill neutral'}>{isReadyForExport ? 'Ready' : 'Review Required'}</span>
+          <span className={progress.reportReady ? 'status-pill success' : 'status-pill attention'}>{progress.reportReady ? 'Documentation ready' : 'Documentation incomplete'}</span>
         </div>
+
+        <section className="inspection-summary-card">
+          <div className="report-section-title-row"><div><p className="eyebrow">Documentation completeness summary</p><h3>{progress.percentComplete}% complete</h3></div></div>
+          <div className="inspection-metric-grid">
+            <div><span>Visible steps</span><strong>{progress.totalVisibleSteps}</strong></div>
+            <div><span>Incomplete steps</span><strong>{progress.incompleteSteps}</strong></div>
+            <div><span>Blocked steps</span><strong>{progress.blockedSteps}</strong></div>
+            <div><span>Missing readings/evidence/branches</span><strong>{progress.missingRequiredDocumentationCount}</strong></div>
+          </div>
+        </section>
         <div className="report-document-flow">
           {steps.map((section) => {
             const metadata = getDiagnosticStepMetadata(section)
             const stepId = typeof metadata.step_id === 'string' ? metadata.step_id : section.section_key
             const readings = Array.isArray(metadata.technician_readings) ? metadata.technician_readings.filter(isRecord) : []
             const stepCaptures = captures.filter((capture) => captureMatchesDiagnosticStep(capture, stepId))
+            const completeness = getDiagnosticStepCompleteness(section, captures)
             return (
               <article key={section.id} className="report-document-card">
                 <h3>{section.title}</h3>
                 <p><strong>Status:</strong> {typeof metadata.technician_status === 'string' ? metadata.technician_status.replace(/_/g, ' ') : 'not tested'}</p>
+                <p><strong>Completeness:</strong> {completeness.badges.length ? completeness.badges.join(', ') : 'Incomplete'}</p>
+                {typeof metadata.technician_selected_branch === 'string' && metadata.technician_selected_branch ? <p><strong>Technician-selected branch:</strong> {metadata.technician_selected_branch}</p> : null}
                 <p>{stripConfidenceText(String(metadata.instruction ?? section.body ?? ''))}</p>
                 {typeof metadata.oem_flow_text === 'string' && metadata.oem_flow_text ? <p><strong>OEM flow text:</strong> {metadata.oem_flow_text}</p> : null}
                 {readings.length > 0 ? <div className="report-field-grid">{readings.map((reading, index) => <div key={`${section.id}-reading-${index}`} className="report-field-card"><span>{String(reading.label ?? `Reading ${index + 1}`)}</span><strong>{String(reading.value ?? '')}{reading.unit ? ` ${String(reading.unit)}` : ''}</strong></div>)}</div> : null}
@@ -422,7 +435,6 @@ export default async function SessionReportPreviewPage({
         supportingEvidence={supportingEvidence}
         reportPath={reportPath}
         origin={origin}
-        isReadyForExport={isReadyForExport}
         markReviewedAction={markReviewedAction}
       />
     );
@@ -888,7 +900,8 @@ function GeneratedReportReview({
               <div className="report-field-grid">{customerAssetRows.map((field) => <div key={field.label} className="report-field-card"><span>{field.label}</span><strong>{stripConfidenceText(field.value)}</strong></div>)}</div>
             ) : null}
             {documentSections.filter((section) => shouldRenderDraftSectionStandalone(section) && !isCustomerAssetSection(section) && !/supporting details|supporting evidence/i.test(section.title)).length > 0 ? (
-              <div className="report-document-flow">
+
+              <div className="report-content-grid">
                 {documentSections.filter((section) => shouldRenderDraftSectionStandalone(section) && !isCustomerAssetSection(section) && !/supporting details|supporting evidence/i.test(section.title)).map((section) => (
                   <article key={section.key} className="report-document-card">
                     <h4>{stripConfidenceText(/supporting details/i.test(section.title) ? "Supporting Evidence" : section.title)}</h4>

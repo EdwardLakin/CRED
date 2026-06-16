@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { getPlanLimits, parseBillingPlan } from '@/features/billing'
 import { AddCaptureForm } from '@/features/capture'
 import { approveDiagnosticProcedureStructure, updateDiagnosticProcedureStepExtraction, updateDiagnosticStep, uploadAndExtractDiagnosticProcedure } from '@/features/diagnostic-procedures/actions'
+import { getDiagnosticProcedureProgress, getDiagnosticStepCompleteness } from '@/features/diagnostic-procedures/progress'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import type { Database } from '@/lib/supabase/database.types'
 
@@ -34,6 +35,7 @@ type StepMetadata = {
   technician_notes?: string | null
   technician_conclusion?: string | null
   attached_capture_ids?: string[]
+  technician_selected_branch?: string | null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -117,6 +119,7 @@ function StepCard({
   const title = `${metadata.step_number ? `${metadata.step_number}: ` : ''}${metadata.title ?? section.title}`
   const branches = metadata.oem_branches ?? []
   const externalReferences = metadata.external_references ?? []
+  const completeness = getDiagnosticStepCompleteness(section, captures)
 
   return (
     <article className="card detail-card form-stack" id={`step-${stepId}`}>
@@ -127,7 +130,10 @@ function StepCard({
           <p className="muted">Documentation support only. Follow OEM procedure. Technician owns all conclusions.</p>
           {formatSourcePage(metadata) ? <p className="muted">{formatSourcePage(metadata)}{typeof metadata.extraction_confidence === 'number' ? ` · Extraction confidence ${Math.round(metadata.extraction_confidence * 100)}%` : ''}</p> : null}
         </div>
-        <span className="status-pill neutral">{metadata.technician_status?.replace(/_/g, ' ') ?? 'not tested'}</span>
+        <div className="page-actions">
+          {completeness.badges.map((badge) => <span key={badge} className={badge === 'Complete' ? 'status-pill success' : badge === 'Blocked' || badge === 'Review warning' ? 'status-pill attention' : 'status-pill neutral'}>{badge}</span>)}
+          <span className="status-pill neutral">{metadata.technician_status?.replace(/_/g, ' ') ?? 'not tested'}</span>
+        </div>
       </div>
 
       <form action={extractionUpdateAction} className="form-stack notice warning">
@@ -218,6 +224,17 @@ function StepCard({
           })}
         </div>
 
+
+        {branches.length > 0 ? (
+          <label className="field-stack">
+            <span className="label">Technician-selected OEM branch documented</span>
+            <select name="technician_selected_branch" className="input" defaultValue={metadata.technician_selected_branch ?? ''}>
+              <option value="">Select branch documented</option>
+              {branches.map((branch, index) => <option key={`${branch.label ?? index}-select`} value={branch.label ?? branch.text ?? `Branch ${index + 1}`}>{branch.label ?? branch.text ?? `Branch ${index + 1}`}</option>)}
+            </select>
+          </label>
+        ) : null}
+
         <label className="field-stack">
           <span className="label">Technician notes</span>
           <textarea className="input note-textarea" name="technician_notes" rows={4} defaultValue={metadata.technician_notes ?? ''} placeholder="Document observations, readings context, or why this step is blocked. Do not rely on AI for diagnosis." />
@@ -304,7 +321,9 @@ export default async function DiagnosticProcedurePage({
   const planLimits = getPlanLimits(parseBillingPlan(profile.organization.plan))
   const uploadAction = uploadAndExtractDiagnosticProcedure.bind(null, session.id)
   const procedureInfo = getProcedureInfo(diagnosticDraft)
-  const stepSections = (sections ?? []).filter((section) => getMetadata(section).section_type === 'diagnostic_procedure_step').filter((section) => getMetadata(section).visible !== false)
+  const allStepSections = (sections ?? []).filter((section) => getMetadata(section).section_type === 'diagnostic_procedure_step')
+  const procedureProgress = getDiagnosticProcedureProgress(allStepSections, captures ?? [])
+  const stepSections = allStepSections.filter((section) => getMetadata(section).visible !== false)
   const singleStepSection = stepSections.find((section) => section.id === step || getMetadata(section).step_id === step)
   const visibleStepSections = singleStepSection ? [singleStepSection] : stepSections
   const approveAction = async () => {
@@ -352,6 +371,21 @@ export default async function DiagnosticProcedurePage({
               <p className="muted">{[procedureInfo?.manufacturer, procedureInfo?.documentType, procedureInfo?.sourceFile].filter(Boolean).join(' · ')}</p>
               <p className="muted">Status: {(procedureInfo?.status ?? 'technician_review_required').replace(/_/g, ' ')}</p><form action={approveAction}><button className="button button-primary touch-target">Approve corrected structure for use</button></form><p className="notice info"><strong>Guardrail:</strong> OEM flow text is shown for reference only. The technician decides what was tested and documents the result.</p>
             </div>
+          </section>
+
+          <section className="card detail-card form-stack">
+            <div className="report-section-heading generated-report-heading">
+              <div><p className="eyebrow">Documentation progress</p><h2>{procedureProgress.percentComplete}% complete</h2><p className="muted">Documentation ready only when required technician-entered readings, branch selections, and evidence roles are complete.</p></div>
+              <span className={procedureProgress.reportReady ? 'status-pill success' : 'status-pill attention'}>{procedureProgress.reportReady ? 'Documentation ready' : 'Documentation incomplete'}</span>
+            </div>
+            <div className="inspection-metric-grid">
+              <div><span>Visible steps</span><strong>{procedureProgress.totalVisibleSteps}</strong></div>
+              <div><span>Incomplete steps</span><strong>{procedureProgress.incompleteSteps}</strong></div>
+              <div><span>Blocked</span><strong>{procedureProgress.blockedSteps}</strong></div>
+              <div><span>Warnings</span><strong>{procedureProgress.warningCount}</strong></div>
+              <div><span>Missing required documentation</span><strong>{procedureProgress.missingRequiredDocumentationCount}</strong></div>
+            </div>
+            {procedureProgress.nextIncompleteStepId ? <Link className="button button-secondary touch-target" href={`/dashboard/sessions/${session.id}/diagnostic-procedure#step-${procedureProgress.nextIncompleteStepId}`}>Open next incomplete documentation item.</Link> : null}
           </section>
           <div className="page-actions"><Link className="button button-secondary touch-target" href={`/dashboard/sessions/${session.id}/diagnostic-procedure`}>Full procedure view</Link>{stepSections.map((section) => <Link key={section.id} className="button button-secondary touch-target" href={`/dashboard/sessions/${session.id}/diagnostic-procedure?step=${section.id}#step-${getMetadata(section).step_id ?? section.section_key}`}>{getMetadata(section).step_number ?? 'Step'}</Link>)}</div>
           {visibleStepSections.map((section) => (
