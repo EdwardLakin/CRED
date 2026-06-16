@@ -6,36 +6,66 @@ import { getCurrentUser } from '@/features/auth/server'
 import type { BillingPlan } from '@/features/billing'
 
 const steps = [
-  ['New Session', 'Press once and start capturing immediately. No setup required.'],
-  ['Capture Evidence', 'Use camera, gallery, voice notes, or text notes in any order.'],
-  ['Review', 'CRED turns the captured evidence into a professional report.'],
-  ['Export', 'Approve, then email, share, print, or save the report.'],
+  ['Capture evidence', 'Photos, forms, documents, voice notes, measurements, and field observations enter one evidence-first session.'],
+  ['AI organizes and drafts', 'CRED extracts context, groups evidence, identifies findings, and drafts structured documentation.'],
+  ['Human reviews and approves', 'Technicians edit, verify, show or hide sections, and approve what appears in the final report.'],
+  ['Export professional report', 'Deliver approved documentation as PDF, email, share link, print, or saved record.'],
+] as const
+
+const liveMetrics = [
+  ['Inspection completeness', '78%'],
+  ['Evidence completeness', '84%'],
+  ['Finding confidence', 'Review'],
+  ['Report readiness', 'Drafting'],
+  ['Missing required evidence', 'Panel serial photo'],
+  ['Suggested next capture', 'Voice note on corrective action'],
+] as const
+
+const aiDraftCapabilities = [
+  'Extract details from photos, notes, forms, documents, and observations',
+  'Organize and group related evidence under findings',
+  'Reconstruct form and document structure for review',
+  'Prepare draft summaries, recommendations, and report sections',
+] as const
+
+const reviewControls = [
+  'Edit report title and summary',
+  'Show or hide report sections',
+  'Correct extracted fields',
+  'Review evidence captions',
+  'Verify form fields',
+  'Approve before export',
+] as const
+
+const contextItems = [
+  'Photos',
+  'Technician observations',
+  'Voice notes',
+  'Documents',
+  'Measurements',
+  'Recommendations',
+  'Reference captures',
+] as const
+
+const reportOutputs = [
+  'Inspection summary',
+  'Findings',
+  'Recommended actions',
+  'Reference documents',
+  'Inspector and facility details',
+  'Signatures',
+  'Export as PDF',
+  'Email, share link, print, or save',
 ] as const
 
 const useCases = [
-  'Paper form replacement',
-  'Fleet and service documentation',
-  'Property documentation',
-  'Field service evidence',
+  'Inspections',
+  'Diagnostic documentation',
   'Warranty/claim support',
-] as const
-
-const screenshots = [
-  {
-    title: 'Capture Evidence',
-    detail: 'The capture screen is the product: camera, gallery, voice note, and text note.',
-    rows: ['Paper form photo', 'Job site photo', 'Technician voice note'],
-  },
-  {
-    title: 'Review',
-    detail: 'A professional report appears from the evidence, ready for technician review.',
-    rows: ['Findings', 'Recommendations', 'Photos and notes'],
-  },
-  {
-    title: 'Printable Report',
-    detail: 'Group final actions under one clear export experience.',
-    rows: ['Email', 'Share link', 'Print / Save'],
-  },
+  'Fleet maintenance documentation',
+  'Compliance records',
+  'Field service evidence',
+  'Property or asset documentation',
 ] as const
 
 const plans: Array<{
@@ -49,27 +79,27 @@ const plans: Array<{
     key: 'individual',
     name: 'Individual',
     price: '$39/month',
-    description: 'Paper replacement for independent technicians.',
+    description: 'Evidence-first documentation workflow for independent technicians.',
     features: [
       '1 user',
-      'Unlimited sessions',
-      'Automatic report building',
-      'Paper form capture',
-      'Printable reports',
-      'Mobile evidence capture',
+      'Unlimited evidence sessions',
+      'AI-assisted draft reports',
+      'Paper form and document capture',
+      'Human approval before export',
+      'PDF, print, email, and share-ready reports',
     ],
   },
   {
     key: 'team',
     name: 'Team',
     price: '$99/month',
-    description: 'Shared paper replacement for growing service and maintenance teams.',
+    description: 'Shared capture, review, and report workflow for growing field teams.',
     features: [
       'Up to 5 users',
-      'Shared sessions',
-      'Team reporting',
+      'Shared documentation sessions',
+      'Team reporting workflow',
       'Organization dashboard',
-      'Centralized evidence management',
+      'Centralized evidence and context management',
     ],
   },
   {
@@ -77,14 +107,14 @@ const plans: Array<{
     name: 'Shop',
     price: '$199/month',
     description:
-      'Built for teams that want technicians to capture evidence quickly while CRED builds consistent, professional reports.',
+      'Built for teams that want technicians to capture messy field evidence while CRED prepares consistent, professional reports for review.',
     features: [
       'Up to 25 users',
       'Everything in Team',
       'Shared report history',
       'Team-wide evidence management',
-      'Automatic findings and recommendations',
-      'Customer-ready printable reports',
+      'Draft findings and recommendations',
+      'Customer-ready professional reports',
       'Shop branding and report customization',
       'Session history and audit trail',
       'Priority support',
@@ -93,10 +123,12 @@ const plans: Array<{
 ]
 
 const faqs = [
-  ['Who is CRED built for?', 'CRED is built for technicians and field teams that want to replace paper forms with fast evidence capture and professional reports.'],
-  ['What does CRED build?', 'CRED turns captured evidence into findings, recommendations, form fields, photos, notes, and report structure for human review.'],
-  ['Can I capture a paper form?', 'Yes. If you have a paper form, capture it first. The form provides context for the report.'],
-  ['Can I save reports as PDF?', 'Yes. CRED opens polished printable reports that you can save from your browser’s Print or Share menu for customers, claims, regulated documentation packages, and internal records.'],
+  ['Who is CRED built for?', 'CRED is built for technicians, inspectors, maintenance teams, and field organizations that need evidence-first documentation and professional reports without turning every job into paperwork.'],
+  ['Does CRED diagnose problems?', 'No. CRED assists with evidence organization and documentation. Final diagnosis, approval, certification, and signing remain with the user or technician.'],
+  ['What evidence can I capture?', 'Capture photos, voice notes, text observations, forms, documents, measurements, reference captures, and recommendations in one session.'],
+  ['Can I capture paper forms or reference documents?', 'Yes. Capture paper forms, labels, manuals, prior reports, reference documents, and job site context so CRED can keep them connected to the draft documentation.'],
+  ['Can I review and edit before export?', 'Yes. CRED drafts the documentation, then humans review titles, summaries, sections, captions, fields, findings, and recommendations before approval.'],
+  ['Can I save reports as PDF or share them?', 'Yes. Approved reports can be exported as PDF, emailed, shared by link, printed, or saved for customers, claims, compliance packages, and internal records.'],
 ] as const
 
 export default async function HomePage() {
@@ -123,11 +155,17 @@ export default async function HomePage() {
 
       <section className="landing-hero">
         <div className="landing-hero-content">
-          <p className="eyebrow">Paper replacement for the field</p>
+          <p className="eyebrow">Evidence-first documentation platform</p>
           <h1>Capture anything. Generate everything.</h1>
           <p className="landing-hero-copy">
-            The technician captures evidence. CRED builds the professional report. No setup required.
+            Capture photos, forms, documents, voice notes, and field observations. CRED organizes the evidence, drafts structured documentation, and prepares professional reports for human review and export.
           </p>
+          <div className="workflow-pills" aria-label="CRED workflow">
+            <span>Capture evidence</span>
+            <span>AI drafts</span>
+            <span>Human approves</span>
+            <span>Export report</span>
+          </div>
           <div className="landing-hero-actions">
             <Link href={isAuthenticated ? '/dashboard?checkout=individual' : '/sign-up?plan=individual'} className="button button-primary">
               Start Free Trial
@@ -137,27 +175,39 @@ export default async function HomePage() {
             </Link>
           </div>
         </div>
-        <div className="hero-product-card" aria-label="CRED product preview">
+        <div className="hero-product-card transformation-card" aria-label="Evidence to report transformation preview">
           <div className="mock-phone-header">
             <span />
-            <strong>Evidence Session</strong>
-            <em>Live</em>
+            <strong>Evidence → Report</strong>
+            <em>Human review</em>
           </div>
-          <div className="mock-capture-tile large">📸 Brake assembly photo captured</div>
-          <div className="mock-capture-grid">
-            <div>🎙 Voice note<br /><strong>42 sec</strong></div>
-            <div>✍️ Text note<br /><strong>Ready</strong></div>
+          <div className="evidence-flow">
+            <div className="flow-column">
+              <span className="flow-label">Inputs</span>
+              <div className="input-chip">📸 Photo</div>
+              <div className="input-chip">🎙 Voice Note</div>
+              <div className="input-chip">📋 Form</div>
+              <div className="input-chip">📄 Document</div>
+            </div>
+            <div className="flow-arrow" aria-hidden="true">→</div>
+            <div className="flow-column ai-status-card">
+              <span className="flow-label">AI draft status</span>
+              <div><span>Evidence completeness</span><strong>84%</strong></div>
+              <div><span>Finding confidence</span><strong>Review</strong></div>
+              <div><span>Report readiness</span><strong>Draft ready</strong></div>
+            </div>
           </div>
-          <div className="mock-report-strip">
-            <span>Report</span>
-            <strong>Ready</strong>
+          <div className="mock-report-output">
+            <span className="flow-label">Output</span>
+            <strong>Approved professional inspection report</strong>
+            <p>AI assists with organization and drafting. A technician approves before export.</p>
           </div>
         </div>
       </section>
 
       <section className="landing-section" id="how-it-works">
-        <div className="section-kicker">How it works</div>
-        <h2>From first capture to finished report.</h2>
+        <div className="section-kicker">Workflow</div>
+        <h2>From messy field evidence to review-ready documentation.</h2>
         <div className="how-grid">
           {steps.map(([title, description], index) => (
             <article className="landing-card" key={title}>
@@ -169,36 +219,96 @@ export default async function HomePage() {
         </div>
       </section>
 
+      <section className="landing-section split-section">
+        <div>
+          <div className="section-kicker">Live documentation while you work</div>
+          <h2>Progress updates as evidence is captured.</h2>
+          <p className="section-copy">
+            CRED shows what is complete, what still needs support, and what to capture next while the job is still fresh.
+          </p>
+        </div>
+        <div className="product-metric-card">
+          {liveMetrics.map(([label, value]) => (
+            <div className="metric-row" key={label}>
+              <span>{label}</span>
+              <strong>{value}</strong>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="landing-section product-preview-section">
+        <div className="section-kicker">AI-assisted draft generation</div>
+        <h2>CRED organizes the evidence into a structured draft.</h2>
+        <div className="screenshot-grid">
+          <article className="screenshot-card wide-card">
+            <div className="screenshot-topbar"><span /><span /><span /></div>
+            <h3>Evidence extraction and grouping</h3>
+            <p>CRED can extract, organize, group evidence, reconstruct form/document structure, identify findings, and prepare recommendations for review.</p>
+            <div className="mock-list">
+              {aiDraftCapabilities.map((capability) => (
+                <div key={capability}>✓ {capability}</div>
+              ))}
+            </div>
+          </article>
+          <article className="screenshot-card review-card">
+            <div className="screenshot-topbar"><span /><span /><span /></div>
+            <h3>Human review remains in control</h3>
+            <p>CRED drafts the documentation. Technicians decide what appears in the final report.</p>
+            <div className="mock-list compact-list">
+              {reviewControls.map((control) => (
+                <div key={control}>✓ {control}</div>
+              ))}
+            </div>
+            <div className="trust-line">AI cannot auto-approve, certify, or sign reports.</div>
+          </article>
+        </div>
+      </section>
+
+      <section className="landing-section split-section">
+        <div>
+          <div className="section-kicker">Evidence never loses context</div>
+          <h2>Every capture stays connected to the finding it supports.</h2>
+          <p className="section-copy">
+            Photos, notes, documents, measurements, reference captures, technician observations, and recommendations remain tied to the relevant finding from capture through export.
+          </p>
+        </div>
+        <div className="context-map-card">
+          <strong>Finding: Leaking hydraulic fitting</strong>
+          <div className="context-node-grid">
+            {contextItems.map((item) => (
+              <span key={item}>{item}</span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="landing-section split-section report-ready-section">
+        <div>
+          <div className="section-kicker">Professional reports ready for delivery</div>
+          <h2>Approved reports are built for customers, claims, compliance, and records.</h2>
+          <p className="section-copy">
+            Export the final documentation as a PDF, send it by email, share a link, print it, or save it with the job record.
+          </p>
+        </div>
+        <div className="report-output-card">
+          {reportOutputs.map((output) => (
+            <div key={output}>✓ {output}</div>
+          ))}
+        </div>
+      </section>
+
       <section className="landing-section split-section" id="use-cases">
         <div>
           <div className="section-kicker">Use cases</div>
-          <h2>Built for teams replacing paper in the field.</h2>
+          <h2>Built for documentation-heavy field work.</h2>
           <p className="section-copy">
-            CRED keeps capture simple while creating reports that support approvals, claims, warranties, customer communication, and internal quality control.
+            CRED supports the teams that need complete evidence, accountable human review, and professional report delivery after every job.
           </p>
         </div>
         <div className="use-case-list">
           {useCases.map((useCase) => (
             <div className="use-case-pill" key={useCase}>✓ {useCase}</div>
-          ))}
-        </div>
-      </section>
-
-      <section className="landing-section">
-        <div className="section-kicker">Product preview</div>
-        <h2>Capture, review, and export without configuration.</h2>
-        <div className="screenshot-grid">
-          {screenshots.map((screenshot) => (
-            <article className="screenshot-card" key={screenshot.title}>
-              <div className="screenshot-topbar"><span /><span /><span /></div>
-              <h3>{screenshot.title}</h3>
-              <p>{screenshot.detail}</p>
-              <div className="mock-list">
-                {screenshot.rows.map((row) => (
-                  <div key={row}>{row}</div>
-                ))}
-              </div>
-            </article>
           ))}
         </div>
       </section>
