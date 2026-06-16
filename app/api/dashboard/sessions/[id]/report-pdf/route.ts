@@ -10,7 +10,7 @@ import {
   isFieldServiceSessionType,
   normalizeFieldServiceDetails,
 } from '@/features/field-service'
-import { buildCustomerAssetRows, buildNormalizedReportModel, classifyReferenceDocumentTitle, dedupeEvidenceDetails, deriveFormSectionsFromCaptures, getNormalizedFindingModels, getNormalizedInspectionStatus, getNormalizedRecommendedActions, isCustomerAssetSection, isMeaningfulCustomerReportText, normalizeDraftSections, shouldRenderDetail, shouldRenderDraftSectionStandalone, splitRecommendationText, stripConfidenceText, sanitizeCapturesForImageAiAssist } from '@/features/reports/report-structure'
+import { buildCustomerAssetRows, buildNormalizedReportModel, classifyReferenceDocumentTitle, dedupeEvidenceDetails, deriveFormSectionsFromCaptures, getNormalizedFindingModels, getNormalizedRecommendedActions, isMeaningfulCustomerReportText, normalizeDraftSections, shouldRenderDetail, shouldRenderDraftSectionStandalone, splitRecommendationText, stripConfidenceText, sanitizeCapturesForImageAiAssist } from '@/features/reports/report-structure'
 import { asDiagnosticRecordArray, getDiagnosticProcedureProgress, getDiagnosticStepCompleteness } from '@/features/diagnostic-procedures/progress'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { recordUsageEvent } from '@/features/usage'
@@ -144,22 +144,20 @@ function renderTextList(title: string, values: string[], existingRenderedText: s
 
 
 function buildExecutiveSummaryHtml(params: { reportTitle: string; organizationName: string; dateLabel: string; findings: ReturnType<typeof getNormalizedFindingModels<ReportCapture>>; referenceCount: number; evidenceCount: number }) {
-  const actions = getNormalizedRecommendedActions(params.findings)
-  const breakdown = ['critical', 'advisory', 'informational'].map((key) => ({ key, count: params.findings.filter((finding) => finding.severity.key === key).length, label: params.findings.find((finding) => finding.severity.key === key)?.severity.label ?? ({ critical: '🔴 Critical', advisory: '🟡 Advisory', informational: '🟢 Informational' } as Record<string, string>)[key] })).filter((item) => item.count > 0)
-  return `<section class="item premium-cover"><p class="eyebrow">Professional Inspection Report</p><h1>${escapeHtml(params.reportTitle)}</h1><p class="meta">${escapeHtml(params.organizationName)}</p></section><section class="item service-section"><h2>Inspection Summary</h2><p>Inspection completed on ${escapeHtml(params.dateLabel)}.</p><dl><div><dt>Total Findings</dt><dd>${params.findings.length}</dd></div><div><dt>Critical Findings</dt><dd>${params.findings.filter((finding) => finding.severity.key === 'critical').length}</dd></div><div><dt>Reference Documents Captured</dt><dd>${params.referenceCount}</dd></div><div><dt>Evidence Items Captured</dt><dd>${params.evidenceCount}</dd></div></dl><h3>Findings Identified</h3>${breakdown.length ? `<ul>${breakdown.map((item) => `<li>${item.count} ${escapeHtml(item.label)}</li>`).join('')}</ul>` : '<p class="muted">No findings identified from included evidence.</p>'}<h3>Recommended Actions</h3>${actions.length ? `<ul>${actions.map((item) => `<li>${escapeHtml(item.action)}</li>`).join('')}</ul>` : '<p class="muted">No recommended actions captured.</p>'}<h3>Inspection Status</h3><p><strong>${escapeHtml(getNormalizedInspectionStatus(params.findings))}</strong></p></section>`
+  return `<section class="item premium-cover"><p class="eyebrow">Professional Inspection Report</p><h1>${escapeHtml(params.reportTitle)}</h1><p class="meta">${escapeHtml(params.organizationName)} · ${escapeHtml(params.dateLabel)}</p></section><section class="item service-section"><h2>Inspection Overview</h2><p>Evidence-first report prepared from included captures and technician-authored content.</p><dl><div><dt>Findings awaiting review</dt><dd>${params.findings.length}</dd></div><div><dt>Reference Documents Captured</dt><dd>${params.referenceCount}</dd></div><div><dt>Evidence Items Captured</dt><dd>${params.evidenceCount}</dd></div></dl></section>`
 }
 
 function buildFindingCardsHtml(items: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>['findings'], signedUrls: Record<string, string>) {
   const findings = getNormalizedFindingModels(items)
   if (findings.length === 0) return ''
-  return `<section class="item service-section"><h2>Findings</h2>${findings.map((finding, index) => {
+  return `<section class="item service-section"><h2>Inspection Findings</h2>${findings.map((finding, index) => {
     const capture = finding.entry.capture
     const signedUrl = signedUrls[capture.id]
     const isImageFile = Boolean(capture.storage_path?.match(/\.(jpg|jpeg|png|webp|gif|heic)$/i))
     const shouldRenderImage = signedUrl && (capture.media_kind === 'image' || capture.type === 'photo' || isImageFile)
     const imageHtml = shouldRenderImage ? `<div class="finding-image"><img src="${escapeHtml(signedUrl)}" alt="${escapeHtml(finding.title)} evidence image" /></div>` : ''
     const details = finding.details.filter((detail) => !finding.observations.some((observation) => observation.includes(detail.value)))
-    return `<article class="finding-card">${imageHtml}<div class="finding-content"><p class="eyebrow">Finding ${index + 1}</p><h3>${escapeHtml(finding.title)}</h3><p class="severity">${escapeHtml(finding.severity.label)}</p><h4>Observed Condition</h4>${finding.observations.length ? finding.observations.map((item) => `<p>${escapeHtml(item)}</p>`).join('') : '<p class="muted">Condition documented in supporting evidence.</p>'}${details.length ? `<h4>Key Details</h4>${renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value })))}` : ''}<h4>Recommendation</h4>${finding.recommendations.length ? `<ul>${finding.recommendations.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : '<p class="muted">No recommendation captured.</p>'}</div></article>`
+    return `<article class="finding-card">${imageHtml}<div class="finding-content"><p class="eyebrow">Finding ${index + 1}</p><h3>${escapeHtml(finding.title)}</h3><h4>Technician / Verified Condition</h4>${finding.observations.length ? finding.observations.map((item) => `<p>${escapeHtml(item)}</p>`).join('') : '<p class="muted">Condition documented in supporting evidence.</p>'}${details.length ? `<h4>Key Details</h4>${renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value })))}` : ''}<h4>Verified Recommendation</h4>${finding.recommendations.length ? `<ul>${finding.recommendations.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : '<p class="muted">No verified recommendation captured.</p>'}</div></article>`
   }).join('')}</section>`
 }
 
@@ -548,19 +546,12 @@ export async function GET(_request: Request, { params }: RouteContext) {
     .join(' · ')
 
   const visibleReportSections = reportSections.filter((section) => !isHiddenFromReport(section.metadata))
-  const generatedReportHtml = buildGeneratedReportHtml(reportDraft, visibleReportSections)
   const reportTitle = reportDraft?.title || session.title
 
   const documentSections = normalizeDraftSections(visibleReportSections, captureItems)
   const derivedFormSections = deriveFormSectionsFromCaptures(captureItems)
   const formSections = documentSections.length > 0 ? documentSections : derivedFormSections
   const customerAssetHtml = renderDefinitionRows(buildCustomerAssetRows(formSections, session as unknown as Record<string, unknown>))
-  const formSectionsHtml = formSections.length > 0 ? formSections.filter((section) => shouldRenderDraftSectionStandalone(section) && !isCustomerAssetSection(section) && !/supporting details|supporting evidence/i.test(section.title)).map((section) => {
-    const title = /supporting details/i.test(section.title) ? 'Supporting Evidence' : section.title
-    const rowsHtml = section.fields.length > 0 ? renderDefinitionRows(section.fields.map((field) => ({ label: field.label, value: field.value }))) : ''
-    const bodyHtml = section.body ? (/recommend/i.test(title) ? `<ul>${splitRecommendationText(section.body).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : `<p>${escapeHtml(section.body)}</p>`) : ''
-    return bodyHtml || rowsHtml ? `<section class="item service-section"><h2>${escapeHtml(title)}</h2>${bodyHtml}${rowsHtml}</section>` : ''
-  }).join('') : ''
   const reviewDocument = buildNormalizedReportModel({ captures: captureItems, sections: formSections, draftSections: visibleReportSections, measurements: reportDraft?.measurements ?? [], findings: reportDraft?.findings ?? [] })
   const unattachedDetails = reviewDocument.unattachedDetails
   const unattachedHtml = unattachedDetails.length > 0 ? `<section class="item service-section"><h2>Supporting Evidence</h2>${renderDefinitionRows(unattachedDetails.map((detail) => ({ label: detail.label, value: detail.value })))}</section>` : ''
@@ -570,12 +561,15 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const draftReferencedCaptureCount = new Set(visibleReportSections.flatMap((section) => section.source_capture_ids ?? []).filter((id) => captureItems.some((capture) => capture.id === id))).size
   const evidenceSectionIsEmpty = reviewDocument.findings.length === 0 && reviewDocument.referenceDocuments.length === 0 && reviewDocument.additionalNotes.length === 0 && reviewDocument.supportingEvidence.length === 0 && reviewDocument.unattachedDetails.length === 0
   if (captureItems.length > 0 && draftReferencedCaptureCount === 0 && evidenceSectionIsEmpty) console.warn('[report-evidence-check] Included captures have no draft references; Evidence Appendix will render all included captures.', { session_id: session.id, included_capture_count: captureItems.length })
-  const itemsHtml = [buildFindingCardsHtml(reviewDocument.findings, signedUrls), buildRecommendedActionsHtml(findingModels), buildReferenceDocumentsHtml(reviewDocument.referenceDocuments, signedUrls), buildEvidenceSectionHtml('Additional Notes', reviewDocument.additionalNotes.filter((entry) => isMeaningfulCustomerReportText([entry.capture.technician_note, entry.capture.transcript, ...entry.group.findings, ...entry.group.recommendations].filter(Boolean).join(' '))), signedUrls), buildEvidenceSectionHtml('Supporting Evidence', reviewDocument.supportingEvidence, signedUrls)].join('')
+  const referenceHtml = buildReferenceDocumentsHtml(reviewDocument.referenceDocuments, signedUrls)
+  const findingsHtml = buildFindingCardsHtml(reviewDocument.findings, signedUrls)
+  const notesHtml = buildEvidenceSectionHtml('Final Notes / Work Order Notes', reviewDocument.additionalNotes.filter((entry) => isMeaningfulCustomerReportText([entry.capture.technician_note, entry.capture.transcript, ...entry.group.findings, ...entry.group.recommendations].filter(Boolean).join(' '))), signedUrls)
+  const supportingHtml = buildEvidenceSectionHtml('Supporting Evidence', reviewDocument.supportingEvidence, signedUrls)
 
 
   const toolbarHtml = previewOnly ? '' : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>'
   const html = `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Report Header</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'No asset details')} · ${escapeHtml(formatDateInTimeZone(new Date(), timeZone))}</p></header>${summaryHtml}${customerAssetHtml ? `<section class="item service-section"><h2>Customer / Asset Details</h2>${customerAssetHtml}</section>` : ''}${formSectionsHtml || generatedReportHtml}${unattachedHtml}${buildFinalNotesHtml(session)}${itemsHtml}${appendixHtml}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile, reportSignatures, signatureUrls)}</main></body></html>`
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Report Header</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'No asset details')} · ${escapeHtml(formatDateInTimeZone(new Date(), timeZone))}</p></header>${summaryHtml}${customerAssetHtml || referenceHtml ? `<section class="item service-section"><h2>Asset / Customer Information</h2>${customerAssetHtml}${referenceHtml}</section>` : ''}${findingsHtml}${unattachedHtml}${buildFinalNotesHtml(session)}${notesHtml}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile, reportSignatures, signatureUrls)}${supportingHtml}${appendixHtml}</main></body></html>`
 
   return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
 }

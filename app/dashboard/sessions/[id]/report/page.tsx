@@ -10,21 +10,16 @@ import {
 import { asDiagnosticRecordArray, getDiagnosticProcedureProgress, getDiagnosticStepCompleteness } from "@/features/diagnostic-procedures/progress";
 import {
   buildCustomerAssetRows,
-  buildEvidencePackages,
   buildNormalizedReportModel,
   classifyReferenceDocumentTitle,
   deriveFormSectionsFromCaptures,
   getFormStructureSummary,
   sanitizeReportStructureForSession,
-  isCustomerAssetSection,
   normalizeDraftSections,
   shouldRenderDetail,
-  shouldRenderDraftSectionStandalone,
   splitRecommendationText,
   stripConfidenceText,
-  getNormalizedInspectionStatus,
   getNormalizedFindingModels,
-  getNormalizedRecommendedActions,
   isMeaningfulCustomerReportText,
   sanitizeCapturesForImageAiAssist,
 } from "@/features/reports/report-structure";
@@ -416,7 +411,6 @@ export default async function SessionReportPreviewPage({
     measurements: currentReport?.measurements ?? [],
     findings: currentReport?.findings ?? [],
   });
-  const evidencePackages = buildEvidencePackages(visibleCaptures, reviewDocument.findings.map((entry) => entry.group));
   const progress = getInspectionProgress(visibleCaptures, session.session_type, template?.required_evidence ?? null, (signatures ?? []).length);
   const photoEvidence = supportingEvidence.filter(
     (item) => item.kind === "photo",
@@ -527,7 +521,6 @@ export default async function SessionReportPreviewPage({
             documentSections={documentSections}
             formStructureSummary={formStructureSummary}
             reviewDocument={reviewDocument}
-            evidencePackages={evidencePackages}
             customerAssetRows={buildCustomerAssetRows(documentSections, session as unknown as Record<string, unknown>)}
             supportingEvidence={supportingEvidence}
             reportEvidenceDiagnostics={reportEvidenceDiagnostics}
@@ -589,7 +582,6 @@ function GeneratedReportReview({
   documentSections,
   formStructureSummary,
   reviewDocument,
-  evidencePackages,
   customerAssetRows,
   supportingEvidence,
   reportEvidenceDiagnostics,
@@ -613,7 +605,6 @@ function GeneratedReportReview({
   documentSections: ReturnType<typeof normalizeDraftSections>;
   formStructureSummary: ReturnType<typeof getFormStructureSummary>;
   reviewDocument: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>;
-  evidencePackages: ReturnType<typeof buildEvidencePackages>;
   customerAssetRows: ReturnType<typeof buildCustomerAssetRows>;
   supportingEvidence: SupportingEvidenceItem[];
   reportEvidenceDiagnostics: { capturesSaved: number; includedInReport: number; referencedByDraft: number; hiddenFromReport: number };
@@ -633,18 +624,23 @@ function GeneratedReportReview({
     ...otherEvidence,
   ].filter((item) => item.capture.include_in_report).length;
   const findings = reviewDocument.findingModels;
-  const actions = reviewDocument.recommendedActions;
-  const severityBreakdown = reviewDocument.summary.severityBreakdown;
   const hasUnlinkedIncludedEvidence = reportEvidenceDiagnostics.includedInReport > reportEvidenceDiagnostics.referencedByDraft;
+  const structureSourceLabel = formStructureSummary.source === "generic_fallback"
+    ? "Generic evidence report"
+    : formStructureSummary.source === "uploaded_report"
+      ? "Uploaded report"
+      : formStructureSummary.source === "uploaded_template"
+        ? "Uploaded template"
+        : "Uploaded form";
 
   return (
     <section className="card detail-card report-command-card form-stack generated-report-card">
       <div className="report-section-heading generated-report-heading">
         <div>
-          <p className="eyebrow">Summary</p>
+          <p className="eyebrow">Inspection Overview</p>
           <h2>{stripConfidenceText(currentReport?.title ?? session.title)}</h2>
           <p className="muted">
-            A document-style review of the captured form, notes, photos, and recommendations.
+            Evidence-first review built from included captures and technician-authored content.
           </p>
         </div>
         {currentReport?.status === "approved" ? (
@@ -668,50 +664,31 @@ function GeneratedReportReview({
       <section className="inspection-summary-card">
         <div className="report-section-title-row">
           <div>
-            <p className="eyebrow">Inspection Summary</p>
-            <h3>Inspection completed on {formatDate(new Date().toISOString(), timeZone)}</h3>
+            <p className="eyebrow">Inspection Overview</p>
+            <h3>Captured evidence for {formatDate(new Date().toISOString(), timeZone)}</h3>
           </div>
-          <span className="status-pill attention">{getNormalizedInspectionStatus(findings)}</span>
+          <span className="status-pill neutral">Evidence review</span>
         </div>
-        {currentReport?.summary ? <p>{stripConfidenceText(currentReport.summary)}</p> : null}
         <div className="inspection-metric-grid">
-          <div><span>Total Findings</span><strong>{findings.length}</strong></div>
-          <div><span>Critical Findings</span><strong>{reviewDocument.summary.criticalFindings}</strong></div>
+          <div><span>Captures saved</span><strong>{reportEvidenceDiagnostics.capturesSaved}</strong></div>
+          <div><span>Included in report</span><strong>{reportEvidenceDiagnostics.includedInReport}</strong></div>
+          <div><span>Hidden from report</span><strong>{reportEvidenceDiagnostics.hiddenFromReport}</strong></div>
           <div><span>Reference Documents Captured</span><strong>{reviewDocument.referenceDocuments.length}</strong></div>
-          <div><span>Evidence Items Captured</span><strong>{includedEvidenceCount}</strong></div>
-        </div>
-        <div className="inspection-metric-grid">
-          <div><span>Evidence Completeness</span><strong>{progress.evidenceCompleteness}%</strong></div>
-          <div><span>Finding Confidence</span><strong>{progress.findingConfidence}%</strong></div>
-          <div><span>Report Readiness</span><strong>{progress.reportReadiness}%</strong></div>
-          <div><span>Remaining Required Items</span><strong>{progress.remainingRequiredItems}</strong></div>
         </div>
         <p className="muted">
-          <strong>Structure:</strong>{" "}
-          {formStructureSummary.source === "generic_fallback"
-            ? "Generic evidence report"
-            : formStructureSummary.source === "uploaded_report"
-              ? "Uploaded report"
-              : formStructureSummary.source === "uploaded_template"
-                ? "Uploaded template"
-                : "Uploaded form"}
+          <strong>Structure source:</strong>{" "}
+          {structureSourceLabel}
           {formStructureSummary.sourceDocumentName ? ` · ${formStructureSummary.sourceDocumentName}` : ""}
         </p>
         {progress.missingReadinessItems.length > 0 ? (
-          <p className="notice info">Final verification remaining: {progress.missingReadinessItems.join(', ')}. AI cannot auto approve, certify, or sign this report.</p>
+          <p className="notice info"><strong>Missing required manual items:</strong> {progress.missingReadinessItems.join(', ')}.</p>
         ) : null}
-        <div className="summary-columns">
-          <div>
-            <h4>Findings Identified</h4>
-            {severityBreakdown.length > 0 ? <ul>{severityBreakdown.map((item) => <li key={item.key}>{item.count} {item.label}</li>)}</ul> : <p className="muted">No findings identified from included evidence.</p>}
-          </div>
-          <div>
-            <h4>Recommended Actions</h4>
-            {actions.length > 0 ? <ul>{actions.map((item) => <li key={item.action}>{item.action}</li>)}</ul> : <p className="muted">No recommended actions captured.</p>}
-          </div>
-        </div>
+        <p className="muted"><strong>Findings awaiting review:</strong> {findings.length}</p>
       </section>
-      <section className="inspection-summary-card">
+      <details className="inspection-summary-card">
+        <summary className="report-section-title-row">
+          <span><span className="eyebrow">Diagnostics</span><strong>Capture coverage</strong></span>
+        </summary>
         <div className="report-section-title-row">
           <div>
             <p className="eyebrow">Evidence diagnostics</p>
@@ -725,11 +702,11 @@ function GeneratedReportReview({
           <div><span>Hidden from report</span><strong>{reportEvidenceDiagnostics.hiddenFromReport}</strong></div>
         </div>
         {hasUnlinkedIncludedEvidence ? <p className="notice warning">Some evidence is not linked to generated sections. It will still appear in the Evidence Appendix.</p> : null}
-      </section>
+      </details>
 
       {hasPendingEvidence ? (
         <p className="notice info compact-report-notice">
-          Your evidence is saved. CRED is preparing the report. You can
+          Your evidence is saved. CRED is organizing the review workspace. You can
           continue capturing while this finishes.
         </p>
       ) : null}
@@ -737,10 +714,10 @@ function GeneratedReportReview({
       {!currentReport ? (
         <form action={generateReportAction} className="empty-report-shell">
           <div>
-            <h3>Building your report…</h3>
+            <h3>No review draft yet</h3>
             <p className="muted">
               {visibleCaptureCount > 0
-                ? "Your evidence is saved. CRED is preparing the report. You can refresh this page or continue capturing while this finishes."
+                ? "Your evidence is saved. Prepare an editable review draft or continue capturing."
                 : "No evidence has been added yet. Continue capturing to build the report."}
             </p>
           </div>
@@ -938,11 +915,9 @@ function GeneratedReportReview({
           <section className="report-subsection report-document-section">
             <div className="report-section-title-row">
               <div>
-                <h3>Customer / Asset Details</h3>
+                <h3>Asset / Customer Information</h3>
                 <p className="muted">
-                  {documentSections.length > 0
-                    ? "Related fields are grouped under familiar report headings."
-                    : "Evidence is grouped with notes, details, observations, and recommendations."}
+                  Reference and identity captures only: work orders, forms, VIN/data plates, registration, unit identifiers, odometer, and customer/asset documents.
                 </p>
               </div>
             </div>
@@ -957,50 +932,22 @@ function GeneratedReportReview({
             {customerAssetRows.length > 0 ? (
               <div className="report-field-grid">{customerAssetRows.map((field) => <div key={field.label} className="report-field-card"><span>{field.label}</span><strong>{stripConfidenceText(field.value)}</strong></div>)}</div>
             ) : null}
-            {documentSections.filter((section) => shouldRenderDraftSectionStandalone(section) && !isCustomerAssetSection(section) && !/supporting details|supporting evidence/i.test(section.title)).length > 0 ? (
-
-              <div className="report-content-grid">
-                {documentSections.filter((section) => shouldRenderDraftSectionStandalone(section) && !isCustomerAssetSection(section) && !/supporting details|supporting evidence/i.test(section.title)).map((section) => (
-                  <article key={section.key} className="report-document-card">
-                    <h4>{stripConfidenceText(/supporting details/i.test(section.title) ? "Supporting Evidence" : section.title)}</h4>
-                    {section.body ? (/recommend/i.test(section.title) ? <ul>{splitRecommendationText(section.body).map((item, index) => <li key={index}>{stripConfidenceText(item)}</li>)}</ul> : <p>{stripConfidenceText(section.body)}</p>) : null}
-                    {getProfessionalFields(section.fields).length > 0 ? (
-                      <div className="report-field-grid">
-                        {getProfessionalFields(section.fields).map((field) => (
-                          <div key={`${section.key}-${field.key}`} className="report-field-card">
-                            <span>{field.label}</span>
-                            <strong>{stripConfidenceText(field.value)}</strong>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <EvidenceGroupList
-                items={reviewDocument.findings}
+            <ReferenceDocumentList
+                items={reviewDocument.referenceDocuments}
                 supportingEvidence={supportingEvidence}
               />
-            )}
           </section>
 
-          <EvidenceAppendix supportingEvidence={supportingEvidence} timeZone={timeZone} />
-
-          {documentSections.length > 0 ? (
+          {documentSections.length > 0 || reviewDocument.findings.length > 0 ? (
             <section className="report-subsection report-supporting-section">
               <div className="report-section-title-row">
                 <div>
                   <h3>Inspection Findings</h3>
-                  <p className="muted">Issue and condition evidence tied to findings, measurements, and recommendations.</p>
+                  <p className="muted">Technician notes and verified findings grouped by system/component. Suggestions remain review-only until verified.</p>
                 </div>
                 <span className="status-pill neutral compact">{includedEvidenceCount} included</span>
               </div>
-              <EvidencePackageList packages={evidencePackages} supportingEvidence={supportingEvidence} />
               <FindingCardList items={reviewDocument.findings} supportingEvidence={supportingEvidence} />
-              <RecommendedActionsTable findings={findings} />
-              {reviewDocument.referenceDocuments.length > 0 ? <><h3>Reference Documents</h3><ReferenceDocumentList items={reviewDocument.referenceDocuments} supportingEvidence={supportingEvidence} /></> : null}
               {reviewDocument.additionalNotes.some((entry) => isMeaningfulCustomerReportText([entry.capture.technician_note, entry.capture.transcript, ...entry.group.findings, ...entry.group.recommendations].filter(Boolean).join(" "))) ? <><h3>Additional Notes</h3><EvidenceGroupList items={reviewDocument.additionalNotes.filter((entry) => isMeaningfulCustomerReportText([entry.capture.technician_note, entry.capture.transcript, ...entry.group.findings, ...entry.group.recommendations].filter(Boolean).join(" ")))} supportingEvidence={supportingEvidence} /></> : null}
               {reviewDocument.supportingEvidence.length > 0 ? <><h3>Supporting Evidence</h3><EvidenceGroupList items={reviewDocument.supportingEvidence} supportingEvidence={supportingEvidence} /></> : null}
               {reviewDocument.unattachedDetails.length > 0 ? (
@@ -1015,6 +962,7 @@ function GeneratedReportReview({
               ) : null}
             </section>
           ) : null}
+          <EvidenceAppendix supportingEvidence={supportingEvidence} timeZone={timeZone} />
         </>
       ) : null}
 
@@ -1068,42 +1016,6 @@ function InspectorFacilityPanel({
   );
 }
 
-function getProfessionalFields<T extends { value: string }>(fields: T[]) {
-  const captured = fields.filter((field) => field.value && !/^(not captured|pending|unknown)$/i.test(field.value.trim()));
-  if (captured.length > 0) return captured;
-  return fields.filter((field) => field.value).slice(0, 4);
-}
-
-
-
-function EvidencePackageList({
-  packages,
-  supportingEvidence,
-}: {
-  packages: ReturnType<typeof buildEvidencePackages>;
-  supportingEvidence: SupportingEvidenceItem[];
-}) {
-  const evidenceById = new Map(supportingEvidence.map((item) => [item.capture.id, item]));
-  if (packages.length === 0) return <p className="muted">No evidence groups available yet.</p>;
-  return (
-    <section className="evidence-package-section">
-      <div className="report-section-title-row"><div><h3>Evidence Groups</h3><p className="muted">Related captures are grouped into reviewable evidence packages with findings, source values, and traceability.</p></div></div>
-      <div className="evidence-package-list">
-        {packages.map((group) => (
-          <details key={group.id} className="evidence-package-card" open>
-            <summary><span><strong>{group.title}</strong><span className="muted">({group.capture_ids.length} capture{group.capture_ids.length === 1 ? "" : "s"})</span></span><span className="status-pill neutral compact">{Math.round(group.confidence * 100)}%</span></summary>
-            <p>{group.summary}</p>
-            {group.duplicate_flags.length > 0 ? <p className="notice warning">Possible Duplicate — review flagged captures before delivery.</p> : null}
-            <div className="finding-card-grid"><div><strong>Finding</strong><p>{group.generated_finding.text}</p><p className="muted">Severity: {group.generated_finding.severity} · Confidence {Math.round(group.generated_finding.confidence * 100)}%</p></div><div><strong>Source values</strong>{group.generated_finding.source_values.length > 0 ? <ul>{group.generated_finding.source_values.map((field) => <li key={`${group.id}-${field.key}-${field.display_value}`}>{field.label}: {field.display_value} <span className="muted">({field.source_capture_ids.length} source{field.source_capture_ids.length === 1 ? "" : "s"})</span></li>)}</ul> : <p className="muted">No normalized readings extracted.</p>}</div></div>
-            {group.recommendations.length > 0 ? <div><strong>Recommendations</strong><ul>{group.recommendations.map((item) => <li key={item.text}>{item.text} <span className="muted">Supported by {item.supporting_capture_ids.length} capture{item.supporting_capture_ids.length === 1 ? "" : "s"}</span></li>)}</ul></div> : null}
-            <details className="finding-evidence-details"><summary>Supporting Evidence</summary><div className="evidence-chip-list">{group.capture_ids.map((id) => { const item = evidenceById.get(id); return item ? <span key={id} className="status-pill neutral compact">{item.title}</span> : null })}</div></details>
-          </details>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function FindingCardList({
   items,
   supportingEvidence,
@@ -1125,12 +1037,6 @@ function FindingCardList({
       <details className="finding-evidence-details"><summary>Supporting Evidence · {finding.evidenceCount} item{finding.evidenceCount === 1 ? "" : "s"}</summary>{evidence ? <EvidenceGroupList items={items.filter((entry) => entry.group.capture_id === finding.id)} supportingEvidence={supportingEvidence} /> : <p className="muted">Evidence item captured.</p>}</details>
     </article>;
   })}</div>;
-}
-
-function RecommendedActionsTable({ findings }: { findings: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>["findingModels"] }) {
-  const actions = getNormalizedRecommendedActions(findings);
-  if (actions.length === 0) return null;
-  return <section className="recommended-actions-card"><h3>Recommended Actions</h3><div className="actions-table"><div><strong>Priority</strong><strong>Action</strong></div>{actions.map((item) => <div key={item.action}><span>{item.priority}</span><span>{item.action}</span></div>)}</div></section>;
 }
 
 function ReferenceDocumentList({ items, supportingEvidence }: { items: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>["findings"]; supportingEvidence: SupportingEvidenceItem[] }) {

@@ -258,25 +258,24 @@ function getDeterministicReferenceTitle(capture: CaptureLike) {
 }
 
 function getDeterministicFinding(capture: CaptureLike) {
+  const technicianText = clean(capture.technician_note || capture.transcript, 500)
+  if (!technicianText) return null
   if (hasDeterministicBrakeFinding(capture)) {
     return {
       component: 'brakes',
-      title: 'Front brake pads are at wear limit',
-      severity: 'critical',
-      observation: 'Front brake pads are at wear limit.',
-      recommendations: ['Replace front brake pads due to wear limit.'],
+      title: technicianText,
+      severity: 'needs_review',
+      observation: `Technician note: ${technicianText}`,
+      recommendations: [],
     }
   }
   if (hasDeterministicBatteryFinding(capture)) {
     return {
       component: 'battery',
-      title: 'Passenger side battery positive post corrosion',
-      severity: 'advisory',
-      observation: 'Passenger side battery positive post corrosion.',
-      recommendations: [
-        'Clean corrosion on passenger side battery positive post and inspect for damage.',
-        'Regular inspection and maintenance of battery terminals recommended to prevent future corrosion.',
-      ],
+      title: technicianText,
+      severity: 'needs_review',
+      observation: `Technician note: ${technicianText}`,
+      recommendations: [],
     }
   }
   return null
@@ -742,8 +741,9 @@ export function buildEvidenceGroups(captures: CaptureLike[], sections: DraftSect
     if (!group) continue
     const note = clean(capture.technician_note || capture.transcript, 1200)
     if (note) pushUniqueDetail(group.details, { label: 'Technician note', value: note })
+    const hasTechnicianTruth = Boolean(note)
     const summary = clean(capture.ai_summary, 800)
-    if (summary) pushUniqueDetail(group.details, { label: 'Observed condition', value: summary })
+    if (summary && !hasTechnicianTruth) pushUniqueDetail(group.details, { label: 'Suggested observation (needs review)', value: summary })
     for (const field of fieldRowsFromCapture(capture).slice(0, 8)) pushUniqueDetail(group.details, { label: labelize(field.key), value: field.value })
   }
   normalizeStructuredItems(measurements).forEach((measurement) => {
@@ -756,6 +756,8 @@ export function buildEvidenceGroups(captures: CaptureLike[], sections: DraftSect
     const id = finding.source_capture_id
     const group = id ? groups.get(id) : undefined
     if (!group) return
+    const capture = captures.find((candidate) => candidate.id === id)
+    if (capture && clean(capture.technician_note || capture.transcript, 1200)) return
     pushUnique(group.findings, formatFinding(finding))
     if (finding.recommendation) {
       const recommendation = splitRecommendationByEvidence(finding.recommendation, captures.find((capture) => capture.id === id) ?? ({ id: id ?? '', type: null, media_kind: null, extracted_data: null } as CaptureLike))
@@ -772,6 +774,7 @@ export function buildEvidenceGroups(captures: CaptureLike[], sections: DraftSect
       const group = groups.get(id)
       const capture = captures.find((candidate) => candidate.id === id)
       if (!group || !capture || !section.body) continue
+      if (clean(capture.technician_note || capture.transcript, 1200)) continue
       // Draft sections can contain broad/global source_capture_ids. Only attach
       // section copy to a card when it is uniquely sourced or clearly matches
       // that capture's own extracted text, note, transcript, or summary.
@@ -1093,6 +1096,8 @@ function isIsolatedFindingFieldValue(value: string) {
   return /^(?:corrosion present|\d+(?:\.\d+)?\s*mm|red|medium|replace front brake pads|clean corrosion|inspect for damage)$/i.test(clean(value, 200))
 }
 
+// Kept for future diagnostics only; unverified draft-only findings are intentionally not rendered as report truth.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function collectDraftFindingFallbackItems<TCapture extends CaptureLike>(params: Parameters<typeof buildNonDuplicatedReviewDocument<TCapture>>[0], existing: ReviewDocument<TCapture>['findings']): ReviewDocument<TCapture>['findings'] {
   const fallbackCapture = params.captures[0]
   if (!fallbackCapture) return []
@@ -1315,7 +1320,7 @@ export function getNormalizedInspectionStatus<TCapture = CaptureLike>(findings: 
 
 export function buildNormalizedReportModel<TCapture extends CaptureLike>(params: Parameters<typeof buildNonDuplicatedReviewDocument<TCapture>>[0]): NormalizedReportModel<TCapture> {
   const document = buildNonDuplicatedReviewDocument(params)
-  const fallbackFindings = document.findings.length > 0 ? [] : collectDraftFindingFallbackItems(params, document.findings)
+  const fallbackFindings: ReviewDocument<TCapture>['findings'] = []
   const allFindings = [...document.findings, ...fallbackFindings]
   const findingModels = getNormalizedFindingModels(allFindings)
   const recommendedActions = getNormalizedRecommendedActions(findingModels)
