@@ -21,6 +21,7 @@ export interface Database {
           current_period_end: string | null
           trial_ends_at: string | null
           billing_started_at: string | null
+          image_ai_assist_enabled: boolean
           created_at: string | null
         }
         Insert: {
@@ -34,6 +35,7 @@ export interface Database {
           current_period_end?: string | null
           trial_ends_at?: string | null
           billing_started_at?: string | null
+          image_ai_assist_enabled?: boolean
           created_at?: string | null
         }
         Update: {
@@ -47,6 +49,7 @@ export interface Database {
           current_period_end?: string | null
           trial_ends_at?: string | null
           billing_started_at?: string | null
+          image_ai_assist_enabled?: boolean
           created_at?: string | null
         }
         Relationships: []

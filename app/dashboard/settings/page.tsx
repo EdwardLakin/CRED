@@ -4,7 +4,7 @@ import { signOut } from '../actions'
 import { ThemeToggle } from '@/components/theme'
 import { Button, Card } from '@/components/ui'
 import { BrowserTimeZoneInput, SignaturePad } from '@/components/ui/SignaturePad'
-import { clearDefaultSignature, saveDefaultSignature, saveInspectorFacilitySettings } from '@/features/settings/actions'
+import { clearDefaultSignature, saveDefaultSignature, saveImageAiAssistSetting, saveInspectorFacilitySettings } from '@/features/settings/actions'
 import { hasInternalAdminAccess, requireSessionWorkspace } from '@/features/sessions/data'
 
 export default async function SettingsPage() {
@@ -39,6 +39,21 @@ export default async function SettingsPage() {
       <div className="section-header page-header"><div><p className="eyebrow">Settings</p><h1>Workspace settings</h1><p className="muted">Manage account details, organization context, display preferences, and workspace controls.</p></div></div>
       {settingsSaved ? <p className="success">Settings saved.</p> : null}
       <Card className="dashboard-card workspace-card"><div className="dashboard-grid settings-summary-grid"><div><strong>User</strong><p className="muted">{profile.full_name}</p></div><div><strong>Organization</strong><p className="muted">{organization.name}</p></div><div><strong>Industry</strong><p className="muted">{industry}</p></div><div className="workspace-actions"><ThemeToggle /><form action={signOut} className="sign-out-form"><Button type="submit" variant="secondary">Sign out</Button></form></div></div></Card>
+
+      <Card className="dashboard-card workspace-card">
+        <form action={saveImageAiAssistSetting} className="form-stack">
+          <div>
+            <p className="eyebrow">AI Assist</p>
+            <h2>Image upload AI assist</h2>
+            <p className="muted">Controls whether uploaded images create AI processing jobs for classification, extraction, and generated notes. Uploads and manual review still work when disabled.</p>
+          </div>
+          <label className="report-visibility-toggle">
+            <input type="checkbox" name="image_ai_assist_enabled" defaultChecked={organization.image_ai_assist_enabled} />
+            <span>Enable Image AI Assist for this workspace</span>
+          </label>
+          <div className="form-actions"><Button type="submit">Save AI Assist Setting</Button></div>
+        </form>
+      </Card>
       <Card className="dashboard-card workspace-card">
         <form action={saveInspectorFacilitySettings} className="form-stack">
           <div><p className="eyebrow">Reports</p><h2>Inspector / Facility Details</h2><p className="muted">Saved details autofill Review and exported reports. You can still capture a report-specific signature.</p></div>

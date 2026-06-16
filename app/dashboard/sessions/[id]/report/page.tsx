@@ -14,6 +14,7 @@ import {
   classifyReferenceDocumentTitle,
   deriveFormSectionsFromCaptures,
   getFormStructureSummary,
+  sanitizeReportStructureForSession,
   isCustomerAssetSection,
   normalizeDraftSections,
   shouldRenderDetail,
@@ -226,6 +227,7 @@ export default async function SessionReportPreviewPage({
         .from("ai_report_draft_sections")
         .select("*")
         .eq("ai_report_draft_id", currentReport.id)
+        .eq("documentation_session_id", session.id)
         .eq("organization_id", profile.organization_id)
         .order("sort_order", { ascending: true })
     : { data: [] };
@@ -262,7 +264,8 @@ export default async function SessionReportPreviewPage({
   const normalizedReportSections = normalizeDraftSections(visibleReportSections, visibleCaptures);
   const derivedFormSections = deriveFormSectionsFromCaptures(visibleCaptures);
   const documentSections = normalizedReportSections.length > 0 ? normalizedReportSections : derivedFormSections;
-  const formStructureSummary = getFormStructureSummary(currentReport?.report_structure ?? null, documentSections);
+  const sanitizedReportStructure = sanitizeReportStructureForSession(currentReport?.report_structure ?? null, visibleCaptures.map((capture) => capture.id));
+  const formStructureSummary = getFormStructureSummary(sanitizedReportStructure, documentSections);
   const reviewDocument = buildNormalizedReportModel({
     captures: visibleCaptures,
     sections: documentSections,

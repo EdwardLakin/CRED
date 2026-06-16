@@ -15,6 +15,7 @@ import { Button } from '@/components/ui'
 import {
   createCaptureRecordFromUploadedFile,
   createTextNoteCaptureRecord,
+  updateCaptureItemNote,
   validateCaptureBillingAccess,
 } from '@/features/capture/actions'
 import {
@@ -37,6 +38,9 @@ type SelectedEvidenceFile = {
   previewUrl: string
   status: UploadStatus
   error?: string
+  note: string
+  captureItemId?: string
+  noteSaveStatus?: 'idle' | 'saving' | 'saved' | 'failed'
 }
 
 type SpeechRecognitionResultLike = {
@@ -365,13 +369,15 @@ export function AddCaptureForm({
       size: file.size,
       previewUrl: URL.createObjectURL(file),
       status: 'queued',
+      note: '',
+      noteSaveStatus: 'idle',
     }))
   }
 
-  function updateSelectedFileStatus(fileId: string, status: UploadStatus, error?: string) {
+  function updateSelectedFileStatus(fileId: string, status: UploadStatus, error?: string, captureItemId?: string) {
     setSelectedFiles((currentFiles) => {
       const nextFiles = currentFiles.map((file) =>
-        file.id === fileId ? { ...file, status, error } : file,
+        file.id === fileId ? { ...file, status, error, ...(captureItemId ? { captureItemId } : {}) } : file,
       )
       selectedFilesRef.current = nextFiles
       return nextFiles
@@ -426,6 +432,40 @@ export function AddCaptureForm({
     if (captureIntent === 'auto_image' || captureIntent === 'auto_evidence') {
       await autoSaveSelectedMedia(evidenceFiles)
     }
+  }
+
+
+  function updateSelectedFileNote(fileId: string, noteValue: string) {
+    setSelectedFiles((currentFiles) => {
+      const nextFiles = currentFiles.map((file) =>
+        file.id === fileId ? { ...file, note: noteValue, noteSaveStatus: (file.status === 'saved' ? 'saving' : 'idle') as SelectedEvidenceFile['noteSaveStatus'] } : file,
+      )
+      selectedFilesRef.current = nextFiles
+      return nextFiles
+    })
+
+    const file = selectedFilesRef.current.find((current) => current.id === fileId)
+    if (!file?.captureItemId || file.status !== 'saved') return
+
+    updateCaptureItemNote({ sessionId, captureItemId: file.captureItemId, technicianNote: noteValue })
+      .then((result) => {
+        setSelectedFiles((currentFiles) => {
+          const nextFiles = currentFiles.map((current) =>
+            current.id === fileId ? { ...current, noteSaveStatus: (result.ok ? 'saved' : 'failed') as SelectedEvidenceFile['noteSaveStatus'] } : current,
+          )
+          selectedFilesRef.current = nextFiles
+          return nextFiles
+        })
+      })
+      .catch(() => {
+        setSelectedFiles((currentFiles) => {
+          const nextFiles = currentFiles.map((current) =>
+            current.id === fileId ? { ...current, noteSaveStatus: 'failed' as SelectedEvidenceFile['noteSaveStatus'] } : current,
+          )
+          selectedFilesRef.current = nextFiles
+          return nextFiles
+        })
+      })
   }
 
   function removeSelectedFile(fileId: string) {
@@ -574,7 +614,7 @@ export function AddCaptureForm({
           guidedStep,
           guidedLabel,
           workflow,
-          technicianNote: note,
+          technicianNote: selectedFile.note,
           transcriptStatus,
           noteSource,
           reportOrder: null,
@@ -589,7 +629,7 @@ export function AddCaptureForm({
         }
 
         savedCount += 1
-        updateSelectedFileStatus(selectedFile.id, 'saved')
+        updateSelectedFileStatus(selectedFile.id, 'saved', undefined, result.captureItemId)
       } catch (error) {
         failedCount += 1
         const message = getFriendlyUploadError(
@@ -1089,23 +1129,33 @@ export function AddCaptureForm({
                         type="button"
                         className="evidence-note-edit-link"
                         onClick={() => {
-                          noteTextareaRef.current?.scrollIntoView({
-                            behavior: 'smooth',
-                            block: 'center',
-                          })
-                          noteTextareaRef.current?.focus({
-                            preventScroll: true,
-                          })
+                          const input = document.getElementById(`file-note-${file.id}`)
+                          input?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                          input?.focus({ preventScroll: true })
                         }}
                       >
                         Edit note
                       </button>
                     </div>
                     <span>
-                      {note.trim() || 'Optional: speak or type a note for this media'}
+                      {file.note.trim() || 'Optional: type a note for this media'}
                     </span>
                   </div>
                 </div>
+
+                <label className="field-stack" htmlFor={`file-note-${file.id}`}>
+                  <span className="label">Note/caption for this image</span>
+                  <textarea
+                    id={`file-note-${file.id}`}
+                    className="input note-textarea"
+                    value={file.note}
+                    placeholder="Optional note for only this image."
+                    onChange={(event) => updateSelectedFileNote(file.id, event.target.value)}
+                    rows={3}
+                  />
+                  {file.noteSaveStatus === 'saving' ? <span className="muted">Saving note…</span> : null}
+                  {file.noteSaveStatus === 'failed' ? <span className="error">Could not save this note.</span> : null}
+                </label>
 
                 <div className="draft-evidence-preview-footer">
                   <span className="muted draft-evidence-filename">

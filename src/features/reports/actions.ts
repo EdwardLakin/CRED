@@ -10,7 +10,8 @@ import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import { ReportEmailError, sendReportEmail, validateReportEmailRecipients } from '@/lib/email/reports'
 import { AI_REPORT_DRAFT_MODEL, AI_REPORT_DRAFT_PROMPT_VERSION, generateReportDraft } from '@/lib/openai/report-draft-generator'
 import type { OrganizationPlan } from '@/lib/stripe'
-import { buildEvidenceGroups, buildEvidencePackages, buildNormalizedReportFields, deriveFormSectionsFromCaptures, scoreFormReferenceCapture, selectPrimaryFormCaptures, stripConfidenceText } from '@/features/reports/report-structure'
+import { buildEvidenceGroups, buildEvidencePackages,
+  sanitizeReportStructureForSession, buildNormalizedReportFields, deriveFormSectionsFromCaptures, scoreFormReferenceCapture, selectPrimaryFormCaptures, stripConfidenceText } from '@/features/reports/report-structure'
 import type { Json } from '@/lib/supabase/database.types'
 
 const REPORT_SHARE_EXPIRATION_DAYS = 30
@@ -521,7 +522,7 @@ export async function generateAiReportDraft(sessionId: string) {
   if (process.env.NODE_ENV !== 'production') {
     console.info('[report-structure]', { session_id: session.id, mode: formSections.length > 0 ? 'form_structured' : 'evidence_first', form_capture_ids: formCaptureIds, scores: formDebug })
   }
-  const reportStructure: Json = safeJson({
+  const rawReportStructure: Json = safeJson({
     version: 2,
     mode: formSections.length > 0 ? 'form_structured' : 'evidence_first',
     form_sections: formSections,
@@ -530,6 +531,7 @@ export async function generateAiReportDraft(sessionId: string) {
     evidence_cards: evidenceGroups,
     normalized_report_fields: buildNormalizedReportFields(normalizedCaptures),
   }) ?? {}
+  const reportStructure = sanitizeReportStructureForSession(rawReportStructure, normalizedCaptures.map((capture) => capture.id))
 
   const now = new Date().toISOString()
   const { data: draft, error: draftError } = await supabase
@@ -681,6 +683,7 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
     .from('ai_report_draft_sections')
     .select('id, metadata')
     .eq('ai_report_draft_id', draft.id)
+    .eq('documentation_session_id', session.id)
     .eq('organization_id', profile.organization_id)
 
   if (sectionsError) {
@@ -711,6 +714,7 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
       })
       .eq('id', section.id)
       .eq('ai_report_draft_id', draft.id)
+      .eq('documentation_session_id', session.id)
       .eq('organization_id', profile.organization_id)
 
     if (sectionUpdateError) {

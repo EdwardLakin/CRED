@@ -74,6 +74,7 @@ export default async function GuidedCapturePage({
           <h1>Capture Evidence</h1>
           <p className="muted">{session.title}</p>
           <p className="muted">If you have a paper form, capture it first.</p>
+          <p className="status-pill neutral">AI Assist: {profile.organization.image_ai_assist_enabled ? 'On' : 'Off'}</p>
         </div>
         <form action={doneAction}>
           <button className="button button-primary touch-target">Done</button>
