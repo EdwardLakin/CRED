@@ -407,6 +407,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
         .from('ai_report_draft_sections')
         .select('*')
         .eq('ai_report_draft_id', reportDraft.id)
+        .eq('documentation_session_id', session.id)
         .eq('organization_id', organizationId)
         .order('sort_order', { ascending: true })
     : { data: [] }

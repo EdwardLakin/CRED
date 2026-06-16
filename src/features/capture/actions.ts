@@ -790,6 +790,10 @@ export async function createCaptureRecordFromUploadedFile(
   }
 
   if (existingCapture) {
+    if (!profile.organization.image_ai_assist_enabled || !mimeTypeIsImage(mimeType)) {
+      return { ok: true, sessionId: session.id, captureItemId: existingCapture.id }
+    }
+
     try {
       await queueCaptureAnalysisJobs({
         supabase,
@@ -830,8 +834,8 @@ export async function createCaptureRecordFromUploadedFile(
       type: itemCaptureType,
       storage_path: storagePath,
       captured_at: capturedAt,
-      ai_status: 'queued',
-      processing_status: 'queued',
+      ai_status: profile.organization.image_ai_assist_enabled && itemMediaKind === 'image' ? 'queued' : 'needs_review',
+      processing_status: profile.organization.image_ai_assist_enabled && itemMediaKind === 'image' ? 'queued' : 'not_started',
       extracted_data: itemExtractedData,
       technician_note: technicianNote || null,
       transcript:
@@ -894,21 +898,23 @@ export async function createCaptureRecordFromUploadedFile(
   }
 
 
-  try {
-    await queueCaptureAnalysisJobs({
-      supabase,
-      organizationId: profile.organization_id,
-      sessionId: session.id,
-      captureItemId: captureItem.id,
-      metadata: { filename, mime_type: mimeType, capture_intent: rawCaptureIntent },
-    })
-  } catch (queueError) {
+  if (profile.organization.image_ai_assist_enabled && itemMediaKind === 'image') {
+    try {
+      await queueCaptureAnalysisJobs({
+        supabase,
+        organizationId: profile.organization_id,
+        sessionId: session.id,
+        captureItemId: captureItem.id,
+        metadata: { filename, mime_type: mimeType, capture_intent: rawCaptureIntent },
+      })
+    } catch (queueError) {
     logCaptureFailure({
       step: 'capture_processing_queue_insert',
       captureId: captureItem.id,
       ...getSafeErrorDetails(queueError),
     })
-    return captureError('Capture saved, but AI queueing failed. Please retry or contact support.', session.id)
+      return captureError('Capture saved, but AI queueing failed. Please retry or contact support.', session.id)
+    }
   }
 
   try {
@@ -2518,4 +2524,29 @@ export async function removeCaptureItem(formData: FormData) {
   revalidatePath(
     `/dashboard/sessions/${capture.documentation_session_id}/capture`,
   )
+}
+
+
+export async function updateCaptureItemNote(input: { sessionId: string; captureItemId: string; technicianNote: string }) {
+  const sessionId = input.sessionId.trim()
+  const captureItemId = input.captureItemId.trim()
+  const technicianNote = input.technicianNote.trim().slice(0, 2000)
+  if (!sessionId || !captureItemId) return { ok: false, error: 'Missing capture.' }
+  const { supabase, profile } = await requireSessionWorkspace()
+  const { error } = await supabase
+    .from('capture_items')
+    .update({
+      technician_note: technicianNote || null,
+      transcript: technicianNote || null,
+      transcript_status: technicianNote ? 'completed' : 'not_started',
+      note_source: 'edited',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', captureItemId)
+    .eq('documentation_session_id', sessionId)
+    .eq('organization_id', profile.organization_id)
+  if (error) return { ok: false, error: error.message }
+  revalidatePath(`/dashboard/sessions/${sessionId}/capture`)
+  revalidatePath(`/dashboard/sessions/${sessionId}/report`)
+  return { ok: true }
 }

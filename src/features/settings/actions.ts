@@ -18,6 +18,20 @@ function getString(formData: FormData, field: string) {
   return typeof value === 'string' ? value.trim() || null : null
 }
 
+export async function saveImageAiAssistSetting(formData: FormData) {
+  const { supabase, profile } = await requireSessionWorkspace()
+  const { error } = await supabase
+    .from('organizations')
+    .update({ image_ai_assist_enabled: formData.get('image_ai_assist_enabled') === 'on' })
+    .eq('id', profile.organization_id)
+
+  if (error) redirect(`/dashboard/settings?error=${encodeURIComponent(error.message)}`)
+
+  revalidatePath('/dashboard/settings')
+  revalidatePath('/dashboard')
+  redirect('/dashboard/settings?saved=image-ai-assist')
+}
+
 export async function saveInspectorFacilitySettings(formData: FormData) {
   const { supabase, profile } = await requireSessionWorkspace()
 

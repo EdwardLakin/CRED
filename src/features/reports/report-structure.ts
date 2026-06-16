@@ -1361,3 +1361,40 @@ export function buildEvidencePackages(captures: CaptureLike[], evidenceGroups: E
     }
   })
 }
+
+function sanitizeReportNodeForSession(value: Json, sessionCaptureIds: Set<string>): Json | undefined {
+  if (Array.isArray(value)) {
+    const sanitized = value
+      .map((item) => sanitizeReportNodeForSession(item, sessionCaptureIds))
+      .filter((item): item is Json => item !== undefined)
+    return sanitized
+  }
+
+  if (!isRecord(value)) return value
+
+  const sourceCaptureId = typeof value.source_capture_id === 'string' ? value.source_capture_id : null
+  if (sourceCaptureId && !sessionCaptureIds.has(sourceCaptureId)) return undefined
+
+  const captureId = typeof value.capture_id === 'string' ? value.capture_id : null
+  if (captureId && !sessionCaptureIds.has(captureId)) return undefined
+
+  const next: Record<string, Json> = {}
+  for (const [key, child] of Object.entries(value)) {
+    if ((key === 'capture_ids' || key === 'source_capture_ids' || key === 'supporting_capture_ids' || key === 'related_capture_ids' || key === 'form_capture_ids') && Array.isArray(child)) {
+      next[key] = child.filter((id): id is string => typeof id === 'string' && sessionCaptureIds.has(id))
+      if ((key === 'capture_ids' || key === 'supporting_capture_ids') && next[key].length === 0) return undefined
+      continue
+    }
+
+    const sanitizedChild = sanitizeReportNodeForSession(child as Json, sessionCaptureIds)
+    if (sanitizedChild !== undefined) next[key] = sanitizedChild
+  }
+
+  return next
+}
+
+export function sanitizeReportStructureForSession(reportStructure: Json | null, sessionCaptureIds: string[]): Json {
+  const captureIds = new Set(sessionCaptureIds)
+  const sanitized = sanitizeReportNodeForSession(reportStructure ?? {}, captureIds)
+  return sanitized ?? {}
+}

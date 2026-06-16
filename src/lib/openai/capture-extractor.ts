@@ -97,6 +97,8 @@ export type CaptureExtractionResult = {
   generated_note: string | null
   generated_observation: string | null
   generated_recommendation: string | null
+  reading_status: 'clear' | 'unclear'
+  technician_verification_required: boolean
 }
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
@@ -109,7 +111,7 @@ const EMPTY_FIELDS = Object.fromEntries(
 const EXTRACTION_SYSTEM_PROMPT = `You extract cautious structured text from CRED classified captures for commercial vehicle/equipment documentation and field service reports.
 Return JSON only, no markdown.
 Use null for any field that is not visible, unclear, or supported by technician context. Technician note/transcript is high-value context for evidence captures, but do not blindly override image evidence.
-Do not invent values. Preserve exact VIN, plate, unit, serial, and reference strings as shown.
+Do not invent values or error codes. Do not infer text/readings that are not clearly visible. If a meter screen is unclear, partially cut off, blurry, or ambiguous, leave reading fields null, set reading_status to unclear, confidence low, and technician_verification_required true. Preserve exact VIN, plate, unit, serial, and reference strings as shown.
 VIN values must be exactly 17 characters after removing spaces. If a possible VIN is not exactly 17 characters or is uncertain, put it in notes instead of vin.
 For unit number, extract fleet/unit decals or obvious unit identifiers.
 Source documents are used for identity/header context. Do not convert work order line descriptions or prior comments into findings unless the technician note explicitly asks to include them.
@@ -218,6 +220,8 @@ export const CAPTURE_DETAIL_EXTRACTION_SCHEMA = {
     generated_note: { type: ['string', 'null'] },
     generated_observation: { type: ['string', 'null'] },
     generated_recommendation: { type: ['string', 'null'] },
+    reading_status: { type: 'string', enum: ['clear', 'unclear'] },
+    technician_verification_required: { type: 'boolean' },
   },
   required: [
     'summary',
@@ -229,6 +233,8 @@ export const CAPTURE_DETAIL_EXTRACTION_SCHEMA = {
     'generated_note',
     'generated_observation',
     'generated_recommendation',
+    'reading_status',
+    'technician_verification_required',
   ],
 } as const satisfies JsonSchemaObject
 
@@ -489,6 +495,8 @@ export function validateCaptureExtraction(
       generated_note: null,
       generated_observation: null,
       generated_recommendation: null,
+      reading_status: 'unclear',
+      technician_verification_required: true,
     }
   }
 
@@ -509,6 +517,8 @@ export function validateCaptureExtraction(
     generated_note: sanitizeText(value.generated_note, 600),
     generated_observation: sanitizeText(value.generated_observation, 600),
     generated_recommendation: sanitizeText(value.generated_recommendation, 600),
+    reading_status: value.reading_status === 'clear' ? 'clear' : 'unclear',
+    technician_verification_required: value.technician_verification_required === true || clampConfidence(value.confidence) < 0.65 || value.reading_status === 'unclear',
   }
 }
 
@@ -539,7 +549,9 @@ export function buildExtractedCaptureData(
       extracted_values: extraction.extracted_values,
       generated_note: extraction.generated_note,
       generated_observation: extraction.generated_observation,
-      generated_recommendation: extraction.generated_recommendation,
+      generated_recommendation: extraction.technician_verification_required ? null : extraction.generated_recommendation,
+      reading_status: extraction.reading_status,
+      technician_verification_required: extraction.technician_verification_required,
     },
     capture_ai_analysis: buildCaptureAiAnalysis(
       existingObject,
@@ -574,7 +586,9 @@ export function buildCaptureAiAnalysis(
     extracted_values: extraction.extracted_values,
     generated_note: extraction.generated_note,
     generated_observation: extraction.generated_observation,
-    generated_recommendation: extraction.generated_recommendation,
+    generated_recommendation: extraction.technician_verification_required ? null : extraction.generated_recommendation,
+    reading_status: extraction.reading_status,
+    technician_verification_required: extraction.technician_verification_required,
     ai_status: status,
     analyzed_at: new Date().toISOString(),
   }
@@ -623,7 +637,7 @@ export async function extractCaptureImageDetails(
           content: [
             {
               type: 'input_text',
-              text: `Classified capture type: ${detectedType}. ${targetInstruction}${sourceDocumentContext}${note ? `\nTechnician note/transcript: "${note.slice(0, 1000)}". Use it as strong context while checking visual consistency. For source documents, only use document content as findings if this note explicitly asks to include it.` : ''}\nReturn exactly the JSON schema fields.`,
+              text: `Classified capture type: ${detectedType}. ${targetInstruction}${sourceDocumentContext}${note ? `\nTechnician note/transcript: "${note.slice(0, 1000)}". Use it as strong context while checking visual consistency. For source documents, only use document content as findings if this note explicitly asks to include it.` : ''}\nReturn exactly the JSON schema fields. For questionable readings, use summary 'AI could not confidently read this image. Please verify manually.' and do not include invented values.`,
             },
             { type: 'input_image', image_url: signedImageUrl },
           ],
