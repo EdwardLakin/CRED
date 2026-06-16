@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 
 import { requireActiveBillingAccess } from '@/features/billing'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import { appendDiagnosticReportApprovedAuditEvent } from '@/features/diagnostic-procedures/actions'
 import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import { ReportEmailError, sendReportEmail, validateReportEmailRecipients } from '@/lib/email/reports'
 import { FINAL_NOTES_MODEL, FINAL_NOTES_PROMPT_VERSION, generateFinalNotes } from '@/lib/openai/final-notes-generator'
@@ -236,6 +237,8 @@ export async function markReportReviewed(sessionId: string, formData: FormData) 
     .eq('organization_id', profile.organization_id)
 
   if (error) redirect(getReportRedirectPath(session.id, { error: error.message }))
+
+  await appendDiagnosticReportApprovedAuditEvent(session.id)
 
   revalidatePath(`/dashboard/sessions/${session.id}`)
   revalidatePath(`/dashboard/sessions/${session.id}/report`)

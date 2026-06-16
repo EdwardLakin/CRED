@@ -28,8 +28,20 @@ const ALLOWED_PROCEDURE_MIME_TYPES = new Set([
 ])
 
 const STEP_STATUSES = new Set(['not_tested', 'pass', 'fail', 'blocked', 'not_applicable'])
+const SIGN_OFF_STATEMENT = 'I followed the OEM procedure and documented technician-selected results. AI did not diagnose, select branches, determine root cause, or recommend repair.'
 
 type ActionResult = { ok: true; message?: string } | { ok: false; error: string }
+type DiagnosticAuditEventType = 'procedure_uploaded' | 'extraction_review_approved' | 'step_updated' | 'branch_selected' | 'reading_added_or_updated' | 'evidence_attached' | 'step_hidden_or_unhidden' | 'procedure_signed_off' | 'report_approved_for_export'
+
+type DiagnosticAuditEvent = {
+  event_type: DiagnosticAuditEventType
+  occurred_at: string
+  profile_id: string
+  profile_name?: string | null
+  step_id?: string | null
+  step_title?: string | null
+  details?: Record<string, unknown>
+}
 
 type SectionMetadata = {
   section_type?: string
@@ -79,6 +91,22 @@ function getRedirectPath(sessionId: string, params: Record<string, string | numb
   return `/dashboard/sessions/${sessionId}/diagnostic-procedure?${query.toString()}`
 }
 
+function buildAuditEvent(eventType: DiagnosticAuditEventType, profile: { id: string; full_name?: string | null }, details: Omit<DiagnosticAuditEvent, 'event_type' | 'occurred_at' | 'profile_id' | 'profile_name'> = {}): DiagnosticAuditEvent {
+  return {
+    event_type: eventType,
+    occurred_at: new Date().toISOString(),
+    profile_id: profile.id,
+    profile_name: profile.full_name ?? null,
+    ...details,
+  }
+}
+
+function appendAuditEvent(reportStructure: unknown, event: DiagnosticAuditEvent): Json {
+  if (!isRecord(reportStructure)) return safeJson(reportStructure)
+  const existing = Array.isArray(reportStructure.audit_events) ? reportStructure.audit_events.filter(isRecord) : []
+  return safeJson({ ...reportStructure, audit_events: [...existing, event].slice(-200) })
+}
+
 function getStepSectionTitle(step: DiagnosticProcedureExtractionResult['steps'][number]) {
   const prefix = step.step_number ? `${step.step_number}: ` : ''
   return `${prefix}${step.title ?? 'OEM procedure step'}`.slice(0, 180)
@@ -124,6 +152,13 @@ function buildReportStructure(params: {
       attached_capture_ids: [],
     })),
     extraction_warnings: params.procedure.extraction_warnings,
+    signed_off: false,
+    signed_off_by: null,
+    signed_off_at: null,
+    sign_off_name: null,
+    sign_off_statement: SIGN_OFF_STATEMENT,
+    signature_capture_id: null,
+    audit_events: [],
   }
 }
 
@@ -227,12 +262,13 @@ async function saveDiagnosticProcedureDraft(input: {
   const { supabase, profile, session } = await getAuthorizedSession(input.sessionId)
   if (!session) throw new Error('Documentation session not found.')
   const now = new Date().toISOString()
-  const reportStructure = buildReportStructure({
+  let reportStructure = buildReportStructure({
     procedure: input.extraction,
     sourceCaptureId: input.sourceCaptureId,
     sourceFilename: input.sourceFilename,
     sourceStoragePath: input.sourceStoragePath,
   })
+  reportStructure = appendAuditEvent(reportStructure, buildAuditEvent('procedure_uploaded', profile, { details: { source_capture_id: input.sourceCaptureId, source_file_name: input.sourceFilename } })) as typeof reportStructure
 
   const { data: draft, error: draftError } = await supabase
     .from('ai_report_drafts')
@@ -351,17 +387,19 @@ function parseJsonArrayField(formData: FormData, field: string, maxLength = 1200
   }
 }
 
-function patchDraftProcedureStatus(reportStructure: unknown, status: string): Json {
+function patchDraftProcedureStatus(reportStructure: unknown, status: string, event?: DiagnosticAuditEvent): Json {
   if (!isRecord(reportStructure)) return safeJson(reportStructure)
-  return safeJson({ ...reportStructure, procedure_status: status })
+  const next = { ...reportStructure, procedure_status: status }
+  return event ? appendAuditEvent(next, event) : safeJson(next)
 }
 
-function updateDraftReportStructure(reportStructure: unknown, stepId: string, patch: SectionMetadata): Json {
+function updateDraftReportStructure(reportStructure: unknown, stepId: string, patch: SectionMetadata, events: DiagnosticAuditEvent[] = []): Json {
   if (!isRecord(reportStructure)) return safeJson(reportStructure)
   const steps = Array.isArray(reportStructure.steps)
     ? reportStructure.steps.map((step) => isRecord(step) && step.step_id === stepId ? { ...step, ...patch } : step)
     : []
-  return safeJson({ ...reportStructure, steps })
+  const existing = Array.isArray(reportStructure.audit_events) ? reportStructure.audit_events.filter(isRecord) : []
+  return safeJson({ ...reportStructure, steps, audit_events: [...existing, ...events].slice(-200) })
 }
 
 
@@ -393,7 +431,8 @@ export async function updateDiagnosticProcedureStepExtraction(sectionId: string,
   const nextMetadata = { ...metadata, ...patch }
   const sectionTitle = `${stepNumber ? `${stepNumber}: ` : ''}${title}`.slice(0, 180)
   const draftRecord = Array.isArray(section.ai_report_drafts) ? section.ai_report_drafts[0] : section.ai_report_drafts
-  let nextReportStructure = updateDraftReportStructure(isRecord(draftRecord) ? draftRecord.report_structure : null, stepId, { ...patch, sort_order: sortOrder } as SectionMetadata)
+  const visibilityChanged = metadata.visible !== visible
+  let nextReportStructure = updateDraftReportStructure(isRecord(draftRecord) ? draftRecord.report_structure : null, stepId, { ...patch, sort_order: sortOrder } as SectionMetadata, visibilityChanged ? [buildAuditEvent('step_hidden_or_unhidden', profile, { step_id: stepId, step_title: sectionTitle, details: { visible } })] : [])
   if (isRecord(nextReportStructure)) nextReportStructure = safeJson({ ...nextReportStructure, procedure_status: 'technician_review_required' })
 
   const { error: sectionError } = await supabase
@@ -426,7 +465,7 @@ export async function approveDiagnosticProcedureStructure(draftId: string): Prom
     .eq('organization_id', workspace.profile.organization_id)
     .single()
   if (error || !draft) return { ok: false, error: 'Diagnostic procedure draft not found.' }
-  const nextReportStructure = patchDraftProcedureStatus(draft.report_structure, 'approved_for_use')
+  const nextReportStructure = patchDraftProcedureStatus(draft.report_structure, 'approved_for_use', buildAuditEvent('extraction_review_approved', workspace.profile))
   const { error: updateError } = await workspace.supabase
     .from('ai_report_drafts')
     .update({ report_structure: nextReportStructure, status: 'reviewed', updated_at: new Date().toISOString() })
@@ -471,7 +510,10 @@ export async function updateDiagnosticStep(sectionId: string, formData: FormData
   const nextMetadata = { ...metadata, ...patch }
   const stepId = typeof metadata.step_id === 'string' ? metadata.step_id : section.section_key
   const draftRecord = Array.isArray(section.ai_report_drafts) ? section.ai_report_drafts[0] : section.ai_report_drafts
-  const nextReportStructure = updateDraftReportStructure(isRecord(draftRecord) ? draftRecord.report_structure : null, stepId, patch)
+  const auditEvents = [buildAuditEvent('step_updated', profile, { step_id: stepId, step_title: section.title, details: { technician_status: technicianStatus } })]
+  if (technicianSelectedBranch) auditEvents.push(buildAuditEvent('branch_selected', profile, { step_id: stepId, step_title: section.title, details: { branch: technicianSelectedBranch } }))
+  if (technicianReadings.length > 0) auditEvents.push(buildAuditEvent('reading_added_or_updated', profile, { step_id: stepId, step_title: section.title, details: { reading_count: technicianReadings.length } }))
+  const nextReportStructure = updateDraftReportStructure(isRecord(draftRecord) ? draftRecord.report_structure : null, stepId, patch, auditEvents)
 
   const { error: sectionError } = await supabase
     .from('ai_report_draft_sections')
@@ -542,6 +584,76 @@ export async function attachCaptureToDiagnosticStep(sectionId: string, captureIt
 
   if (sectionError) return { ok: false, error: sectionError.message }
 
+  const draftRecord = Array.isArray(section.ai_report_drafts) ? section.ai_report_drafts[0] : section.ai_report_drafts
+  const nextReportStructure = updateDraftReportStructure(isRecord(draftRecord) ? draftRecord.report_structure : null, stepId, { attached_capture_ids: attachedCaptureIds }, [buildAuditEvent('evidence_attached', profile, { step_id: stepId, step_title: section.title, details: { capture_item_id: capture.id } })])
+  await supabase
+    .from('ai_report_drafts')
+    .update({ report_structure: nextReportStructure, updated_at: new Date().toISOString() })
+    .eq('id', section.ai_report_draft_id)
+    .eq('documentation_session_id', section.documentation_session_id)
+    .eq('organization_id', profile.organization_id)
+
   revalidatePath(`/dashboard/sessions/${section.documentation_session_id}/diagnostic-procedure`)
   return { ok: true }
+}
+
+export async function signOffDiagnosticProcedure(draftId: string, formData: FormData): Promise<ActionResult> {
+  const workspace = await requireSessionWorkspace()
+  const signOffName = getString(formData, 'sign_off_name').slice(0, 160) || workspace.profile.full_name
+  const acknowledged = formData.get('sign_off_acknowledged') === 'on'
+  const incompleteAcknowledged = formData.get('incomplete_acknowledged') === 'on'
+  const reportReady = formData.get('report_ready') === 'true'
+  if (!acknowledged) return { ok: false, error: 'Technician sign-off acknowledgment is required.' }
+  if (!reportReady && !incompleteAcknowledged) return { ok: false, error: 'Acknowledge incomplete or blocked procedure documentation before sign-off.' }
+
+  const { data: draft, error } = await workspace.supabase
+    .from('ai_report_drafts')
+    .select('id, documentation_session_id, organization_id, report_structure')
+    .eq('id', draftId)
+    .eq('organization_id', workspace.profile.organization_id)
+    .single()
+  if (error || !draft || !isRecord(draft.report_structure) || draft.report_structure.mode !== 'diagnostic_procedure') return { ok: false, error: 'Diagnostic procedure draft not found.' }
+
+  const signedAt = new Date().toISOString()
+  const nextReportStructure = appendAuditEvent({
+    ...draft.report_structure,
+    procedure_status: reportReady ? 'signed_off' : 'signed_off_with_incomplete_acknowledgment',
+    signed_off: true,
+    signed_off_by: workspace.profile.id,
+    signed_off_at: signedAt,
+    sign_off_name: signOffName,
+    sign_off_statement: SIGN_OFF_STATEMENT,
+  }, buildAuditEvent('procedure_signed_off', workspace.profile, { details: { sign_off_name: signOffName, report_ready: reportReady, incomplete_acknowledged: incompleteAcknowledged } }))
+
+  const { error: updateError } = await workspace.supabase
+    .from('ai_report_drafts')
+    .update({ report_structure: nextReportStructure, updated_at: signedAt })
+    .eq('id', draft.id)
+    .eq('documentation_session_id', draft.documentation_session_id)
+    .eq('organization_id', workspace.profile.organization_id)
+  if (updateError) return { ok: false, error: updateError.message }
+  revalidatePath(`/dashboard/sessions/${draft.documentation_session_id}/diagnostic-procedure`)
+  revalidatePath(`/dashboard/sessions/${draft.documentation_session_id}/report`)
+  return { ok: true, message: 'Diagnostic procedure signed off.' }
+}
+
+export async function appendDiagnosticReportApprovedAuditEvent(sessionId: string) {
+  const workspace = await requireSessionWorkspace()
+  const { data: draft } = await workspace.supabase
+    .from('ai_report_drafts')
+    .select('id, documentation_session_id, organization_id, report_structure')
+    .eq('documentation_session_id', sessionId)
+    .eq('organization_id', workspace.profile.organization_id)
+    .not('status', 'eq', 'superseded')
+    .order('generated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (!draft || !isRecord(draft.report_structure) || draft.report_structure.mode !== 'diagnostic_procedure') return
+  const nextReportStructure = appendAuditEvent(draft.report_structure, buildAuditEvent('report_approved_for_export', workspace.profile))
+  await workspace.supabase
+    .from('ai_report_drafts')
+    .update({ report_structure: nextReportStructure, updated_at: new Date().toISOString() })
+    .eq('id', draft.id)
+    .eq('documentation_session_id', draft.documentation_session_id)
+    .eq('organization_id', workspace.profile.organization_id)
 }

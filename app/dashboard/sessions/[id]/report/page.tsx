@@ -143,6 +143,10 @@ function getDiagnosticProcedureInfo(draft: AiReportDraft | null) {
     manufacturer: typeof procedure.manufacturer === 'string' ? procedure.manufacturer : null,
     documentType: typeof procedure.document_type === 'string' ? procedure.document_type.replace(/_/g, ' ') : null,
     sourceFile: typeof procedure.source_file_name === 'string' ? procedure.source_file_name : null,
+    signedOff: draft.report_structure.signed_off === true,
+    signOffName: typeof draft.report_structure.sign_off_name === 'string' ? draft.report_structure.sign_off_name : null,
+    signedOffAt: typeof draft.report_structure.signed_off_at === 'string' ? draft.report_structure.signed_off_at : null,
+    signOffStatement: typeof draft.report_structure.sign_off_statement === 'string' ? draft.report_structure.sign_off_statement : null,
   }
 }
 
@@ -190,6 +194,7 @@ function DiagnosticProcedureReport({
           <h1>{info?.title ?? session.title}</h1>
           <p className="notice info"><strong>Documentation support only.</strong> Follow OEM procedure. Technician owns all conclusions and recommendations. AI does not diagnose, determine root cause, or recommend repair.</p>
           <p className="muted">{[info?.manufacturer, info?.documentType, info?.sourceFile].filter(Boolean).join(' · ')}</p>
+          {info?.signedOff ? <p className="notice success"><strong>Signed off by {info.signOffName ?? 'technician'}</strong>{info.signedOffAt ? ` at ${formatDateTime(info.signedOffAt)}` : ''}. {info.signOffStatement}</p> : <p className="notice warning"><strong>Technician sign-off pending.</strong> Complete sign-off in the Diagnostic Procedure Workspace before final delivery.</p>}
         </div>
         <div className="page-actions report-preview-actions compact-report-actions">
           <Link href={`/dashboard/sessions/${session.id}/diagnostic-procedure`} className="button button-secondary touch-target">Edit procedure documentation</Link>
