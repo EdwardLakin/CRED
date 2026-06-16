@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type MouseEvent,
 } from 'react'
 import { useRouter } from 'next/navigation'
 
@@ -26,6 +27,7 @@ import { createClient } from '@/lib/supabase/client'
 
 const MAX_BATCH_FILES = 10
 const VOICE_NOTE_TIMEOUT_MS = 60_000
+const MEDIA_NOTE_AUTOSAVE_DELAY_MS = 800
 
 type UploadStatus = 'queued' | 'uploading' | 'saved' | 'ai_queued' | 'needs_queue_retry' | 'failed'
 type DiagnosticEvidenceRole = 'meter_reading_photo' | 'scan_tool_screenshot' | 'connector_photo' | 'wiring_reference' | 'voice_note' | 'technician_note' | 'other'
@@ -51,7 +53,7 @@ type SelectedEvidenceFile = {
   error?: string
   note: string
   captureItemId?: string
-  noteSaveStatus?: 'idle' | 'saving' | 'saved' | 'failed'
+  noteSaveStatus?: 'idle' | 'unsaved' | 'saving' | 'saved' | 'failed'
 }
 
 type SpeechRecognitionResultLike = {
@@ -220,7 +222,7 @@ function SubmitButton({
         ? 'Saving…'
         : retryOnly
           ? 'Retry failed upload'
-          : 'Save note'}
+          : 'Save general note'}
     </Button>
   )
 }
@@ -232,6 +234,14 @@ function getUploadStatusLabel(status: UploadStatus, error?: string) {
   if (status === 'saved') return 'Saved'
   if (status === 'failed') return error ?? 'Upload failed. Please retry.'
   return 'Queued'
+}
+
+function getNoteSaveStatusLabel(status: SelectedEvidenceFile['noteSaveStatus']) {
+  if (status === 'unsaved') return 'Unsaved'
+  if (status === 'saving') return 'Saving…'
+  if (status === 'saved') return 'Saved'
+  if (status === 'failed') return 'Save failed'
+  return 'Unsaved until media upload completes'
 }
 
 function getFriendlyUploadError(message: string) {
@@ -292,6 +302,7 @@ export function AddCaptureForm({
   const selectedFilesRef = useRef<SelectedEvidenceFile[]>([])
   const isSavingRef = useRef(false)
   const uploadStartedFileIdsRef = useRef(new Set<string>())
+  const noteAutosaveTimeoutsRef = useRef(new Map<string, number>())
   const [actionError, setActionError] = useState<string | null>(null)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -341,7 +352,11 @@ export function AddCaptureForm({
   }
 
   useEffect(() => {
+    const noteAutosaveTimeouts = noteAutosaveTimeoutsRef.current
+
     return () => {
+      noteAutosaveTimeouts.forEach((timeoutId) => window.clearTimeout(timeoutId))
+      noteAutosaveTimeouts.clear()
       selectedFilesRef.current.forEach((file) =>
         URL.revokeObjectURL(file.previewUrl),
       )
@@ -390,6 +405,16 @@ export function AddCaptureForm({
     setSelectedFiles((currentFiles) => {
       const nextFiles = currentFiles.map((file) =>
         file.id === fileId ? { ...file, status, error, ...(captureItemId ? { captureItemId } : {}) } : file,
+      )
+      selectedFilesRef.current = nextFiles
+      return nextFiles
+    })
+  }
+
+  function updateSelectedFileNoteStatus(fileId: string, noteSaveStatus: SelectedEvidenceFile['noteSaveStatus']) {
+    setSelectedFiles((currentFiles) => {
+      const nextFiles = currentFiles.map((file) =>
+        file.id === fileId ? { ...file, noteSaveStatus } : file,
       )
       selectedFilesRef.current = nextFiles
       return nextFiles
@@ -456,33 +481,87 @@ export function AddCaptureForm({
   function updateSelectedFileNote(fileId: string, noteValue: string) {
     setSelectedFiles((currentFiles) => {
       const nextFiles = currentFiles.map((file) =>
-        file.id === fileId ? { ...file, note: noteValue, noteSaveStatus: (file.status === 'saved' ? 'saving' : 'idle') as SelectedEvidenceFile['noteSaveStatus'] } : file,
+        file.id === fileId
+          ? {
+              ...file,
+              note: noteValue,
+              noteSaveStatus: (file.captureItemId ? 'unsaved' : 'idle') as SelectedEvidenceFile['noteSaveStatus'],
+            }
+          : file,
       )
       selectedFilesRef.current = nextFiles
       return nextFiles
     })
 
-    const file = selectedFilesRef.current.find((current) => current.id === fileId)
-    if (!file?.captureItemId || file.status !== 'saved') return
+    scheduleSelectedFileNoteSave(fileId)
+  }
 
-    updateCaptureItemNote({ sessionId, captureItemId: file.captureItemId, technicianNote: noteValue })
+  function scheduleSelectedFileNoteSave(fileId: string) {
+    const existingTimeout = noteAutosaveTimeoutsRef.current.get(fileId)
+    if (existingTimeout) {
+      window.clearTimeout(existingTimeout)
+    }
+
+    const file = selectedFilesRef.current.find((current) => current.id === fileId)
+    if (!file?.captureItemId) return
+
+    const timeoutId = window.setTimeout(() => {
+      noteAutosaveTimeoutsRef.current.delete(fileId)
+      void saveSelectedFileNote(fileId)
+    }, MEDIA_NOTE_AUTOSAVE_DELAY_MS)
+    noteAutosaveTimeoutsRef.current.set(fileId, timeoutId)
+  }
+
+  async function saveSelectedFileNote(fileId: string) {
+    const file = selectedFilesRef.current.find((current) => current.id === fileId)
+    if (!file?.captureItemId) return true
+
+    updateSelectedFileNoteStatus(fileId, 'saving')
+
+    const result = await updateCaptureItemNote({
+      sessionId,
+      captureItemId: file.captureItemId,
+      technicianNote: file.note,
+    })
+
+    updateSelectedFileNoteStatus(fileId, result.ok ? 'saved' : 'failed')
+    return result.ok
+  }
+
+  async function flushMediaNoteSaves() {
+    noteAutosaveTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId))
+    noteAutosaveTimeoutsRef.current.clear()
+
+    const filesNeedingSave = selectedFilesRef.current.filter(
+      (file) => file.captureItemId && (file.noteSaveStatus === 'unsaved' || file.noteSaveStatus === 'failed'),
+    )
+
+    if (filesNeedingSave.length === 0) return true
+
+    const results = await Promise.all(filesNeedingSave.map((file) => saveSelectedFileNote(file.id)))
+    return results.every(Boolean)
+  }
+
+  function hasUnsavedMediaNotes() {
+    return selectedFilesRef.current.some((file) =>
+      file.captureItemId && (file.noteSaveStatus === 'unsaved' || file.noteSaveStatus === 'saving' || file.noteSaveStatus === 'failed'),
+    )
+  }
+
+  function saveSelectedFileNoteFromButton(fileId: string) {
+    const existingTimeout = noteAutosaveTimeoutsRef.current.get(fileId)
+    if (existingTimeout) {
+      window.clearTimeout(existingTimeout)
+      noteAutosaveTimeoutsRef.current.delete(fileId)
+    }
+
+    void saveSelectedFileNote(fileId)
       .then((result) => {
-        setSelectedFiles((currentFiles) => {
-          const nextFiles = currentFiles.map((current) =>
-            current.id === fileId ? { ...current, noteSaveStatus: (result.ok ? 'saved' : 'failed') as SelectedEvidenceFile['noteSaveStatus'] } : current,
-          )
-          selectedFilesRef.current = nextFiles
-          return nextFiles
-        })
+        if (!result) setClientError('Could not save one media note. Try again before leaving.')
       })
       .catch(() => {
-        setSelectedFiles((currentFiles) => {
-          const nextFiles = currentFiles.map((current) =>
-            current.id === fileId ? { ...current, noteSaveStatus: 'failed' as SelectedEvidenceFile['noteSaveStatus'] } : current,
-          )
-          selectedFilesRef.current = nextFiles
-          return nextFiles
-        })
+        updateSelectedFileNoteStatus(fileId, 'failed')
+        setClientError('Could not save one media note. Try again before leaving.')
       })
   }
 
@@ -509,13 +588,15 @@ export function AddCaptureForm({
     setSaveMessage(null)
   }
 
-  function openCameraPicker() {
+  async function openCameraPicker() {
+    await flushMediaNoteSaves()
     setCaptureIntent('auto_evidence')
     setPreferCameraCapture(true)
     window.setTimeout(() => fileInputRef.current?.click(), 0)
   }
 
-  function openGalleryPicker() {
+  async function openGalleryPicker() {
+    await flushMediaNoteSaves()
     setCaptureIntent('auto_evidence')
     setPreferCameraCapture(false)
     window.setTimeout(() => fileInputRef.current?.click(), 0)
@@ -651,6 +732,13 @@ export function AddCaptureForm({
           undefined,
           result.captureItemId,
         )
+        const latestFile = selectedFilesRef.current.find((current) => current.id === selectedFile.id)
+        if (latestFile?.note && latestFile.note !== selectedFile.note) {
+          updateSelectedFileNoteStatus(selectedFile.id, 'unsaved')
+          scheduleSelectedFileNoteSave(selectedFile.id)
+        } else {
+          updateSelectedFileNoteStatus(selectedFile.id, 'saved')
+        }
       } catch (error) {
         failedCount += 1
         const message = getFriendlyUploadError(
@@ -993,15 +1081,37 @@ export function AddCaptureForm({
       cleanupRecognition()
     }
 
+    function warnAboutUnsavedMediaNotes(event: BeforeUnloadEvent) {
+      if (!hasUnsavedMediaNotes()) return
+
+      event.preventDefault()
+      event.returnValue = ''
+    }
+
     window.addEventListener('pagehide', stopOnPageExit)
     window.addEventListener('beforeunload', stopOnPageExit)
+    window.addEventListener('beforeunload', warnAboutUnsavedMediaNotes)
 
     return () => {
       window.removeEventListener('pagehide', stopOnPageExit)
       window.removeEventListener('beforeunload', stopOnPageExit)
+      window.removeEventListener('beforeunload', warnAboutUnsavedMediaNotes)
       cleanupRecognition()
     }
   }, [cleanupRecognition])
+
+  async function handleDoneNavigation(event: MouseEvent<HTMLAnchorElement>) {
+    if (!hasUnsavedMediaNotes()) return
+
+    event.preventDefault()
+    const saved = await flushMediaNoteSaves()
+    if (saved && stickyDoneHref) {
+      router.push(stickyDoneHref)
+      return
+    }
+
+    setClientError('Could not save one media note. Try again before leaving.')
+  }
 
   return (
     <form onSubmit={handleSubmit} className="capture-form form-stack">
@@ -1183,14 +1293,29 @@ export function AddCaptureForm({
                     onChange={(event) => updateSelectedFileNote(file.id, event.target.value)}
                     rows={3}
                   />
-                  {file.noteSaveStatus === 'saving' ? <span className="muted">Saving note…</span> : null}
-                  {file.noteSaveStatus === 'failed' ? <span className="error">Could not save this note.</span> : null}
+                  <span
+                    className={file.noteSaveStatus === 'failed' ? 'error' : 'muted'}
+                    role="status"
+                    aria-live="polite"
+                  >
+                    {getNoteSaveStatusLabel(file.noteSaveStatus)}
+                  </span>
                 </label>
 
                 <div className="draft-evidence-preview-footer">
                   <span className="muted draft-evidence-filename">
                     {file.name}
                   </span>
+                  {file.captureItemId ? (
+                    <button
+                      type="button"
+                      className="secondary-link"
+                      onClick={() => saveSelectedFileNoteFromButton(file.id)}
+                      disabled={file.noteSaveStatus === 'saving'}
+                    >
+                      Save this note
+                    </button>
+                  ) : null}
                   {file.status === 'failed' ? (
                     <>
                       <button
@@ -1231,7 +1356,7 @@ export function AddCaptureForm({
 
       <div className="field-stack capture-note-composer report-note-editor capture-secondary-panel">
         <label htmlFor={`technician-note-${guidanceKey}`} className="label">
-          Note for this evidence
+          General note without media
         </label>
         <textarea
           ref={noteTextareaRef}
@@ -1250,7 +1375,7 @@ export function AddCaptureForm({
           rows={4}
         />
         <p className="muted note-helper-text">
-          {isDiagnosticProcedureAttachment ? 'Attachments save to this OEM procedure step. Documentation support only; follow OEM procedure.' : 'Photos and gallery selections save and queue immediately. Notes are optional and can be saved separately when there is no media.'}
+          {isDiagnosticProcedureAttachment ? 'Use this for text-only or voice-only documentation for the OEM procedure step. Media captions save inside each media card above.' : 'Use this only for text-only evidence, voice-only evidence, or a general note without media. Media captions save inside each media card above.'}
         </p>
         {isVoiceSupported === false ? (
           <p className="muted capture-upload-hint" role="status">
@@ -1327,7 +1452,7 @@ export function AddCaptureForm({
               Done
             </button>
           ) : (
-            <Link href={stickyDoneHref} className="button button-secondary touch-target">
+            <Link href={stickyDoneHref} className="button button-secondary touch-target" onClick={handleDoneNavigation}>
               Done
             </Link>
           )}
