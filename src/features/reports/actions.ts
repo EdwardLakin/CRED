@@ -8,6 +8,7 @@ import { requireActiveBillingAccess } from '@/features/billing'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import { ReportEmailError, sendReportEmail, validateReportEmailRecipients } from '@/lib/email/reports'
+import { FINAL_NOTES_MODEL, FINAL_NOTES_PROMPT_VERSION, generateFinalNotes } from '@/lib/openai/final-notes-generator'
 import { AI_REPORT_DRAFT_MODEL, AI_REPORT_DRAFT_PROMPT_VERSION, generateReportDraft } from '@/lib/openai/report-draft-generator'
 import type { OrganizationPlan } from '@/lib/stripe'
 import { buildEvidenceGroups, buildEvidencePackages,
@@ -74,6 +75,108 @@ function requireReportReadyForDelivery(sessionId: string, session: { review_stat
       }),
     )
   }
+}
+
+
+export async function saveFinalNotes(sessionId: string, formData: FormData) {
+  const { supabase, profile, session } = await requireOwnedSession(sessionId)
+  const finalNotes = getString(formData, 'final_notes').slice(0, 6000)
+  const includeInExport = formData.get('include_final_notes_in_export') === 'on'
+  const { error } = await supabase
+    .from('documentation_sessions')
+    .update({
+      final_notes: finalNotes || null,
+      final_notes_ai_generated: false,
+      final_notes_updated_at: new Date().toISOString(),
+      final_notes_edited_by_user: true,
+      include_final_notes_in_export: includeInExport,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', session.id)
+    .eq('organization_id', profile.organization_id)
+  if (error) redirect(getReportRedirectPath(session.id, { error: error.message }))
+  revalidatePath(`/dashboard/sessions/${session.id}`)
+  revalidatePath(`/dashboard/sessions/${session.id}/report`)
+  redirect(getReportRedirectPath(session.id, { notes: 1 }))
+}
+
+export async function generateFinalNotesForSession(sessionId: string) {
+  const { supabase, profile, session } = await requireOwnedSession(sessionId)
+  const billingAccess = requireActiveBillingAccess(profile)
+  if (!billingAccess.ok) redirect(getReportRedirectPath(session.id, { error: billingAccess.message }))
+
+  const aiAllowance = await requireUsageAllowance({
+    supabase,
+    organizationId: profile.organization_id,
+    plan: billingAccess.access.plan,
+    eventType: 'ai_report_draft_generation',
+  })
+  if (!aiAllowance.ok) redirect(getReportRedirectPath(session.id, { error: aiAllowance.message }))
+
+  const { data: fullSession, error: fullSessionError } = await supabase
+    .from('documentation_sessions')
+    .select('id, title, session_type, asset_label, vin, unit_number, customer_name, field_service_details')
+    .eq('id', session.id)
+    .eq('organization_id', profile.organization_id)
+    .single()
+  if (fullSessionError || !fullSession) redirect(getReportRedirectPath(session.id, { error: 'Documentation session not found.' }))
+
+  const { data: captures, error: capturesError } = await supabase
+    .from('capture_items')
+    .select('id, type, media_kind, captured_at, technician_note, transcript, extracted_data')
+    .eq('documentation_session_id', session.id)
+    .eq('organization_id', profile.organization_id)
+    .is('deleted_at', null)
+    .order('report_order', { ascending: true, nullsFirst: false })
+    .order('captured_at', { ascending: true })
+  if (capturesError) redirect(getReportRedirectPath(session.id, { error: capturesError.message }))
+
+  const { data: currentDraft } = await supabase
+    .from('ai_report_drafts')
+    .select('findings, measurements')
+    .eq('documentation_session_id', session.id)
+    .eq('organization_id', profile.organization_id)
+    .not('status', 'in', '(superseded)')
+    .order('generated_at', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  let notes: string
+  try {
+    notes = await generateFinalNotes({
+      session: fullSession,
+      captures: captures ?? [],
+      findings: currentDraft?.findings ?? [],
+      recommendations: currentDraft?.measurements ?? [],
+    })
+  } catch (error) {
+    redirect(getReportRedirectPath(session.id, { error: getReportDraftErrorMessage(error) }))
+  }
+
+  const now = new Date().toISOString()
+  const { error } = await supabase
+    .from('documentation_sessions')
+    .update({
+      final_notes: notes,
+      final_notes_ai_generated: true,
+      final_notes_updated_at: now,
+      final_notes_edited_by_user: false,
+      updated_at: now,
+    })
+    .eq('id', session.id)
+    .eq('organization_id', profile.organization_id)
+  if (error) redirect(getReportRedirectPath(session.id, { error: error.message }))
+
+  await recordUsageEvent({
+    supabase,
+    organizationId: profile.organization_id,
+    eventType: 'ai_report_draft_generation',
+    metadata: { session_id: session.id, operation: 'final_notes_generation', model: FINAL_NOTES_MODEL, prompt_version: FINAL_NOTES_PROMPT_VERSION },
+    createdBy: profile.id,
+  })
+  revalidatePath(`/dashboard/sessions/${session.id}/report`)
+  redirect(getReportRedirectPath(session.id, { notes_generated: 1 }))
 }
 
 export async function markReportReviewed(sessionId: string, formData: FormData) {

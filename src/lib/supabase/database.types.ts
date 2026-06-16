@@ -240,6 +240,11 @@ export interface Database {
           review_status: string
           reviewed_at: string | null
           reviewed_by: string | null
+          final_notes: string | null
+          final_notes_ai_generated: boolean
+          final_notes_updated_at: string | null
+          final_notes_edited_by_user: boolean
+          include_final_notes_in_export: boolean
           created_at: string | null
           updated_at: string | null
         }
@@ -262,6 +267,11 @@ export interface Database {
           review_status?: string
           reviewed_at?: string | null
           reviewed_by?: string | null
+          final_notes?: string | null
+          final_notes_ai_generated?: boolean
+          final_notes_updated_at?: string | null
+          final_notes_edited_by_user?: boolean
+          include_final_notes_in_export?: boolean
           created_at?: string | null
           updated_at?: string | null
         }
@@ -284,6 +294,11 @@ export interface Database {
           review_status?: string
           reviewed_at?: string | null
           reviewed_by?: string | null
+          final_notes?: string | null
+          final_notes_ai_generated?: boolean
+          final_notes_updated_at?: string | null
+          final_notes_edited_by_user?: boolean
+          include_final_notes_in_export?: boolean
           created_at?: string | null
           updated_at?: string | null
         }
