@@ -31,7 +31,9 @@ import {
   disableReportShareLink,
   emailReport,
   generateAiReportDraft,
+  generateFinalNotesForSession,
   markReportReviewed,
+  saveFinalNotes,
   saveReport,
   saveReportEdits,
 } from "@/features/reports/actions";
@@ -40,6 +42,7 @@ import { requireSessionWorkspace } from "@/features/sessions/data";
 import { SignatureCaptureForm } from "@/features/signatures";
 import { useSavedSignature } from "@/features/signatures/actions";
 import type { Database } from "@/lib/supabase/database.types";
+import { FinalNotesEditor } from "@/features/reports/components/FinalNotesEditor";
 
 type Tables = Database["public"]["Tables"];
 type DocumentationSession = Tables["documentation_sessions"]["Row"];
@@ -142,6 +145,8 @@ export default async function SessionReportPreviewPage({
     reviewed?: string;
     saved?: string;
     shared?: string;
+    notes?: string;
+    notes_generated?: string;
   }>;
 }) {
   const { id } = await params;
@@ -150,7 +155,7 @@ export default async function SessionReportPreviewPage({
   const { data: session, error: sessionError } = await supabase
     .from("documentation_sessions")
     .select(
-      "id, title, session_type, organization_id, workflow_template_id, review_status, reviewed_at, reviewed_by, asset_label, vin, unit_number, customer_name, updated_at",
+      "id, title, session_type, organization_id, workflow_template_id, review_status, reviewed_at, reviewed_by, asset_label, vin, unit_number, customer_name, final_notes, final_notes_ai_generated, final_notes_updated_at, final_notes_edited_by_user, include_final_notes_in_export, updated_at",
     )
     .eq("id", id)
     .eq("organization_id", profile.organization_id)
@@ -302,6 +307,8 @@ export default async function SessionReportPreviewPage({
   const emailAction = emailReport.bind(null, session.id);
   const shareAction = createReportShareLink.bind(null, session.id);
   const generateReportAction = generateAiReportDraft.bind(null, session.id);
+  const generateFinalNotesAction = generateFinalNotesForSession.bind(null, session.id);
+  const saveFinalNotesAction = saveFinalNotes.bind(null, session.id);
   const saveReportEditsAction = currentReport
     ? saveReportEdits.bind(null, currentReport.id)
     : null;
@@ -347,6 +354,8 @@ export default async function SessionReportPreviewPage({
         {status.disabled ? (
           <p className="success">Share link disabled.</p>
         ) : null}
+        {status.notes ? <p className="success">Final notes saved.</p> : null}
+        {status.notes_generated ? <p className="success">Final notes generated.</p> : null}
         {!isReadyForExport ? (
           <p className="notice info">Approve this report before exporting.</p>
         ) : null}
@@ -377,6 +386,14 @@ export default async function SessionReportPreviewPage({
             facilityName={profile.company_profile?.facility_name ?? profile.company_profile?.company_name ?? profile.organization.name}
             facilityLocation={[profile.company_profile?.facility_city, profile.company_profile?.facility_region].filter(Boolean).join(", ")}
             timeZone={profile.timezone}
+          />
+
+          <FinalNotesEditor
+            defaultValue={session.final_notes ?? ""}
+            editedByUser={session.final_notes_edited_by_user}
+            includeInExport={session.include_final_notes_in_export}
+            generateAction={generateFinalNotesAction}
+            saveAction={saveFinalNotesAction}
           />
 
           <InspectorFacilityPanel profile={profile} sessionId={session.id} signatures={signatures ?? []} signatureUrls={signatureUrls} />
