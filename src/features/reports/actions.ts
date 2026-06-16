@@ -12,10 +12,43 @@ import { FINAL_NOTES_MODEL, FINAL_NOTES_PROMPT_VERSION, generateFinalNotes } fro
 import { AI_REPORT_DRAFT_MODEL, AI_REPORT_DRAFT_PROMPT_VERSION, generateReportDraft } from '@/lib/openai/report-draft-generator'
 import type { OrganizationPlan } from '@/lib/stripe'
 import { buildEvidenceGroups, buildEvidencePackages,
-  sanitizeReportStructureForSession, buildNormalizedReportFields, deriveFormSectionsFromCaptures, scoreFormReferenceCapture, selectPrimaryFormCaptures, stripConfidenceText } from '@/features/reports/report-structure'
+  sanitizeReportStructureForSession, buildNormalizedReportFields, deriveFormSectionsFromCaptures, scoreFormReferenceCapture, selectPrimaryFormCaptures, stripConfidenceText, GENERIC_REPORT_SECTION_TITLES, getReportStructureSourceMetadata } from '@/features/reports/report-structure'
 import type { Json } from '@/lib/supabase/database.types'
 
 const REPORT_SHARE_EXPIRATION_DAYS = 30
+
+function genericFallbackDraftSections(draftOutput: Awaited<ReturnType<typeof generateReportDraft>>) {
+  return GENERIC_REPORT_SECTION_TITLES.map((title, index) => {
+    const matchingSection = draftOutput.sections.find((section) => {
+      const normalizedTitle = section.title.toLowerCase()
+      if (title === 'Findings') return /finding|condition|issue|defect/.test(normalizedTitle)
+      if (title === 'Recommendations') return /recommend|action/.test(normalizedTitle)
+      if (title === 'Technician Notes') return /technician|note/.test(normalizedTitle)
+      if (title === 'Evidence Captured') return /evidence|capture|photo/.test(normalizedTitle)
+      if (title === 'Report Summary') return /summary|overview/.test(normalizedTitle)
+      if (title === 'Final Notes / Work Order Notes') return /final|work order/.test(normalizedTitle)
+      if (title === 'Inspector / Facility Details') return /inspector|facility/.test(normalizedTitle)
+      if (title === 'Signoff') return /sign|approval/.test(normalizedTitle)
+      return false
+    })
+
+    return {
+      section_key: title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''),
+      title,
+      body: matchingSection?.body ?? (title === 'Report Summary' ? draftOutput.summary : null),
+      status: matchingSection?.status ?? 'informational' as const,
+      confidence: matchingSection?.confidence ?? draftOutput.confidence,
+      source_capture_ids: matchingSection?.source_capture_ids ?? [],
+      sort_order: index,
+      metadata: {
+        source_field_group: title,
+        related_capture_ids: [],
+        fields: [],
+        generic_fallback_section: true,
+      } as Json,
+    }
+  })
+}
 
 function getString(formData: FormData, field: string) {
   const value = formData.get(field)
@@ -618,8 +651,15 @@ export async function generateAiReportDraft(sessionId: string) {
     transcript: capture.transcript,
     extracted_data: capture.extracted_data,
   }))
+  const structureSourceMetadata = getReportStructureSourceMetadata(normalizedCaptures)
   const formSections = deriveFormSectionsFromCaptures(normalizedCaptures)
   const formCaptureIds = selectPrimaryFormCaptures(normalizedCaptures).map((capture) => capture.id)
+  if (structureSourceMetadata.report_structure_source === 'generic_fallback') {
+    draftOutput = {
+      ...draftOutput,
+      sections: genericFallbackDraftSections(draftOutput),
+    }
+  }
   const evidenceGroups = buildEvidenceGroups(normalizedCaptures, draftOutput.sections, draftOutput.measurements, draftOutput.findings)
   const formDebug = normalizedCaptures.map((capture, index) => ({ id: capture.id, score: Number(scoreFormReferenceCapture(capture, index).toFixed(2)) }))
   if (process.env.NODE_ENV !== 'production') {
@@ -628,6 +668,7 @@ export async function generateAiReportDraft(sessionId: string) {
   const rawReportStructure: Json = safeJson({
     version: 2,
     mode: formSections.length > 0 ? 'form_structured' : 'evidence_first',
+    ...structureSourceMetadata,
     form_sections: formSections,
     form_capture_ids: formCaptureIds,
     evidence_groups: buildEvidencePackages(normalizedCaptures, evidenceGroups),

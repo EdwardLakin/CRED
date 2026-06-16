@@ -95,8 +95,22 @@ export type FormStructureSummary = {
   isFormStructured: boolean
   sourceCaptureIds: string[]
   guidance: string[]
+  source: ReportStructureSource
+  sourceDocumentName: string | null
 }
 
+export type ReportStructureSource = 'uploaded_form' | 'uploaded_report' | 'uploaded_template' | 'generic_fallback'
+
+export const GENERIC_REPORT_SECTION_TITLES = [
+  'Report Summary',
+  'Evidence Captured',
+  'Technician Notes',
+  'Findings',
+  'Recommendations',
+  'Final Notes / Work Order Notes',
+  'Inspector / Facility Details',
+  'Signoff',
+] as const
 
 const HEADER_FIELD_ALIASES = {
   customer: ['customer', 'customer_name', 'client', 'client_name', 'company', 'company_name', 'contact', 'owner'],
@@ -495,13 +509,61 @@ export function scoreFormReferenceCapture(capture: CaptureLike, index = 0) {
   return score
 }
 
+function getSourceDocumentType(capture: CaptureLike) {
+  const { sourceDocument } = getSourceDocumentFields(capture)
+  return typeof sourceDocument?.type === 'string' ? sourceDocument.type : null
+}
+
+function getSourceDocumentLabel(capture: CaptureLike) {
+  const { sourceDocument } = getSourceDocumentFields(capture)
+  return typeof sourceDocument?.label === 'string' && sourceDocument.label.trim() ? sourceDocument.label.trim() : null
+}
+
+function getStructureSourceFromText(text: string): ReportStructureSource | null {
+  if (/\btemplate\b/.test(text)) return 'uploaded_template'
+  if (/\breport\b/.test(text)) return 'uploaded_report'
+  if (/\b(form|checklist|inspection sheet|inspection form)\b/.test(text)) return 'uploaded_form'
+  return null
+}
+
+export function getReportStructureSourceCapture(captures: CaptureLike[]) {
+  return captures.find((capture) => {
+    const sourceDocumentType = getSourceDocumentType(capture)
+    const text = textForCapture(capture)
+    if (capture.type !== 'document' && capture.media_kind !== 'document') return false
+    if (sourceDocumentType === 'other' || sourceDocumentType === 'diagnostic_procedure') return true
+    return Boolean(getStructureSourceFromText(text))
+  }) ?? null
+}
+
+export function getReportStructureSourceMetadata(captures: CaptureLike[]) {
+  const capture = getReportStructureSourceCapture(captures)
+  if (!capture) {
+    return {
+      report_structure_source: 'generic_fallback' as ReportStructureSource,
+      source_capture_id: null,
+      source_document_name: null,
+    }
+  }
+
+  const text = textForCapture(capture)
+  return {
+    report_structure_source: getStructureSourceFromText(text) ?? 'uploaded_form',
+    source_capture_id: capture.id,
+    source_document_name: getSourceDocumentLabel(capture) ?? getDeterministicReferenceTitle(capture) ?? 'Uploaded document',
+  }
+}
+
 export function isFormReferenceCapture(capture: CaptureLike, index = 0) {
-  return scoreFormReferenceCapture(capture, index) >= (index === 0 ? 4.2 : 5.2)
+  return getReportStructureSourceCapture([capture])?.id === capture.id && scoreFormReferenceCapture(capture, index) >= (index === 0 ? 4.2 : 5.2)
 }
 
 export function selectPrimaryFormCaptures(captures: CaptureLike[]) {
+  const structureSourceCapture = getReportStructureSourceCapture(captures)
+  if (!structureSourceCapture) return []
   const scored = captures
     .map((capture, index) => ({ capture, index, score: scoreFormReferenceCapture(capture, index) }))
+    .filter((item) => item.capture.id === structureSourceCapture.id)
     .filter((item) => item.score >= (item.index === 0 ? 4.2 : 5.2))
     .sort((a, b) => a.index - b.index || b.score - a.score)
   if (scored.length === 0) return []
@@ -719,11 +781,16 @@ export function getFormStructureSummary(reportStructure: Json | null, sections: 
   const structure = isRecord(reportStructure) ? reportStructure : {}
   const sourceCaptureIds = Array.from(new Set(sections.flatMap((section) => section.source_capture_ids)))
   const hasFormFields = sections.some((section) => section.fields.length > 0 || Boolean(section.source_field_group))
-  const isFormStructured = structure.mode === 'form_structured' || hasFormFields
+  const structureSource = typeof structure.report_structure_source === 'string'
+    ? structure.report_structure_source as ReportStructureSource
+    : null
+  const isFormStructured = structureSource !== 'generic_fallback' && (structure.mode === 'form_structured' || hasFormFields)
   return {
     isFormStructured,
     sourceCaptureIds,
     guidance: isFormStructured ? getCaptureGuidance(sections) : [],
+    source: structureSource ?? (isFormStructured ? 'uploaded_form' : 'generic_fallback'),
+    sourceDocumentName: typeof structure.source_document_name === 'string' ? structure.source_document_name : null,
   }
 }
 
