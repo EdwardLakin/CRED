@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 
 import { getPlanLimits, parseBillingPlan } from '@/features/billing'
 import { AddCaptureForm } from '@/features/capture'
-import { approveDiagnosticProcedureStructure, updateDiagnosticProcedureStepExtraction, updateDiagnosticStep, uploadAndExtractDiagnosticProcedure } from '@/features/diagnostic-procedures/actions'
+import { approveDiagnosticProcedureStructure, signOffDiagnosticProcedure, updateDiagnosticProcedureStepExtraction, updateDiagnosticStep, uploadAndExtractDiagnosticProcedure } from '@/features/diagnostic-procedures/actions'
 import { getDiagnosticProcedureProgress, getDiagnosticStepCompleteness } from '@/features/diagnostic-procedures/progress'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import type { Database } from '@/lib/supabase/database.types'
@@ -11,6 +11,7 @@ import type { Database } from '@/lib/supabase/database.types'
 type AiReportDraft = Database['public']['Tables']['ai_report_drafts']['Row']
 type AiReportDraftSection = Database['public']['Tables']['ai_report_draft_sections']['Row']
 type CaptureItem = Database['public']['Tables']['capture_items']['Row']
+type DiagnosticAuditEvent = { event_type?: string; occurred_at?: string; profile_id?: string; profile_name?: string | null; step_id?: string | null; step_title?: string | null; details?: Record<string, unknown> }
 
 type StepMetadata = {
   section_type?: string
@@ -44,6 +45,28 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function getMetadata(section: AiReportDraftSection): StepMetadata {
   return isRecord(section.metadata) ? section.metadata as StepMetadata : {}
+}
+
+function formatTimestamp(value: string | null | undefined) {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+}
+
+function getDiagnosticAuditEvents(draft: AiReportDraft | null): DiagnosticAuditEvent[] {
+  if (!draft || !isRecord(draft.report_structure) || !Array.isArray(draft.report_structure.audit_events)) return []
+  return draft.report_structure.audit_events.filter(isRecord).slice(-8).reverse() as DiagnosticAuditEvent[]
+}
+
+function getSignOffInfo(draft: AiReportDraft | null) {
+  if (!draft || !isRecord(draft.report_structure)) return { signedOff: false, signedOffBy: null, signedOffAt: null, signOffName: null, statement: null }
+  return {
+    signedOff: draft.report_structure.signed_off === true,
+    signedOffBy: typeof draft.report_structure.signed_off_by === 'string' ? draft.report_structure.signed_off_by : null,
+    signedOffAt: typeof draft.report_structure.signed_off_at === 'string' ? draft.report_structure.signed_off_at : null,
+    signOffName: typeof draft.report_structure.sign_off_name === 'string' ? draft.report_structure.sign_off_name : null,
+    statement: typeof draft.report_structure.sign_off_statement === 'string' ? draft.report_structure.sign_off_statement : null,
+  }
 }
 
 function getProcedureInfo(draft: AiReportDraft | null) {
@@ -321,6 +344,8 @@ export default async function DiagnosticProcedurePage({
   const planLimits = getPlanLimits(parseBillingPlan(profile.organization.plan))
   const uploadAction = uploadAndExtractDiagnosticProcedure.bind(null, session.id)
   const procedureInfo = getProcedureInfo(diagnosticDraft)
+  const signOffInfo = getSignOffInfo(diagnosticDraft)
+  const auditEvents = getDiagnosticAuditEvents(diagnosticDraft)
   const allStepSections = (sections ?? []).filter((section) => getMetadata(section).section_type === 'diagnostic_procedure_step')
   const procedureProgress = getDiagnosticProcedureProgress(allStepSections, captures ?? [])
   const stepSections = allStepSections.filter((section) => getMetadata(section).visible !== false)
@@ -329,6 +354,10 @@ export default async function DiagnosticProcedurePage({
   const approveAction = async () => {
     'use server'
     if (diagnosticDraft) await approveDiagnosticProcedureStructure(diagnosticDraft.id)
+  }
+  const signOffAction = async (formData: FormData) => {
+    'use server'
+    if (diagnosticDraft) await signOffDiagnosticProcedure(diagnosticDraft.id, formData)
   }
 
   return (
@@ -369,7 +398,9 @@ export default async function DiagnosticProcedurePage({
               <p className="eyebrow">Extracted procedure</p>
               <h2>{procedureInfo?.title ?? diagnosticDraft.title ?? 'Diagnostic Procedure'}</h2>
               <p className="muted">{[procedureInfo?.manufacturer, procedureInfo?.documentType, procedureInfo?.sourceFile].filter(Boolean).join(' · ')}</p>
-              <p className="muted">Status: {(procedureInfo?.status ?? 'technician_review_required').replace(/_/g, ' ')}</p><form action={approveAction}><button className="button button-primary touch-target">Approve corrected structure for use</button></form><p className="notice info"><strong>Guardrail:</strong> OEM flow text is shown for reference only. The technician decides what was tested and documents the result.</p>
+              <p className="muted">Status: {(procedureInfo?.status ?? 'technician_review_required').replace(/_/g, ' ')}</p>
+              <p className="muted">Sign-off: {signOffInfo.signedOff ? `Signed by ${signOffInfo.signOffName ?? signOffInfo.signedOffBy ?? 'technician'}${formatTimestamp(signOffInfo.signedOffAt) ? ` at ${formatTimestamp(signOffInfo.signedOffAt)}` : ''}` : 'Not signed off'}</p>
+              <form action={approveAction}><button className="button button-primary touch-target">Approve corrected structure for use</button></form><p className="notice info"><strong>Guardrail:</strong> OEM flow text is shown for reference only. The technician decides what was tested and documents the result.</p>
             </div>
           </section>
 
@@ -386,6 +417,27 @@ export default async function DiagnosticProcedurePage({
               <div><span>Missing required documentation</span><strong>{procedureProgress.missingRequiredDocumentationCount}</strong></div>
             </div>
             {procedureProgress.nextIncompleteStepId ? <Link className="button button-secondary touch-target" href={`/dashboard/sessions/${session.id}/diagnostic-procedure#step-${procedureProgress.nextIncompleteStepId}`}>Open next incomplete documentation item.</Link> : null}
+          </section>
+
+          <section className="card detail-card form-stack">
+            <div className="report-section-heading generated-report-heading">
+              <div><p className="eyebrow">Technician sign-off</p><h2>{signOffInfo.signedOff ? 'Procedure signed off' : 'Sign off procedure documentation'}</h2><p className="muted">Sign-off records technician ownership of documented OEM procedure results for warranty, disputes, fleet records, and review.</p></div>
+              <span className={signOffInfo.signedOff ? 'status-pill success' : 'status-pill attention'}>{signOffInfo.signedOff ? 'Signed off' : 'Not signed'}</span>
+            </div>
+            {signOffInfo.signedOff ? <p className="notice success"><strong>{signOffInfo.signOffName ?? 'Technician'}</strong> signed off {formatTimestamp(signOffInfo.signedOffAt) ?? ''}. {signOffInfo.statement}</p> : (
+              <form action={signOffAction} className="form-stack">
+                {!procedureProgress.reportReady ? <label className="field-stack notice warning"><span><input type="checkbox" name="incomplete_acknowledged" /> I acknowledge incomplete, blocked, warning, or missing required documentation remains and sign off with that limitation recorded.</span></label> : null}
+                <label className="field-stack"><span className="label">Technician name</span><input className="input" name="sign_off_name" defaultValue={profile.full_name} required /></label>
+                <input type="hidden" name="report_ready" value={procedureProgress.reportReady ? 'true' : 'false'} />
+                <label className="field-stack notice info"><span><input type="checkbox" name="sign_off_acknowledged" required /> I followed the OEM procedure and documented technician-selected results. AI did not diagnose, select branches, determine root cause, or recommend repair.</span></label>
+                <button className="button button-primary touch-target">Save technician sign-off</button>
+              </form>
+            )}
+          </section>
+
+          <section className="card detail-card form-stack">
+            <div><p className="eyebrow">Diagnostic audit trail</p><h2>Recent audit events</h2></div>
+            {auditEvents.length > 0 ? <ul className="muted">{auditEvents.map((event, index) => <li key={`${event.event_type}-${event.occurred_at}-${index}`}><strong>{(event.event_type ?? 'event').replace(/_/g, ' ')}</strong>{event.step_title ? ` · ${event.step_title}` : ''}{event.profile_name ? ` · ${event.profile_name}` : ''}{event.occurred_at ? ` · ${formatTimestamp(event.occurred_at)}` : ''}</li>)}</ul> : <p className="muted">No audit events recorded yet.</p>}
           </section>
           <div className="page-actions"><Link className="button button-secondary touch-target" href={`/dashboard/sessions/${session.id}/diagnostic-procedure`}>Full procedure view</Link>{stepSections.map((section) => <Link key={section.id} className="button button-secondary touch-target" href={`/dashboard/sessions/${session.id}/diagnostic-procedure?step=${section.id}#step-${getMetadata(section).step_id ?? section.section_key}`}>{getMetadata(section).step_number ?? 'Step'}</Link>)}</div>
           {visibleStepSections.map((section) => (

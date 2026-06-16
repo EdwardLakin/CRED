@@ -227,6 +227,10 @@ function getDiagnosticProcedureInfo(draft: ReportDraft | null) {
     manufacturer: typeof procedure.manufacturer === 'string' ? procedure.manufacturer : null,
     documentType: typeof procedure.document_type === 'string' ? procedure.document_type.replace(/_/g, ' ') : null,
     sourceFile: typeof procedure.source_file_name === 'string' ? procedure.source_file_name : null,
+    signedOff: draft.report_structure.signed_off === true,
+    signOffName: typeof draft.report_structure.sign_off_name === 'string' ? draft.report_structure.sign_off_name : null,
+    signedOffAt: typeof draft.report_structure.signed_off_at === 'string' ? draft.report_structure.signed_off_at : null,
+    signOffStatement: typeof draft.report_structure.sign_off_statement === 'string' ? draft.report_structure.sign_off_statement : null,
   }
 }
 
@@ -270,9 +274,10 @@ function buildDiagnosticProcedureReportHtml(params: { session: ReportSession; or
     { label: 'Manufacturer', value: info?.manufacturer ?? '' },
     { label: 'Document type', value: info?.documentType ?? '' },
     { label: 'Source file', value: info?.sourceFile ?? '' },
+    { label: 'Technician sign-off', value: info?.signedOff ? `Signed by ${info.signOffName ?? 'technician'}${info.signedOffAt ? ` at ${formatDateInTimeZone(new Date(info.signedOffAt), params.timeZone)}` : ''}` : 'Not signed off' },
     { label: 'Date', value: formatDateInTimeZone(new Date(), params.timeZone) },
   ]
-  return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(info?.title ?? params.session.title)} diagnostic procedure documentation</title><style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Diagnostic Procedure Workspace</p><h1>${escapeHtml(info?.title ?? params.session.title)}</h1><p class="notice info"><strong>Documentation support only.</strong> Follow OEM procedure. Technician owns all conclusions and recommendations. AI does not diagnose, determine root cause, or recommend repair.</p>${renderDefinitionRows(details)}</header>${`<section class="item service-section"><h2>Documentation completeness summary</h2>${renderDefinitionRows([
+  return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(info?.title ?? params.session.title)} diagnostic procedure documentation</title><style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Diagnostic Procedure Workspace</p><h1>${escapeHtml(info?.title ?? params.session.title)}</h1><p class="notice info"><strong>Documentation support only.</strong> Follow OEM procedure. Technician owns all conclusions and recommendations. AI does not diagnose, determine root cause, or recommend repair.</p>${info?.signedOff ? `<p class="notice info"><strong>Signed off by ${escapeHtml(info.signOffName ?? 'technician')}</strong>${info.signedOffAt ? ` at ${escapeHtml(formatDateInTimeZone(new Date(info.signedOffAt), params.timeZone))}` : ''}. ${escapeHtml(info.signOffStatement ?? '')}</p>` : '<p class="notice warning"><strong>Technician sign-off pending.</strong></p>'}${renderDefinitionRows(details)}</header>${`<section class="item service-section"><h2>Documentation completeness summary</h2>${renderDefinitionRows([
     { label: 'Percent complete', value: `${progress.percentComplete}%` },
     { label: 'Visible steps', value: String(progress.totalVisibleSteps) },
     { label: 'Incomplete steps', value: String(progress.incompleteSteps) },
