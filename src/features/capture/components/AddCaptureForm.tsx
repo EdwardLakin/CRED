@@ -27,7 +27,7 @@ import { createClient } from '@/lib/supabase/client'
 const MAX_BATCH_FILES = 10
 const VOICE_NOTE_TIMEOUT_MS = 60_000
 
-type UploadStatus = 'queued' | 'uploading' | 'saved' | 'failed'
+type UploadStatus = 'queued' | 'uploading' | 'saved' | 'ai_queued' | 'needs_queue_retry' | 'failed'
 type DiagnosticEvidenceRole = 'meter_reading_photo' | 'scan_tool_screenshot' | 'connector_photo' | 'wiring_reference' | 'voice_note' | 'technician_note' | 'other'
 
 const DIAGNOSTIC_EVIDENCE_ROLE_OPTIONS: Array<{ value: DiagnosticEvidenceRole; label: string }> = [
@@ -204,21 +204,19 @@ function formatFileSize(bytes: number) {
 function SubmitButton({
   hasEvidence,
   pending,
-  hasActiveUploads,
   retryOnly,
 }: {
   hasEvidence: boolean
   pending: boolean
-  hasActiveUploads: boolean
   retryOnly: boolean
 }) {
   return (
     <Button
       type="submit"
       className="button button-primary touch-target"
-      disabled={pending || hasActiveUploads || !hasEvidence}
+      disabled={pending || !hasEvidence}
     >
-      {pending || hasActiveUploads
+      {pending
         ? 'Saving…'
         : retryOnly
           ? 'Retry failed upload'
@@ -228,9 +226,11 @@ function SubmitButton({
 }
 
 function getUploadStatusLabel(status: UploadStatus, error?: string) {
-  if (status === 'uploading') return 'Uploading…'
+  if (status === 'uploading') return 'Uploading'
+  if (status === 'ai_queued') return 'Saved — AI queued'
+  if (status === 'needs_queue_retry') return 'Saved — AI retry needed'
   if (status === 'saved') return 'Saved'
-  if (status === 'failed') return error ? `Upload failed — retry: ${error}` : 'Upload failed — retry'
+  if (status === 'failed') return error ?? 'Upload failed. Please retry.'
   return 'Queued'
 }
 
@@ -249,7 +249,7 @@ function getFriendlyUploadError(message: string) {
     return 'Upload failed — bad connection'
   }
 
-  return message || 'Upload failed — retry'
+  return message || 'Upload failed. Please retry.'
 }
 
 
@@ -329,7 +329,6 @@ export function AddCaptureForm({
     captureIntent === 'auto_evidence' || captureIntent === 'auto_image'
   const captureSizeLabel = maxFileSizeLabel ?? formatFileSize(maxCaptureFileSizeBytes)
   const videoSizeLabel = formatFileSize(maxVideoFileSizeBytes)
-  const hasActiveUploads = selectedFiles.some((file) => file.status === 'uploading')
   const failedFiles = selectedFiles.filter((file) => file.status === 'failed')
   const uploadableFiles = failedFiles.length > 0 ? failedFiles : selectedFiles.filter((file) => file.status === 'queued')
 
@@ -375,7 +374,7 @@ export function AddCaptureForm({
 
   function buildSelectedEvidenceFiles(files: File[]): SelectedEvidenceFile[] {
     return files.map((file, index) => ({
-      id: getSelectedEvidenceFileId(file, index),
+      id: `${getSelectedEvidenceFileId(file, index)}-${typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`,
       file,
       name: file.name,
       type: file.type,
@@ -439,11 +438,17 @@ export function AddCaptureForm({
     }
 
     const evidenceFiles = buildSelectedEvidenceFiles(files)
-    replaceSelectedFiles(evidenceFiles)
+    const nextFiles = [...selectedFilesRef.current, ...evidenceFiles]
+    selectedFilesRef.current = nextFiles
+    setSelectedFiles(nextFiles)
     setClientError(null)
 
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+
     if (captureIntent === 'auto_image' || captureIntent === 'auto_evidence') {
-      await autoSaveSelectedMedia(evidenceFiles)
+      void autoSaveSelectedMedia(evidenceFiles)
     }
   }
 
@@ -545,16 +550,14 @@ export function AddCaptureForm({
     }
 
     setActionError(null)
-    setSaveMessage(`Uploading ${pendingFiles.length} file${pendingFiles.length === 1 ? '' : 's'}…`)
-    isSavingRef.current = true
-    setIsSaving(true)
+    setSaveMessage(`Uploading ${pendingFiles.length} file${pendingFiles.length === 1 ? '' : 's'} in background…`)
 
     try {
       const result = await uploadSelectedFiles(pendingFiles)
 
       if (result.savedCount > 0) {
         cleanupRecognition()
-        setSaveMessage(isDiagnosticProcedureAttachment ? `${result.savedCount} attachment${result.savedCount === 1 ? '' : 's'} saved for this procedure step.` : `${result.savedCount} capture${result.savedCount === 1 ? '' : 's'} saved and queued for AI.`)
+        setSaveMessage(isDiagnosticProcedureAttachment ? `${result.savedCount} attachment${result.savedCount === 1 ? '' : 's'} saved for this procedure step.` : `${result.savedCount} capture${result.savedCount === 1 ? '' : 's'} saved. AI processing will retry if needed.`)
         triggerBackgroundProcessing()
         router.refresh()
       }
@@ -570,8 +573,7 @@ export function AddCaptureForm({
         )
       }
     } finally {
-      isSavingRef.current = false
-      setIsSaving(false)
+      // Background uploads should not block camera/gallery controls.
     }
   }
 
@@ -643,7 +645,12 @@ export function AddCaptureForm({
         }
 
         savedCount += 1
-        updateSelectedFileStatus(selectedFile.id, 'saved', undefined, result.captureItemId)
+        updateSelectedFileStatus(
+          selectedFile.id,
+          result.processingStatus === 'queued' ? 'ai_queued' : result.processingStatus === 'needs_queue_retry' ? 'needs_queue_retry' : 'saved',
+          undefined,
+          result.captureItemId,
+        )
       } catch (error) {
         failedCount += 1
         const message = getFriendlyUploadError(
@@ -685,7 +692,7 @@ export function AddCaptureForm({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
-    if (isSavingRef.current || isSaving || hasActiveUploads) {
+    if (isSavingRef.current || isSaving) {
       return
     }
 
@@ -1018,7 +1025,7 @@ export function AddCaptureForm({
       {isDiagnosticProcedureAttachment ? (
         <label className="field-stack capture-secondary-panel">
           <span className="label">Evidence role for this step attachment</span>
-          <select className="input" value={diagnosticEvidenceRole} onChange={(event) => setDiagnosticEvidenceRole(event.target.value as DiagnosticEvidenceRole)} disabled={isSaving || hasActiveUploads}>
+          <select className="input" value={diagnosticEvidenceRole} onChange={(event) => setDiagnosticEvidenceRole(event.target.value as DiagnosticEvidenceRole)} disabled={isSaving}>
             {DIAGNOSTIC_EVIDENCE_ROLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
@@ -1039,7 +1046,7 @@ export function AddCaptureForm({
             type="button"
             className="capture-evidence-button touch-target"
             onClick={openCameraPicker}
-            disabled={isSaving || hasActiveUploads}
+            disabled={isSaving}
           >
             <span className="capture-evidence-icon" aria-hidden="true">📷</span>
             <span><strong>Camera</strong><small>Take photo, then add note</small></span>
@@ -1048,7 +1055,7 @@ export function AddCaptureForm({
             type="button"
             className="capture-evidence-button touch-target"
             onClick={openGalleryPicker}
-            disabled={isSaving || hasActiveUploads}
+            disabled={isSaving}
           >
             <span className="capture-evidence-icon" aria-hidden="true">🖼️</span>
             <span><strong>Gallery</strong><small>Choose media, then add note</small></span>
@@ -1057,7 +1064,7 @@ export function AddCaptureForm({
             type="button"
             className="capture-evidence-button touch-target"
             onClick={startVoiceNote}
-            disabled={isSaving || hasActiveUploads || voiceNoteStatus === 'listening'}
+            disabled={isSaving || voiceNoteStatus === 'listening'}
           >
             <span className="capture-evidence-icon" aria-hidden="true">🎙️</span>
             <span><strong>Voice Note</strong><small>Speak context quickly</small></span>
@@ -1066,7 +1073,7 @@ export function AddCaptureForm({
             type="button"
             className="capture-evidence-button touch-target"
             onClick={focusTextNote}
-            disabled={isSaving || hasActiveUploads}
+            disabled={isSaving}
           >
             <span className="capture-evidence-icon" aria-hidden="true">✍️</span>
             <span><strong>Text Note</strong><small>Type what matters</small></span>
@@ -1088,7 +1095,7 @@ export function AddCaptureForm({
           multiple={supportsMultipleFiles}
           className="input file-input camera-file-input"
           onChange={validateFileSelection}
-          disabled={isSaving || hasActiveUploads}
+          disabled={isSaving}
         />
         {selectedFiles.length > 0 ? (
           <div className="selected-evidence-list">
@@ -1189,7 +1196,7 @@ export function AddCaptureForm({
                       <button
                         type="submit"
                         className="secondary-link"
-                        disabled={isSaving || hasActiveUploads}
+                        disabled={isSaving}
                       >
                         Retry failed upload
                       </button>
@@ -1197,7 +1204,7 @@ export function AddCaptureForm({
                         type="button"
                         className="secondary-link danger-link"
                         onClick={() => removeSelectedFile(file.id)}
-                        disabled={isSaving || hasActiveUploads}
+                        disabled={isSaving}
                       >
                         Remove failed upload
                       </button>
@@ -1207,7 +1214,7 @@ export function AddCaptureForm({
                       type="button"
                       className="secondary-link danger-link"
                       onClick={() => removeSelectedFile(file.id)}
-                      disabled={isSaving || hasActiveUploads}
+                      disabled={isSaving}
                     >
                       Remove selected file
                     </button>
@@ -1255,7 +1262,7 @@ export function AddCaptureForm({
               type="button"
               className="button button-secondary touch-target"
               onClick={startVoiceNote}
-              disabled={isSaving || hasActiveUploads || voiceNoteStatus === 'listening'}
+              disabled={isSaving || voiceNoteStatus === 'listening'}
             >
               Start
             </button>
@@ -1302,7 +1309,6 @@ export function AddCaptureForm({
       <SubmitButton
         hasEvidence={uploadableFiles.length > 0 || note.trim().length > 0}
         pending={isSaving}
-        hasActiveUploads={hasActiveUploads}
         retryOnly={failedFiles.length > 0}
       />
 
@@ -1312,11 +1318,11 @@ export function AddCaptureForm({
             type="button"
             className="button button-primary touch-target"
             onClick={openCameraPicker}
-            disabled={isSaving || hasActiveUploads}
+            disabled={isSaving}
           >
             Camera
           </button>
-          {hasActiveUploads || isSaving ? (
+          {isSaving ? (
             <button type="button" className="button button-secondary touch-target" disabled>
               Done
             </button>
