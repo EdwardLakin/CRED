@@ -128,6 +128,10 @@ export type FormStructureSummary = {
   guidance: string[]
   source: ReportStructureSource
   sourceDocumentName: string | null
+  classification: string | null
+  blueprintSectionCount: number
+  blueprintFieldCount: number
+  mappedEvidenceCount: number
 }
 
 export type ReportStructureSource = 'uploaded_form' | 'uploaded_report' | 'uploaded_template' | 'generic_fallback'
@@ -819,12 +823,20 @@ export function getFormStructureSummary(reportStructure: Json | null, sections: 
     ? structure.report_structure_source as ReportStructureSource
     : null
   const isFormStructured = structureSource !== 'generic_fallback' && (structure.mode === 'form_structured' || hasFormFields)
+  const blueprint = isRecord(structure.form_blueprint) ? structure.form_blueprint : null
+  const blueprintSections = Array.isArray(blueprint?.sections) ? blueprint.sections : []
+  const blueprintFields = Array.isArray(blueprint?.fields) ? blueprint.fields : []
+  const mappings = Array.isArray(structure.evidence_field_mappings) ? structure.evidence_field_mappings : []
   return {
     isFormStructured,
     sourceCaptureIds,
     guidance: isFormStructured ? getCaptureGuidance(sections) : [],
     source: structureSource ?? (isFormStructured ? 'uploaded_form' : 'generic_fallback'),
     sourceDocumentName: typeof structure.source_document_name === 'string' ? structure.source_document_name : null,
+    classification: typeof blueprint?.classification === 'string' ? blueprint.classification : null,
+    blueprintSectionCount: blueprintSections.length,
+    blueprintFieldCount: blueprintFields.length,
+    mappedEvidenceCount: mappings.length,
   }
 }
 
@@ -1463,6 +1475,180 @@ export function buildEvidencePackages(captures: CaptureLike[], evidenceGroups: E
       duplicate_flags: allDuplicateFlags.filter((flag) => captureIds.includes(flag.capture_id)),
     }
   })
+}
+
+
+export type FormClassification = 'FORD_MPI' | 'ALBERTA_CVIP' | 'COMMERCIAL_VEHICLE_ROI' | 'WAJAX_FIELD_ORDER' | 'GENERIC_WORK_ORDER' | 'GENERIC_INSPECTION_FORM' | 'GENERIC_SERVICE_REPORT' | 'CUSTOM_FORM'
+
+export type FormBlueprintField = {
+  id: string
+  label: string
+  field_type: 'text' | 'measurement' | 'checkbox' | 'pass_fail' | 'signature' | 'notes' | 'header' | 'footer' | 'unknown'
+  section_id: string | null
+  page_index: number | null
+  value: string | null
+  source_capture_id: string
+}
+
+export type FormBlueprintSection = {
+  id: string
+  title: string
+  page_index: number | null
+  field_ids: string[]
+}
+
+export type FormBlueprint = {
+  version: 1
+  document_type: string
+  classification: FormClassification
+  classification_confidence: number
+  source_capture_ids: string[]
+  pages: Array<{ page_index: number; label: string; source_capture_id: string }>
+  sections: FormBlueprintSection[]
+  fields: FormBlueprintField[]
+  tables: Array<{ id: string; title: string; section_id: string | null; source_capture_id: string }>
+  checkboxes: string[]
+  pass_fail_indicators: string[]
+  signature_areas: string[]
+  notes_areas: string[]
+  measurement_fields: string[]
+  header_fields: string[]
+  footer_fields: string[]
+}
+
+export type EvidenceFieldMapping = {
+  capture_id: string
+  field_id: string | null
+  section_id: string | null
+  section_title: string
+  field_label: string | null
+  confidence: number
+  truth_source: 'technician_note' | 'technician_transcript' | 'captured_measurement' | 'explicit_selection' | 'ai_extraction' | 'ai_inference'
+  reason: string
+}
+
+const KNOWN_FORM_RULES: Array<{ classification: FormClassification; confidence: number; patterns: RegExp[] }> = [
+  { classification: 'FORD_MPI', confidence: 0.9, patterns: [/\bford\b/i, /multi[ -]?point|\bmp[iv]\b/i] },
+  { classification: 'ALBERTA_CVIP', confidence: 0.92, patterns: [/\balberta\b/i, /\bcvip\b|commercial vehicle inspection/i] },
+  { classification: 'COMMERCIAL_VEHICLE_ROI', confidence: 0.86, patterns: [/commercial vehicle/i, /record of inspection|\broi\b/i] },
+  { classification: 'WAJAX_FIELD_ORDER', confidence: 0.9, patterns: [/\bwajax\b/i, /field (service )?(order|report)|time card|charges/i] },
+  { classification: 'GENERIC_WORK_ORDER', confidence: 0.72, patterns: [/work order|repair order|complaint/i, /cause|correction|customer/i] },
+  { classification: 'GENERIC_INSPECTION_FORM', confidence: 0.7, patterns: [/inspection|checklist|pass|fail/i, /tire|brake|lighting|vehicle/i] },
+  { classification: 'GENERIC_SERVICE_REPORT', confidence: 0.68, patterns: [/service report|field service/i, /equipment|work performed|technician/i] },
+]
+
+function classifyFormBlueprintText(text: string): { classification: FormClassification; confidence: number } {
+  for (const rule of KNOWN_FORM_RULES) {
+    if (rule.patterns.every((pattern) => pattern.test(text))) return { classification: rule.classification, confidence: rule.confidence }
+  }
+  return { classification: 'CUSTOM_FORM', confidence: text.trim() ? 0.45 : 0 }
+}
+
+function inferBlueprintFieldType(label: string, value: string): FormBlueprintField['field_type'] {
+  const text = `${label} ${value}`
+  if (/sign|signature|accepted by|authorized by/i.test(text)) return 'signature'
+  if (/notes?|comments?|remarks?|complaint|cause|correction/i.test(text)) return 'notes'
+  if (/pass|fail|ok|defect|reject/i.test(text)) return 'pass_fail'
+  if (/\[[ x✓✔]?\]|☐|☑|checkbox|yes\s*\/\s*no/i.test(text)) return 'checkbox'
+  if (/measurement|reading|mm|psi|volt|hours?|odometer|mileage|tread|brake|depth/i.test(text)) return 'measurement'
+  if (/customer|unit|vehicle|vin|serial|make|model|date|work order|plate/i.test(text)) return 'header'
+  if (/footer|page \d|terms|disclaimer/i.test(text)) return 'footer'
+  return 'text'
+}
+
+export function extractFormBlueprint(captures: CaptureLike[]): FormBlueprint | null {
+  const formCaptures = selectPrimaryFormCaptures(captures)
+  if (formCaptures.length === 0) return null
+  const allText = formCaptures.map(textForCapture).join(' ')
+  const classification = classifyFormBlueprintText(allText)
+  const sections = new Map<string, FormBlueprintSection>()
+  const fields: FormBlueprintField[] = []
+  const pages = formCaptures.map((capture, index) => ({ page_index: index + 1, label: `Page ${index + 1}`, source_capture_id: capture.id }))
+
+  for (const [captureIndex, capture] of formCaptures.entries()) {
+    const sourceDocument = getSourceDocumentFields(capture).sourceDocument
+    const sourceSections = Array.isArray(sourceDocument?.sections) ? sourceDocument.sections : []
+    for (const [index, rawSection] of sourceSections.entries()) {
+      const title = clean(isRecord(rawSection) ? rawSection.title : rawSection, 120) || `Form section ${index + 1}`
+      const id = slug(title, `section_${captureIndex + 1}_${index + 1}`)
+      if (!sections.has(id)) sections.set(id, { id, title, page_index: captureIndex + 1, field_ids: [] })
+    }
+
+    const rows = fieldRowsFromCapture(capture)
+    const fallbackRows = rows.length > 0 ? [] : labelRowsFromText(capture)
+    for (const [index, row] of [...rows, ...fallbackRows].entries()) {
+      const sectionTitle = inferSectionTitle(`${row.key} ${row.label}`)
+      const sectionId = slug(sectionTitle, `section_${captureIndex + 1}`)
+      if (!sections.has(sectionId)) sections.set(sectionId, { id: sectionId, title: sectionTitle, page_index: captureIndex + 1, field_ids: [] })
+      const fieldType = inferBlueprintFieldType(row.label, row.value)
+      const fieldId = `${sectionId}_${slug(row.key || row.label, `field_${index + 1}`)}`
+      fields.push({ id: fieldId, label: row.label, field_type: fieldType, section_id: sectionId, page_index: captureIndex + 1, value: row.value === 'Not captured' ? null : row.value, source_capture_id: capture.id })
+      sections.get(sectionId)?.field_ids.push(fieldId)
+    }
+  }
+
+  return {
+    version: 1,
+    document_type: classification.classification === 'CUSTOM_FORM' ? 'custom_form' : classification.classification.toLowerCase(),
+    classification: classification.classification,
+    classification_confidence: classification.confidence,
+    source_capture_ids: formCaptures.map((capture) => capture.id),
+    pages,
+    sections: Array.from(sections.values()).slice(0, 40),
+    fields: fields.slice(0, 240),
+    tables: [],
+    checkboxes: fields.filter((field) => field.field_type === 'checkbox').map((field) => field.id),
+    pass_fail_indicators: fields.filter((field) => field.field_type === 'pass_fail').map((field) => field.id),
+    signature_areas: fields.filter((field) => field.field_type === 'signature').map((field) => field.id),
+    notes_areas: fields.filter((field) => field.field_type === 'notes').map((field) => field.id),
+    measurement_fields: fields.filter((field) => field.field_type === 'measurement').map((field) => field.id),
+    header_fields: fields.filter((field) => field.field_type === 'header').map((field) => field.id),
+    footer_fields: fields.filter((field) => field.field_type === 'footer').map((field) => field.id),
+  }
+}
+
+function truthSourceForCapture(capture: CaptureLike): EvidenceFieldMapping['truth_source'] {
+  if (clean(capture.technician_note, 20)) return 'technician_note'
+  if (clean(capture.transcript, 20)) return 'technician_transcript'
+  if (Object.keys(getExtractionFields(capture.extracted_data)).some((key) => /measurement|reading|value|depth|mm|psi|volt/i.test(key))) return 'captured_measurement'
+  if (isRecord(capture.extracted_data) && isRecord(capture.extracted_data.guidance)) return 'explicit_selection'
+  if (clean(capture.ai_summary, 20) || clean(capture.ocr_text, 20)) return 'ai_extraction'
+  return 'ai_inference'
+}
+
+export function mapEvidenceToFormBlueprint(captures: CaptureLike[], blueprint: FormBlueprint | null): EvidenceFieldMapping[] {
+  if (!blueprint) return []
+  const sourceIds = new Set(blueprint.source_capture_ids)
+  const sections = new Map(blueprint.sections.map((section) => [section.id, section]))
+  const evidenceCaptures = captures.filter((capture) => !sourceIds.has(capture.id))
+  return evidenceCaptures.flatMap((capture) => {
+    const captureText = normalizeForMatch(`${capture.technician_note ?? ''} ${capture.transcript ?? ''} ${capture.ai_summary ?? ''} ${capture.ocr_text ?? ''} ${JSON.stringify(getExtractionFields(capture.extracted_data))}`)
+    if (!captureText) return []
+    const candidates = blueprint.fields.map((field) => {
+      const section = field.section_id ? sections.get(field.section_id) : null
+      const fieldText = normalizeForMatch(`${section?.title ?? ''} ${field.label}`)
+      const tokens = fieldText.split(' ').filter((token) => token.length > 2)
+      const hits = tokens.filter((token) => captureText.includes(token)).length
+      const componentHits = componentHitsForBlueprint(captureText, fieldText)
+      const confidence = Math.min(0.98, (hits / Math.max(tokens.length, 1)) * 0.65 + componentHits * 0.12 + (field.field_type === 'measurement' && /\b\d+(?:\.\d+)?\s*(mm|psi|v|volt|hours?)\b/.test(captureText) ? 0.18 : 0))
+      return { field, section, confidence }
+    }).filter((candidate) => candidate.confidence >= 0.22).sort((a, b) => b.confidence - a.confidence).slice(0, 3)
+    return candidates.map((candidate) => ({
+      capture_id: capture.id,
+      field_id: candidate.field.id,
+      section_id: candidate.section?.id ?? null,
+      section_title: candidate.section?.title ?? 'Unmapped evidence',
+      field_label: candidate.field.label,
+      confidence: Number(candidate.confidence.toFixed(2)),
+      truth_source: truthSourceForCapture(capture),
+      reason: 'Matched evidence text against extracted form section and field labels.',
+    }))
+  })
+}
+
+function componentHitsForBlueprint(captureText: string, fieldText: string) {
+  const terms = ['brake', 'tire', 'tyre', 'wheel', 'lighting', 'light', 'windshield', 'glass', 'body', 'engine', 'battery', 'fluid', 'leak', 'complaint', 'cause', 'correction']
+  return terms.filter((term) => captureText.includes(term) && fieldText.includes(term)).length
 }
 
 function sanitizeReportNodeForSession(value: Json, sessionCaptureIds: Set<string>): Json | undefined {

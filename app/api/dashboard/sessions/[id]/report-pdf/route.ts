@@ -137,6 +137,25 @@ function getProfessionalRows(rows: Array<{ label: string; value: string }>) {
   return captured.length > 0 ? captured : visibleRows.slice(0, 4)
 }
 
+
+function buildStructuredFormDataHtml(reportStructure: Json | null) {
+  const structure = isRecord(reportStructure) ? reportStructure : {}
+  const blueprint = isRecord(structure.form_blueprint) ? structure.form_blueprint : null
+  if (!blueprint) return ''
+  const sections = Array.isArray(blueprint.sections) ? blueprint.sections : []
+  const fields = Array.isArray(blueprint.fields) ? blueprint.fields : []
+  const mappings = Array.isArray(structure.evidence_field_mappings) ? structure.evidence_field_mappings : []
+  const classification = typeof blueprint.classification === 'string' ? blueprint.classification.replace(/_/g, ' ') : 'CUSTOM FORM'
+  const sectionRows = sections.slice(0, 12).flatMap((section) => {
+    if (!isRecord(section)) return []
+    const sectionId = typeof section.id === 'string' ? section.id : ''
+    const title = typeof section.title === 'string' ? section.title : 'Form section'
+    const count = fields.filter((field) => isRecord(field) && field.section_id === sectionId).length
+    return [{ label: title, value: `${count} fields` }]
+  })
+  return `<section class="item service-section"><h2>Structured Form Data</h2><p class="muted">Export package follows the uploaded form blueprint (${escapeHtml(classification)}). Evidence mappings are stored once and referenced from findings and appendix.</p>${renderDefinitionRows([...sectionRows, { label: 'Evidence-field mappings', value: String(mappings.length) }])}</section>`
+}
+
 function renderDefinitionRows(rows: Array<{ label: string; value: string }>) {
   const visibleRows = getProfessionalRows(rows)
   if (visibleRows.length === 0) return ''
@@ -603,6 +622,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const derivedFormSections = deriveFormSectionsFromCaptures(captureItems)
   const formSections = documentSections.length > 0 ? documentSections : derivedFormSections
   const customerAssetHtml = renderDefinitionRows(buildCustomerAssetRows(formSections, session as unknown as Record<string, unknown>))
+  const structuredFormDataHtml = buildStructuredFormDataHtml(reportDraft?.report_structure ?? null)
   const reviewDocument = buildNormalizedReportModel({ captures: captureItems, sections: formSections, draftSections: visibleReportSections, measurements: reportDraft?.measurements ?? [], findings: reportDraft?.findings ?? [] })
   const unattachedDetails = reviewDocument.unattachedDetails
   const unattachedHtml = unattachedDetails.length > 0 ? `<section class="item service-section"><h2>Supporting Evidence</h2>${renderDefinitionRows(unattachedDetails.map((detail) => ({ label: detail.label, value: detail.value })))}</section>` : ''
@@ -619,7 +639,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
 
   const toolbarHtml = previewOnly ? '' : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>'
   const html = `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Report Header</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'No asset details')} · ${escapeHtml(formatDateInTimeZone(new Date(), timeZone))}</p></header>${summaryHtml}${customerAssetHtml || referenceHtml ? `<section class="item service-section"><h2>Asset / Customer Information</h2>${customerAssetHtml}${referenceHtml}</section>` : ''}${findingsHtml}${unattachedHtml}${buildFinalNotesHtml(session)}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile, reportSignatures, signatureUrls)}${supportingHtml}${appendixHtml}</main></body></html>`
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Report Header</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'No asset details')} · ${escapeHtml(formatDateInTimeZone(new Date(), timeZone))}</p></header>${summaryHtml}${structuredFormDataHtml}${customerAssetHtml || referenceHtml ? `<section class="item service-section"><h2>Asset / Customer Information</h2>${customerAssetHtml}${referenceHtml}</section>` : ''}${findingsHtml}${unattachedHtml}${buildFinalNotesHtml(session)}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile, reportSignatures, signatureUrls)}${supportingHtml}${appendixHtml}</main></body></html>`
 
   return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
 }

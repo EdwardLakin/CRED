@@ -679,7 +679,13 @@ function GeneratedReportReview({
           <strong>Structure source:</strong>{" "}
           {structureSourceLabel}
           {formStructureSummary.sourceDocumentName ? ` · ${formStructureSummary.sourceDocumentName}` : ""}
+          {formStructureSummary.classification ? ` · ${formStructureSummary.classification.replace(/_/g, " ")}` : ""}
         </p>
+        {formStructureSummary.isFormStructured ? (
+          <p className="muted">
+            <strong>Form intelligence:</strong> {formStructureSummary.blueprintSectionCount} sections, {formStructureSummary.blueprintFieldCount} fields, {formStructureSummary.mappedEvidenceCount} evidence-to-field mappings.
+          </p>
+        ) : null}
         {progress.missingReadinessItems.length > 0 ? (
           <p className="notice info"><strong>Missing required manual items:</strong> {progress.missingReadinessItems.join(', ')}.</p>
         ) : null}

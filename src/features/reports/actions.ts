@@ -13,7 +13,7 @@ import { FINAL_NOTES_MODEL, FINAL_NOTES_PROMPT_VERSION, generateFinalNotes } fro
 import { AI_REPORT_DRAFT_MODEL, AI_REPORT_DRAFT_PROMPT_VERSION, generateReportDraft } from '@/lib/openai/report-draft-generator'
 import type { OrganizationPlan } from '@/lib/stripe'
 import { buildEvidenceGroups, buildEvidencePackages,
-  sanitizeReportStructureForSession, buildNormalizedReportFields, deriveFormSectionsFromCaptures, scoreFormReferenceCapture, selectPrimaryFormCaptures, stripConfidenceText, GENERIC_REPORT_SECTION_TITLES, getReportStructureSourceMetadata, sanitizeCapturesForImageAiAssist } from '@/features/reports/report-structure'
+  sanitizeReportStructureForSession, buildNormalizedReportFields, deriveFormSectionsFromCaptures, extractFormBlueprint, mapEvidenceToFormBlueprint, scoreFormReferenceCapture, selectPrimaryFormCaptures, stripConfidenceText, GENERIC_REPORT_SECTION_TITLES, getReportStructureSourceMetadata, sanitizeCapturesForImageAiAssist } from '@/features/reports/report-structure'
 import type { Json } from '@/lib/supabase/database.types'
 
 const REPORT_SHARE_EXPIRATION_DAYS = 30
@@ -687,7 +687,9 @@ export async function generateAiReportDraft(sessionId: string) {
   })), profile.organization.image_ai_assist_enabled)
   const structureSourceMetadata = getReportStructureSourceMetadata(normalizedCaptures)
   const formSections = deriveFormSectionsFromCaptures(normalizedCaptures)
-  const formCaptureIds = selectPrimaryFormCaptures(normalizedCaptures).map((capture) => capture.id)
+  const formBlueprint = extractFormBlueprint(normalizedCaptures)
+  const evidenceFieldMappings = mapEvidenceToFormBlueprint(normalizedCaptures, formBlueprint)
+  const formCaptureIds = formBlueprint?.source_capture_ids ?? selectPrimaryFormCaptures(normalizedCaptures).map((capture) => capture.id)
   if (structureSourceMetadata.report_structure_source === 'generic_fallback') {
     draftOutput = {
       ...draftOutput,
@@ -705,6 +707,10 @@ export async function generateAiReportDraft(sessionId: string) {
     mode: formSections.length > 0 ? 'form_structured' : 'evidence_first',
     ...structureSourceMetadata,
     form_sections: formSections,
+    form_blueprint: formBlueprint,
+    structured_form_data: formBlueprint ? { blueprint: formBlueprint, field_mappings: evidenceFieldMappings } : null,
+    evidence_field_mappings: evidenceFieldMappings,
+    export_package: { artifacts: ['structured_form_data', 'evidence_report', 'evidence_appendix'], duplicate_policy: 'evidence_used_once_as_truth' },
     form_capture_ids: formCaptureIds,
     evidence_groups: buildEvidencePackages(normalizedCaptures, evidenceGroups),
     evidence_cards: evidenceGroups,
@@ -738,6 +744,23 @@ export async function generateAiReportDraft(sessionId: string) {
 
   if (draftError || !draft) {
     redirect(getReportRedirectPath(session.id, { error: draftError?.message ?? 'Could not save report.' }))
+  }
+
+  if (formBlueprint) {
+    const formBlueprintStore = supabase as unknown as { from: (table: 'form_blueprints') => { upsert: (values: Record<string, unknown>, options: { onConflict: string }) => Promise<unknown> } }
+    await formBlueprintStore.from('form_blueprints').upsert({
+      documentation_session_id: session.id,
+      organization_id: profile.organization_id,
+      source_capture_ids: formBlueprint.source_capture_ids,
+      document_type: formBlueprint.document_type,
+      classification: formBlueprint.classification,
+      classification_confidence: formBlueprint.classification_confidence,
+      blueprint: formBlueprint,
+      structured_form_data: { blueprint: formBlueprint, field_mappings: evidenceFieldMappings },
+      evidence_field_mappings: evidenceFieldMappings,
+      export_package: { artifacts: ['structured_form_data', 'evidence_report', 'evidence_appendix'], duplicate_policy: 'evidence_used_once_as_truth' },
+      updated_at: now,
+    }, { onConflict: 'documentation_session_id' })
   }
 
   if (draftOutput.sections.length > 0) {
