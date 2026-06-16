@@ -40,6 +40,10 @@ type SectionMetadata = {
   required_measurements?: Json
   required_evidence?: Json
   oem_flow_text?: string | null
+  oem_branches?: Json
+  external_references?: Json
+  visible?: boolean
+  extraction_review_status?: string
   extraction_warnings?: Json
   technician_status?: string
   technician_readings?: Json
@@ -90,6 +94,8 @@ function buildReportStructure(params: {
       technician_owns_conclusions: true,
       ai_diagnosis_disabled: true,
     },
+    procedure_status: 'technician_review_required',
+    extraction_status: 'extracted',
     procedure: {
       title: params.procedure.title,
       manufacturer: params.procedure.manufacturer,
@@ -103,6 +109,8 @@ function buildReportStructure(params: {
     steps: params.procedure.steps.map((step, index) => ({
       ...step,
       sort_order: index + 1,
+      visible: true,
+      extraction_review_status: 'technician_review_required',
       technician_status: 'not_tested',
       technician_readings: [],
       technician_notes: null,
@@ -271,6 +279,8 @@ async function saveDiagnosticProcedureDraft(input: {
         required_evidence: step.required_evidence,
         oem_flow_text: step.oem_flow_text,
         extraction_warnings: step.extraction_warnings,
+        visible: true,
+        extraction_review_status: 'technician_review_required',
         technician_status: 'not_tested',
         technician_readings: [],
         technician_notes: null,
@@ -319,12 +329,104 @@ async function getAuthorizedStep(sectionId: string) {
   return { ...workspace, section }
 }
 
+
+function parseJsonArrayField(formData: FormData, field: string, maxLength = 12000): Json {
+  const raw = getString(formData, field).slice(0, maxLength)
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? safeJson(parsed) : []
+  } catch {
+    return raw.split('\n').map((line) => line.trim()).filter(Boolean).map((text) => ({ text })) as Json
+  }
+}
+
+function patchDraftProcedureStatus(reportStructure: unknown, status: string): Json {
+  if (!isRecord(reportStructure)) return safeJson(reportStructure)
+  return safeJson({ ...reportStructure, procedure_status: status })
+}
+
 function updateDraftReportStructure(reportStructure: unknown, stepId: string, patch: SectionMetadata): Json {
   if (!isRecord(reportStructure)) return safeJson(reportStructure)
   const steps = Array.isArray(reportStructure.steps)
     ? reportStructure.steps.map((step) => isRecord(step) && step.step_id === stepId ? { ...step, ...patch } : step)
     : []
   return safeJson({ ...reportStructure, steps })
+}
+
+
+export async function updateDiagnosticProcedureStepExtraction(sectionId: string, formData: FormData): Promise<ActionResult> {
+  const { supabase, profile, section } = await getAuthorizedStep(sectionId)
+  if (!section) return { ok: false, error: 'Diagnostic procedure step not found.' }
+
+  const metadata = section.metadata as SectionMetadata
+  const stepId = typeof metadata.step_id === 'string' ? metadata.step_id : section.section_key
+  const title = getString(formData, 'title').slice(0, 180) || 'OEM procedure step'
+  const stepNumber = getString(formData, 'step_number').slice(0, 80) || null
+  const instruction = getString(formData, 'instruction').slice(0, 4000) || section.body || ''
+  const oemFlowText = getString(formData, 'oem_flow_text').slice(0, 1200) || null
+  const sortOrder = Math.max(1, Math.min(999, Number(getString(formData, 'sort_order') || 1) || 1))
+  const visible = formData.get('visible') === 'on'
+  const patch: SectionMetadata = {
+    title,
+    step_number: stepNumber,
+    instruction,
+    oem_flow_text: oemFlowText,
+    required_measurements: parseJsonArrayField(formData, 'required_measurements'),
+    oem_branches: parseJsonArrayField(formData, 'oem_branches'),
+    external_references: parseJsonArrayField(formData, 'external_references'),
+    visible,
+    extraction_review_status: 'technician_review_required',
+    updated_by: profile.id,
+    updated_at: new Date().toISOString(),
+  }
+  const nextMetadata = { ...metadata, ...patch }
+  const sectionTitle = `${stepNumber ? `${stepNumber}: ` : ''}${title}`.slice(0, 180)
+  const draftRecord = Array.isArray(section.ai_report_drafts) ? section.ai_report_drafts[0] : section.ai_report_drafts
+  let nextReportStructure = updateDraftReportStructure(isRecord(draftRecord) ? draftRecord.report_structure : null, stepId, { ...patch, sort_order: sortOrder } as SectionMetadata)
+  if (isRecord(nextReportStructure)) nextReportStructure = safeJson({ ...nextReportStructure, procedure_status: 'technician_review_required' })
+
+  const { error: sectionError } = await supabase
+    .from('ai_report_draft_sections')
+    .update({ title: sectionTitle, body: instruction, sort_order: sortOrder, metadata: safeJson(nextMetadata), updated_at: new Date().toISOString() })
+    .eq('id', section.id)
+    .eq('documentation_session_id', section.documentation_session_id)
+    .eq('organization_id', profile.organization_id)
+  if (sectionError) return { ok: false, error: sectionError.message }
+
+  const { error: draftError } = await supabase
+    .from('ai_report_drafts')
+    .update({ report_structure: nextReportStructure, status: 'needs_review', updated_at: new Date().toISOString() })
+    .eq('id', section.ai_report_draft_id)
+    .eq('documentation_session_id', section.documentation_session_id)
+    .eq('organization_id', profile.organization_id)
+  if (draftError) return { ok: false, error: draftError.message }
+
+  revalidatePath(`/dashboard/sessions/${section.documentation_session_id}/diagnostic-procedure`)
+  revalidatePath(`/dashboard/sessions/${section.documentation_session_id}/report`)
+  return { ok: true, message: 'Extracted step structure updated for technician review.' }
+}
+
+export async function approveDiagnosticProcedureStructure(draftId: string): Promise<ActionResult> {
+  const workspace = await requireSessionWorkspace()
+  const { data: draft, error } = await workspace.supabase
+    .from('ai_report_drafts')
+    .select('id, documentation_session_id, organization_id, report_structure')
+    .eq('id', draftId)
+    .eq('organization_id', workspace.profile.organization_id)
+    .single()
+  if (error || !draft) return { ok: false, error: 'Diagnostic procedure draft not found.' }
+  const nextReportStructure = patchDraftProcedureStatus(draft.report_structure, 'approved_for_use')
+  const { error: updateError } = await workspace.supabase
+    .from('ai_report_drafts')
+    .update({ report_structure: nextReportStructure, status: 'reviewed', updated_at: new Date().toISOString() })
+    .eq('id', draft.id)
+    .eq('documentation_session_id', draft.documentation_session_id)
+    .eq('organization_id', workspace.profile.organization_id)
+  if (updateError) return { ok: false, error: updateError.message }
+  revalidatePath(`/dashboard/sessions/${draft.documentation_session_id}/diagnostic-procedure`)
+  revalidatePath(`/dashboard/sessions/${draft.documentation_session_id}/report`)
+  return { ok: true, message: 'Procedure structure approved for use.' }
 }
 
 export async function updateDiagnosticStep(sectionId: string, formData: FormData): Promise<ActionResult> {

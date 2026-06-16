@@ -239,7 +239,7 @@ function captureMatchesDiagnosticStep(capture: ReportCapture, stepId: string) {
 
 function buildDiagnosticProcedureReportHtml(params: { session: ReportSession; organizationName: string; reportDraft: ReportDraft; reportSections: ReportDraftSection[]; captureItems: ReportCapture[]; signedUrls: Record<string, string>; showToolbar: boolean; timeZone: string | null }) {
   const info = getDiagnosticProcedureInfo(params.reportDraft)
-  const steps = params.reportSections.filter((section) => getDiagnosticStepMetadata(section).section_type === 'diagnostic_procedure_step')
+  const steps = params.reportSections.filter((section) => { const metadata = getDiagnosticStepMetadata(section); return metadata.section_type === 'diagnostic_procedure_step' && metadata.visible !== false })
   const toolbarHtml = params.showToolbar ? '<div class="toolbar"><button onclick="window.print()">Print / Save Documentation</button><p class="print-help">Documentation support only. Follow OEM procedure.</p></div>' : ''
   const stepHtml = steps.map((section) => {
     const metadata = getDiagnosticStepMetadata(section)

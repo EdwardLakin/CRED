@@ -171,7 +171,7 @@ function DiagnosticProcedureReport({
   markReviewedAction: ServerAction
 }) {
   const info = getDiagnosticProcedureInfo(currentReport)
-  const steps = sections.filter((section) => getDiagnosticStepMetadata(section).section_type === 'diagnostic_procedure_step')
+  const steps = sections.filter((section) => { const metadata = getDiagnosticStepMetadata(section); return metadata.section_type === 'diagnostic_procedure_step' && metadata.visible !== false })
   return (
     <main className="page-shell dashboard-shell report-preview-shell report-review-shell">
       <div className="section-header page-header report-preview-header report-review-header">

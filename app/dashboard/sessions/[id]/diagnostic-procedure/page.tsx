@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 
 import { getPlanLimits, parseBillingPlan } from '@/features/billing'
 import { AddCaptureForm } from '@/features/capture'
-import { updateDiagnosticStep, uploadAndExtractDiagnosticProcedure } from '@/features/diagnostic-procedures/actions'
+import { approveDiagnosticProcedureStructure, updateDiagnosticProcedureStepExtraction, updateDiagnosticStep, uploadAndExtractDiagnosticProcedure } from '@/features/diagnostic-procedures/actions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import type { Database } from '@/lib/supabase/database.types'
 
@@ -21,6 +21,10 @@ type StepMetadata = {
   required_measurements?: Array<{ key?: string; label?: string; unit?: string | null; expected_text?: string | null }>
   required_evidence?: Array<{ label?: string; evidence_type?: string }>
   oem_flow_text?: string | null
+  oem_branches?: Array<{ label?: string; text?: string; target_step_id?: string; target_step_number?: string }>
+  external_references?: Array<{ label?: string; text?: string; url?: string }>
+  visible?: boolean
+  extraction_review_status?: string
   extraction_warnings?: string[]
   technician_status?: string
   technician_readings?: Array<{ key?: string; label?: string; value?: string; unit?: string | null }>
@@ -47,6 +51,7 @@ function getProcedureInfo(draft: AiReportDraft | null) {
     manufacturer: typeof procedure.manufacturer === 'string' ? procedure.manufacturer : null,
     documentType: typeof procedure.document_type === 'string' ? procedure.document_type.replace(/_/g, ' ') : null,
     sourceFile: typeof procedure.source_file_name === 'string' ? procedure.source_file_name : null,
+    status: typeof draft.report_structure.procedure_status === 'string' ? draft.report_structure.procedure_status : 'technician_review_required',
   }
 }
 
@@ -64,6 +69,7 @@ function getCaptureLabel(capture: CaptureItem) {
 }
 
 function StepCard({
+  allSections,
   section,
   captures,
   sessionId,
@@ -71,6 +77,7 @@ function StepCard({
   maxCaptureFileSizeBytes,
   maxVideoFileSizeBytes,
 }: {
+  allSections: AiReportDraftSection[]
   section: AiReportDraftSection
   captures: CaptureItem[]
   sessionId: string
@@ -83,11 +90,17 @@ function StepCard({
   const readings = metadata.technician_readings ?? []
   const requiredMeasurements = metadata.required_measurements ?? []
   const stepCaptures = captures.filter((capture) => captureHasStep(capture, stepId))
+  const extractionUpdateAction = async (formData: FormData) => {
+    'use server'
+    await updateDiagnosticProcedureStepExtraction(section.id, formData)
+  }
   const updateAction = async (formData: FormData) => {
     'use server'
     await updateDiagnosticStep(section.id, formData)
   }
   const title = `${metadata.step_number ? `${metadata.step_number}: ` : ''}${metadata.title ?? section.title}`
+  const branches = metadata.oem_branches ?? []
+  const externalReferences = metadata.external_references ?? []
 
   return (
     <article className="card detail-card form-stack" id={`step-${stepId}`}>
@@ -99,6 +112,23 @@ function StepCard({
         </div>
         <span className="status-pill neutral">{metadata.technician_status?.replace(/_/g, ' ') ?? 'not tested'}</span>
       </div>
+
+      <form action={extractionUpdateAction} className="form-stack notice warning">
+        <strong>Technician extraction review required</strong>
+        <p>Correct OEM text only. Do not add diagnosis, repair recommendations, or inferred next steps.</p>
+        <label className="field-stack"><span className="label">Visible in procedure/report</span><input type="checkbox" name="visible" defaultChecked={metadata.visible !== false} /></label>
+        <div className="inspection-metric-grid">
+          <label className="field-stack"><span className="label">Step number</span><input className="input" name="step_number" defaultValue={metadata.step_number ?? ''} /></label>
+          <label className="field-stack"><span className="label">Sort order</span><input className="input" name="sort_order" type="number" min="1" defaultValue={section.sort_order ?? 1} /></label>
+        </div>
+        <label className="field-stack"><span className="label">Step title</span><input className="input" name="title" defaultValue={metadata.title ?? section.title} /></label>
+        <label className="field-stack"><span className="label">OEM instruction</span><textarea className="input note-textarea" name="instruction" rows={4} defaultValue={metadata.instruction ?? section.body ?? ''} /></label>
+        <label className="field-stack"><span className="label">Measurement labels/ranges (JSON array)</span><textarea className="input note-textarea" name="required_measurements" rows={3} defaultValue={JSON.stringify(requiredMeasurements, null, 2)} /></label>
+        <label className="field-stack"><span className="label">OEM flow text</span><textarea className="input note-textarea" name="oem_flow_text" rows={3} defaultValue={metadata.oem_flow_text ?? ''} /></label>
+        <label className="field-stack"><span className="label">OEM branch text (JSON array with optional target_step_id/target_step_number)</span><textarea className="input note-textarea" name="oem_branches" rows={3} defaultValue={JSON.stringify(branches, null, 2)} /></label>
+        <label className="field-stack"><span className="label">External references (JSON array)</span><textarea className="input note-textarea" name="external_references" rows={3} defaultValue={JSON.stringify(externalReferences, null, 2)} /></label>
+        <button className="button button-secondary touch-target">Save extraction corrections</button>
+      </form>
 
       <section className="notice info">
         <strong>OEM instruction text</strong>
@@ -118,6 +148,15 @@ function StepCard({
           </ul>
         </div>
       ) : null}
+
+      {branches.length > 0 ? (
+        <div className="field-stack"><h3>Technician-selected OEM branch navigation</h3>{branches.map((branch, index) => {
+          const target = allSections.find((candidate) => { const candidateMetadata = getMetadata(candidate); return (branch.target_step_id && candidateMetadata.step_id === branch.target_step_id) || (branch.target_step_number && candidateMetadata.step_number === branch.target_step_number) })
+          return <details key={`${branch.label ?? index}`}><summary>{branch.label ?? branch.text ?? `Branch ${index + 1}`}</summary><p className="muted">{branch.text ?? branch.label}</p>{target ? <Link className="secondary-link touch-target" href={`/dashboard/sessions/${sessionId}/diagnostic-procedure?step=${target.id}#step-${getMetadata(target).step_id ?? target.section_key}`}>Open referenced OEM step</Link> : null}</details>
+        })}</div>
+      ) : null}
+
+      {externalReferences.length > 0 ? <div className="field-stack"><h3>External references</h3><ul className="muted">{externalReferences.map((ref, index) => <li key={`${ref.label ?? index}`}>{ref.url ? <a href={ref.url}>{ref.label ?? ref.url}</a> : (ref.label ?? ref.text ?? 'Reference')}{ref.text ? ` — ${ref.text}` : ''}</li>)}</ul></div> : null}
 
       {metadata.required_evidence && metadata.required_evidence.length > 0 ? (
         <div className="field-stack">
@@ -202,10 +241,10 @@ export default async function DiagnosticProcedurePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ error?: string; extracted?: string; captureSaved?: string }>
+  searchParams: Promise<{ error?: string; extracted?: string; captureSaved?: string; step?: string }>
 }) {
   const { id } = await params
-  const { error, extracted, captureSaved } = await searchParams
+  const { error, extracted, captureSaved, step } = await searchParams
   const { supabase, profile } = await requireSessionWorkspace()
   const { data: session, error: sessionError } = await supabase
     .from('documentation_sessions')
@@ -247,7 +286,13 @@ export default async function DiagnosticProcedurePage({
   const planLimits = getPlanLimits(parseBillingPlan(profile.organization.plan))
   const uploadAction = uploadAndExtractDiagnosticProcedure.bind(null, session.id)
   const procedureInfo = getProcedureInfo(diagnosticDraft)
-  const stepSections = (sections ?? []).filter((section) => getMetadata(section).section_type === 'diagnostic_procedure_step')
+  const stepSections = (sections ?? []).filter((section) => getMetadata(section).section_type === 'diagnostic_procedure_step').filter((section) => getMetadata(section).visible !== false)
+  const singleStepSection = stepSections.find((section) => section.id === step || getMetadata(section).step_id === step)
+  const visibleStepSections = singleStepSection ? [singleStepSection] : stepSections
+  const approveAction = async () => {
+    'use server'
+    if (diagnosticDraft) await approveDiagnosticProcedureStructure(diagnosticDraft.id)
+  }
 
   return (
     <main className="page-shell dashboard-shell">
@@ -287,12 +332,14 @@ export default async function DiagnosticProcedurePage({
               <p className="eyebrow">Extracted procedure</p>
               <h2>{procedureInfo?.title ?? diagnosticDraft.title ?? 'Diagnostic Procedure'}</h2>
               <p className="muted">{[procedureInfo?.manufacturer, procedureInfo?.documentType, procedureInfo?.sourceFile].filter(Boolean).join(' · ')}</p>
-              <p className="notice info"><strong>Guardrail:</strong> OEM flow text is shown for reference only. The technician decides what was tested and documents the result.</p>
+              <p className="muted">Status: {(procedureInfo?.status ?? 'technician_review_required').replace(/_/g, ' ')}</p><form action={approveAction}><button className="button button-primary touch-target">Approve corrected structure for use</button></form><p className="notice info"><strong>Guardrail:</strong> OEM flow text is shown for reference only. The technician decides what was tested and documents the result.</p>
             </div>
           </section>
-          {stepSections.map((section) => (
+          <div className="page-actions"><Link className="button button-secondary touch-target" href={`/dashboard/sessions/${session.id}/diagnostic-procedure`}>Full procedure view</Link>{stepSections.map((section) => <Link key={section.id} className="button button-secondary touch-target" href={`/dashboard/sessions/${session.id}/diagnostic-procedure?step=${section.id}#step-${getMetadata(section).step_id ?? section.section_key}`}>{getMetadata(section).step_number ?? 'Step'}</Link>)}</div>
+          {visibleStepSections.map((section) => (
             <StepCard
               key={section.id}
+              allSections={stepSections}
               section={section}
               captures={captures ?? []}
               sessionId={session.id}
