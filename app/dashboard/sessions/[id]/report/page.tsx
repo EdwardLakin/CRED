@@ -655,6 +655,17 @@ function GeneratedReportReview({
           <div><span>Report Readiness</span><strong>{progress.reportReadiness}%</strong></div>
           <div><span>Remaining Required Items</span><strong>{progress.remainingRequiredItems}</strong></div>
         </div>
+        <p className="muted">
+          <strong>Structure:</strong>{" "}
+          {formStructureSummary.source === "generic_fallback"
+            ? "Generic evidence report"
+            : formStructureSummary.source === "uploaded_report"
+              ? "Uploaded report"
+              : formStructureSummary.source === "uploaded_template"
+                ? "Uploaded template"
+                : "Uploaded form"}
+          {formStructureSummary.sourceDocumentName ? ` · ${formStructureSummary.sourceDocumentName}` : ""}
+        </p>
         {progress.missingReadinessItems.length > 0 ? (
           <p className="notice info">Final verification remaining: {progress.missingReadinessItems.join(', ')}. AI cannot auto approve, certify, or sign this report.</p>
         ) : null}

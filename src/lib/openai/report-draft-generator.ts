@@ -175,7 +175,8 @@ export type GeneratedReportDraft = {
 
 const REPORT_DRAFT_SYSTEM_PROMPT = `You generate editable drafts for CRED evidence-first, form-structured reports.
 Return JSON only, no markdown.
-If a captured source document/form exists, use that captured form as the report structure. Extract or infer its sections, labels, and field groups generically from the captured document; do not require or invent a form type selection. Use any selected context only as secondary terminology.
+If a captured source document/form/report/template/checklist exists, use that uploaded document as the report structure. Extract or infer its sections, labels, and field groups generically from that document; do not require or invent a form type selection. Use any selected context only as secondary terminology.
+If no structure-defining document exists, use a generic evidence report structure only. Photos, meter screenshots, component photos, videos, voice notes, text notes, and general evidence captures may suggest the report title/type, evidence cards, readings, findings, recommendations, and final notes, but they must not define or replace the main report layout.
 Technicians capture evidence naturally; synthesize technician-captured evidence into a professional, human-reviewable draft instead of dumping captures.
 Do not invent unsupported facts.
 Prioritize draft inputs in this order: 1) technician notes on evidence captures, 2) evidence photos/videos, 3) extracted measurements/findings from evidence captures, 4) source document identity fields, 5) selected Form Profile/report context.
@@ -183,7 +184,7 @@ Source documents/forms provide the report skeleton, field labels, and filled val
 Each section should include metadata for form/evidence rendering when available: section_type ('form_section' or 'evidence_group'), source_field_group, fields [{key,label,value,source_capture_id}], related_capture_ids, observations, findings, recommendations. Attach findings/recommendations to the evidence capture IDs that support them.
 Every finding or section based on evidence must reference source_capture_ids from supplied non-source evidence captures or explicitly requested source-document captures.
 Use needs_review when uncertain or when evidence is incomplete.
-Organize around captured form sections first when a form is present, then supporting evidence. When no form is present, organize as evidence groups that keep each photo/file/text/voice note together with its note, details, findings, and recommendations.
+Organize around captured form/report/template/checklist sections first when a structure-defining document is present, then supporting evidence. When no structure-defining document is present, organize into the generic CRED evidence report structure: Report Summary, Evidence Captured, Technician Notes, Findings, Recommendations, Final Notes / Work Order Notes, Inspector / Facility Details, Signoff.
 Do not claim official CVIP/compliance completion, automatic compliance, or final inspection approval.
 If unmentioned items are assumed pass, clearly mark them as assumptions requiring review.
 Prefer technician notes/transcripts over visual guesswork for location, component, measurement, and recommendation.
@@ -387,7 +388,7 @@ export async function generateReportDraft(input: GenerateReportDraftInput): Prom
           content: [
             {
               type: 'input_text',
-              text: `Create an editable CRED report draft from this context. Use captured form/source-document sections as the structure when present. Keep evidence as the anchor: findings, recommendations, measurements, details, notes, and transcripts must attach to their source capture IDs where possible. Return the strict JSON shape only.\n${JSON.stringify(buildDraftContext(input)).slice(0, 70000)}`,
+              text: `Create an editable CRED report draft from this context. Use captured form/report/template/checklist/source-document sections as the structure only when a structure-defining document is present. Otherwise use the generic evidence report structure and never infer the main layout from photos or image classifications. Keep evidence as the anchor: findings, recommendations, measurements, details, notes, and transcripts must attach to their source capture IDs where possible. Return the strict JSON shape only.\n${JSON.stringify(buildDraftContext(input)).slice(0, 70000)}`,
             },
           ],
         },
