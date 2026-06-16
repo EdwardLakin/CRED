@@ -11,7 +11,7 @@ import {
   normalizeFieldServiceDetails,
 } from '@/features/field-service'
 import { buildCustomerAssetRows, buildNormalizedReportModel, classifyReferenceDocumentTitle, dedupeEvidenceDetails, deriveFormSectionsFromCaptures, getNormalizedFindingModels, getNormalizedInspectionStatus, getNormalizedRecommendedActions, isCustomerAssetSection, isMeaningfulCustomerReportText, normalizeDraftSections, shouldRenderDetail, shouldRenderDraftSectionStandalone, splitRecommendationText, stripConfidenceText } from '@/features/reports/report-structure'
-import { getDiagnosticProcedureProgress, getDiagnosticStepCompleteness } from '@/features/diagnostic-procedures/progress'
+import { asDiagnosticRecordArray, getDiagnosticProcedureProgress, getDiagnosticStepCompleteness } from '@/features/diagnostic-procedures/progress'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { recordUsageEvent } from '@/features/usage'
 import { formatDateInTimeZone } from '@/lib/date-format'
@@ -260,11 +260,11 @@ function buildDiagnosticProcedureReportHtml(params: { session: ReportSession; or
   const stepHtml = steps.map((section) => {
     const metadata = getDiagnosticStepMetadata(section)
     const stepId = typeof metadata.step_id === 'string' ? metadata.step_id : section.section_key
-    const readings = Array.isArray(metadata.technician_readings) ? metadata.technician_readings.filter(isRecord) : []
+    const readings = asDiagnosticRecordArray(metadata.technician_readings)
     const stepCaptures = params.captureItems.filter((capture) => captureMatchesDiagnosticStep(capture, stepId))
     const completeness = getDiagnosticStepCompleteness(section, params.captureItems)
     const readingsHtml = readings.length ? renderDefinitionRows(readings.map((reading, index) => ({ label: String(reading.label ?? `Reading ${index + 1}`), value: `${String(reading.value ?? '')}${reading.unit ? ` ${String(reading.unit)}` : ''}` }))) : '<p class="muted">No technician readings entered.</p>'
-    const evidenceHtml = stepCaptures.length ? Array.from(new Set(stepCaptures.map(getDiagnosticEvidenceRole))).map((role) => `<div><p class="muted">${escapeHtml(formatDiagnosticEvidenceRole(role))}</p><ul>${stepCaptures.filter((capture) => getDiagnosticEvidenceRole(capture) === role).map((capture) => { const url = params.signedUrls[capture.id]; return `<li>${escapeHtml(getEvidenceTitle(capture))}${capture.technician_note ? ` — ${escapeHtml(capture.technician_note)}` : ''}${url ? ` — <a href="${escapeHtml(url)}">Open attachment</a>` : ''}</li>` }).join('')}</ul></div>`).join('') : '<p class="muted">No step evidence attached.</p>'
+    const evidenceHtml = stepCaptures.length ? Array.from(new Set(stepCaptures.map(getDiagnosticEvidenceRole))).map((role) => `<div><p class="muted">${escapeHtml(formatDiagnosticEvidenceRole(role))}</p><ul>${stepCaptures.filter((capture) => getDiagnosticEvidenceRole(capture) === role).map((capture) => `<li>${escapeHtml(getEvidenceTitle(capture))}${capture.technician_note ? ` — ${escapeHtml(capture.technician_note)}` : ''}</li>`).join('')}</ul></div>`).join('') : '<p class="muted">No step evidence attached.</p>'
     return `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2>${typeof metadata.source_page_start === 'number' ? `<p class="muted">Source page${typeof metadata.source_page_end === 'number' && metadata.source_page_end !== metadata.source_page_start ? `s ${metadata.source_page_start}-${metadata.source_page_end}` : ` ${metadata.source_page_start}`}</p>` : ''}${Array.isArray(metadata.extraction_warnings) && metadata.extraction_warnings.length ? `<p class="notice warning">${escapeHtml(metadata.extraction_warnings.map(String).join('; '))}</p>` : ''}<p><strong>Status:</strong> ${escapeHtml(typeof metadata.technician_status === 'string' ? metadata.technician_status.replace(/_/g, ' ') : 'not tested')}</p><p><strong>Completeness:</strong> ${escapeHtml(completeness.badges.length ? completeness.badges.join(', ') : 'Incomplete')}</p>${typeof metadata.technician_selected_branch === 'string' && metadata.technician_selected_branch ? `<p><strong>Technician-selected branch:</strong> ${escapeHtml(metadata.technician_selected_branch)}</p>` : ''}<h3>OEM instruction text</h3><p>${escapeHtml(String(metadata.instruction ?? section.body ?? ''))}</p>${typeof metadata.oem_flow_text === 'string' && metadata.oem_flow_text ? `<p><strong>OEM flow text:</strong> ${escapeHtml(metadata.oem_flow_text)}</p>` : ''}<h3>Technician-entered readings</h3>${readingsHtml}${typeof metadata.technician_notes === 'string' && metadata.technician_notes ? `<h3>Technician notes</h3><p>${escapeHtml(metadata.technician_notes)}</p>` : ''}${typeof metadata.technician_conclusion === 'string' && metadata.technician_conclusion ? `<h3>Technician conclusion</h3><p>${escapeHtml(metadata.technician_conclusion)}</p>` : ''}<h3>Attached evidence</h3>${evidenceHtml}</section>`
   }).join('')
   const details = [
@@ -285,7 +285,7 @@ function buildDiagnosticProcedureReportHtml(params: { session: ReportSession; or
     { label: 'Missing readings/evidence/branches', value: String(progress.missingRequiredDocumentationCount) },
     { label: 'Warnings', value: String(progress.warningCount) },
     { label: 'Documentation ready', value: progress.reportReady ? 'Yes' : 'No' },
-  ])}</section>`}${stepHtml || '<section class="item"><h2>No procedure steps documented.</h2></section>'}</main></body></html>`
+  ])}</section>`}${stepHtml || '<section class="item"><h2>No visible procedure steps documented.</h2><p class="notice warning">All extracted steps may be hidden or unavailable.</p></section>'}</main></body></html>`
 }
 
 function buildFieldServiceReportHtml({

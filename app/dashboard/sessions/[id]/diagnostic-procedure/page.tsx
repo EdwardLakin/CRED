@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation'
 import { getPlanLimits, parseBillingPlan } from '@/features/billing'
 import { AddCaptureForm } from '@/features/capture'
 import { approveDiagnosticProcedureStructure, signOffDiagnosticProcedure, updateDiagnosticProcedureStepExtraction, updateDiagnosticStep, uploadAndExtractDiagnosticProcedure } from '@/features/diagnostic-procedures/actions'
-import { getDiagnosticProcedureProgress, getDiagnosticStepCompleteness } from '@/features/diagnostic-procedures/progress'
+import { asDiagnosticRecordArray, getDiagnosticProcedureProgress, getDiagnosticStepCompleteness } from '@/features/diagnostic-procedures/progress'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import type { Database } from '@/lib/supabase/database.types'
 
@@ -45,6 +45,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function getMetadata(section: AiReportDraftSection): StepMetadata {
   return isRecord(section.metadata) ? section.metadata as StepMetadata : {}
+}
+
+function getStepAnchorId(stepId: string) {
+  return `step-${encodeURIComponent(stepId).replace(/%/g, '')}`
+}
+
+function asStepArray<T extends Record<string, unknown>>(value: unknown): T[] {
+  return asDiagnosticRecordArray(value) as T[]
 }
 
 function formatTimestamp(value: string | null | undefined) {
@@ -128,8 +136,8 @@ function StepCard({
 }) {
   const metadata = getMetadata(section)
   const stepId = metadata.step_id ?? section.section_key
-  const readings = metadata.technician_readings ?? []
-  const requiredMeasurements = metadata.required_measurements ?? []
+  const readings = asStepArray<{ key?: string; label?: string; value?: string; unit?: string | null }>(metadata.technician_readings)
+  const requiredMeasurements = asStepArray<{ key?: string; label?: string; unit?: string | null; expected_text?: string | null }>(metadata.required_measurements)
   const stepCaptures = captures.filter((capture) => captureHasStep(capture, stepId))
   const extractionUpdateAction = async (formData: FormData) => {
     'use server'
@@ -140,12 +148,12 @@ function StepCard({
     await updateDiagnosticStep(section.id, formData)
   }
   const title = `${metadata.step_number ? `${metadata.step_number}: ` : ''}${metadata.title ?? section.title}`
-  const branches = metadata.oem_branches ?? []
-  const externalReferences = metadata.external_references ?? []
+  const branches = asStepArray<{ label?: string; text?: string; target_step_id?: string; target_step_number?: string }>(metadata.oem_branches)
+  const externalReferences = asStepArray<{ label?: string; text?: string; url?: string }>(metadata.external_references)
   const completeness = getDiagnosticStepCompleteness(section, captures)
 
   return (
-    <article className="card detail-card form-stack" id={`step-${stepId}`}>
+    <article className="card detail-card form-stack" id={getStepAnchorId(stepId)}>
       <div className="captures-section-header">
         <div>
           <p className="eyebrow">OEM procedure step</p>
@@ -199,17 +207,17 @@ function StepCard({
       {branches.length > 0 ? (
         <div className="field-stack"><h3>Technician-selected OEM branch navigation</h3>{branches.map((branch, index) => {
           const target = allSections.find((candidate) => { const candidateMetadata = getMetadata(candidate); return (branch.target_step_id && candidateMetadata.step_id === branch.target_step_id) || (branch.target_step_number && candidateMetadata.step_number === branch.target_step_number) })
-          return <details key={`${branch.label ?? index}`}><summary>{branch.label ?? branch.text ?? `Branch ${index + 1}`}</summary><p className="muted">{branch.text ?? branch.label}</p>{target ? <Link className="secondary-link touch-target" href={`/dashboard/sessions/${sessionId}/diagnostic-procedure?step=${target.id}#step-${getMetadata(target).step_id ?? target.section_key}`}>Open referenced OEM step</Link> : null}</details>
+          return <details key={`${branch.label ?? index}`}><summary>{branch.label ?? branch.text ?? `Branch ${index + 1}`}</summary><p className="muted">{branch.text ?? branch.label}</p>{target ? <Link className="secondary-link touch-target" href={`/dashboard/sessions/${sessionId}/diagnostic-procedure?step=${target.id}#${getStepAnchorId(getMetadata(target).step_id ?? target.section_key)}`}>Open referenced OEM step</Link> : null}</details>
         })}</div>
       ) : null}
 
       {externalReferences.length > 0 ? <div className="field-stack"><h3>External references</h3><ul className="muted">{externalReferences.map((ref, index) => <li key={`${ref.label ?? index}`}>{ref.url ? <a href={ref.url}>{ref.label ?? ref.url}</a> : (ref.label ?? ref.text ?? 'Reference')}{ref.text ? ` — ${ref.text}` : ''}</li>)}</ul></div> : null}
 
-      {metadata.required_evidence && metadata.required_evidence.length > 0 ? (
+      {asStepArray<{ label?: string; evidence_type?: string }>(metadata.required_evidence).length > 0 ? (
         <div className="field-stack">
           <h3>Requested documentation prompts</h3>
           <ul className="muted">
-            {metadata.required_evidence.map((evidence, index) => <li key={`${evidence.label ?? index}`}>{evidence.label ?? 'Evidence'}{evidence.evidence_type ? ` (${evidence.evidence_type.replace(/_/g, ' ')})` : ''}</li>)}
+            {asStepArray<{ label?: string; evidence_type?: string }>(metadata.required_evidence).map((evidence, index) => <li key={`${evidence.label ?? index}`}>{evidence.label ?? 'Evidence'}{evidence.evidence_type ? ` (${evidence.evidence_type.replace(/_/g, ' ')})` : ''}</li>)}
           </ul>
         </div>
       ) : null}
@@ -284,7 +292,7 @@ function StepCard({
           workflow="diagnostic_procedure"
           guidedStep={stepId}
           guidedLabel={title}
-          returnPath={`/dashboard/sessions/${sessionId}/diagnostic-procedure#step-${stepId}`}
+          returnPath={`/dashboard/sessions/${sessionId}/diagnostic-procedure#${getStepAnchorId(stepId)}`}
           maxCaptureFileSizeBytes={maxCaptureFileSizeBytes}
           maxVideoFileSizeBytes={maxVideoFileSizeBytes}
           maxFileSizeLabel="your plan limit"
@@ -351,6 +359,7 @@ export default async function DiagnosticProcedurePage({
   const stepSections = allStepSections.filter((section) => getMetadata(section).visible !== false)
   const singleStepSection = stepSections.find((section) => section.id === step || getMetadata(section).step_id === step)
   const visibleStepSections = singleStepSection ? [singleStepSection] : stepSections
+  const hiddenStepCount = allStepSections.length - stepSections.length
   const approveAction = async () => {
     'use server'
     if (diagnosticDraft) await approveDiagnosticProcedureStructure(diagnosticDraft.id)
@@ -416,7 +425,7 @@ export default async function DiagnosticProcedurePage({
               <div><span>Warnings</span><strong>{procedureProgress.warningCount}</strong></div>
               <div><span>Missing required documentation</span><strong>{procedureProgress.missingRequiredDocumentationCount}</strong></div>
             </div>
-            {procedureProgress.nextIncompleteStepId ? <Link className="button button-secondary touch-target" href={`/dashboard/sessions/${session.id}/diagnostic-procedure#step-${procedureProgress.nextIncompleteStepId}`}>Open next incomplete documentation item.</Link> : null}
+            {procedureProgress.nextIncompleteStepId ? <Link className="button button-secondary touch-target" href={`/dashboard/sessions/${session.id}/diagnostic-procedure#${getStepAnchorId(procedureProgress.nextIncompleteStepId)}`}>Open next incomplete documentation item.</Link> : null}
           </section>
 
           <section className="card detail-card form-stack">
@@ -439,7 +448,9 @@ export default async function DiagnosticProcedurePage({
             <div><p className="eyebrow">Diagnostic audit trail</p><h2>Recent audit events</h2></div>
             {auditEvents.length > 0 ? <ul className="muted">{auditEvents.map((event, index) => <li key={`${event.event_type}-${event.occurred_at}-${index}`}><strong>{(event.event_type ?? 'event').replace(/_/g, ' ')}</strong>{event.step_title ? ` · ${event.step_title}` : ''}{event.profile_name ? ` · ${event.profile_name}` : ''}{event.occurred_at ? ` · ${formatTimestamp(event.occurred_at)}` : ''}</li>)}</ul> : <p className="muted">No audit events recorded yet.</p>}
           </section>
-          <div className="page-actions"><Link className="button button-secondary touch-target" href={`/dashboard/sessions/${session.id}/diagnostic-procedure`}>Full procedure view</Link>{stepSections.map((section) => <Link key={section.id} className="button button-secondary touch-target" href={`/dashboard/sessions/${session.id}/diagnostic-procedure?step=${section.id}#step-${getMetadata(section).step_id ?? section.section_key}`}>{getMetadata(section).step_number ?? 'Step'}</Link>)}</div>
+          <div className="page-actions"><Link className="button button-secondary touch-target" href={`/dashboard/sessions/${session.id}/diagnostic-procedure`}>Full procedure view</Link>{stepSections.map((section) => <Link key={section.id} className="button button-secondary touch-target" href={`/dashboard/sessions/${session.id}/diagnostic-procedure?step=${section.id}#${getStepAnchorId(getMetadata(section).step_id ?? section.section_key)}`}>{getMetadata(section).step_number ?? 'Step'}</Link>)}</div>
+          {stepSections.length === 0 ? <p className="notice warning">No visible procedure steps. Unhide at least one step in extraction review to continue documentation.</p> : null}
+          {hiddenStepCount > 0 ? <p className="notice info">{hiddenStepCount} hidden procedure step{hiddenStepCount === 1 ? '' : 's'} excluded from progress and report output.</p> : null}
           {visibleStepSections.map((section) => (
             <StepCard
               key={section.id}

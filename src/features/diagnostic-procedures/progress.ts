@@ -55,12 +55,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function getMetadata(section: AiReportDraftSection): DiagnosticStepMetadata {
+export function getDiagnosticStepMetadata(section: Pick<AiReportDraftSection, 'metadata'>): DiagnosticStepMetadata {
   return isRecord(section.metadata) ? section.metadata as DiagnosticStepMetadata : {}
 }
 
-function asRecordArray(value: unknown): Record<string, unknown>[] {
+export function asDiagnosticRecordArray(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter(isRecord) : []
+}
+
+function getMetadata(section: AiReportDraftSection): DiagnosticStepMetadata {
+  return getDiagnosticStepMetadata(section)
 }
 
 function hasText(value: unknown) {
@@ -92,15 +96,15 @@ export function getDiagnosticStepCompleteness(section: AiReportDraftSection, cap
   const stepId = metadata.step_id ?? section.section_key
   const visible = metadata.visible !== false
   const status = metadata.technician_status ?? 'not_tested'
-  const requiredMeasurements = asRecordArray(metadata.required_measurements)
-  const readings = asRecordArray(metadata.technician_readings)
-  const requiredEvidence = asRecordArray(metadata.required_evidence)
-  const branches = asRecordArray(metadata.oem_branches)
+  const requiredMeasurements = asDiagnosticRecordArray(metadata.required_measurements)
+  const readings = asDiagnosticRecordArray(metadata.technician_readings)
+  const requiredEvidence = asDiagnosticRecordArray(metadata.required_evidence)
+  const branches = asDiagnosticRecordArray(metadata.oem_branches)
   const stepCaptures = captures.filter((capture) => captureMatchesDiagnosticStep(capture, stepId))
   const missingRequiredReadings = status !== 'blocked' && status !== 'not_applicable' && requiredMeasurements.some((measurement) => {
-    const key = typeof measurement.key === 'string' ? measurement.key : null
-    const label = typeof measurement.label === 'string' ? measurement.label : null
-    return !readings.some((reading) => (key && reading.key === key || label && reading.label === label) && hasText(reading.value))
+    const key = typeof measurement.key === 'string' && measurement.key.trim() ? measurement.key : null
+    const label = typeof measurement.label === 'string' && measurement.label.trim() ? measurement.label : key
+    return !readings.some((reading) => ((key && reading.key === key) || (label && reading.label === label)) && hasText(reading.value))
   })
   const missingSelectedBranch = status !== 'blocked' && status !== 'not_applicable' && branches.length > 0 && !hasText(metadata.technician_selected_branch)
   const missingRequiredEvidence = status !== 'blocked' && status !== 'not_applicable' && requiredEvidence.some((evidence) => !hasRequiredEvidence(stepCaptures, evidence))
