@@ -262,6 +262,7 @@ export async function validateCaptureBillingAccess(
   }
 
   const { supabase, profile } = await requireSessionWorkspace()
+
   const billingAccess = requireActiveBillingAccess(profile)
 
   if (!billingAccess.ok) {
@@ -1228,6 +1229,11 @@ export async function classifyPendingCaptures(
   }
 
   const { supabase, profile } = await requireSessionWorkspace()
+
+  if (!profile.organization.image_ai_assist_enabled) {
+    return { ok: false, message: 'Image AI Assist is disabled for this organization.' }
+  }
+
   const billingAccess = requireActiveBillingAccess(profile)
 
   if (!billingAccess.ok) {
@@ -1839,6 +1845,11 @@ export async function extractCaptureDetails(
   }
 
   const { supabase, profile } = await requireSessionWorkspace()
+
+  if (!profile.organization.image_ai_assist_enabled) {
+    return { ok: false, message: 'Image AI Assist is disabled for this organization.' }
+  }
+
   const billingAccess = requireActiveBillingAccess(profile)
 
   if (!billingAccess.ok) {

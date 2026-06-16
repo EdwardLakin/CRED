@@ -26,6 +26,7 @@ import {
   getNormalizedFindingModels,
   getNormalizedRecommendedActions,
   isMeaningfulCustomerReportText,
+  sanitizeCapturesForImageAiAssist,
 } from "@/features/reports/report-structure";
 import {
   createReportShareLink,
@@ -362,7 +363,7 @@ export default async function SessionReportPreviewPage({
     session.session_type,
     template?.required_evidence ?? null,
   );
-  const allCaptures = captures ?? [];
+  const allCaptures = sanitizeCapturesForImageAiAssist(captures ?? [], profile.organization.image_ai_assist_enabled);
   const visibleCaptures = allCaptures;
   const signedEvidenceUrls: Record<string, string> = {};
   await Promise.all(

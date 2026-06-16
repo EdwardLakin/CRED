@@ -186,6 +186,27 @@ export async function processCaptureProcessingTick(batchSize = 5) {
 }
 
 async function processJob(supabase: ReturnType<typeof createAdminClient>, job: Job) {
+  const { data: organization, error: organizationError } = await db(supabase)
+    .from('organizations')
+    .select('image_ai_assist_enabled')
+    .eq('id', job.organization_id)
+    .maybeSingle()
+  if (organizationError) throw organizationError
+
+  const imageAiAssistEnabled = isRecord(organization) && organization.image_ai_assist_enabled === true
+
+  if (!imageAiAssistEnabled && (job.job_type === 'classify_capture' || job.job_type === 'extract_capture' || job.job_type === 'generate_capture_note')) {
+    if (job.capture_item_id) {
+      await db(supabase)
+        .from('capture_items')
+        .update({ ai_status: 'needs_review', processing_status: 'needs_review', ai_summary: null })
+        .eq('id', job.capture_item_id)
+        .eq('organization_id', job.organization_id)
+        .eq('documentation_session_id', job.documentation_session_id)
+    }
+    return
+  }
+
   if (job.job_type === 'group_evidence' || job.job_type === 'normalize_report_fields' || job.job_type === 'generate_findings' || job.job_type === 'update_report_readiness') {
     await db(supabase)
       .from('capture_items')
