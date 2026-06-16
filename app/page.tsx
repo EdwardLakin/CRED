@@ -1,9 +1,143 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+
+import Image from 'next/image'
 import Link from 'next/link'
 
 import { ThemeToggle } from '@/components/theme'
 import { PricingCheckoutButton } from '@/features/billing/components/PricingCheckoutButton'
 import { getCurrentUser } from '@/features/auth/server'
 import type { BillingPlan } from '@/features/billing'
+
+
+type ProductScreenshotCardProps = {
+  title: string
+  eyebrow: string
+  description: string
+  src: string
+  alt: string
+  imagePosition?: string
+  variant?: 'default' | 'wide' | 'before-after'
+}
+
+const workflowScreenshots: ProductScreenshotCardProps[] = [
+  {
+    title: 'Capture evidence',
+    eyebrow: 'Capture',
+    description:
+      'Photos, documents, voice notes, and text notes are captured in one session while CRED tracks readiness and missing evidence.',
+    src: '/marketing/cred/capture-page.png',
+    alt: 'CRED capture page showing evidence inputs and readiness tracking',
+    imagePosition: 'top center',
+  },
+  {
+    title: 'Review and correct',
+    eyebrow: 'Review',
+    description:
+      'Generated sections, extracted fields, recommendations, and evidence captions remain editable before approval.',
+    src: '/marketing/cred/review-edit.png',
+    alt: 'CRED review edit screen with editable generated report content',
+  },
+  {
+    title: 'Keep evidence connected',
+    eyebrow: 'Evidence context',
+    description:
+      'Photos, notes, documents, measurements, and recommendations stay linked to the finding they support.',
+    src: '/marketing/cred/evidence-context.png',
+    alt: 'CRED evidence context screen linking evidence to findings',
+  },
+  {
+    title: 'Export the report',
+    eyebrow: 'Export',
+    description:
+      'Email, share, print, save, or export a professional report after human approval.',
+    src: '/marketing/cred/export-report.png',
+    alt: 'CRED export report screen with delivery options after approval',
+  },
+]
+
+function publicAssetExists(src: string) {
+  return existsSync(join(process.cwd(), 'public', src.replace(/^\//, '')))
+}
+
+function ProductScreenshotCard({
+  title,
+  eyebrow,
+  description,
+  src,
+  alt,
+  imagePosition = 'center top',
+  variant = 'default',
+}: ProductScreenshotCardProps) {
+  const hasScreenshot = publicAssetExists(src)
+
+  return (
+    <article className={`screenshot-card product-screenshot-card ${variant === 'wide' ? 'wide-card' : ''}`}>
+      <div className="screenshot-copy">
+        <span className="section-kicker">{eyebrow}</span>
+        <h3>{title}</h3>
+        <p>{description}</p>
+      </div>
+      <div className="screenshot-frame">
+        {hasScreenshot ? (
+          <Image
+            src={src}
+            alt={alt}
+            width={1280}
+            height={900}
+            className="screenshot-image"
+            sizes="(max-width: 760px) 100vw, (max-width: 1180px) 50vw, 540px"
+            style={{ objectPosition: imagePosition }}
+          />
+        ) : (
+          <div className="screenshot-placeholder" role="img" aria-label={`${alt} placeholder`}>
+            <span>{eyebrow}</span>
+            <strong>{title}</strong>
+            <small>Add {src.replace('/marketing/cred/', '')} to show this product screenshot.</small>
+          </div>
+        )}
+      </div>
+    </article>
+  )
+}
+
+function BeforeAfterScreenshot({
+  src,
+  alt,
+  label,
+  imagePosition,
+}: {
+  src: string
+  alt: string
+  label: string
+  imagePosition?: string
+}) {
+  const hasScreenshot = publicAssetExists(src)
+
+  return (
+    <div className="before-after-screenshot">
+      <span>{label}</span>
+      <div className="screenshot-frame">
+        {hasScreenshot ? (
+          <Image
+            src={src}
+            alt={alt}
+            width={1280}
+            height={900}
+            className="screenshot-image"
+            sizes="(max-width: 760px) 100vw, 480px"
+            style={{ objectPosition: imagePosition ?? 'center top' }}
+          />
+        ) : (
+          <div className="screenshot-placeholder" role="img" aria-label={`${alt} placeholder`}>
+            <strong>{label}</strong>
+            <small>Add {src.replace('/marketing/cred/', '')}</small>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 
 const steps = [
   ['Capture evidence', 'Photos, forms, documents, voice notes, measurements, and field observations enter one evidence-first session.'],
@@ -205,6 +339,19 @@ export default async function HomePage() {
         </div>
       </section>
 
+      <section className="landing-section workflow-screenshots-section" aria-labelledby="workflow-screenshots-title">
+        <div className="section-kicker">Product workflow</div>
+        <h2 id="workflow-screenshots-title">See the full workflow</h2>
+        <p className="section-copy">
+          CRED captures messy field evidence, turns it into a review-ready draft, keeps every finding tied to its source, and exports a professional report.
+        </p>
+        <div className="screenshot-grid product-screenshot-grid">
+          {workflowScreenshots.map((screenshot) => (
+            <ProductScreenshotCard key={screenshot.title} {...screenshot} />
+          ))}
+        </div>
+      </section>
+
       <section className="landing-section" id="how-it-works">
         <div className="section-kicker">Workflow</div>
         <h2>From messy field evidence to review-ready documentation.</h2>
@@ -295,6 +442,32 @@ export default async function HomePage() {
           {reportOutputs.map((output) => (
             <div key={output}>✓ {output}</div>
           ))}
+        </div>
+      </section>
+
+      <section className="landing-section featured-workflow-section" aria-labelledby="featured-workflow-title">
+        <div className="section-kicker">Before and after</div>
+        <h2 id="featured-workflow-title">From captured evidence to professional report</h2>
+        <p className="section-copy">
+          AI assists with extraction, organization, and drafting. Final review, approval, signatures, and certification remain with the user.
+        </p>
+        <div className="workflow-screenshot-strip" aria-label="Capture evidence becomes an AI-assisted draft and then a professional report">
+          <BeforeAfterScreenshot
+            label="Captured evidence"
+            src="/marketing/cred/capture-page.png"
+            alt="CRED capture page with field evidence collected in one session"
+            imagePosition="top center"
+          />
+          <div className="workflow-draft-arrow" aria-hidden="true">
+            <span>→</span>
+            <strong>AI-assisted draft</strong>
+          </div>
+          <BeforeAfterScreenshot
+            label="Professional report"
+            src="/marketing/cred/printable-report.png"
+            alt="CRED printable professional report after user approval"
+            imagePosition="top center"
+          />
         </div>
       </section>
 
