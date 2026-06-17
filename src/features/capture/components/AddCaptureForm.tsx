@@ -279,6 +279,7 @@ export function AddCaptureForm({
   const [preferCameraCapture, setPreferCameraCapture] = useState(true)
   const [selectedFiles, setSelectedFiles] = useState<SelectedEvidenceFile[]>([])
   const [note, setNote] = useState('')
+  const [showTextNoteEditor, setShowTextNoteEditor] = useState(false)
   const [noteSource, setNoteSource] = useState<'manual' | 'voice' | 'edited'>(
     'manual',
   )
@@ -736,6 +737,48 @@ export function AddCaptureForm({
     return true
   }
 
+  async function handleStandaloneTextNoteSave() {
+    if (isSavingRef.current || isSaving) {
+      return
+    }
+
+    if (!note.trim()) {
+      setClientError('Type a note before saving text evidence.')
+      return
+    }
+
+    setClientError(null)
+    setActionError(null)
+    setSaveMessage(null)
+    isSavingRef.current = true
+    setIsSaving(true)
+
+    try {
+      const saved = await saveTextNoteOnly()
+
+      if (!saved) {
+        return
+      }
+
+      setNote('')
+      setNoteSource('manual')
+      setTranscriptStatus('not_started')
+      setVoiceNoteStatus('idle')
+      setShowTextNoteEditor(false)
+    } finally {
+      isSavingRef.current = false
+      setIsSaving(false)
+    }
+  }
+
+  function cancelStandaloneTextNote() {
+    setNote('')
+    setNoteSource('manual')
+    setShowTextNoteEditor(false)
+    setClientError(null)
+    setActionError(null)
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
@@ -1003,6 +1046,56 @@ export function AddCaptureForm({
             <span><strong>Gallery</strong><small>Choose media, then add note</small></span>
           </button>
         </div>
+      </div>
+
+      <div className="standalone-text-note-panel">
+        {showTextNoteEditor ? (
+          <div className="compact-text-note-editor field-stack">
+            <label className="field-stack" htmlFor={`${fileInputId}-text-note`}>
+              <span className="label">Text note</span>
+              <textarea
+                id={`${fileInputId}-text-note`}
+                className="input note-textarea"
+                value={note}
+                placeholder="Type a short evidence note."
+                onChange={(event) => setNote(event.target.value)}
+                rows={4}
+                disabled={isSaving}
+              />
+            </label>
+            <div className="form-actions compact-text-note-actions">
+              <button
+                type="button"
+                className="button button-primary touch-target"
+                onClick={handleStandaloneTextNoteSave}
+                disabled={isSaving || !note.trim()}
+              >
+                {isSaving ? 'Saving…' : 'Save Note'}
+              </button>
+              <button
+                type="button"
+                className="button button-secondary touch-target"
+                onClick={cancelStandaloneTextNote}
+                disabled={isSaving}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="secondary-link standalone-text-note-toggle touch-target"
+            onClick={() => {
+              setClientError(null)
+              setActionError(null)
+              setShowTextNoteEditor(true)
+            }}
+            disabled={isSaving}
+          >
+            + Add Text Note
+          </button>
+        )}
       </div>
 
       <div className="field-stack capture-file-field capture-secondary-panel">
