@@ -20,9 +20,8 @@ export function DeleteEvidenceButton({
   const buttonRef = useRef<HTMLButtonElement>(null)
   const [isConfirming, setIsConfirming] = useState(false)
   const [isDeleted, setIsDeleted] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
-
-  if (isDeleted) return null
 
   function confirmDelete() {
     const formData = new FormData()
@@ -30,11 +29,19 @@ export function DeleteEvidenceButton({
 
     setIsDeleted(true)
     setIsConfirming(false)
-    buttonRef.current?.closest('[data-evidence-card]')?.remove()
+    setError(null)
+    const card = buttonRef.current?.closest('[data-evidence-card]')
+    if (card instanceof HTMLElement) card.style.display = 'none'
     onDeleted?.()
 
     startTransition(async () => {
-      await removeCaptureItem(formData)
+      const result = await removeCaptureItem(formData)
+      if (!result.ok) {
+        setIsDeleted(false)
+        setError(result.error ?? 'Unable to delete evidence.')
+        if (card instanceof HTMLElement) card.style.display = ''
+        return
+      }
       router.refresh()
     })
   }
@@ -42,6 +49,7 @@ export function DeleteEvidenceButton({
   return (
     <>
       <button
+        style={isDeleted ? { display: 'none' } : undefined}
         ref={buttonRef}
         type="button"
         className={className}
@@ -50,6 +58,7 @@ export function DeleteEvidenceButton({
       >
         {isPending ? 'Deleting…' : label}
       </button>
+      {error ? <p className="form-error" role="alert">{error}</p> : null}
       {isConfirming ? (
         <div className="modal-backdrop" role="presentation">
           <div

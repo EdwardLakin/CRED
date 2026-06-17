@@ -1,7 +1,6 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { redirect } from 'next/navigation'
 
 import {
   formatBytes,
@@ -2546,24 +2545,22 @@ export async function updateCaptureReview(
   return { ok: true, message: 'Saved.' }
 }
 
-export async function removeCaptureItem(formData: FormData) {
+export async function removeCaptureItem(formData: FormData): Promise<{ ok: boolean; error?: string; sessionId?: string }> {
   const captureId = getString(formData, 'capture_id')
 
   if (!captureId) {
-    return
+    return { ok: false, error: 'Missing evidence item.' }
   }
 
   const { supabase, profile, capture } = await getAuthorizedCapture(captureId)
   const billingAccess = requireActiveBillingAccess(profile)
 
   if (!capture) {
-    return
+    return { ok: false, error: 'Evidence item not found.' }
   }
 
   if (!billingAccess.ok) {
-    redirect(
-      `/dashboard/sessions/${capture.documentation_session_id}?error=${encodeURIComponent(billingAccess.message)}`,
-    )
+    return { ok: false, error: billingAccess.message, sessionId: capture.documentation_session_id }
   }
 
   if (capture.storage_path) {
@@ -2582,9 +2579,7 @@ export async function removeCaptureItem(formData: FormData) {
       captureId: capture.id,
       ...getSafeErrorDetails(error),
     })
-    redirect(
-      `/dashboard/sessions/${capture.documentation_session_id}?error=${encodeURIComponent('Unable to delete evidence.')}`,
-    )
+    return { ok: false, error: 'Unable to delete evidence.', sessionId: capture.documentation_session_id }
   }
 
   revalidatePath(`/dashboard/sessions/${capture.documentation_session_id}`)
@@ -2592,6 +2587,8 @@ export async function removeCaptureItem(formData: FormData) {
     `/dashboard/sessions/${capture.documentation_session_id}/capture`,
   )
   revalidatePath(`/dashboard/sessions/${capture.documentation_session_id}/report`)
+
+  return { ok: true, sessionId: capture.documentation_session_id }
 }
 
 

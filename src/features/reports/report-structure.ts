@@ -15,6 +15,15 @@ function isImageDerivedCapture(capture: CaptureLike) {
   return capture.media_kind === 'image' || capture.type === 'photo' || capture.type === 'vin_plate' || capture.type === 'info_plate'
 }
 
+function hasDocumentTextContext(capture: CaptureLike) {
+  return Boolean(
+    capture.type === 'document' ||
+      capture.media_kind === 'document' ||
+      capture.ocr_text?.trim() ||
+      (isRecord(capture.extracted_data) && (isRecord(capture.extracted_data.source_document) || isRecord(capture.extracted_data.extraction)))
+  )
+}
+
 function preserveTechnicianOnlyExtractedData(extractedData: Json | null): Json | null {
   if (!isRecord(extractedData)) return extractedData
 
@@ -29,6 +38,13 @@ function preserveTechnicianOnlyExtractedData(extractedData: Json | null): Json |
 
 export function sanitizeCaptureForImageAiAssist(capture: CaptureLike, imageAiAssistEnabled: boolean): CaptureLike {
   if (imageAiAssistEnabled || !isImageDerivedCapture(capture)) return capture
+
+  if (hasDocumentTextContext(capture)) {
+    return {
+      ...capture,
+      ai_summary: null,
+    }
+  }
 
   return {
     ...capture,
