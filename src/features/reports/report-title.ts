@@ -47,19 +47,20 @@ export function getDisplayReportTitle(draft: ReportTitleDraft, session: ReportTi
   const explicitReportTitle = getReportInfoValue(draft, session, 'report_title')
   if (explicitReportTitle && !isPlaceholderReportTitle(explicitReportTitle)) return stripConfidenceText(explicitReportTitle).trim()
 
-  const draftTitle = stripConfidenceText(draft?.title ?? '').trim()
-  if (draftTitle && !isPlaceholderReportTitle(draftTitle)) return draftTitle
-
   const subject = getReportInfoValue(draft, session, 'subject_name')
-    || getReportInfoValue(draft, session, 'asset_equipment')
-    || session.asset_label
     || getReportInfoValue(draft, session, 'customer_client')
     || session.customer_name
+    || getReportInfoValue(draft, session, 'asset_equipment')
+    || session.asset_label
+    || getReportInfoValue(draft, session, 'reference_number')
     || session.unit_number
     || session.vin
     || ''
   const subjectTitle = buildSubjectReportTitle(subject)
   if (subjectTitle) return subjectTitle
+
+  const draftTitle = stripConfidenceText(draft?.title ?? '').trim()
+  if (draftTitle && !isPlaceholderReportTitle(draftTitle)) return draftTitle
 
   const sessionTitle = stripConfidenceText(session.title ?? '').trim()
   if (sessionTitle && !isPlaceholderReportTitle(sessionTitle)) return sessionTitle

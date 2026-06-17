@@ -34,14 +34,14 @@ export function FinalNotesEditor({ defaultValue, editedByUser, includeInExport, 
   }
 
   return (
-    <section className="card detail-card report-command-card form-stack final-notes-card">
-      <div className="report-section-heading generated-report-heading">
+    <details className="card detail-card report-command-card form-stack final-notes-card" open>
+      <summary className="report-section-heading generated-report-heading">
         <div>
           <p className="eyebrow">Final Notes</p>
           <h2>Final Summary / Report Notes</h2>
           <p className="muted">Copy/paste-ready report summary based on technician-authored content.</p>
         </div>
-      </div>
+      </summary>
       <form action={saveAction} className="form-stack">
         <label className="field-stack">
           <span className="label">Final summary / report notes</span>
@@ -62,6 +62,6 @@ export function FinalNotesEditor({ defaultValue, editedByUser, includeInExport, 
         <button className="button button-secondary touch-target" name="final_notes_action" value="regenerate">Regenerate</button>
       </form>
       {message ? <p className="success compact-success">{message}</p> : null}
-    </section>
+    </details>
   )
 }

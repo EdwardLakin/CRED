@@ -188,7 +188,7 @@ function renderFieldServiceSection(details: Record<string, unknown>, sectionKey:
 }
 
 
-function buildInspectorFacilityHtml(profile: { full_name?: string | null; inspector_role_or_title?: string | null; technician_license_number?: string | null; inspector_email?: string | null; inspector_phone?: string | null } | null, companyProfile: { company_name?: string | null; facility_name?: string | null; facility_number?: string | null; facility_address_line_1?: string | null; facility_address_line_2?: string | null; facility_city?: string | null; facility_region?: string | null; facility_postal_code?: string | null; facility_country?: string | null; facility_phone?: string | null; facility_email?: string | null; permit_number?: string | null; certification_number?: string | null } | null, signatures: ReportSignature[], signatureUrls: Record<string, string>) {
+function buildInspectorFacilityHtml(profile: { full_name?: string | null; inspector_role_or_title?: string | null; technician_license_number?: string | null; inspector_email?: string | null; inspector_phone?: string | null; default_signature_path?: string | null; use_default_signature?: boolean | null } | null, companyProfile: { company_name?: string | null; facility_name?: string | null; facility_number?: string | null; facility_address_line_1?: string | null; facility_address_line_2?: string | null; facility_city?: string | null; facility_region?: string | null; facility_postal_code?: string | null; facility_country?: string | null; facility_phone?: string | null; facility_email?: string | null; permit_number?: string | null; certification_number?: string | null } | null, signatures: ReportSignature[], signatureUrls: Record<string, string>) {
   const address = [companyProfile?.facility_address_line_1, companyProfile?.facility_address_line_2, companyProfile?.facility_city, companyProfile?.facility_region, companyProfile?.facility_postal_code, companyProfile?.facility_country].filter(Boolean).join(', ')
   const rows = [
     { label: 'Inspector Name', value: profile?.full_name ?? '' },
@@ -202,9 +202,12 @@ function buildInspectorFacilityHtml(profile: { full_name?: string | null; inspec
     { label: 'Certification Number', value: companyProfile?.certification_number ?? '' },
   ]
   const signature = signatures.find((item) => /inspector|technician/i.test(item.signature_type)) ?? signatures[0]
-  const signatureHtml = signature && signatureUrls[signature.id]
-    ? `<div class="signature-block"><img class="signature-image" src="${escapeHtml(signatureUrls[signature.id])}" alt="Inspector signature" /></div>`
-    : '<div class="signature-block signature-empty"><p class="muted">No report-specific signature captured.</p></div>'
+  const defaultSignatureUrl = profile?.use_default_signature && profile.default_signature_path ? signatureUrls.__default_signature : null
+  const signatureUrl = signature ? signatureUrls[signature.id] : defaultSignatureUrl
+  const signatureLabel = signature ? 'Report-specific signature' : 'Default saved signature'
+  const signatureHtml = signatureUrl
+    ? `<div class="signature-block"><p class="muted">${escapeHtml(signatureLabel)}</p><img class="signature-image" src="${escapeHtml(signatureUrl)}" alt="Inspector signature" /></div>`
+    : '<div class="signature-block signature-empty"><p class="muted">No signature available.</p></div>'
   return `<section class="item service-section"><h2>Inspector / Organization Details</h2>${renderDefinitionRows(rows)}${signatureHtml}</section>`
 }
 
@@ -309,9 +312,16 @@ function buildEvidenceAppendixHtml(captures: ReportCapture[], signedUrls: Record
       : signedUrl
         ? `<p><a href="${escapeHtml(signedUrl)}">Open ${escapeHtml(mediaKind)} evidence</a></p>`
         : `<div class="video-still">${escapeHtml(getEvidenceTitle(capture))}</div>`
+    const technicianFields = isRecord(capture.extracted_data) ? capture.extracted_data : {}
+    const technicianPills = [
+      typeof technicianFields.technician_status === 'string' ? technicianFields.technician_status : null,
+      typeof technicianFields.technician_category === 'string' ? technicianFields.technician_category : null,
+    ].filter((value): value is string => Boolean(value?.trim()))
+    const neutralPills = [getEvidenceTitle(capture), 'Included', 'Captured']
+    const pillsHtml = `<div class="evidence-pill-row">${[...technicianPills, ...neutralPills].map((pill) => `<span class="evidence-pill">${escapeHtml(pill.replace(/_/g, ' '))}</span>`).join('')}</div>`
     const detailRows = [{ label: 'Captured', value: formatDateTimeInTimeZone(new Date(capture.captured_at), timeZone) }]
     if (options.showDebugDetails) detailRows.unshift({ label: 'Capture ID', value: capture.id }, { label: 'Media kind', value: String(capture.media_kind ?? mediaKind) })
-    return `<article class="evidence-card"${options.showDebugDetails ? ` data-capture-id="${escapeHtml(capture.id)}"` : ''}><div class="media evidence-media">${mediaHtml}</div><div class="evidence-copy"><h3>${escapeHtml(getEvidenceTitle(capture))}</h3><p>${escapeHtml(primaryNote)}</p>${renderDefinitionRows(detailRows)}</div></article>`
+    return `<article class="evidence-card"${options.showDebugDetails ? ` data-capture-id="${escapeHtml(capture.id)}"` : ''}><div class="media evidence-media">${mediaHtml}</div><div class="evidence-copy"><h3>${escapeHtml(getEvidenceTitle(capture))}</h3>${pillsHtml}<p>${escapeHtml(primaryNote)}</p>${renderDefinitionRows(detailRows)}</div></article>`
   }).join('')}</div></section>`
 }
 
@@ -443,7 +453,7 @@ function buildFieldServiceReportHtml({
 }
 
 const REPORT_STYLES = `
-    body{font-family:Arial,Helvetica,sans-serif;background:#f7f8fc;color:#13213a;margin:0;padding:32px}.report{max-width:980px;margin:0 auto}.header,.item{background:white;border:1px solid #d8e2ef;border-radius:18px;box-shadow:0 12px 34px rgba(20,33,61,.08);padding:24px;margin-bottom:18px}.eyebrow{color:#155dfc;font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}.meta,.muted{color:#5f6f89}.media{position:relative;border-radius:16px;overflow:hidden;background:#f1f5fb;border:1px solid #d8e2ef}.media img{display:block;width:100%;max-height:620px;object-fit:contain;background:#0f172a}.note{background:rgba(15,23,42,.86);bottom:0;color:white;left:0;padding:14px 18px;position:absolute;right:0}.note p{margin:6px 0 0}.finding{margin-top:16px}.finding h3{margin-bottom:8px}dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}dl div{background:#f1f5fb;border:1px solid #d8e2ef;border-radius:12px;padding:10px}dt{font-weight:800}dd{margin:4px 0 0}.video-still{align-items:center;aspect-ratio:16/9;background:#14213d;color:white;display:flex;font-size:24px;font-weight:800;justify-content:center}.video-link{padding:12px 16px}.toolbar{margin-bottom:16px}.print-help{color:#5f6f89;font-size:13px;margin:8px 0 0}.service-section h2{border-bottom:1px solid #d8e2ef;padding-bottom:8px}.signature-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.signature-block{background:#f8fafc;border:1px solid #d8e2ef;border-radius:14px;padding:14px}.signature-image{background:white;border:1px solid #d8e2ef;border-radius:10px;display:block;max-height:120px;max-width:100%;object-fit:contain;padding:8px}.premium-cover{background:linear-gradient(135deg,#fff,#eef4ff)}.finding-card,.reference-card{border:1px solid #d8e2ef;border-radius:14px;margin:12px 0;padding:14px}.finding-card{display:grid;gap:16px;grid-template-columns:minmax(220px,36%) 1fr}.finding-image{align-self:start;background:#f1f5fb;border:1px solid #d8e2ef;border-radius:12px;overflow:hidden}.finding-image img{display:block;width:100%;max-height:360px;object-fit:contain}.reference-card details{margin-top:10px}.reference-card details:not([open]) .item{display:none}.evidence-grid{display:grid;gap:16px;grid-template-columns:repeat(2,minmax(0,1fr))}.evidence-card{border:1px solid #d8e2ef;border-radius:14px;display:grid;gap:12px;grid-template-rows:auto 1fr;padding:14px}.evidence-card h3{margin:0 0 8px}.evidence-card p{margin-top:0}.evidence-media img{max-height:260px;object-fit:contain}.evidence-copy dl{grid-template-columns:1fr}.evidence-copy dl div{padding:8px}.severity{background:#fff7ed;border:1px solid #fed7aa;border-radius:999px;display:inline-block;font-weight:800;padding:7px 10px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #d8e2ef;padding:10px;text-align:left}th{background:#f1f5fb}@media (max-width:700px){body{padding:14px}dl,.evidence-grid{grid-template-columns:1fr}.header,.item{border-radius:14px;padding:16px}.finding-card{grid-template-columns:1fr}}@media print{body{background:white;padding:0}.toolbar{display:none}.header,.item,.finding-card,.evidence-card{break-inside:avoid;box-shadow:none}.finding-image,.finding-image img{break-inside:avoid;visibility:visible}.reference-card details:not([open])>*:not(summary){display:none}.note{position:static;background:#14213d}a{color:#13213a}}
+    body{font-family:Arial,Helvetica,sans-serif;background:#f7f8fc;color:#13213a;margin:0;padding:32px}.report{max-width:980px;margin:0 auto}.header,.item{background:white;border:1px solid #d8e2ef;border-radius:18px;box-shadow:0 12px 34px rgba(20,33,61,.08);padding:24px;margin-bottom:18px}.eyebrow{color:#155dfc;font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}.meta,.muted{color:#5f6f89}.media{position:relative;border-radius:16px;overflow:hidden;background:#f1f5fb;border:1px solid #d8e2ef}.media img{display:block;width:100%;max-height:620px;object-fit:contain;background:#0f172a}.note{background:rgba(15,23,42,.86);bottom:0;color:white;left:0;padding:14px 18px;position:absolute;right:0}.note p{margin:6px 0 0}.finding{margin-top:16px}.finding h3{margin-bottom:8px}dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}dl div{background:#f1f5fb;border:1px solid #d8e2ef;border-radius:12px;padding:10px}dt{font-weight:800}dd{margin:4px 0 0}.video-still{align-items:center;aspect-ratio:16/9;background:#14213d;color:white;display:flex;font-size:24px;font-weight:800;justify-content:center}.video-link{padding:12px 16px}.toolbar{margin-bottom:16px}.print-help{color:#5f6f89;font-size:13px;margin:8px 0 0}.service-section h2{border-bottom:1px solid #d8e2ef;padding-bottom:8px}.signature-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.signature-block{background:#f8fafc;border:1px solid #d8e2ef;border-radius:14px;padding:14px}.signature-image{background:white;border:1px solid #d8e2ef;border-radius:10px;display:block;max-height:120px;max-width:100%;object-fit:contain;padding:8px}.premium-cover{background:linear-gradient(135deg,#fff,#eef4ff)}.finding-card,.reference-card{border:1px solid #d8e2ef;border-radius:14px;margin:12px 0;padding:14px}.finding-card{display:grid;gap:16px;grid-template-columns:minmax(220px,36%) 1fr}.finding-image{align-self:start;background:#f1f5fb;border:1px solid #d8e2ef;border-radius:12px;overflow:hidden}.finding-image img{display:block;width:100%;max-height:360px;object-fit:contain}.reference-card details{margin-top:10px}.reference-card details:not([open]) .item{display:none}.evidence-grid{display:grid;gap:16px;grid-template-columns:repeat(2,minmax(0,1fr))}.evidence-card{border:1px solid #d8e2ef;border-radius:14px;display:grid;gap:12px;grid-template-rows:auto 1fr;padding:14px}.evidence-card h3{margin:0 0 8px}.evidence-card p{margin-top:0}.evidence-media img{max-height:260px;object-fit:contain}.evidence-copy dl{grid-template-columns:1fr}.evidence-copy dl div{padding:8px}.severity,.evidence-pill{background:#f8fafc;border:1px solid #d8e2ef;border-radius:999px;display:inline-block;font-size:12px;font-weight:800;padding:7px 10px}.evidence-pill-row{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #d8e2ef;padding:10px;text-align:left}th{background:#f1f5fb}@media (max-width:700px){body{padding:14px}dl,.evidence-grid{grid-template-columns:1fr}.header,.item{border-radius:14px;padding:16px}.finding-card{grid-template-columns:1fr}}@media print{body{background:white;padding:0}.toolbar{display:none}.header,.item,.finding-card,.evidence-card{break-inside:avoid;box-shadow:none}.finding-image,.finding-image img{break-inside:avoid;visibility:visible}.reference-card details:not([open])>*:not(summary){display:none}.note{position:static;background:#14213d}a{color:#13213a}}
   `
 
 export async function GET(_request: Request, { params }: RouteContext) {
@@ -559,7 +569,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
 
   const { data: reportProfile } = await supabase
     .from('profiles')
-    .select('full_name, inspector_role_or_title, technician_license_number, inspector_email, inspector_phone, timezone')
+    .select('full_name, inspector_role_or_title, technician_license_number, inspector_email, inspector_phone, timezone, default_signature_path, use_default_signature')
     .eq('id', session.created_by)
     .eq('organization_id', organizationId)
     .maybeSingle()
@@ -575,6 +585,10 @@ export async function GET(_request: Request, { params }: RouteContext) {
     const { data } = await supabase.storage.from('documentation-signatures').createSignedUrl(signature.signature_image_path, 60 * 20)
     if (data?.signedUrl) signatureUrls[signature.id] = data.signedUrl
   }))
+  if ((reportSignatures.length === 0 || !reportSignatures.some((signature) => /inspector|technician/i.test(signature.signature_type))) && reportProfile?.use_default_signature && reportProfile.default_signature_path) {
+    const { data } = await supabase.storage.from('documentation-signatures').createSignedUrl(reportProfile.default_signature_path, 60 * 20)
+    if (data?.signedUrl) signatureUrls.__default_signature = data.signedUrl
+  }
 
   const { data: reportDrafts } = await supabase
     .from('ai_report_drafts')
