@@ -1,6 +1,7 @@
 import type { CaptureItem } from '../types'
 import { CAPTURE_TYPE_LABELS, getCaptureProcessingLabel, getCaptureProcessingStatus, getSourceDocumentMetadata, type CaptureType } from '../types'
 import { formatDateTime } from '@/features/sessions'
+import { DeleteEvidenceButton } from '@/features/capture/components/DeleteEvidenceButton'
 
 function getCaptureLabel(capture: CaptureItem) {
   const sourceDocument = getSourceDocumentMetadata(capture.extracted_data)
@@ -36,7 +37,7 @@ export function RecentCapturesList({ captures, signedUrls, limit = 6, timeZone =
   return (
     <div className="recent-capture-list">
       {recentCaptures.map((capture) => (
-        <article key={capture.id} className="recent-capture-card">
+        <article key={capture.id} className="recent-capture-card" data-evidence-card>
           <div>
             <h3>{getCaptureLabel(capture)}</h3>
             <p className="muted">{getCaptureMeta(capture)} · {formatDateTime(capture.captured_at ?? capture.created_at, timeZone)}</p>
@@ -50,6 +51,7 @@ export function RecentCapturesList({ captures, signedUrls, limit = 6, timeZone =
                 Open
               </a>
             ) : null}
+            <DeleteEvidenceButton captureId={capture.id} />
           </div>
         </article>
       ))}

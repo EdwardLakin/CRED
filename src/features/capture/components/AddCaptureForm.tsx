@@ -18,6 +18,7 @@ import {
   updateCaptureItemNote,
   validateCaptureBillingAccess,
 } from '@/features/capture/actions'
+import { DeleteEvidenceButton } from '@/features/capture/components/DeleteEvidenceButton'
 import {
   type CaptureIntent,
   type CaptureType,
@@ -548,6 +549,24 @@ export function AddCaptureForm({
       fileInputRef.current.files = dataTransfer.files
     }
 
+    setClientError(null)
+    setActionError(null)
+    setSaveMessage(null)
+  }
+
+  function removeDeletedSelectedFile(fileId: string) {
+    const fileToRemove = selectedFilesRef.current.find((file) => file.id === fileId)
+    const existingTimeout = noteAutosaveTimeoutsRef.current.get(fileId)
+
+    if (existingTimeout) {
+      window.clearTimeout(existingTimeout)
+      noteAutosaveTimeoutsRef.current.delete(fileId)
+    }
+
+    const remainingFiles = selectedFilesRef.current.filter((file) => file.id !== fileId)
+    URL.revokeObjectURL(fileToRemove?.previewUrl ?? '')
+    selectedFilesRef.current = remainingFiles
+    setSelectedFiles(remainingFiles)
     setClientError(null)
     setActionError(null)
     setSaveMessage(null)
@@ -1135,6 +1154,7 @@ export function AddCaptureForm({
               <article
                 key={file.id}
                 className="capture-list-item evidence-preview-card draft-evidence-preview-card"
+                data-evidence-card
               >
                 <div className="capture-list-main">
                   <div>
@@ -1214,14 +1234,20 @@ export function AddCaptureForm({
                     {file.name}
                   </span>
                   {file.captureItemId ? (
-                    <button
-                      type="button"
-                      className="secondary-link"
-                      onClick={() => saveSelectedFileNoteFromButton(file.id)}
-                      disabled={file.noteSaveStatus === 'saving'}
-                    >
-                      Save this note
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        className="secondary-link"
+                        onClick={() => saveSelectedFileNoteFromButton(file.id)}
+                        disabled={file.noteSaveStatus === 'saving'}
+                      >
+                        Save this note
+                      </button>
+                      <DeleteEvidenceButton
+                        captureId={file.captureItemId}
+                        onDeleted={() => removeDeletedSelectedFile(file.id)}
+                      />
+                    </>
                   ) : null}
                   {file.status === 'failed' ? (
                     <>
