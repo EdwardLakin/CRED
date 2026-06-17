@@ -1,7 +1,7 @@
 import type { Json } from '@/lib/supabase/database.types'
 
 export const FINAL_NOTES_MODEL = 'gpt-4.1-mini'
-export const FINAL_NOTES_PROMPT_VERSION = 'work-order-final-notes-v1'
+export const FINAL_NOTES_PROMPT_VERSION = 'report-final-notes-v1'
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 
@@ -31,12 +31,12 @@ export type GenerateFinalNotesInput = {
   recommendations: Json
 }
 
-const FINAL_NOTES_SYSTEM_PROMPT = `You draft concise technician-facing work order notes for CRED.
+const FINAL_NOTES_SYSTEM_PROMPT = `You draft concise technician-facing report notes for CRED.
 Return plain text only, no markdown headings unless needed.
 Use only current-session evidence supplied in the request.
 Technician Truth precedence is mandatory: manual capture notes/captions, voice transcripts, user-entered text notes, verified findings, and verified recommendations are primary source-of-truth observations. You may organize and summarize them, but must not replace, reinterpret, embellish, overwrite, or contradict technician-provided observations. Prioritize these technician-provided sources, then capture ordering and timestamps.
 Do not use previous-session data, stale report_structure entries, unverified low-confidence AI readings, unsupported AI findings, or recommendations without supporting current-session capture IDs.
-Images are optional supporting context only; do not persist or invent image interpretation results.
+Do not use image descriptions, image classifications, OCR from photos, or unverified extracted image fields. Images without technician-authored notes are evidence appendix items only, not report findings.
 Organize in this flow when evidence supports it: complaint/reason for inspection, diagnostic steps performed, measurements/observations, findings, recommendations/next steps.
 Keep it professional, copy/paste ready, and concise.`
 
@@ -70,7 +70,7 @@ function buildContext(input: GenerateFinalNotesInput) {
       captured_at: capture.captured_at,
       technician_note: capture.technician_note,
       transcript: capture.transcript,
-      extracted_data: capture.extracted_data,
+      extracted_data: (capture.technician_note || capture.transcript || capture.type === 'text_note' || capture.media_kind === 'note' || capture.media_kind === 'audio') ? capture.extracted_data : null,
     })),
     verified_findings: input.findings,
     verified_recommendations: input.recommendations,
@@ -91,7 +91,7 @@ export async function generateFinalNotes(input: GenerateFinalNotesInput) {
       model: FINAL_NOTES_MODEL,
       input: [
         { role: 'system', content: [{ type: 'input_text', text: FINAL_NOTES_SYSTEM_PROMPT }] },
-        { role: 'user', content: [{ type: 'input_text', text: `Draft final work order notes from this current-session evidence only.\n${JSON.stringify(buildContext(input)).slice(0, 50000)}` }] },
+        { role: 'user', content: [{ type: 'input_text', text: `Draft final report notes from this current-session evidence only.\n${JSON.stringify(buildContext(input)).slice(0, 50000)}` }] },
       ],
       max_output_tokens: 800,
     }),

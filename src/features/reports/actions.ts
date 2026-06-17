@@ -29,7 +29,7 @@ function genericFallbackDraftSections(draftOutput: Awaited<ReturnType<typeof gen
       if (title === 'Technician Notes') return /technician|note/.test(normalizedTitle)
       if (title === 'Evidence Captured') return /evidence|capture|photo/.test(normalizedTitle)
       if (title === 'Report Summary') return /summary|overview/.test(normalizedTitle)
-      if (title === 'Final Notes / Work Order Notes') return /final|work order/.test(normalizedTitle)
+      if (title === 'Final Summary / Report Notes') return /final|report notes|work order/.test(normalizedTitle)
       if (title === 'Inspector / Facility Details') return /inspector|facility/.test(normalizedTitle)
       if (title === 'Signoff') return /sign|approval/.test(normalizedTitle)
       return false
@@ -67,6 +67,31 @@ function ensureDraftSectionsReferenceCaptures<T extends { title: string; source_
     ...section,
     source_capture_ids: getSectionSourceCaptureIds(section.title, section.source_capture_ids, allCaptureIds, noteCaptureIds),
   }))
+}
+
+
+function isPlaceholderSessionTitle(title: string | null | undefined) {
+  return !title || /^new session\b/i.test(title.trim())
+}
+
+function buildSafeReportTitle(args: {
+  draftTitle: string | null | undefined
+  sessionTitle: string | null | undefined
+  structureSource: string | null | undefined
+  sourceDocumentName: string | null | undefined
+  customerName: string | null | undefined
+  assetLabel: string | null | undefined
+  unitNumber: string | null | undefined
+  vin: string | null | undefined
+}) {
+  const cleanedDraftTitle = stripConfidenceText(args.draftTitle ?? '').trim()
+  if (cleanedDraftTitle && !/^new session\b/i.test(cleanedDraftTitle) && !/automotive|vehicle inspection/i.test(cleanedDraftTitle)) return cleanedDraftTitle
+  if (args.structureSource && args.structureSource !== 'generic_fallback' && args.sourceDocumentName) return stripConfidenceText(args.sourceDocumentName).trim()
+  const identity = [args.customerName, args.assetLabel, args.unitNumber, args.vin].map((value) => stripConfidenceText(value ?? '').trim()).filter(Boolean).slice(0, 2).join(' — ')
+  if (identity) return `${identity} Evidence Report`
+  const sessionTitle = stripConfidenceText(args.sessionTitle ?? '').trim()
+  if (sessionTitle && !isPlaceholderSessionTitle(sessionTitle)) return sessionTitle
+  return `General Evidence Report — ${new Date().toISOString().slice(0, 10)}`
 }
 
 function getString(formData: FormData, field: string) {
@@ -717,6 +742,25 @@ export async function generateAiReportDraft(sessionId: string) {
     normalized_report_fields: buildNormalizedReportFields(normalizedCaptures),
   }) ?? {}
   const reportStructure = sanitizeReportStructureForSession(rawReportStructure, normalizedCaptures.map((capture) => capture.id))
+
+  const safeReportTitle = buildSafeReportTitle({
+    draftTitle: draftOutput.title,
+    sessionTitle: fullSession.title,
+    structureSource: structureSourceMetadata.report_structure_source,
+    sourceDocumentName: structureSourceMetadata.source_document_name,
+    customerName: fullSession.customer_name,
+    assetLabel: fullSession.asset_label,
+    unitNumber: fullSession.unit_number,
+    vin: fullSession.vin,
+  })
+  draftOutput = { ...draftOutput, title: safeReportTitle }
+  if (isPlaceholderSessionTitle(fullSession.title)) {
+    await supabase
+      .from('documentation_sessions')
+      .update({ title: safeReportTitle, updated_at: new Date().toISOString() })
+      .eq('id', session.id)
+      .eq('organization_id', profile.organization_id)
+  }
 
   const now = new Date().toISOString()
   const { data: draft, error: draftError } = await supabase

@@ -142,7 +142,7 @@ export const GENERIC_REPORT_SECTION_TITLES = [
   'Technician Notes',
   'Findings',
   'Recommendations',
-  'Final Notes / Work Order Notes',
+  'Final Summary / Report Notes',
   'Inspector / Facility Details',
   'Signoff',
 ] as const
@@ -605,8 +605,12 @@ export function selectPrimaryFormCaptures(captures: CaptureLike[]) {
   return [primary.capture, ...scored.filter((item) => item.index !== primary.index && item.score > primary.score + 2).map((item) => item.capture)].slice(0, 2)
 }
 
+const IMAGE_ALLOWED_IDENTITY_FIELD = /^(vin|vehicle_identification_number|serial(_number)?|asset(_id|_label)?|unit(_number)?|plate(_number)?|licen[cs]e(_number|_plate)?|odometer|mileage|hours?|hour_meter|work_order(_number)?|repair_order|ro_number|claim(_number)?|file(_number)?|customer(_name)?|client(_name)?|address|location)$/i
+const IMAGE_PROHIBITED_REPORT_TRUTH_FIELD = /(summary|description|classification|component|severity|condition|observed|finding|defect|damage|recommend|diagnosis|status|confidence|ocr|detected)/i
+
 export function fieldRowsFromCapture(capture: CaptureLike): NormalizedFormField[] {
   return Object.entries(getExtractionFields(capture.extracted_data))
+    .filter(([key]) => !isImageDerivedCapture(capture) || (IMAGE_ALLOWED_IDENTITY_FIELD.test(key) && !IMAGE_PROHIBITED_REPORT_TRUTH_FIELD.test(key)))
     .map(([key, value]) => ({ key, label: labelize(key), value: clean(value), source_capture_id: capture.id }))
     .filter((field) => field.label && field.value && !/^work_order$/i.test(field.value))
     .slice(0, 40)
@@ -745,9 +749,6 @@ export function buildEvidenceGroups(captures: CaptureLike[], sections: DraftSect
     if (!group) continue
     const note = clean(capture.technician_note || capture.transcript, 1200)
     if (note) pushUniqueDetail(group.details, { label: 'Technician note', value: note })
-    const hasTechnicianTruth = Boolean(note)
-    const summary = clean(capture.ai_summary, 800)
-    if (summary && !hasTechnicianTruth) pushUniqueDetail(group.details, { label: 'Suggested observation (needs review)', value: summary })
     for (const field of fieldRowsFromCapture(capture).slice(0, 8)) pushUniqueDetail(group.details, { label: labelize(field.key), value: field.value })
   }
   normalizeStructuredItems(measurements).forEach((measurement) => {
@@ -761,9 +762,9 @@ export function buildEvidenceGroups(captures: CaptureLike[], sections: DraftSect
     const group = id ? groups.get(id) : undefined
     if (!group) return
     const capture = captures.find((candidate) => candidate.id === id)
-    if (capture && clean(capture.technician_note || capture.transcript, 1200)) return
-    pushUnique(group.findings, formatFinding(finding))
-    if (finding.recommendation) {
+    if (!capture || !clean(capture.technician_note || capture.transcript, 1200)) return
+    pushUnique(group.findings, clean(capture.technician_note || capture.transcript, 1200))
+    if (finding.recommendation && !isImageDerivedCapture(capture)) {
       const recommendation = splitRecommendationByEvidence(finding.recommendation, captures.find((capture) => capture.id === id) ?? ({ id: id ?? '', type: null, media_kind: null, extracted_data: null } as CaptureLike))
       if (recommendation) pushUnique(group.recommendations, recommendation)
     }
@@ -778,21 +779,23 @@ export function buildEvidenceGroups(captures: CaptureLike[], sections: DraftSect
       const group = groups.get(id)
       const capture = captures.find((candidate) => candidate.id === id)
       if (!group || !capture || !section.body) continue
-      if (clean(capture.technician_note || capture.transcript, 1200)) continue
+      const technicianTruth = clean(capture.technician_note || capture.transcript, 1200)
+      if (!technicianTruth) continue
       // Draft sections can contain broad/global source_capture_ids. Only attach
       // section copy to a card when it is uniquely sourced or clearly matches
       // that capture's own extracted text, note, transcript, or summary.
       if (sectionSourceIds.length > 1 && !isFindingSection && !belongsToCapture(titleAndBody, capture)) continue
-      if (isRecommendation) {
+      if (isRecommendation && !isImageDerivedCapture(capture)) {
         const recommendation = splitRecommendationByEvidence(section.body, capture)
         if (recommendation) pushUnique(group.recommendations, recommendation)
-      } else if (belongsToCapture(section.body, capture) || (isFindingSection && sectionSourceIds.length <= 1)) pushUnique(group.findings, section.body)
+      } else if (belongsToCapture(section.body, capture) || (isFindingSection && sectionSourceIds.length <= 1)) pushUnique(group.findings, technicianTruth)
     }
     if (sectionSourceIds.length === 0 && isFindingSection && section.body) {
       for (const capture of captures) {
-        if (!belongsToCapture(titleAndBody, capture)) continue
+        const technicianTruth = clean(capture.technician_note || capture.transcript, 1200)
+        if (!technicianTruth || !belongsToCapture(titleAndBody, capture)) continue
         const group = groups.get(capture.id)
-        if (group) pushUnique(group.findings, section.body)
+        if (group) pushUnique(group.findings, technicianTruth)
       }
     }
   }
@@ -883,7 +886,8 @@ function hasBatteryFindingEvidence(text: string) {
 }
 
 function hasTrueDefectEvidence(capture: CaptureLike, group?: EvidenceGroup) {
-  const text = `${capture.type ?? ''} ${capture.media_kind ?? ''} ${textForCapture(capture)} ${(group?.findings ?? []).join(' ')} ${(group?.recommendations ?? []).join(' ')}`.toLowerCase()
+  const technicianTruth = `${capture.technician_note ?? ''} ${capture.transcript ?? ''} ${(group?.findings ?? []).join(' ')} ${(group?.recommendations ?? []).join(' ')}`
+  const text = `${capture.type ?? ''} ${capture.media_kind ?? ''} ${technicianTruth}`.toLowerCase()
   const hasBrakePadDefect = /\bbrakes?\b[\s\S]{0,120}\bpads?\b[\s\S]{0,120}\b(?:wear\s*limit|2\s*mm|replace)|\bpads?\b[\s\S]{0,120}\b(?:wear\s*limit|2\s*mm|replace)[\s\S]{0,120}\bbrakes?\b/i.test(text)
   const hasBatteryDefect = hasBatteryFindingEvidence(text)
   const hasComponent = /\b(brake\s*pads?|brakes?|rotor|battery|terminal|post|tire|tyre|tread|wheel|bearing|axle|engine|coolant|oil|hose|belt|body|frame|panel|light|lamp)\b/i.test(text)

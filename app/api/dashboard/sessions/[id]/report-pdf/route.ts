@@ -63,7 +63,7 @@ function isHiddenFromReport(metadata: Json) {
 function buildFinalNotesHtml(session: Pick<ReportSession, 'final_notes' | 'include_final_notes_in_export'>) {
   const notes = session.include_final_notes_in_export ? (session.final_notes ?? '') : ''
   if (!notes) return ''
-  return `<section class="item service-section"><h2>Final Notes / Work Order Notes</h2><p>${escapeRawHtml(notes).replace(/\n/g, '<br />')}</p></section>`
+  return `<section class="item service-section"><h2>Final Summary / Report Notes</h2><p>${escapeRawHtml(notes).replace(/\n/g, '<br />')}</p></section>`
 }
 
 function getCaptureFilename(capture: ReportCapture) {
