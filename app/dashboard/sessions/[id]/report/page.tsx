@@ -5,7 +5,6 @@ import { notFound } from "next/navigation";
 import {
   getCaptureProcessingStatus,
   getRequiredEvidenceCompletion,
-  getInspectionProgress,
 } from "@/features/capture";
 import { asDiagnosticRecordArray, getDiagnosticProcedureProgress, getDiagnosticStepCompleteness } from "@/features/diagnostic-procedures/progress";
 import {
@@ -109,7 +108,18 @@ function getEvidenceKind(capture: CaptureItem): SupportingEvidenceItem["kind"] {
   return "file";
 }
 
+function getShortTechnicianTitle(item: CaptureItem) {
+  const note = getEvidenceNote(item);
+  if (!note) return null;
+  const firstSentence = note.split(/(?<=[.!?])\s+/)[0]?.trim() ?? note.trim();
+  const clean = stripConfidenceText(firstSentence).replace(/\s+/g, " ").trim();
+  if (!clean || clean.length > 72 || /\b(recommend|severity|diagnos|fault|failed|root cause)\b/i.test(clean)) return null;
+  return /[.!?]$/.test(clean) ? clean : `${clean}.`;
+}
+
 function getEvidenceTitle(item: CaptureItem) {
+  const technicianTitle = getShortTechnicianTitle(item);
+  if (technicianTitle && (isPhotoCapture(item) || item.media_kind === "video" || item.type === "video")) return technicianTitle;
   const referenceTitle = classifyReferenceDocumentTitle(item);
   if (referenceTitle !== "Reference Document" || item.media_kind === "document") return referenceTitle;
   if (item.type === "text_note" || item.media_kind === "note")
@@ -226,7 +236,7 @@ function DiagnosticProcedureReport({
           </div>
           {hasUnlinkedIncludedEvidence ? <p className="notice warning">Some evidence is not linked to generated sections. It will still appear in the Evidence Appendix.</p> : null}
         </section>
-        <EvidenceAppendix supportingEvidence={supportingEvidence} timeZone={timeZone} />
+        <EvidenceAppendix supportingEvidence={supportingEvidence} timeZone={timeZone} isGenericEvidenceReport={false} />
         <div className="report-document-flow">
           {steps.length === 0 ? <p className="notice warning">No visible procedure steps are included in this diagnostic report.</p> : null}
           {steps.map((section) => {
@@ -413,7 +423,6 @@ export default async function SessionReportPreviewPage({
     measurements: currentReport?.measurements ?? [],
     findings: currentReport?.findings ?? [],
   });
-  const progress = getInspectionProgress(visibleCaptures, session.session_type, template?.required_evidence ?? null);
   const photoEvidence = supportingEvidence.filter(
     (item) => item.kind === "photo",
   );
@@ -448,6 +457,7 @@ export default async function SessionReportPreviewPage({
     : null;
   const sourceFieldEntries = getDisplayEntries(currentReport?.header_fields);
   const displayReportTitle = getDisplayReportTitle(currentReport, session);
+  const isGenericEvidenceReport = formStructureSummary.source === "generic_fallback";
   const isEditingReport = Boolean(currentReport);
   if (currentReport && getDiagnosticProcedureInfo(currentReport)) {
     return (
@@ -523,19 +533,17 @@ export default async function SessionReportPreviewPage({
             otherEvidence={otherEvidence}
             photoEvidence={photoEvidence}
             documentSections={documentSections}
-            formStructureSummary={formStructureSummary}
             reviewDocument={reviewDocument}
             supportingEvidence={supportingEvidence}
             reportEvidenceDiagnostics={reportEvidenceDiagnostics}
             session={session}
             saveReportEditsAction={saveReportEditsAction}
             sourceFieldEntries={sourceFieldEntries}
-            visibleCaptureCount={visibleCaptures.length}
-            progress={progress}
             facilityName={profile.company_profile?.facility_name ?? profile.company_profile?.company_name ?? profile.organization.name}
             facilityLocation={[profile.company_profile?.facility_city, profile.company_profile?.facility_region].filter(Boolean).join(", ")}
             timeZone={profile.timezone}
             displayReportTitle={displayReportTitle}
+            isGenericEvidenceReport={isGenericEvidenceReport}
           />
 
           <FinalNotesEditor
@@ -584,19 +592,17 @@ function GeneratedReportReview({
   otherEvidence,
   photoEvidence,
   documentSections,
-  formStructureSummary,
   reviewDocument,
   supportingEvidence,
   reportEvidenceDiagnostics,
   session,
   saveReportEditsAction,
   sourceFieldEntries,
-  visibleCaptureCount,
-  progress,
   facilityName,
   facilityLocation,
   timeZone,
   displayReportTitle,
+  isGenericEvidenceReport,
 }: {
   reportSections: AiReportDraftSection[];
   currentReport: AiReportDraft | null;
@@ -607,19 +613,17 @@ function GeneratedReportReview({
   otherEvidence: SupportingEvidenceItem[];
   photoEvidence: SupportingEvidenceItem[];
   documentSections: ReturnType<typeof normalizeDraftSections>;
-  formStructureSummary: ReturnType<typeof getFormStructureSummary>;
   reviewDocument: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>;
   supportingEvidence: SupportingEvidenceItem[];
   reportEvidenceDiagnostics: { capturesSaved: number; includedInReport: number; referencedByDraft: number; hiddenFromReport: number };
   session: Pick<DocumentationSession, "id" | "title" | "asset_label" | "customer_name" | "suggested_details">;
   saveReportEditsAction: ServerAction | null;
   sourceFieldEntries: [string, unknown][];
-  visibleCaptureCount: number;
-  progress: ReturnType<typeof getInspectionProgress>;
   facilityName: string;
   facilityLocation: string;
   timeZone: string | null;
   displayReportTitle: string;
+  isGenericEvidenceReport: boolean;
 }) {
   const editableSections = reportSections;
   const includedEvidenceCount = [
@@ -627,15 +631,6 @@ function GeneratedReportReview({
     ...noteEvidence,
     ...otherEvidence,
   ].filter((item) => item.capture.include_in_report).length;
-  const findings = reviewDocument.findingModels;
-  const structureSourceLabel = formStructureSummary.source === "generic_fallback"
-    ? "Generic evidence report"
-    : formStructureSummary.source === "uploaded_report"
-      ? "Uploaded report"
-      : formStructureSummary.source === "uploaded_template"
-        ? "Uploaded template"
-        : "Uploaded form";
-
   return (
     <section className="card detail-card report-command-card form-stack generated-report-card">
       <div className="report-section-heading generated-report-heading">
@@ -665,38 +660,6 @@ function GeneratedReportReview({
       </div>
 
       <section className="inspection-summary-card">
-        <div className="report-section-title-row">
-          <div>
-            <p className="eyebrow">Report Overview</p>
-            <h3>Capture Summary</h3>
-          </div>
-          <span className="status-pill neutral">Evidence review</span>
-        </div>
-        <div className="inspection-metric-grid">
-          <div><span>Captures saved</span><strong>{reportEvidenceDiagnostics.capturesSaved}</strong></div>
-          <div><span>Included in report</span><strong>{reportEvidenceDiagnostics.includedInReport}</strong></div>
-          <div><span>Hidden from report</span><strong>{reportEvidenceDiagnostics.hiddenFromReport}</strong></div>
-          <div><span>Reference Documents Captured</span><strong>{reviewDocument.referenceDocuments.length}</strong></div>
-        </div>
-        <p className="muted">
-          <strong>Structure source:</strong>{" "}
-          {structureSourceLabel}
-          {formStructureSummary.sourceDocumentName ? ` · ${formStructureSummary.sourceDocumentName}` : ""}
-          {formStructureSummary.classification ? ` · ${formStructureSummary.classification.replace(/_/g, " ")}` : ""}
-        </p>
-        {formStructureSummary.isFormStructured ? (
-          <p className="muted">
-            <strong>Form intelligence:</strong> {formStructureSummary.blueprintSectionCount} sections, {formStructureSummary.blueprintFieldCount} fields, {formStructureSummary.mappedEvidenceCount} evidence-to-field mappings.
-          </p>
-        ) : null}
-        {progress.missingReadinessItems.length > 0 ? (
-          <p className="notice info"><strong>Missing required manual items:</strong> {progress.missingReadinessItems.join(', ')}.</p>
-        ) : (
-          <p className="notice info"><strong>No required reference items for this report type.</strong></p>
-        )}
-        <p className="muted"><strong>Technician-authored findings awaiting review:</strong> {findings.length}</p>
-      </section>
-      <section className="inspection-summary-card">
         <div className="report-section-title-row"><div><p className="eyebrow">Capture Summary</p><h3>Captured report materials</h3></div></div>
         <div className="inspection-metric-grid">
           <div><span>Evidence Items Captured</span><strong>{reportEvidenceDiagnostics.capturesSaved}</strong></div>
@@ -716,11 +679,9 @@ function GeneratedReportReview({
       {!currentReport ? (
         <form action={generateReportAction} className="empty-report-shell">
           <div>
-            <h3>No review draft yet</h3>
+            <h3>Ready to prepare report</h3>
             <p className="muted">
-              {visibleCaptureCount > 0
-                ? "Your evidence is saved. Prepare an editable review draft or continue capturing."
-                : "No evidence has been added yet. Continue capturing to build the report."}
+              Your evidence is saved. Prepare an editable report or continue capturing.
             </p>
           </div>
           <div className="form-actions report-inline-actions">
@@ -757,11 +718,11 @@ function GeneratedReportReview({
           ["Asset / Equipment", getReportInfoValue(currentReport, session, "asset_equipment") || session.asset_label],
           ["Location / Address", getReportInfoValue(currentReport, session, "location_address")],
           ["Reference Number", getReportInfoValue(currentReport, session, "reference_number")],
-        ].map(([label, value]) => <div key={label} className="report-field-card"><span>{label}</span><strong>{value ? stripConfidenceText(String(value)) : "Optional"}</strong></div>)}</div>
+        ].map(([label, value]) => <div key={label} className="report-field-card"><span>{label}</span><strong className={value ? undefined : "not-provided"}>{value ? stripConfidenceText(String(value)) : "Not provided"}</strong></div>)}</div>
         <ReferenceDocumentList items={reviewDocument.referenceDocuments} supportingEvidence={supportingEvidence} />
       </section>
 
-      <EvidenceAppendix supportingEvidence={supportingEvidence} timeZone={timeZone} />
+      <EvidenceAppendix supportingEvidence={supportingEvidence} timeZone={timeZone} isGenericEvidenceReport={isGenericEvidenceReport} />
 
       {currentReport && isEditingReport && saveReportEditsAction ? (
         <form
@@ -1120,14 +1081,14 @@ function EvidenceGroupList({
   );
 }
 
-function EvidenceAppendix({ supportingEvidence, timeZone }: { supportingEvidence: SupportingEvidenceItem[]; timeZone: string | null }) {
+function EvidenceAppendix({ supportingEvidence, timeZone, isGenericEvidenceReport }: { supportingEvidence: SupportingEvidenceItem[]; timeZone: string | null; isGenericEvidenceReport: boolean }) {
   return (
     <section className="report-subsection report-supporting-section">
       <div className="report-section-title-row">
         <div>
-          <p className="eyebrow">Evidence Appendix</p>
-          <h3>Evidence Captured</h3>
-          <p className="muted">All included captures appear here whether or not generated draft sections reference them.</p>
+          <p className="eyebrow">{isGenericEvidenceReport ? "Evidence" : "Evidence Appendix"}</p>
+          <h3>{isGenericEvidenceReport ? "Captured Evidence" : "Evidence Captured"}</h3>
+          <p className="muted">{isGenericEvidenceReport ? "Included captures with technician-authored notes and capture details." : "All included captures appear here whether or not generated draft sections reference them."}</p>
         </div>
         <span className="status-pill neutral compact">{supportingEvidence.length} included</span>
       </div>
@@ -1147,8 +1108,8 @@ function EvidenceAppendix({ supportingEvidence, timeZone }: { supportingEvidence
               </div>
               <div className="evidence-first-body">
                 <h4>{item.title}</h4>
-                <p><strong>Primary evidence description:</strong> {stripConfidenceText(item.note ?? "No technician note provided.")}</p>
-                <p className="muted">Media kind: {item.capture.media_kind ?? item.kind} · Captured {formatDateTime(item.capture.captured_at, timeZone)}</p>
+                {item.note ? <p><strong>Technician note:</strong> {stripConfidenceText(item.note)}</p> : <p className="muted">No technician note provided.</p>}
+                <p className="muted">{item.kind === "photo" ? "Photo evidence" : item.kind === "video" ? "Video evidence" : item.kind === "audio" ? "Voice note" : item.kind === "note" ? "Technician note" : "Supporting file"} · Captured {formatDateTime(item.capture.captured_at, timeZone)}</p>
               </div>
             </article>
           ))}
@@ -1366,10 +1327,11 @@ function ExportPanel({
 
   return (
     <details
+      open={isReadyForExport}
       id="export-report"
       className="card detail-card report-sidebar-card report-delivery-tabs export-panel form-stack compact-export-panel"
     >
-      <summary className="export-summary-row">Export Report</summary>
+      <summary className="export-summary-row">Export Report{isReadyForExport ? " · Print / Save PDF" : ""}</summary>
       <div>
         <p className="eyebrow">Export</p>
         <h2>Export Report</h2>
@@ -1455,7 +1417,7 @@ function ExportPanel({
               className="button button-secondary touch-target"
               target="_blank"
             >
-              Print
+              Open Printable Report
             </Link>
           ) : (
             <span
@@ -1480,7 +1442,7 @@ function ExportPanel({
               className="button button-secondary touch-target"
               target="_blank"
             >
-              Save PDF
+              Print / Save PDF
             </Link>
           ) : (
             <span
