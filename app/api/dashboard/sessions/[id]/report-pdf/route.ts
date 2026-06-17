@@ -229,14 +229,14 @@ function buildExecutiveSummaryHtml(params: { reportTitle: string; organizationNa
   return `<section class="item premium-cover"><p class="eyebrow">Professional Evidence Report</p><h1>${escapeHtml(params.reportTitle)}</h1><p class="meta">${escapeHtml(params.organizationName)} · ${escapeHtml(params.dateLabel)}</p></section><section class="item service-section"><h2>Report Overview</h2><p>Evidence-first report prepared from included captures and technician-authored content.</p><dl><div><dt>Technician-authored findings</dt><dd>${params.findings.length}</dd></div><div><dt>Reference Documents Captured</dt><dd>${params.referenceCount}</dd></div><div><dt>Evidence Items Captured</dt><dd>${params.evidenceCount}</dd></div></dl></section>`
 }
 
-function buildFindingCardsHtml(items: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>['findings'], signedUrls: Record<string, string>) {
+function buildFindingCardsHtml(items: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>['findings'], signedUrls: Record<string, string>, options: { renderImages?: boolean } = {}) {
   const findings = getNormalizedFindingModels(items)
   if (findings.length === 0) return ''
   return `<section class="item service-section"><h2>Technician-Authored Findings</h2>${findings.map((finding, index) => {
     const capture = finding.entry.capture
     const signedUrl = signedUrls[capture.id]
     const isImageFile = Boolean(capture.storage_path?.match(/\.(jpg|jpeg|png|webp|gif|heic)$/i))
-    const shouldRenderImage = signedUrl && (capture.media_kind === 'image' || capture.type === 'photo' || isImageFile)
+    const shouldRenderImage = options.renderImages !== false && signedUrl && (capture.media_kind === 'image' || capture.type === 'photo' || isImageFile)
     const imageHtml = shouldRenderImage ? `<div class="finding-image"><img src="${escapeHtml(signedUrl)}" alt="${escapeHtml(finding.title)} evidence image" /></div>` : ''
     const details = finding.details.filter((detail) => !finding.observations.some((observation) => observation.includes(detail.value)))
     return `<article class="finding-card">${imageHtml}<div class="finding-content"><p class="eyebrow">Finding ${index + 1}</p><h3>${escapeHtml(finding.title)}</h3><h4>Technician / Verified Condition</h4>${finding.observations.length ? finding.observations.map((item) => `<p>${escapeHtml(item)}</p>`).join('') : '<p class="muted">Condition documented in supporting evidence.</p>'}${details.length ? `<h4>Key Details</h4>${renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value })))}` : ''}<h4>Verified Recommendation</h4>${finding.recommendations.length ? `<ul>${finding.recommendations.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : '<p class="muted">No verified recommendation captured.</p>'}</div></article>`
@@ -249,9 +249,9 @@ function buildRecommendedActionsHtml(findings: ReturnType<typeof getNormalizedFi
   return `<section class="item service-section"><h2>Recommended Actions</h2><table><thead><tr><th>Priority</th><th>Action</th></tr></thead><tbody>${actions.map((item) => `<tr><td>${escapeHtml(item.priority)}</td><td>${escapeHtml(item.action)}</td></tr>`).join('')}</tbody></table></section>`
 }
 
-function buildReferenceDocumentsHtml(items: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>['findings'], signedUrls: Record<string, string>) {
+function buildReferenceDocumentsHtml(items: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>['findings'], signedUrls: Record<string, string>, options: { includeOriginal?: boolean } = {}) {
   if (!items.length) return ''
-  return `<section class="item service-section"><h2>Reference Documents</h2>${items.map((entry) => { const details = dedupeEvidenceDetails(entry.group.details).filter((detail) => isMeaningfulCustomerReportText(detail.value)); return `<article class="reference-card"><h3>${escapeHtml(getEvidenceTitle(entry.capture))}</h3>${details.length ? renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value }))) : '<p class="muted">Reference captured for report support.</p>'}<details><summary>View Original Reference</summary>${buildEvidenceItemsHtml([entry], signedUrls)}</details></article>` }).join('')}</section>`
+  return `<section class="item service-section"><h2>Reference Documents</h2>${items.map((entry) => { const details = dedupeEvidenceDetails(entry.group.details).filter((detail) => isMeaningfulCustomerReportText(detail.value)); const originalHtml = options.includeOriginal === false ? '' : `<details><summary>View Original Reference</summary>${buildEvidenceItemsHtml([entry], signedUrls)}</details>`; return `<article class="reference-card"><h3>${escapeHtml(getEvidenceTitle(entry.capture))}</h3>${details.length ? renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value }))) : '<p class="muted">Reference captured for report support.</p>'}${originalHtml}</article>` }).join('')}</section>`
 }
 
 function buildEvidenceItemsHtml(
@@ -298,9 +298,9 @@ function buildEvidenceSectionHtml(title: string, items: ReturnType<typeof buildN
   return `<section class="item service-section"><h2>${escapeHtml(title)}</h2><div class="evidence-children">${buildEvidenceItemsHtml(items, signedUrls)}</div></section>`
 }
 
-function buildEvidenceAppendixHtml(captures: ReportCapture[], signedUrls: Record<string, string>, timeZone: string | null) {
-  if (captures.length === 0) return '<section class="item service-section"><h2>Evidence Appendix</h2><p class="muted">No included evidence selected for this report.</p></section>'
-  return `<section class="item service-section"><h2>Evidence Appendix</h2><p class="muted">All included captures are listed once from the reviewed report state.</p><div class="evidence-children">${captures.map((capture) => {
+function buildEvidenceAppendixHtml(captures: ReportCapture[], signedUrls: Record<string, string>, timeZone: string | null, options: { showDebugDetails?: boolean } = {}) {
+  if (captures.length === 0) return '<section class="item service-section"><h2>Evidence Captured</h2><p class="muted">No included evidence selected for this report.</p></section>'
+  return `<section class="item service-section"><h2>Evidence Captured</h2><p class="muted">Included captures are listed once from the reviewed report state.</p><div class="evidence-grid">${captures.map((capture) => {
     const signedUrl = signedUrls[capture.id]
     const mediaKind = getEvidenceKind(capture)
     const primaryNote = getPrimaryEvidenceDescription(capture) || 'No technician note provided.'
@@ -309,7 +309,9 @@ function buildEvidenceAppendixHtml(captures: ReportCapture[], signedUrls: Record
       : signedUrl
         ? `<p><a href="${escapeHtml(signedUrl)}">Open ${escapeHtml(mediaKind)} evidence</a></p>`
         : `<div class="video-still">${escapeHtml(getEvidenceTitle(capture))}</div>`
-    return `<article class="item" data-capture-id="${escapeHtml(capture.id)}"><h2>${escapeHtml(getEvidenceTitle(capture))}</h2><div class="media">${mediaHtml}</div><section class="finding"><h3>Primary evidence description</h3><p>${escapeHtml(primaryNote)}</p></section>${renderDefinitionRows([{ label: 'Capture ID', value: capture.id }, { label: 'Media kind', value: String(capture.media_kind ?? mediaKind) }, { label: 'Captured', value: formatDateTimeInTimeZone(new Date(capture.captured_at), timeZone) }])}</article>`
+    const detailRows = [{ label: 'Captured', value: formatDateTimeInTimeZone(new Date(capture.captured_at), timeZone) }]
+    if (options.showDebugDetails) detailRows.unshift({ label: 'Capture ID', value: capture.id }, { label: 'Media kind', value: String(capture.media_kind ?? mediaKind) })
+    return `<article class="evidence-card"${options.showDebugDetails ? ` data-capture-id="${escapeHtml(capture.id)}"` : ''}><div class="media evidence-media">${mediaHtml}</div><div class="evidence-copy"><h3>${escapeHtml(getEvidenceTitle(capture))}</h3><p>${escapeHtml(primaryNote)}</p>${renderDefinitionRows(detailRows)}</div></article>`
   }).join('')}</div></section>`
 }
 
@@ -441,7 +443,7 @@ function buildFieldServiceReportHtml({
 }
 
 const REPORT_STYLES = `
-    body{font-family:Arial,Helvetica,sans-serif;background:#f7f8fc;color:#13213a;margin:0;padding:32px}.report{max-width:980px;margin:0 auto}.header,.item{background:white;border:1px solid #d8e2ef;border-radius:18px;box-shadow:0 12px 34px rgba(20,33,61,.08);padding:24px;margin-bottom:18px}.eyebrow{color:#155dfc;font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}.meta,.muted{color:#5f6f89}.media{position:relative;border-radius:16px;overflow:hidden;background:#f1f5fb;border:1px solid #d8e2ef}.media img{display:block;width:100%;max-height:620px;object-fit:contain;background:#0f172a}.note{background:rgba(15,23,42,.86);bottom:0;color:white;left:0;padding:14px 18px;position:absolute;right:0}.note p{margin:6px 0 0}.finding{margin-top:16px}.finding h3{margin-bottom:8px}dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}dl div{background:#f1f5fb;border:1px solid #d8e2ef;border-radius:12px;padding:10px}dt{font-weight:800}dd{margin:4px 0 0}.video-still{align-items:center;aspect-ratio:16/9;background:#14213d;color:white;display:flex;font-size:24px;font-weight:800;justify-content:center}.video-link{padding:12px 16px}.toolbar{margin-bottom:16px}.print-help{color:#5f6f89;font-size:13px;margin:8px 0 0}.service-section h2{border-bottom:1px solid #d8e2ef;padding-bottom:8px}.signature-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.signature-block{background:#f8fafc;border:1px solid #d8e2ef;border-radius:14px;padding:14px}.signature-image{background:white;border:1px solid #d8e2ef;border-radius:10px;display:block;max-height:120px;max-width:100%;object-fit:contain;padding:8px}.premium-cover{background:linear-gradient(135deg,#fff,#eef4ff)}.finding-card,.reference-card{border:1px solid #d8e2ef;border-radius:14px;margin:12px 0;padding:14px}.finding-card{display:grid;gap:16px;grid-template-columns:minmax(220px,36%) 1fr}.finding-image{align-self:start;background:#f1f5fb;border:1px solid #d8e2ef;border-radius:12px;overflow:hidden}.finding-image img{display:block;width:100%;max-height:360px;object-fit:contain}.reference-card details{margin-top:10px}.reference-card details:not([open]) .item{display:none}.severity{background:#fff7ed;border:1px solid #fed7aa;border-radius:999px;display:inline-block;font-weight:800;padding:7px 10px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #d8e2ef;padding:10px;text-align:left}th{background:#f1f5fb}@media (max-width:700px){body{padding:14px}dl{grid-template-columns:1fr}.header,.item{border-radius:14px;padding:16px}.finding-card{grid-template-columns:1fr}}@media print{body{background:white;padding:0}.toolbar{display:none}.header,.item,.finding-card{break-inside:avoid;box-shadow:none}.finding-image,.finding-image img{break-inside:avoid;visibility:visible}.reference-card details:not([open])>*:not(summary){display:none}.note{position:static;background:#14213d}a{color:#13213a}}
+    body{font-family:Arial,Helvetica,sans-serif;background:#f7f8fc;color:#13213a;margin:0;padding:32px}.report{max-width:980px;margin:0 auto}.header,.item{background:white;border:1px solid #d8e2ef;border-radius:18px;box-shadow:0 12px 34px rgba(20,33,61,.08);padding:24px;margin-bottom:18px}.eyebrow{color:#155dfc;font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}.meta,.muted{color:#5f6f89}.media{position:relative;border-radius:16px;overflow:hidden;background:#f1f5fb;border:1px solid #d8e2ef}.media img{display:block;width:100%;max-height:620px;object-fit:contain;background:#0f172a}.note{background:rgba(15,23,42,.86);bottom:0;color:white;left:0;padding:14px 18px;position:absolute;right:0}.note p{margin:6px 0 0}.finding{margin-top:16px}.finding h3{margin-bottom:8px}dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}dl div{background:#f1f5fb;border:1px solid #d8e2ef;border-radius:12px;padding:10px}dt{font-weight:800}dd{margin:4px 0 0}.video-still{align-items:center;aspect-ratio:16/9;background:#14213d;color:white;display:flex;font-size:24px;font-weight:800;justify-content:center}.video-link{padding:12px 16px}.toolbar{margin-bottom:16px}.print-help{color:#5f6f89;font-size:13px;margin:8px 0 0}.service-section h2{border-bottom:1px solid #d8e2ef;padding-bottom:8px}.signature-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.signature-block{background:#f8fafc;border:1px solid #d8e2ef;border-radius:14px;padding:14px}.signature-image{background:white;border:1px solid #d8e2ef;border-radius:10px;display:block;max-height:120px;max-width:100%;object-fit:contain;padding:8px}.premium-cover{background:linear-gradient(135deg,#fff,#eef4ff)}.finding-card,.reference-card{border:1px solid #d8e2ef;border-radius:14px;margin:12px 0;padding:14px}.finding-card{display:grid;gap:16px;grid-template-columns:minmax(220px,36%) 1fr}.finding-image{align-self:start;background:#f1f5fb;border:1px solid #d8e2ef;border-radius:12px;overflow:hidden}.finding-image img{display:block;width:100%;max-height:360px;object-fit:contain}.reference-card details{margin-top:10px}.reference-card details:not([open]) .item{display:none}.evidence-grid{display:grid;gap:16px;grid-template-columns:repeat(2,minmax(0,1fr))}.evidence-card{border:1px solid #d8e2ef;border-radius:14px;display:grid;gap:12px;grid-template-rows:auto 1fr;padding:14px}.evidence-card h3{margin:0 0 8px}.evidence-card p{margin-top:0}.evidence-media img{max-height:260px;object-fit:contain}.evidence-copy dl{grid-template-columns:1fr}.evidence-copy dl div{padding:8px}.severity{background:#fff7ed;border:1px solid #fed7aa;border-radius:999px;display:inline-block;font-weight:800;padding:7px 10px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #d8e2ef;padding:10px;text-align:left}th{background:#f1f5fb}@media (max-width:700px){body{padding:14px}dl,.evidence-grid{grid-template-columns:1fr}.header,.item{border-radius:14px;padding:16px}.finding-card{grid-template-columns:1fr}}@media print{body{background:white;padding:0}.toolbar{display:none}.header,.item,.finding-card,.evidence-card{break-inside:avoid;box-shadow:none}.finding-image,.finding-image img{break-inside:avoid;visibility:visible}.reference-card details:not([open])>*:not(summary){display:none}.note{position:static;background:#14213d}a{color:#13213a}}
   `
 
 export async function GET(_request: Request, { params }: RouteContext) {
@@ -449,6 +451,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const requestUrl = new URL(_request.url)
   const shareTokenValue = requestUrl.searchParams.get('share_token')
   const previewOnly = requestUrl.searchParams.get('preview') === '1'
+  const showDebugDetails = requestUrl.searchParams.get('debug') === '1'
   const sharedAccess = Boolean(shareTokenValue)
 
   let supabase: SupabaseClient<Database>
@@ -644,22 +647,21 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const structuredFormDataHtml = buildStructuredFormDataHtml(reportDraft?.report_structure ?? null)
   const reportInfoHtml = renderReportInformationHtml(reportDraft, session)
   const reviewDocument = buildNormalizedReportModel({ captures: captureItems, sections: formSections, draftSections: visibleReportSections, measurements: reportDraft?.measurements ?? [], findings: reportDraft?.findings ?? [] })
-  const unattachedDetails = reviewDocument.unattachedDetails
-  const unattachedHtml = unattachedDetails.length > 0 ? `<section class="item service-section"><h2>Supporting Evidence</h2>${renderDefinitionRows(unattachedDetails.map((detail) => ({ label: detail.label, value: detail.value })))}</section>` : ''
+  const unattachedHtml = ''
   const findingModels = reviewDocument.findingModels
   const summaryHtml = buildExecutiveSummaryHtml({ reportTitle, organizationName, dateLabel: formatDateInTimeZone(new Date(), timeZone), findings: findingModels, referenceCount: reviewDocument.referenceDocuments.length, evidenceCount: captureItems.length })
-  const appendixHtml = buildEvidenceAppendixHtml(appendixCaptureItems, signedUrls, timeZone)
+  const appendixHtml = buildEvidenceAppendixHtml(appendixCaptureItems, signedUrls, timeZone, { showDebugDetails })
   const draftReferencedCaptureCount = new Set(visibleReportSections.flatMap((section) => section.source_capture_ids ?? []).filter((id) => captureItems.some((capture) => capture.id === id))).size
   const evidenceSectionIsEmpty = reviewDocument.findings.length === 0 && reviewDocument.referenceDocuments.length === 0 && reviewDocument.additionalNotes.length === 0 && reviewDocument.supportingEvidence.length === 0 && reviewDocument.unattachedDetails.length === 0
   if (captureItems.length > 0 && draftReferencedCaptureCount === 0 && evidenceSectionIsEmpty) console.warn('[report-evidence-check] Included captures have no draft references; Evidence Appendix will render all included captures.', { session_id: session.id, included_capture_count: captureItems.length })
-  const referenceHtml = buildReferenceDocumentsHtml(reviewDocument.referenceDocuments, signedUrls)
-  const findingsHtml = buildFindingCardsHtml(reviewDocument.findings, signedUrls)
-  const supportingHtml = buildEvidenceSectionHtml('Supporting Evidence', reviewDocument.supportingEvidence, signedUrls)
+  const referenceHtml = buildReferenceDocumentsHtml(reviewDocument.referenceDocuments, signedUrls, { includeOriginal: false })
+  const findingsHtml = buildFindingCardsHtml(reviewDocument.findings, signedUrls, { renderImages: false })
+  const supportingHtml = ''
 
 
   const toolbarHtml = previewOnly ? '' : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>'
   const html = `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Report Header</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'General evidence report')} · ${escapeHtml(formatDateInTimeZone(new Date(), timeZone))}</p></header>${summaryHtml}${reportInfoHtml}${structuredFormDataHtml}${customerAssetHtml || referenceHtml ? `<section class="item service-section"><h2>Report Metadata</h2>${customerAssetHtml}${referenceHtml}</section>` : ''}${findingsHtml}${unattachedHtml}${buildFinalNotesHtml(session)}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile, reportSignatures, signatureUrls)}${supportingHtml}${appendixHtml}</main></body></html>`
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Professional Evidence Report</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'General evidence report')} · ${escapeHtml(formatDateInTimeZone(new Date(), timeZone))}</p></header>${summaryHtml}${reportInfoHtml}${structuredFormDataHtml}${customerAssetHtml || referenceHtml ? `<section class="item service-section"><h2>Report Metadata</h2>${customerAssetHtml}${referenceHtml}</section>` : ''}${findingsHtml}${unattachedHtml}${buildFinalNotesHtml(session)}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile, reportSignatures, signatureUrls)}${supportingHtml}${appendixHtml}</main></body></html>`
 
   return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
 }
