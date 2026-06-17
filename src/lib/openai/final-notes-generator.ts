@@ -37,7 +37,7 @@ Use only current-session evidence supplied in the request.
 Technician Truth precedence is mandatory: manual capture notes/captions, voice transcripts, user-entered text notes, verified findings, and verified recommendations are primary source-of-truth observations. You may organize and summarize them, but must not replace, reinterpret, embellish, overwrite, or contradict technician-provided observations. Prioritize these technician-provided sources, then capture ordering and timestamps.
 Do not use previous-session data, stale report_structure entries, unverified low-confidence AI readings, unsupported AI findings, or recommendations without supporting current-session capture IDs.
 Do not use image descriptions, image classifications, OCR from photos, or unverified extracted image fields. Images without technician-authored notes are evidence appendix items only, not report findings.
-Organize in this flow when evidence supports it: complaint/reason for inspection, diagnostic steps performed, measurements/observations, findings, recommendations/next steps.
+For generic evidence-only sessions, do not invent complaint, inspection, diagnostic steps, measurements, findings, faults, severity, or recommendations unless technician-authored content explicitly provides them. If there are no verified findings/recommendations, write a neutral evidence count plus technician notes/transcripts only. Do not say no technical issues or faults were identified unless the technician explicitly wrote that.
 Keep it professional, copy/paste ready, and concise.`
 
 function getOpenAiApiKey() {
@@ -77,7 +77,25 @@ function buildContext(input: GenerateFinalNotesInput) {
   }
 }
 
+function hasMeaningfulJson(value: Json) {
+  if (Array.isArray(value)) return value.length > 0
+  if (isRecord(value)) return Object.keys(value).length > 0
+  return Boolean(value)
+}
+
+function buildNeutralEvidenceSummary(input: GenerateFinalNotesInput) {
+  const technicianNotes = input.captures
+    .map((capture) => (capture.technician_note?.trim() || capture.transcript?.trim() || ''))
+    .filter(Boolean)
+  if (hasMeaningfulJson(input.findings) || hasMeaningfulJson(input.recommendations) || technicianNotes.length === 0) return null
+  const evidenceCount = input.captures.length
+  const evidenceLabel = `${evidenceCount} evidence item${evidenceCount === 1 ? '' : 's'} captured.`
+  return `${evidenceLabel} Technician notes: ${technicianNotes.join(' ')}`.slice(0, 6000)
+}
+
 export async function generateFinalNotes(input: GenerateFinalNotesInput) {
+  const neutralSummary = buildNeutralEvidenceSummary(input)
+  if (neutralSummary) return neutralSummary
   const apiKey = getOpenAiApiKey()
   if (!apiKey) throw new Error('OPENAI_API_KEY_MISSING')
 
