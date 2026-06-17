@@ -359,6 +359,12 @@ export default async function SessionReportPreviewPage({
       if (data?.signedUrl) signatureUrls[signature.id] = data.signedUrl;
     }),
   );
+  if (profile.use_default_signature && profile.default_signature_path && !(signatures ?? []).length) {
+    const { data } = await supabase.storage
+      .from("documentation-signatures")
+      .createSignedUrl(profile.default_signature_path, 60 * 10);
+    if (data?.signedUrl) signatureUrls.__default_signature = data.signedUrl;
+  }
 
   const currentReport =
     (aiDrafts ?? []).find((draft) => draft.status === "approved") ??
@@ -704,13 +710,13 @@ function GeneratedReportReview({
         </form>
       ) : null}
 
-      <section className="report-subsection report-document-section">
-        <div className="report-section-title-row">
+      <details className="report-subsection report-document-section" open>
+        <summary className="report-section-title-row">
           <div>
             <h3>Report Information</h3>
             <p className="muted">Report metadata is optional for generic evidence reports and is used in export when present.</p>
           </div>
-        </div>
+        </summary>
         <div className="report-field-grid">{[
           ["Report Title", displayReportTitle],
           ["Subject Name", getReportInfoValue(currentReport, session, "subject_name")],
@@ -720,7 +726,7 @@ function GeneratedReportReview({
           ["Reference Number", getReportInfoValue(currentReport, session, "reference_number")],
         ].map(([label, value]) => <div key={label} className="report-field-card"><span>{label}</span><strong className={value ? undefined : "not-provided"}>{value ? stripConfidenceText(String(value)) : "Not provided"}</strong></div>)}</div>
         <ReferenceDocumentList items={reviewDocument.referenceDocuments} supportingEvidence={supportingEvidence} />
-      </section>
+      </details>
 
       <EvidenceAppendix supportingEvidence={supportingEvidence} timeZone={timeZone} isGenericEvidenceReport={isGenericEvidenceReport} />
 
@@ -729,15 +735,15 @@ function GeneratedReportReview({
           action={saveReportEditsAction}
           className="form-stack report-edit-form"
         >
-          <div className="report-subsection report-edit-panel">
-            <div className="report-section-title-row">
+          <details className="report-subsection report-edit-panel" open>
+            <summary className="report-section-title-row">
               <div>
                 <h3>Review and correct report</h3>
                 <p className="muted">
                   Edit this report directly, then save changes before approval or export.
                 </p>
               </div>
-            </div>
+            </summary>
             <label className="field-stack">
               <span className="label">Report title</span>
               <input
@@ -762,7 +768,7 @@ function GeneratedReportReview({
                 defaultValue={stripConfidenceText(currentReport.summary ?? "")}
               />
             </label>
-          </div>
+          </details>
 
           <div className="report-content-grid">
             {editableSections.map((section) => {
@@ -779,7 +785,7 @@ function GeneratedReportReview({
                       defaultChecked={included}
                     />
                     <span>
-                      {included ? "Hide from report" : "Show in report"}
+                      Include in report
                     </span>
                   </label>
                   <label className="field-stack">
@@ -808,7 +814,7 @@ function GeneratedReportReview({
                           <input type="hidden" name={`section_field_label_${section.id}_${fieldIndex}`} value={field.label} />
                           <label className="report-visibility-toggle">
                             <input type="checkbox" name={`section_field_include_${section.id}_${fieldIndex}`} defaultChecked />
-                            <span>Show field</span>
+                            <span>Include in report</span>
                           </label>
                           <label className="field-stack">
                             <span className="label">{field.label}</span>
@@ -823,28 +829,28 @@ function GeneratedReportReview({
             })}
           </div>
 
-          <section className="report-subsection report-edit-panel">
-            <div>
+          <details className="report-subsection report-edit-panel" open>
+            <summary>
               <h3>Report evidence</h3>
               <p className="muted">
                 Edit notes and choose what appears in the final report.
               </p>
-            </div>
+            </summary>
             <EvidenceGallery
               isEditingReport
               noteEvidence={noteEvidence}
               otherEvidence={otherEvidence}
               photoEvidence={photoEvidence}
             />
-          </section>
+          </details>
 
-          <section className="report-subsection report-edit-panel">
-            <div>
+          <details className="report-subsection report-edit-panel" open>
+            <summary>
               <h3>Form fields</h3>
               <p className="muted">
                 Correct form details that should appear in the report.
               </p>
-            </div>
+            </summary>
             <input
               type="hidden"
               name="field_count"
@@ -868,7 +874,7 @@ function GeneratedReportReview({
                         name={`field_include_${index}`}
                         defaultChecked
                       />
-                      <span>Show in report</span>
+                      <span>Include in report</span>
                     </label>
                     <label className="field-stack">
                       <span className="label">{key.replace(/_/g, " ")}</span>
@@ -884,7 +890,7 @@ function GeneratedReportReview({
                 <p className="muted">No saved form fields yet.</p>
               )}
             </div>
-          </section>
+          </details>
 
           <div className="form-actions report-inline-actions report-primary-flow">
             <button className="button button-primary touch-target">
@@ -904,14 +910,14 @@ function GeneratedReportReview({
         <>
 
           {documentSections.length > 0 || reviewDocument.findings.length > 0 ? (
-            <section className="report-subsection report-supporting-section">
-              <div className="report-section-title-row">
+            <details className="report-subsection report-supporting-section" open>
+              <summary className="report-section-title-row">
                 <div>
                   <h3>Report Sections</h3>
                   <p className="muted">Technician notes and verified findings grouped by system/component. Suggestions remain review-only until verified.</p>
                 </div>
                 <span className="status-pill neutral compact">{includedEvidenceCount} included</span>
-              </div>
+              </summary>
               <FindingCardList items={reviewDocument.findings} supportingEvidence={supportingEvidence} />
               {reviewDocument.additionalNotes.some((entry) => isMeaningfulCustomerReportText([entry.capture.technician_note, entry.capture.transcript, ...entry.group.findings, ...entry.group.recommendations].filter(Boolean).join(" "))) ? <><h3>Additional Notes</h3><EvidenceGroupList items={reviewDocument.additionalNotes.filter((entry) => isMeaningfulCustomerReportText([entry.capture.technician_note, entry.capture.transcript, ...entry.group.findings, ...entry.group.recommendations].filter(Boolean).join(" ")))} supportingEvidence={supportingEvidence} /></> : null}
               {reviewDocument.supportingEvidence.length > 0 ? <><h3>Supporting Evidence</h3><EvidenceGroupList items={reviewDocument.supportingEvidence} supportingEvidence={supportingEvidence} /></> : null}
@@ -925,7 +931,7 @@ function GeneratedReportReview({
                   </div>
                 </div>
               ) : null}
-            </section>
+            </details>
           ) : null}
         </>
       ) : null}
@@ -950,6 +956,8 @@ function InspectorFacilityPanel({
   const facility = profile.company_profile;
   const address = [facility?.facility_address_line_1, facility?.facility_address_line_2, facility?.facility_city, facility?.facility_region, facility?.facility_postal_code, facility?.facility_country].filter(Boolean).join(', ');
   const latestSignature = signatures.find((signature) => /inspector|technician/i.test(signature.signature_type)) ?? signatures[0];
+  const defaultSignatureUrl = profile.default_signature_path ? signatureUrls.__default_signature : null;
+  const displayedSignatureUrl = latestSignature ? signatureUrls[latestSignature.id] : defaultSignatureUrl;
   const canUseSavedSignature = Boolean(profile.use_default_signature && profile.default_signature_path && !latestSignature);
   const useSavedSignatureAction = useSavedSignature.bind(null, sessionId);
   const rows = [
@@ -964,20 +972,20 @@ function InspectorFacilityPanel({
     ['Certification Number', facility?.certification_number],
   ].filter(([, value]) => typeof value === 'string' && value.trim());
   return (
-    <section className="card detail-card report-command-card form-stack signature-review-panel">
-      <div className="report-section-heading generated-report-heading"><div><p className="eyebrow">Report details</p><h2>Inspector / Organization Details</h2><p className="muted">Autofilled from Settings and included in the export when populated.</p></div></div>
+    <details className="card detail-card report-command-card form-stack signature-review-panel" open>
+      <summary className="report-section-heading generated-report-heading"><div><p className="eyebrow">Report details</p><h2>Inspector / Organization Details</h2><p className="muted">Autofilled from Settings and included in the export when populated.</p></div></summary>
       {rows.length > 0 ? <div className="report-field-grid">{rows.map(([label, value]) => <div key={label} className="report-field-card"><span>{label}</span><strong>{value}</strong></div>)}</div> : <p className="muted">No inspector or facility details saved yet.</p>}
       <p className="muted">Saved default signature: {profile.default_signature_path ? (profile.use_default_signature ? "Available and enabled" : "Available but disabled") : "Not saved"}.</p>
       {canUseSavedSignature ? <form action={useSavedSignatureAction}><button className="button button-secondary touch-target">Use saved signature</button></form> : null}
-      {latestSignature && signatureUrls[latestSignature.id] ? (
+      {displayedSignatureUrl ? (
         <div className="saved-signature-card">
-          <strong>Signature</strong>
+          <strong>{latestSignature ? "Report-specific signature" : "Default saved signature"}</strong>
           {/* eslint-disable-next-line @next/next/no-img-element -- signed signature URLs are short-lived Supabase links and should render exactly as captured. */}
-          <img className="saved-signature-image" src={signatureUrls[latestSignature.id]} alt="Saved report signature" />
+          <img className="saved-signature-image" src={displayedSignatureUrl} alt="Saved report signature" />
         </div>
       ) : <p className="muted">No report-specific signature captured.</p>}
       <SignatureCaptureForm sessionId={sessionId} />
-    </section>
+    </details>
   );
 }
 
@@ -1083,15 +1091,15 @@ function EvidenceGroupList({
 
 function EvidenceAppendix({ supportingEvidence, timeZone, isGenericEvidenceReport }: { supportingEvidence: SupportingEvidenceItem[]; timeZone: string | null; isGenericEvidenceReport: boolean }) {
   return (
-    <section className="report-subsection report-supporting-section">
-      <div className="report-section-title-row">
+    <details className="report-subsection report-supporting-section" open>
+      <summary className="report-section-title-row">
         <div>
           <p className="eyebrow">{isGenericEvidenceReport ? "Evidence" : "Evidence Appendix"}</p>
           <h3>{isGenericEvidenceReport ? "Captured Evidence" : "Evidence Captured"}</h3>
           <p className="muted">{isGenericEvidenceReport ? "Included captures with technician-authored notes and capture details." : "All included captures appear here whether or not generated draft sections reference them."}</p>
         </div>
         <span className="status-pill neutral compact">{supportingEvidence.length} included</span>
-      </div>
+      </summary>
       {supportingEvidence.length > 0 ? (
         <div className="evidence-first-list">
           {supportingEvidence.map((item) => (
@@ -1115,7 +1123,7 @@ function EvidenceAppendix({ supportingEvidence, timeZone, isGenericEvidenceRepor
           ))}
         </div>
       ) : <p className="muted">No included evidence selected for this report.</p>}
-    </section>
+    </details>
   );
 }
 
@@ -1157,9 +1165,7 @@ function EvidenceGallery({
                   defaultChecked={item.capture.include_in_report}
                 />
                 <span>
-                  {item.capture.include_in_report
-                    ? "Hide from report"
-                    : "Show in report"}
+                  Include in report
                 </span>
               </label>
               <div className="report-edit-evidence-preview">
@@ -1262,8 +1268,8 @@ function InlineReviewPanel({
   reviewedLabel: string | null;
 }) {
   return (
-    <section id="approval" className="card detail-card report-sidebar-card form-stack compact-approval-panel">
-        <div>
+    <details id="approval" className="card detail-card report-sidebar-card form-stack compact-approval-panel" open>
+        <summary>
           <p className="eyebrow">Ready</p>
           <h2>{isReadyForExport ? "Approved" : "Approve Report"}</h2>
           {reviewedLabel ? (
@@ -1272,7 +1278,7 @@ function InlineReviewPanel({
               {reviewedBy ? ` by ${reviewedBy}` : ""}.
             </p>
           ) : null}
-        </div>
+        </summary>
         <p className="muted">Confirm the report is ready for delivery after reviewing the summary, sections, evidence, and signatures.</p>
         {!isReadyForExport ? (
           <form action={markReviewedAction} className="form-stack">
@@ -1298,7 +1304,7 @@ function InlineReviewPanel({
             </div>
           </form>
         ) : null}
-      </section>
+      </details>
   );
 }
 
