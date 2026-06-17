@@ -2,7 +2,8 @@ import type { Metadata, Viewport } from 'next'
 import type { ReactNode } from 'react'
 
 import { InstallPrompt } from '@/components/pwa'
-import { ThemeProvider } from '@/components/theme'
+import { ThemeProvider, type ThemeMode } from '@/components/theme'
+import { createClient } from '@/lib/supabase/server'
 
 import './globals.css'
 
@@ -43,11 +44,29 @@ export const viewport: Viewport = {
   ],
 }
 
-export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+async function getInitialThemeMode(): Promise<ThemeMode> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return 'dark'
+  }
+
+  const { data: profile } = await supabase.from('profiles').select('theme_preference').eq('user_id', user.id).maybeSingle()
+
+  return profile?.theme_preference ?? 'dark'
+}
+
+export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+  const initialThemeMode = await getInitialThemeMode()
+  const initialResolvedTheme = initialThemeMode === 'system' ? 'dark' : initialThemeMode
+
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" data-theme={initialResolvedTheme} style={{ colorScheme: initialResolvedTheme }} suppressHydrationWarning>
       <body>
-        <ThemeProvider>
+        <ThemeProvider initialMode={initialThemeMode}>
           {children}
           <InstallPrompt />
         </ThemeProvider>
