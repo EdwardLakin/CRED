@@ -2,7 +2,6 @@ import { notFound } from 'next/navigation'
 
 import { getPlanLimits, parseBillingPlan } from '@/features/billing'
 import { AddCaptureForm, RecentCapturesList } from '@/features/capture'
-import { completeCaptureAndPrepareReport } from '@/features/reports/actions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
 export default async function GuidedCapturePage({
@@ -49,8 +48,6 @@ export default async function GuidedCapturePage({
   )
 
   const planLimits = getPlanLimits(parseBillingPlan(profile.organization.plan))
-  const doneAction = completeCaptureAndPrepareReport.bind(null, session.id)
-
   return (
     <main className="page-shell dashboard-shell focused-capture-shell">
       <div className="section-header page-header focused-capture-header">
@@ -60,9 +57,6 @@ export default async function GuidedCapturePage({
           <p className="muted">If you have a paper form, capture it first.</p>
           <p className="status-pill neutral">AI Assist: {profile.organization.image_ai_assist_enabled ? 'On' : 'Off'}</p>
         </div>
-        <form action={doneAction}>
-          <button className="button button-primary touch-target">Done</button>
-        </form>
       </div>
 
       {captureSaved ? <p className="success">Saved. Keep capturing or tap Done.</p> : null}
@@ -74,7 +68,7 @@ export default async function GuidedCapturePage({
           sessionType={session.session_type}
           returnPath={`/dashboard/sessions/${session.id}/capture#main-capture-card`}
           captureButtonLabel="Camera"
-          helperText="Capture photos, choose from gallery, add a voice note, or type a note."
+          helperText="Capture photos or choose media from your gallery."
           commonCaptureText=""
           showSuggestedCaptureText={false}
           stickyDoneHref={`/dashboard/sessions/${session.id}/report`}
