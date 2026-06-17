@@ -9,7 +9,6 @@ import {
 } from "@/features/capture";
 import { asDiagnosticRecordArray, getDiagnosticProcedureProgress, getDiagnosticStepCompleteness } from "@/features/diagnostic-procedures/progress";
 import {
-  buildCustomerAssetRows,
   buildNormalizedReportModel,
   classifyReferenceDocumentTitle,
   deriveFormSectionsFromCaptures,
@@ -34,7 +33,7 @@ import {
   saveReport,
   saveReportEdits,
 } from "@/features/reports/actions";
-import { formatDate, formatDateTime } from "@/features/sessions";
+import { formatDateTime } from "@/features/sessions";
 import { requireSessionWorkspace } from "@/features/sessions/data";
 import { SignatureCaptureForm } from "@/features/signatures";
 import { useSavedSignature } from "@/features/signatures/actions";
@@ -114,9 +113,9 @@ function getEvidenceTitle(item: CaptureItem) {
   if (referenceTitle !== "Reference Document" || item.media_kind === "document") return referenceTitle;
   if (item.type === "text_note" || item.media_kind === "note")
     return "Technician Note";
-  if (isPhotoCapture(item)) return "Inspection Photo";
+  if (isPhotoCapture(item)) return "Evidence Photo";
   if (item.media_kind === "video" || item.type === "video")
-    return "Inspection Video";
+    return "Evidence Video";
   if (item.media_kind === "audio" || item.type === "voice_note")
     return "Voice Note";
   return "Supporting Evidence";
@@ -126,6 +125,12 @@ function getEvidenceNote(capture: CaptureItem) {
   return capture.technician_note?.trim() || capture.transcript?.trim() || null;
 }
 
+
+function getReportInfoValue(draft: AiReportDraft | null | undefined, session: Pick<DocumentationSession, "suggested_details">, key: string) {
+  if (isRecord(draft?.header_fields) && typeof draft.header_fields[key] === "string") return draft.header_fields[key] as string;
+  if (isRecord(session.suggested_details) && isRecord(session.suggested_details.report_information) && typeof session.suggested_details.report_information[key] === "string") return session.suggested_details.report_information[key] as string;
+  return "";
+}
 
 function getDiagnosticStepMetadata(section: AiReportDraftSection) {
   return isRecord(section.metadata) ? section.metadata as Record<string, unknown> : {}
@@ -281,7 +286,7 @@ export default async function SessionReportPreviewPage({
   const { data: session, error: sessionError } = await supabase
     .from("documentation_sessions")
     .select(
-      "id, title, session_type, organization_id, workflow_template_id, review_status, reviewed_at, reviewed_by, asset_label, vin, unit_number, customer_name, final_notes, final_notes_ai_generated, final_notes_updated_at, final_notes_edited_by_user, include_final_notes_in_export, updated_at",
+      "id, title, session_type, organization_id, workflow_template_id, review_status, reviewed_at, reviewed_by, asset_label, vin, unit_number, customer_name, suggested_details, final_notes, final_notes_ai_generated, final_notes_updated_at, final_notes_edited_by_user, include_final_notes_in_export, updated_at",
     )
     .eq("id", id)
     .eq("organization_id", profile.organization_id)
@@ -521,7 +526,6 @@ export default async function SessionReportPreviewPage({
             documentSections={documentSections}
             formStructureSummary={formStructureSummary}
             reviewDocument={reviewDocument}
-            customerAssetRows={buildCustomerAssetRows(documentSections, session as unknown as Record<string, unknown>)}
             supportingEvidence={supportingEvidence}
             reportEvidenceDiagnostics={reportEvidenceDiagnostics}
             session={session}
@@ -582,7 +586,6 @@ function GeneratedReportReview({
   documentSections,
   formStructureSummary,
   reviewDocument,
-  customerAssetRows,
   supportingEvidence,
   reportEvidenceDiagnostics,
   session,
@@ -605,10 +608,9 @@ function GeneratedReportReview({
   documentSections: ReturnType<typeof normalizeDraftSections>;
   formStructureSummary: ReturnType<typeof getFormStructureSummary>;
   reviewDocument: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>;
-  customerAssetRows: ReturnType<typeof buildCustomerAssetRows>;
   supportingEvidence: SupportingEvidenceItem[];
   reportEvidenceDiagnostics: { capturesSaved: number; includedInReport: number; referencedByDraft: number; hiddenFromReport: number };
-  session: Pick<DocumentationSession, "id" | "title">;
+  session: Pick<DocumentationSession, "id" | "title" | "asset_label" | "customer_name" | "suggested_details">;
   saveReportEditsAction: ServerAction | null;
   sourceFieldEntries: [string, unknown][];
   visibleCaptureCount: number;
@@ -624,7 +626,6 @@ function GeneratedReportReview({
     ...otherEvidence,
   ].filter((item) => item.capture.include_in_report).length;
   const findings = reviewDocument.findingModels;
-  const hasUnlinkedIncludedEvidence = reportEvidenceDiagnostics.includedInReport > reportEvidenceDiagnostics.referencedByDraft;
   const structureSourceLabel = formStructureSummary.source === "generic_fallback"
     ? "Generic evidence report"
     : formStructureSummary.source === "uploaded_report"
@@ -665,7 +666,7 @@ function GeneratedReportReview({
         <div className="report-section-title-row">
           <div>
             <p className="eyebrow">Report Overview</p>
-            <h3>Captured evidence for {formatDate(new Date().toISOString(), timeZone)}</h3>
+            <h3>Capture Summary</h3>
           </div>
           <span className="status-pill neutral">Evidence review</span>
         </div>
@@ -693,24 +694,15 @@ function GeneratedReportReview({
         )}
         <p className="muted"><strong>Technician-authored findings awaiting review:</strong> {findings.length}</p>
       </section>
-      <details className="inspection-summary-card">
-        <summary className="report-section-title-row">
-          <span><span className="eyebrow">Diagnostics</span><strong>Capture coverage</strong></span>
-        </summary>
-        <div className="report-section-title-row">
-          <div>
-            <p className="eyebrow">Evidence diagnostics</p>
-            <h3>Capture coverage</h3>
-          </div>
-        </div>
+      <section className="inspection-summary-card">
+        <div className="report-section-title-row"><div><p className="eyebrow">Capture Summary</p><h3>Captured report materials</h3></div></div>
         <div className="inspection-metric-grid">
-          <div><span>Captures saved</span><strong>{reportEvidenceDiagnostics.capturesSaved}</strong></div>
-          <div><span>Included in report</span><strong>{reportEvidenceDiagnostics.includedInReport}</strong></div>
-          <div><span>Referenced by draft</span><strong>{reportEvidenceDiagnostics.referencedByDraft}</strong></div>
-          <div><span>Hidden from report</span><strong>{reportEvidenceDiagnostics.hiddenFromReport}</strong></div>
+          <div><span>Evidence Items Captured</span><strong>{reportEvidenceDiagnostics.capturesSaved}</strong></div>
+          <div><span>Notes Captured</span><strong>{supportingEvidence.filter((item) => item.kind === "note").length}</strong></div>
+          <div><span>Voice Notes Captured</span><strong>{supportingEvidence.filter((item) => item.kind === "audio").length}</strong></div>
+          <div><span>Reference Documents Captured</span><strong>{reviewDocument.referenceDocuments.length}</strong></div>
         </div>
-        {hasUnlinkedIncludedEvidence ? <p className="notice warning">Some evidence is not linked to generated sections. It will still appear in the Evidence Appendix.</p> : null}
-      </details>
+      </section>
 
       {hasPendingEvidence ? (
         <p className="notice info compact-report-notice">
@@ -752,13 +744,18 @@ function GeneratedReportReview({
       <section className="report-subsection report-document-section">
         <div className="report-section-title-row">
           <div>
-            <h3>Subject / Customer Information</h3>
-            <p className="muted">Report type: {structureSourceLabel}. Edit saved report fields below when corrections are needed.</p>
+            <h3>Report Information</h3>
+            <p className="muted">Report metadata is optional for generic evidence reports and is used in export when present.</p>
           </div>
         </div>
-        {customerAssetRows.length > 0 ? (
-          <div className="report-field-grid">{customerAssetRows.map((field) => <div key={field.label} className="report-field-card"><span>{field.label}</span><strong>{stripConfidenceText(field.value)}</strong></div>)}</div>
-        ) : <p className="muted">No subject/customer values captured yet. Blank optional fields are not missing for a generic evidence report.</p>}
+        <div className="report-field-grid">{[
+          ["Report Title", currentReport?.title ?? session.title],
+          ["Subject Name", getReportInfoValue(currentReport, session, "subject_name")],
+          ["Customer / Client", getReportInfoValue(currentReport, session, "customer_client") || session.customer_name],
+          ["Asset / Equipment", getReportInfoValue(currentReport, session, "asset_equipment") || session.asset_label],
+          ["Location / Address", getReportInfoValue(currentReport, session, "location_address")],
+          ["Reference Number", getReportInfoValue(currentReport, session, "reference_number")],
+        ].map(([label, value]) => <div key={label} className="report-field-card"><span>{label}</span><strong>{value ? stripConfidenceText(String(value)) : "Optional"}</strong></div>)}</div>
         <ReferenceDocumentList items={reviewDocument.referenceDocuments} supportingEvidence={supportingEvidence} />
       </section>
 
@@ -786,6 +783,13 @@ function GeneratedReportReview({
                 defaultValue={stripConfidenceText(currentReport.title ?? session.title)}
               />
             </label>
+            <div className="report-field-grid">
+              <label className="field-stack"><span className="label">Subject Name</span><input className="input" name="subject_name" defaultValue={getReportInfoValue(currentReport, session, "subject_name")} /></label>
+              <label className="field-stack"><span className="label">Customer / Client</span><input className="input" name="customer_client" defaultValue={getReportInfoValue(currentReport, session, "customer_client") || session.customer_name || ""} /></label>
+              <label className="field-stack"><span className="label">Asset / Equipment</span><input className="input" name="asset_equipment" defaultValue={getReportInfoValue(currentReport, session, "asset_equipment") || session.asset_label || ""} /></label>
+              <label className="field-stack"><span className="label">Location / Address</span><input className="input" name="location_address" defaultValue={getReportInfoValue(currentReport, session, "location_address")} /></label>
+              <label className="field-stack"><span className="label">Reference Number</span><input className="input" name="reference_number" defaultValue={getReportInfoValue(currentReport, session, "reference_number")} /></label>
+            </div>
             <label className="field-stack">
               <span className="label">Summary</span>
               <textarea
@@ -986,18 +990,19 @@ function InspectorFacilityPanel({
   const canUseSavedSignature = Boolean(profile.use_default_signature && profile.default_signature_path && !latestSignature);
   const useSavedSignatureAction = useSavedSignature.bind(null, sessionId);
   const rows = [
-    ['Inspector name', profile.full_name],
-    ['Role/title', profile.inspector_role_or_title],
-    ['Technician licence number', profile.technician_license_number],
-    ['Facility name', facility?.facility_name ?? facility?.company_name],
-    ['Facility number', facility?.facility_number],
-    ['Facility address', address],
-    ['Permit number', facility?.permit_number],
-    ['Certification number', facility?.certification_number],
+    ['Inspector Name', profile.full_name],
+    ['Organization Name', facility?.company_name ?? facility?.facility_name],
+    ['Role / Title', profile.inspector_role_or_title],
+    ['Email', profile.inspector_email ?? facility?.facility_email],
+    ['Phone', profile.inspector_phone ?? facility?.facility_phone],
+    ['Organization Address', address],
+    ['Licence Number', profile.technician_license_number],
+    ['Permit Number', facility?.permit_number],
+    ['Certification Number', facility?.certification_number],
   ].filter(([, value]) => typeof value === 'string' && value.trim());
   return (
     <section className="card detail-card report-command-card form-stack signature-review-panel">
-      <div className="report-section-heading generated-report-heading"><div><p className="eyebrow">Report details</p><h2>Inspector / Facility Details</h2><p className="muted">Autofilled from Settings and included in the export.</p></div></div>
+      <div className="report-section-heading generated-report-heading"><div><p className="eyebrow">Report details</p><h2>Inspector / Organization Details</h2><p className="muted">Autofilled from Settings and included in the export when populated.</p></div></div>
       {rows.length > 0 ? <div className="report-field-grid">{rows.map(([label, value]) => <div key={label} className="report-field-card"><span>{label}</span><strong>{value}</strong></div>)}</div> : <p className="muted">No inspector or facility details saved yet.</p>}
       <p className="muted">Saved default signature: {profile.default_signature_path ? (profile.use_default_signature ? "Available and enabled" : "Available but disabled") : "Not saved"}.</p>
       {canUseSavedSignature ? <form action={useSavedSignatureAction}><button className="button button-secondary touch-target">Use saved signature</button></form> : null}
