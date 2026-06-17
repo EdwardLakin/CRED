@@ -2566,20 +2566,32 @@ export async function removeCaptureItem(formData: FormData) {
     )
   }
 
-  await supabase
+  if (capture.storage_path) {
+    await removeUploadedObject(supabase, capture.storage_path)
+  }
+
+  const { error } = await supabase
     .from('capture_items')
-    .update({
-      include_in_report: false,
-      deleted_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
+    .delete()
     .eq('id', capture.id)
     .eq('organization_id', profile.organization_id)
+
+  if (error) {
+    logCaptureFailure({
+      step: 'capture_delete',
+      captureId: capture.id,
+      ...getSafeErrorDetails(error),
+    })
+    redirect(
+      `/dashboard/sessions/${capture.documentation_session_id}?error=${encodeURIComponent('Unable to delete evidence.')}`,
+    )
+  }
 
   revalidatePath(`/dashboard/sessions/${capture.documentation_session_id}`)
   revalidatePath(
     `/dashboard/sessions/${capture.documentation_session_id}/capture`,
   )
+  revalidatePath(`/dashboard/sessions/${capture.documentation_session_id}/report`)
 }
 
 

@@ -39,6 +39,7 @@ import { SignatureCaptureForm } from "@/features/signatures";
 import { useSavedSignature } from "@/features/signatures/actions";
 import type { Database } from "@/lib/supabase/database.types";
 import { FinalNotesEditor } from "@/features/reports/components/FinalNotesEditor";
+import { DeleteEvidenceButton } from "@/features/capture/components/DeleteEvidenceButton";
 
 type Tables = Database["public"]["Tables"];
 type DocumentationSession = Tables["documentation_sessions"]["Row"];
@@ -1157,17 +1158,21 @@ function EvidenceGallery({
             <article
               key={item.capture.id}
               className="review-note-card report-edit-evidence-card"
+              data-evidence-card
             >
-              <label className="report-visibility-toggle">
-                <input
-                  type="checkbox"
-                  name={`capture_include_${item.capture.id}`}
-                  defaultChecked={item.capture.include_in_report}
-                />
-                <span>
-                  Include in report
-                </span>
-              </label>
+              <div className="report-edit-evidence-actions">
+                <label className="report-visibility-toggle">
+                  <input
+                    type="checkbox"
+                    name={`capture_include_${item.capture.id}`}
+                    defaultChecked={item.capture.include_in_report}
+                  />
+                  <span>
+                    Include in report
+                  </span>
+                </label>
+                <DeleteEvidenceButton captureId={item.capture.id} className="button button-secondary touch-target danger-action" />
+              </div>
               <div className="report-edit-evidence-preview">
                 {item.kind === "photo" && item.signedUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured.
