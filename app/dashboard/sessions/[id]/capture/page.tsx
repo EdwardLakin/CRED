@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 
 import { getPlanLimits, parseBillingPlan } from '@/features/billing'
-import { AddCaptureForm, RecentCapturesList, getInspectionProgress } from '@/features/capture'
+import { AddCaptureForm, RecentCapturesList } from '@/features/capture'
 import { completeCaptureAndPrepareReport } from '@/features/reports/actions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
@@ -48,22 +48,6 @@ export default async function GuidedCapturePage({
     }),
   )
 
-  const { data: template } = session.workflow_template_id
-    ? await supabase
-        .from('documentation_workflow_templates')
-        .select('name, required_evidence')
-        .eq('id', session.workflow_template_id)
-        .eq('organization_id', profile.organization_id)
-        .maybeSingle()
-    : { data: null }
-
-  const { count: signatureCount } = await supabase
-    .from('signature_captures')
-    .select('id', { count: 'exact', head: true })
-    .eq('documentation_session_id', session.id)
-    .eq('organization_id', profile.organization_id)
-
-  const progress = getInspectionProgress(captureItems, session.session_type, template?.required_evidence ?? null, signatureCount ?? 0)
   const planLimits = getPlanLimits(parseBillingPlan(profile.organization.plan))
   const doneAction = completeCaptureAndPrepareReport.bind(null, session.id)
 
@@ -82,48 +66,6 @@ export default async function GuidedCapturePage({
       </div>
 
       {captureSaved ? <p className="success">Saved. Keep capturing or tap Done.</p> : null}
-
-      <section className="card detail-card form-stack" aria-labelledby="inspection-progress-heading">
-        <div className="captures-section-header">
-          <div>
-            <p className="eyebrow">AI-guided inspection</p>
-            <h2 id="inspection-progress-heading">Live inspection progress</h2>
-            <p className="muted">CRED updates the draft report as evidence is captured. AI can suggest, extract, organize, and draft — technician approval is still required.</p>
-          </div>
-          <span className="status-pill neutral">{template?.name ?? 'Inspection Template'}</span>
-        </div>
-        {progress.canShowReadinessMetrics ? (
-          <>
-            <div className="inspection-metric-grid">
-              <div><span>Inspection Complete</span><strong>{progress.inspectionComplete}%</strong></div>
-              <div><span>Remaining Required Items</span><strong>{progress.remainingRequiredItems}</strong></div>
-              <div><span>Critical Findings</span><strong>{progress.criticalFindings}</strong></div>
-              <div><span>Missing Evidence</span><strong>{progress.missingEvidence}</strong></div>
-            </div>
-            <div className="inspection-metric-grid">
-              <div><span>Evidence Completeness</span><strong>{progress.evidenceCompleteness}%</strong></div>
-              <div><span>Finding Confidence</span><strong>{progress.findingConfidence}%</strong></div>
-              <div><span>Report Readiness</span><strong>{progress.reportReadiness}%</strong></div>
-            </div>
-            <p className="notice info"><strong>Suggested Next Step:</strong> {progress.nextStep}</p>
-          </>
-        ) : (
-          <div className="notice info capture-analysis-status-card">
-            <strong>Analyzing evidence…</strong>
-            <p>CRED is reading uploaded evidence before calculating report readiness.</p>
-            <div className="capture-analysis-counts" aria-label="AI analysis status counts">
-              <span>Queued: {progress.aiStatusCounts.queued}</span>
-              <span>Analyzing: {progress.aiStatusCounts.analyzing}</span>
-              <span>Complete: {progress.aiStatusCounts.complete}</span>
-              <span>Needs review: {progress.aiStatusCounts.needsReview}</span>
-              <span>Failed: {progress.aiStatusCounts.failed}</span>
-            </div>
-          </div>
-        )}
-        {progress.missingReadinessItems.length > 0 ? (
-          <p className="muted">Missing: {progress.missingReadinessItems.join(', ')}</p>
-        ) : null}
-      </section>
 
       <section className="card detail-card focused-capture-card" id="main-capture-card">
         <AddCaptureForm

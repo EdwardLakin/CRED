@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 
 import { SessionStatusBadge, formatDateTime } from '@/features/sessions'
 import { archiveDocumentationSession, restoreDocumentationSession } from '@/features/sessions/actions'
+import { getSessionWorkflowStatus } from '@/features/sessions/status'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
 export default async function SessionDetailPage({
@@ -46,7 +47,7 @@ export default async function SessionDetailPage({
           </Link>
           <div className="title-row">
             <h1>{session.title}</h1>
-            <SessionStatusBadge status={isArchived ? 'archived' : session.status} />
+            <SessionStatusBadge status={getSessionWorkflowStatus(session)} />
           </div>
           <p className="muted">Updated {formatDateTime(session.updated_at ?? session.created_at, profile.timezone)} · {evidenceCount ?? 0} saved</p>
         </div>
