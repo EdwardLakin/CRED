@@ -71,7 +71,17 @@ function ensureDraftSectionsReferenceCaptures<T extends { title: string; source_
 
 
 function isPlaceholderSessionTitle(title: string | null | undefined) {
-  return !title || /^new session\b/i.test(title.trim())
+  const value = stripConfidenceText(title ?? '').trim()
+  return !value || /^(new session|session|untitled session)\b/i.test(value) || /\d{4}-\d{2}-\d{2}t\d{2}:\d{2}/i.test(value)
+}
+
+function buildSubjectReportTitle(subject: string) {
+  const cleanSubject = stripConfidenceText(subject).replace(/\s+/g, ' ').trim()
+  if (!cleanSubject) return null
+  if (/\b(evidence report|inspection documentation|property documentation|documentation)\b/i.test(cleanSubject)) return cleanSubject
+  if (/\b(property|site|facility|building|home|house|condo|address)\b/i.test(cleanSubject)) return `${cleanSubject} Documentation`
+  if (/\b(inspection|inspect)\b/i.test(cleanSubject)) return `${cleanSubject} Documentation`
+  return `${cleanSubject} Evidence Report`
 }
 
 function buildSafeReportTitle(args: {
@@ -85,13 +95,13 @@ function buildSafeReportTitle(args: {
   vin: string | null | undefined
 }) {
   const cleanedDraftTitle = stripConfidenceText(args.draftTitle ?? '').trim()
-  if (cleanedDraftTitle && !/^new session\b/i.test(cleanedDraftTitle) && !/automotive|vehicle inspection/i.test(cleanedDraftTitle)) return cleanedDraftTitle
+  if (cleanedDraftTitle && !isPlaceholderSessionTitle(cleanedDraftTitle) && !/automotive|vehicle inspection/i.test(cleanedDraftTitle)) return cleanedDraftTitle
   if (args.structureSource && args.structureSource !== 'generic_fallback' && args.sourceDocumentName) return stripConfidenceText(args.sourceDocumentName).trim()
   const identity = [args.customerName, args.assetLabel, args.unitNumber, args.vin].map((value) => stripConfidenceText(value ?? '').trim()).filter(Boolean).slice(0, 2).join(' — ')
-  if (identity) return `${identity} Evidence Report`
+  if (identity) return buildSubjectReportTitle(identity) ?? 'General Evidence Report'
   const sessionTitle = stripConfidenceText(args.sessionTitle ?? '').trim()
   if (sessionTitle && !isPlaceholderSessionTitle(sessionTitle)) return sessionTitle
-  return `General Evidence Report — ${new Date().toISOString().slice(0, 10)}`
+  return 'General Evidence Report'
 }
 
 function getString(formData: FormData, field: string) {
@@ -891,7 +901,7 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
 
   const { data: session, error: sessionError } = await supabase
     .from('documentation_sessions')
-    .select('id, organization_id')
+    .select('id, organization_id, asset_label, customer_name, suggested_details')
     .eq('id', draft.documentation_session_id)
     .eq('organization_id', profile.organization_id)
     .single()
@@ -901,6 +911,14 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
   }
 
   const fieldCount = Number(getString(formData, 'field_count') || 0)
+  const reportInfoFields: Record<string, string> = {
+    report_title: sanitizeReportText(formData.get('report_title'), 180) ?? '',
+    subject_name: sanitizeReportText(formData.get('subject_name'), 180) ?? '',
+    customer_client: sanitizeReportText(formData.get('customer_client'), 180) ?? '',
+    asset_equipment: sanitizeReportText(formData.get('asset_equipment'), 180) ?? '',
+    location_address: sanitizeReportText(formData.get('location_address'), 240) ?? '',
+    reference_number: sanitizeReportText(formData.get('reference_number'), 120) ?? '',
+  }
   const editedHeaderFields: Record<string, string> = {}
   for (let index = 0; index < fieldCount; index += 1) {
     const key = getString(formData, `field_key_${index}`)
@@ -909,11 +927,28 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
     if (key && value && included) editedHeaderFields[key] = value.slice(0, 500)
   }
 
+  Object.entries(reportInfoFields).forEach(([key, value]) => { if (value) editedHeaderFields[key] = value })
+
+  const reportTitle = reportInfoFields.report_title || buildSubjectReportTitle(reportInfoFields.subject_name || reportInfoFields.asset_equipment || reportInfoFields.customer_client) || draft.title || 'General Evidence Report'
   const now = new Date().toISOString()
+  const { error: updateSessionError } = await supabase
+    .from('documentation_sessions')
+    .update({
+      title: reportTitle,
+      customer_name: reportInfoFields.customer_client || session.customer_name,
+      asset_label: reportInfoFields.asset_equipment || reportInfoFields.subject_name || session.asset_label,
+      suggested_details: { ...((session.suggested_details && typeof session.suggested_details === 'object' && !Array.isArray(session.suggested_details)) ? session.suggested_details : {}), report_information: reportInfoFields } as Json,
+      updated_at: now,
+    })
+    .eq('id', session.id)
+    .eq('organization_id', profile.organization_id)
+
+  if (updateSessionError) redirect(getReportRedirectPath(session.id, { error: updateSessionError.message }))
+
   const { error: updateDraftError } = await supabase
     .from('ai_report_drafts')
     .update({
-      title: sanitizeReportText(formData.get('report_title'), 180) ?? draft.title,
+      title: reportTitle,
       summary: sanitizeReportText(formData.get('report_summary'), 1200) ?? draft.summary,
       header_fields: editedHeaderFields,
       updated_at: now,

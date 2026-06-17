@@ -14,7 +14,7 @@ import { buildCustomerAssetRows, buildNormalizedReportModel, classifyReferenceDo
 import { asDiagnosticRecordArray, getDiagnosticProcedureProgress, getDiagnosticStepCompleteness } from '@/features/diagnostic-procedures/progress'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { recordUsageEvent } from '@/features/usage'
-import { formatDateInTimeZone } from '@/lib/date-format'
+import { formatDateInTimeZone, formatDateTimeInTimeZone } from '@/lib/date-format'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { Database, Json } from '@/lib/supabase/database.types'
 
@@ -44,6 +44,33 @@ function escapeHtml(value: unknown) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isPlaceholderReportTitle(value: string | null | undefined) {
+  const title = stripConfidenceText(value ?? '').trim()
+  return !title || /^(new session|session|untitled session)\b/i.test(title) || /\d{4}-\d{2}-\d{2}t\d{2}:\d{2}|\butc\b/i.test(title)
+}
+
+function getReportInfoValue(draft: ReportDraft | null | undefined, session: ReportSession, key: string) {
+  if (isRecord(draft?.header_fields) && typeof draft.header_fields[key] === 'string') return draft.header_fields[key] as string
+  if (isRecord(session.suggested_details) && isRecord(session.suggested_details.report_information) && typeof session.suggested_details.report_information[key] === 'string') return session.suggested_details.report_information[key] as string
+  return ''
+}
+
+function titleFromSubject(subject: string) {
+  const clean = stripConfidenceText(subject).replace(/\s+/g, ' ').trim()
+  if (!clean) return null
+  if (/\b(evidence report|inspection documentation|property documentation|documentation)\b/i.test(clean)) return clean
+  if (/\b(property|site|facility|building|home|house|condo|address)\b/i.test(clean)) return `${clean} Documentation`
+  if (/\b(inspection|inspect)\b/i.test(clean)) return `${clean} Documentation`
+  return `${clean} Evidence Report`
+}
+
+function cleanReportTitle(preferred: string | null | undefined, session: ReportSession, draft: ReportDraft | null | undefined) {
+  const explicit = getReportInfoValue(draft, session, 'report_title') || preferred
+  if (!isPlaceholderReportTitle(explicit)) return stripConfidenceText(explicit ?? '').trim()
+  const subject = getReportInfoValue(draft, session, 'subject_name') || getReportInfoValue(draft, session, 'asset_equipment') || session.asset_label || getReportInfoValue(draft, session, 'customer_client') || session.customer_name || session.unit_number || session.vin || ''
+  return titleFromSubject(subject) ?? 'General Evidence Report'
 }
 
 function escapeRawHtml(value: unknown) {
@@ -138,6 +165,19 @@ function getProfessionalRows(rows: Array<{ label: string; value: string }>) {
 }
 
 
+function renderReportInformationHtml(draft: ReportDraft | null | undefined, session: ReportSession) {
+  const rows = [
+    { label: 'Report Title', value: cleanReportTitle(draft?.title || session.title, session, draft) },
+    { label: 'Subject Name', value: getReportInfoValue(draft, session, 'subject_name') },
+    { label: 'Customer / Client', value: getReportInfoValue(draft, session, 'customer_client') || session.customer_name || '' },
+    { label: 'Asset / Equipment', value: getReportInfoValue(draft, session, 'asset_equipment') || session.asset_label || '' },
+    { label: 'Location / Address', value: getReportInfoValue(draft, session, 'location_address') },
+    { label: 'Reference Number', value: getReportInfoValue(draft, session, 'reference_number') },
+  ]
+  const html = renderDefinitionRows(rows)
+  return html ? `<section class="item service-section"><h2>Report Information</h2>${html}</section>` : ''
+}
+
 function buildStructuredFormDataHtml(reportStructure: Json | null) {
   const structure = isRecord(reportStructure) ? reportStructure : {}
   const blueprint = isRecord(structure.form_blueprint) ? structure.form_blueprint : null
@@ -170,23 +210,24 @@ function renderFieldServiceSection(details: Record<string, unknown>, sectionKey:
 }
 
 
-function buildInspectorFacilityHtml(profile: { full_name?: string | null; inspector_role_or_title?: string | null; technician_license_number?: string | null } | null, companyProfile: { company_name?: string | null; facility_name?: string | null; facility_number?: string | null; facility_address_line_1?: string | null; facility_address_line_2?: string | null; facility_city?: string | null; facility_region?: string | null; facility_postal_code?: string | null; facility_country?: string | null; permit_number?: string | null; certification_number?: string | null } | null, signatures: ReportSignature[], signatureUrls: Record<string, string>) {
+function buildInspectorFacilityHtml(profile: { full_name?: string | null; inspector_role_or_title?: string | null; technician_license_number?: string | null; inspector_email?: string | null; inspector_phone?: string | null } | null, companyProfile: { company_name?: string | null; facility_name?: string | null; facility_number?: string | null; facility_address_line_1?: string | null; facility_address_line_2?: string | null; facility_city?: string | null; facility_region?: string | null; facility_postal_code?: string | null; facility_country?: string | null; facility_phone?: string | null; facility_email?: string | null; permit_number?: string | null; certification_number?: string | null } | null, signatures: ReportSignature[], signatureUrls: Record<string, string>) {
   const address = [companyProfile?.facility_address_line_1, companyProfile?.facility_address_line_2, companyProfile?.facility_city, companyProfile?.facility_region, companyProfile?.facility_postal_code, companyProfile?.facility_country].filter(Boolean).join(', ')
   const rows = [
-    { label: 'Inspector name', value: profile?.full_name ?? '' },
-    { label: 'Role/title', value: profile?.inspector_role_or_title ?? '' },
-    { label: 'Technician licence number', value: profile?.technician_license_number ?? '' },
-    { label: 'Facility name', value: companyProfile?.facility_name ?? companyProfile?.company_name ?? '' },
-    { label: 'Facility number', value: companyProfile?.facility_number ?? '' },
-    { label: 'Facility address', value: address },
-    { label: 'Permit number', value: companyProfile?.permit_number ?? '' },
-    { label: 'Certification number', value: companyProfile?.certification_number ?? '' },
+    { label: 'Inspector Name', value: profile?.full_name ?? '' },
+    { label: 'Organization Name', value: companyProfile?.company_name ?? companyProfile?.facility_name ?? '' },
+    { label: 'Role / Title', value: profile?.inspector_role_or_title ?? '' },
+    { label: 'Email', value: profile?.inspector_email ?? companyProfile?.facility_email ?? '' },
+    { label: 'Phone', value: profile?.inspector_phone ?? companyProfile?.facility_phone ?? '' },
+    { label: 'Organization Address', value: address },
+    { label: 'Licence Number', value: profile?.technician_license_number ?? '' },
+    { label: 'Permit Number', value: companyProfile?.permit_number ?? '' },
+    { label: 'Certification Number', value: companyProfile?.certification_number ?? '' },
   ]
   const signature = signatures.find((item) => /inspector|technician/i.test(item.signature_type)) ?? signatures[0]
   const signatureHtml = signature && signatureUrls[signature.id]
     ? `<div class="signature-block"><img class="signature-image" src="${escapeHtml(signatureUrls[signature.id])}" alt="Inspector signature" /></div>`
     : '<div class="signature-block signature-empty"><p class="muted">No report-specific signature captured.</p></div>'
-  return `<section class="item service-section"><h2>Inspector / Facility Details</h2>${renderDefinitionRows(rows)}${signatureHtml}</section>`
+  return `<section class="item service-section"><h2>Inspector / Organization Details</h2>${renderDefinitionRows(rows)}${signatureHtml}</section>`
 }
 
 function getEvidenceTitle(capture: ReportCapture) {
@@ -194,7 +235,7 @@ function getEvidenceTitle(capture: ReportCapture) {
   if (referenceTitle !== 'Reference Document' || capture.media_kind === 'document') return referenceTitle
   if (capture.type === 'text_note' || capture.media_kind === 'note') return "Technician Note"
   if (capture.media_kind === 'audio' || capture.type === 'voice_note') return "Voice Note"
-  if (capture.media_kind === 'image' || capture.type === 'photo') return "Inspection Photo"
+  if (capture.media_kind === 'image' || capture.type === 'photo') return "Evidence Photo"
   return "Supporting Evidence"
 }
 
@@ -207,13 +248,13 @@ function renderTextList(title: string, values: string[], existingRenderedText: s
 
 
 function buildExecutiveSummaryHtml(params: { reportTitle: string; organizationName: string; dateLabel: string; findings: ReturnType<typeof getNormalizedFindingModels<ReportCapture>>; referenceCount: number; evidenceCount: number }) {
-  return `<section class="item premium-cover"><p class="eyebrow">Professional Inspection Report</p><h1>${escapeHtml(params.reportTitle)}</h1><p class="meta">${escapeHtml(params.organizationName)} · ${escapeHtml(params.dateLabel)}</p></section><section class="item service-section"><h2>Inspection Overview</h2><p>Evidence-first report prepared from included captures and technician-authored content.</p><dl><div><dt>Findings awaiting review</dt><dd>${params.findings.length}</dd></div><div><dt>Reference Documents Captured</dt><dd>${params.referenceCount}</dd></div><div><dt>Evidence Items Captured</dt><dd>${params.evidenceCount}</dd></div></dl></section>`
+  return `<section class="item premium-cover"><p class="eyebrow">Professional Evidence Report</p><h1>${escapeHtml(params.reportTitle)}</h1><p class="meta">${escapeHtml(params.organizationName)} · ${escapeHtml(params.dateLabel)}</p></section><section class="item service-section"><h2>Report Overview</h2><p>Evidence-first report prepared from included captures and technician-authored content.</p><dl><div><dt>Technician-authored findings</dt><dd>${params.findings.length}</dd></div><div><dt>Reference Documents Captured</dt><dd>${params.referenceCount}</dd></div><div><dt>Evidence Items Captured</dt><dd>${params.evidenceCount}</dd></div></dl></section>`
 }
 
 function buildFindingCardsHtml(items: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>['findings'], signedUrls: Record<string, string>) {
   const findings = getNormalizedFindingModels(items)
   if (findings.length === 0) return ''
-  return `<section class="item service-section"><h2>Inspection Findings</h2>${findings.map((finding, index) => {
+  return `<section class="item service-section"><h2>Technician-Authored Findings</h2>${findings.map((finding, index) => {
     const capture = finding.entry.capture
     const signedUrl = signedUrls[capture.id]
     const isImageFile = Boolean(capture.storage_path?.match(/\.(jpg|jpeg|png|webp|gif|heic)$/i))
@@ -232,7 +273,7 @@ function buildRecommendedActionsHtml(findings: ReturnType<typeof getNormalizedFi
 
 function buildReferenceDocumentsHtml(items: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>['findings'], signedUrls: Record<string, string>) {
   if (!items.length) return ''
-  return `<section class="item service-section"><h2>Reference Documents</h2>${items.map((entry) => { const details = dedupeEvidenceDetails(entry.group.details).filter((detail) => isMeaningfulCustomerReportText(detail.value)); return `<article class="reference-card"><h3>${escapeHtml(getEvidenceTitle(entry.capture))}</h3>${details.length ? renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value }))) : '<p class="muted">Reference captured for inspection support.</p>'}<details><summary>View Original Reference</summary>${buildEvidenceItemsHtml([entry], signedUrls)}</details></article>` }).join('')}</section>`
+  return `<section class="item service-section"><h2>Reference Documents</h2>${items.map((entry) => { const details = dedupeEvidenceDetails(entry.group.details).filter((detail) => isMeaningfulCustomerReportText(detail.value)); return `<article class="reference-card"><h3>${escapeHtml(getEvidenceTitle(entry.capture))}</h3>${details.length ? renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value }))) : '<p class="muted">Reference captured for report support.</p>'}<details><summary>View Original Reference</summary>${buildEvidenceItemsHtml([entry], signedUrls)}</details></article>` }).join('')}</section>`
 }
 
 function buildEvidenceItemsHtml(
@@ -290,7 +331,7 @@ function buildEvidenceAppendixHtml(captures: ReportCapture[], signedUrls: Record
       : signedUrl
         ? `<p><a href="${escapeHtml(signedUrl)}">Open ${escapeHtml(mediaKind)} evidence</a></p>`
         : `<div class="video-still">${escapeHtml(getEvidenceTitle(capture))}</div>`
-    return `<article class="item" data-capture-id="${escapeHtml(capture.id)}"><h2>${escapeHtml(getEvidenceTitle(capture))}</h2><div class="media">${mediaHtml}</div><section class="finding"><h3>Primary evidence description</h3><p>${escapeHtml(primaryNote)}</p></section>${renderDefinitionRows([{ label: 'Capture ID', value: capture.id }, { label: 'Media kind', value: String(capture.media_kind ?? mediaKind) }, { label: 'Captured', value: formatDateInTimeZone(new Date(capture.captured_at), timeZone) }])}</article>`
+    return `<article class="item" data-capture-id="${escapeHtml(capture.id)}"><h2>${escapeHtml(getEvidenceTitle(capture))}</h2><div class="media">${mediaHtml}</div><section class="finding"><h3>Primary evidence description</h3><p>${escapeHtml(primaryNote)}</p></section>${renderDefinitionRows([{ label: 'Capture ID', value: capture.id }, { label: 'Media kind', value: String(capture.media_kind ?? mediaKind) }, { label: 'Captured', value: formatDateTimeInTimeZone(new Date(capture.captured_at), timeZone) }])}</article>`
   }).join('')}</div></section>`
 }
 
@@ -410,7 +451,7 @@ function buildFieldServiceReportHtml({
   const chargeRows = ['labour_charge', 'parts_charge', 'mileage_charge', 'expenses_charge', 'misc_charges', 'subtotal', 'tax', 'total']
     .map((fieldName) => ({ label: FIELD_SERVICE_FIELD_LABELS[fieldName] ?? fieldName, value: getDetailValue(details, fieldName) }))
   const reviewDocument = buildNormalizedReportModel({ captures: captureItems, sections: [], draftSections: reportSections, measurements: reportDraft?.measurements ?? [], findings: reportDraft?.findings ?? [] })
-  const reportTitle = reportDraft?.title || session.title
+  const reportTitle = cleanReportTitle(reportDraft?.title || session.title, session, reportDraft)
   const findingModels = reviewDocument.findingModels
   const summaryHtml = buildExecutiveSummaryHtml({ reportTitle, organizationName, dateLabel: formatDateInTimeZone(new Date(), timeZone), findings: findingModels, referenceCount: reviewDocument.referenceDocuments.length, evidenceCount: captureItems.length })
   const appendixHtml = buildEvidenceAppendixHtml(getAppendixCaptures(captureItems).captures, signedUrls, timeZone)
@@ -537,7 +578,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
 
   const { data: reportProfile } = await supabase
     .from('profiles')
-    .select('full_name, inspector_role_or_title, technician_license_number, timezone')
+    .select('full_name, inspector_role_or_title, technician_license_number, inspector_email, inspector_phone, timezone')
     .eq('id', session.created_by)
     .eq('organization_id', organizationId)
     .maybeSingle()
@@ -545,7 +586,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
 
   const { data: reportCompanyProfile } = await supabase
     .from('company_profiles')
-    .select('company_name, facility_name, facility_number, facility_address_line_1, facility_address_line_2, facility_city, facility_region, facility_postal_code, facility_country, permit_number, certification_number')
+    .select('company_name, facility_name, facility_number, facility_address_line_1, facility_address_line_2, facility_city, facility_region, facility_postal_code, facility_country, facility_email, facility_phone, permit_number, certification_number')
     .eq('organization_id', organizationId)
     .maybeSingle()
   const signatureUrls: Record<string, string> = {}
@@ -616,13 +657,14 @@ export async function GET(_request: Request, { params }: RouteContext) {
     .join(' · ')
 
   const visibleReportSections = reportSections.filter((section) => !isHiddenFromReport(section.metadata))
-  const reportTitle = reportDraft?.title || session.title
+  const reportTitle = cleanReportTitle(reportDraft?.title || session.title, session, reportDraft)
 
   const documentSections = normalizeDraftSections(visibleReportSections, captureItems)
   const derivedFormSections = deriveFormSectionsFromCaptures(captureItems)
   const formSections = documentSections.length > 0 ? documentSections : derivedFormSections
   const customerAssetHtml = renderDefinitionRows(buildCustomerAssetRows(formSections, session as unknown as Record<string, unknown>))
   const structuredFormDataHtml = buildStructuredFormDataHtml(reportDraft?.report_structure ?? null)
+  const reportInfoHtml = renderReportInformationHtml(reportDraft, session)
   const reviewDocument = buildNormalizedReportModel({ captures: captureItems, sections: formSections, draftSections: visibleReportSections, measurements: reportDraft?.measurements ?? [], findings: reportDraft?.findings ?? [] })
   const unattachedDetails = reviewDocument.unattachedDetails
   const unattachedHtml = unattachedDetails.length > 0 ? `<section class="item service-section"><h2>Supporting Evidence</h2>${renderDefinitionRows(unattachedDetails.map((detail) => ({ label: detail.label, value: detail.value })))}</section>` : ''
@@ -639,7 +681,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
 
   const toolbarHtml = previewOnly ? '' : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>'
   const html = `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Report Header</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'No asset details')} · ${escapeHtml(formatDateInTimeZone(new Date(), timeZone))}</p></header>${summaryHtml}${structuredFormDataHtml}${customerAssetHtml || referenceHtml ? `<section class="item service-section"><h2>Asset / Customer Information</h2>${customerAssetHtml}${referenceHtml}</section>` : ''}${findingsHtml}${unattachedHtml}${buildFinalNotesHtml(session)}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile, reportSignatures, signatureUrls)}${supportingHtml}${appendixHtml}</main></body></html>`
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Report Header</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'General evidence report')} · ${escapeHtml(formatDateInTimeZone(new Date(), timeZone))}</p></header>${summaryHtml}${reportInfoHtml}${structuredFormDataHtml}${customerAssetHtml || referenceHtml ? `<section class="item service-section"><h2>Report Metadata</h2>${customerAssetHtml}${referenceHtml}</section>` : ''}${findingsHtml}${unattachedHtml}${buildFinalNotesHtml(session)}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile, reportSignatures, signatureUrls)}${supportingHtml}${appendixHtml}</main></body></html>`
 
   return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
 }
