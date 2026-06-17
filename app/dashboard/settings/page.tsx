@@ -74,6 +74,7 @@ export default async function SettingsPage() {
       </Card>
       <section className="settings-link-grid" aria-label="Settings areas">
         {canManageInternalTools ? <Link href="/dashboard/templates" className="card settings-link-card touch-target"><span className="eyebrow">Internal / Admin</span><h2>Report context library</h2><p className="muted">Admin-only compatibility tools for reusable report context. Normal evidence capture does not require setup.</p></Link> : null}
+        <Link href="/dashboard/settings/archived-sessions" className="card settings-link-card touch-target"><span className="eyebrow">Sessions</span><h2>Archived sessions</h2><p className="muted">Search, restore, or safely delete archived workspace sessions.</p></Link>
         <Link href="/dashboard/billing" className="card settings-link-card touch-target"><span className="eyebrow">Billing</span><h2>Plan and subscription</h2><p className="muted">Review current billing status, usage, storage, report sends, and checkout access.</p></Link>
       </section>
     </main>

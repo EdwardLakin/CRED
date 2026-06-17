@@ -317,6 +317,7 @@ export default async function DiagnosticProcedurePage({
     .select('*')
     .eq('id', id)
     .eq('organization_id', profile.organization_id)
+    .is('deleted_at', null)
     .single()
 
   if (sessionError || !session) notFound()

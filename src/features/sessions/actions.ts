@@ -40,6 +40,14 @@ function getDefaultSessionTitle() {
   return `New Session ${formatDateTimeInTimeZone(new Date(), null)}`
 }
 
+function createSessionDisplayId(date = new Date()) {
+  // Short random suffix avoids sequence race conditions while remaining organization-scoped by a unique index.
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  const bytes = crypto.getRandomValues(new Uint8Array(4))
+  const suffix = Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join('')
+  return `EV-${date.getUTCFullYear()}-${suffix}`
+}
+
 function buildFieldServiceDetails(formData: FormData, existingDetails: Json | null | undefined): Json {
   const details: Record<string, Json> = isFieldServiceRecord(existingDetails) ? { ...(existingDetails as Record<string, Json>) } : {}
 
@@ -84,6 +92,7 @@ export async function createDocumentationSession(formData: FormData) {
       created_by: profile.id,
       organization_id: profile.organization_id,
       workflow_template_id: workflowTemplateId,
+      display_id: createSessionDisplayId(),
     })
     .select('id')
     .single()
@@ -174,8 +183,31 @@ export async function archiveDocumentationSession(sessionId: string) {
 
   revalidatePath('/dashboard')
   revalidatePath('/dashboard/sessions')
+  revalidatePath('/dashboard/settings/archived-sessions')
   revalidatePath(`/dashboard/sessions/${sessionId}`)
-  redirect(`/dashboard/sessions/${sessionId}?saved=1`)
+}
+
+export async function deleteDocumentationSession(sessionId: string) {
+  const { supabase, profile } = await requireSessionWorkspace()
+  const billingAccess = requireActiveBillingAccess(profile)
+
+  if (!billingAccess.ok) {
+    redirect(`/dashboard?error=${encodeURIComponent(billingAccess.message)}`)
+  }
+
+  const { error } = await supabase
+    .from('documentation_sessions')
+    .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq('id', sessionId)
+    .eq('organization_id', profile.organization_id)
+
+  if (error) {
+    redirect(`/dashboard?error=${encodeURIComponent(error.message)}`)
+  }
+
+  revalidatePath('/dashboard')
+  revalidatePath('/dashboard/sessions')
+  revalidatePath('/dashboard/settings/archived-sessions')
 }
 
 export async function restoreDocumentationSession(sessionId: string) {
@@ -187,7 +219,7 @@ export async function restoreDocumentationSession(sessionId: string) {
   }
   const { error } = await supabase
     .from('documentation_sessions')
-    .update({ status: 'draft', archived_at: null, updated_at: new Date().toISOString() })
+    .update({ archived_at: null, updated_at: new Date().toISOString() })
     .eq('id', sessionId)
     .eq('organization_id', profile.organization_id)
 
@@ -198,7 +230,7 @@ export async function restoreDocumentationSession(sessionId: string) {
   revalidatePath('/dashboard')
   revalidatePath('/dashboard/sessions')
   revalidatePath(`/dashboard/sessions/${sessionId}`)
-  redirect(`/dashboard/sessions/${sessionId}?saved=1`)
+  revalidatePath('/dashboard/settings/archived-sessions')
 }
 
 const BASE_APPLY_SUGGESTION_FIELDS = ['asset_label', 'vin', 'odometer', 'unit_number', 'customer_name'] as const
