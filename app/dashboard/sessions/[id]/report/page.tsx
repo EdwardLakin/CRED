@@ -411,7 +411,7 @@ export default async function SessionReportPreviewPage({
     measurements: currentReport?.measurements ?? [],
     findings: currentReport?.findings ?? [],
   });
-  const progress = getInspectionProgress(visibleCaptures, session.session_type, template?.required_evidence ?? null, (signatures ?? []).length);
+  const progress = getInspectionProgress(visibleCaptures, session.session_type, template?.required_evidence ?? null);
   const photoEvidence = supportingEvidence.filter(
     (item) => item.kind === "photo",
   );
@@ -637,7 +637,7 @@ function GeneratedReportReview({
     <section className="card detail-card report-command-card form-stack generated-report-card">
       <div className="report-section-heading generated-report-heading">
         <div>
-          <p className="eyebrow">Inspection Overview</p>
+          <p className="eyebrow">Report Overview</p>
           <h2>{stripConfidenceText(currentReport?.title ?? session.title)}</h2>
           <p className="muted">
             Evidence-first review built from included captures and technician-authored content.
@@ -655,7 +655,7 @@ function GeneratedReportReview({
       <div className="report-cover-card">
         <div className="report-logo-mark" aria-hidden="true">{facilityName.slice(0, 1).toUpperCase()}</div>
         <div>
-          <p className="eyebrow">Professional Inspection Report</p>
+          <p className="eyebrow">Professional Evidence Report</p>
           <h3>{stripConfidenceText(currentReport?.title ?? session.title)}</h3>
           <p className="muted">{facilityName}{facilityLocation ? ` · ${facilityLocation}` : ""}</p>
         </div>
@@ -664,7 +664,7 @@ function GeneratedReportReview({
       <section className="inspection-summary-card">
         <div className="report-section-title-row">
           <div>
-            <p className="eyebrow">Inspection Overview</p>
+            <p className="eyebrow">Report Overview</p>
             <h3>Captured evidence for {formatDate(new Date().toISOString(), timeZone)}</h3>
           </div>
           <span className="status-pill neutral">Evidence review</span>
@@ -688,8 +688,10 @@ function GeneratedReportReview({
         ) : null}
         {progress.missingReadinessItems.length > 0 ? (
           <p className="notice info"><strong>Missing required manual items:</strong> {progress.missingReadinessItems.join(', ')}.</p>
-        ) : null}
-        <p className="muted"><strong>Findings awaiting review:</strong> {findings.length}</p>
+        ) : (
+          <p className="notice info"><strong>No required reference items for this report type.</strong></p>
+        )}
+        <p className="muted"><strong>Technician-authored findings awaiting review:</strong> {findings.length}</p>
       </section>
       <details className="inspection-summary-card">
         <summary className="report-section-title-row">
@@ -746,6 +748,21 @@ function GeneratedReportReview({
           </div>
         </form>
       ) : null}
+
+      <section className="report-subsection report-document-section">
+        <div className="report-section-title-row">
+          <div>
+            <h3>Subject / Customer Information</h3>
+            <p className="muted">Report type: {structureSourceLabel}. Edit saved report fields below when corrections are needed.</p>
+          </div>
+        </div>
+        {customerAssetRows.length > 0 ? (
+          <div className="report-field-grid">{customerAssetRows.map((field) => <div key={field.label} className="report-field-card"><span>{field.label}</span><strong>{stripConfidenceText(field.value)}</strong></div>)}</div>
+        ) : <p className="muted">No subject/customer values captured yet. Blank optional fields are not missing for a generic evidence report.</p>}
+        <ReferenceDocumentList items={reviewDocument.referenceDocuments} supportingEvidence={supportingEvidence} />
+      </section>
+
+      <EvidenceAppendix supportingEvidence={supportingEvidence} timeZone={timeZone} />
 
       {currentReport && isEditingReport && saveReportEditsAction ? (
         <form
@@ -918,37 +935,12 @@ function GeneratedReportReview({
 
       {!isEditingReport ? (
         <>
-          <section className="report-subsection report-document-section">
-            <div className="report-section-title-row">
-              <div>
-                <h3>Asset / Customer Information</h3>
-                <p className="muted">
-                  Reference and identity captures only: work orders, forms, VIN/data plates, registration, unit identifiers, odometer, and customer/asset documents.
-                </p>
-              </div>
-            </div>
-            {formStructureSummary.guidance.length > 0 ? (
-              <div className="missing-form-guidance">
-                {formStructureSummary.isFormStructured ? <span className="status-pill neutral compact">Based on captured form</span> : null}
-                {formStructureSummary.guidance.map((item) => (
-                  <Link key={item} href={`/dashboard/sessions/${session.id}/capture`} className="suggestion-chip">{item}</Link>
-                ))}
-              </div>
-            ) : null}
-            {customerAssetRows.length > 0 ? (
-              <div className="report-field-grid">{customerAssetRows.map((field) => <div key={field.label} className="report-field-card"><span>{field.label}</span><strong>{stripConfidenceText(field.value)}</strong></div>)}</div>
-            ) : null}
-            <ReferenceDocumentList
-                items={reviewDocument.referenceDocuments}
-                supportingEvidence={supportingEvidence}
-              />
-          </section>
 
           {documentSections.length > 0 || reviewDocument.findings.length > 0 ? (
             <section className="report-subsection report-supporting-section">
               <div className="report-section-title-row">
                 <div>
-                  <h3>Inspection Findings</h3>
+                  <h3>Report Sections</h3>
                   <p className="muted">Technician notes and verified findings grouped by system/component. Suggestions remain review-only until verified.</p>
                 </div>
                 <span className="status-pill neutral compact">{includedEvidenceCount} included</span>
@@ -968,7 +960,6 @@ function GeneratedReportReview({
               ) : null}
             </section>
           ) : null}
-          <EvidenceAppendix supportingEvidence={supportingEvidence} timeZone={timeZone} />
         </>
       ) : null}
 
@@ -1031,7 +1022,7 @@ function FindingCardList({
 }) {
   const evidenceById = new Map(supportingEvidence.map((item) => [item.capture.id, item]));
   const findings = getNormalizedFindingModels(items);
-  if (findings.length === 0) return <p className="muted">No inspection findings attached yet.</p>;
+  if (findings.length === 0) return <p className="muted">No technician-authored findings attached yet.</p>;
   return <div className="finding-card-list">{findings.map((finding, index) => {
     const evidence = evidenceById.get(finding.id);
     return <article key={finding.id} className="professional-finding-card">

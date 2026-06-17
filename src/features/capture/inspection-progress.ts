@@ -57,7 +57,7 @@ function getConfidence(capture: CaptureItem) {
   return typeof value === 'number' ? Math.max(0, Math.min(1, value)) : null
 }
 
-export function getInspectionProgress(captures: CaptureItem[], sessionType: string, templateRequiredEvidence?: Json | null, signatureCount = 0) {
+export function getInspectionProgress(captures: CaptureItem[], sessionType: string, templateRequiredEvidence?: Json | null) {
   const evidence = getRequiredEvidenceCompletion(captures, sessionType, templateRequiredEvidence)
   const requiredTotal = Math.max(evidence.totalCount, 1)
   const evidenceCompleteness = Math.round((evidence.completedCount / requiredTotal) * 100)
@@ -66,9 +66,8 @@ export function getInspectionProgress(captures: CaptureItem[], sessionType: stri
   const aiStatusCounts = getAiStatusCounts(captures)
   const pendingAiCount = aiStatusCounts.queued + aiStatusCounts.analyzing
   const failedAiCount = aiStatusCounts.failed
-  const signatureReady = signatureCount > 0 ? 100 : 0
   const aiReadinessPenalty = Math.min(25, pendingAiCount * 10 + failedAiCount * 5)
-  const reportReadiness = Math.max(0, Math.round((evidenceCompleteness * 0.55) + (findingConfidence * 0.30) + (signatureReady * 0.15) - aiReadinessPenalty))
+  const reportReadiness = Math.max(0, Math.round((evidenceCompleteness * 0.70) + (findingConfidence * 0.30) - aiReadinessPenalty))
   const criticalFindings = countCriticalFindings(captures)
   const nextMissing = evidence.missing[0]?.rule.label ?? null
 
@@ -88,8 +87,7 @@ export function getInspectionProgress(captures: CaptureItem[], sessionType: stri
       ...evidence.missing.slice(0, 3).map((row) => row.rule.label),
       ...(pendingAiCount > 0 ? ['AI analysis still running'] : []),
       ...(failedAiCount > 0 ? ['AI analysis failed — verify manually'] : []),
-      ...(signatureCount === 0 ? ['Customer/inspector signature'] : []),
     ],
-    nextStep: nextMissing ? `Capture ${nextMissing} evidence.` : 'Review draft report and collect required signoff.',
+    nextStep: nextMissing ? `Capture ${nextMissing} evidence.` : 'Review draft report and export when ready.',
   }
 }

@@ -359,6 +359,8 @@ export function getSessionEvidenceRules(sessionType: string, templateRequiredEvi
     }))
   }
 
+  if (workflow === 'default') return []
+
   return getSteps(workflow).map((step) => ({
     key: step.key,
     label: step.shortLabel,

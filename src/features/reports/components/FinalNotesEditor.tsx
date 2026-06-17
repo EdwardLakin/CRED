@@ -17,7 +17,7 @@ export function FinalNotesEditor({ defaultValue, editedByUser, includeInExport, 
   async function copyNotes() {
     const value = textareaRef.current?.value ?? ''
     await navigator.clipboard.writeText(value)
-    setMessage('Copied work order notes.')
+    setMessage('Copied report notes.')
   }
 
   function confirmRegenerate(event: React.FormEvent<HTMLFormElement>) {
@@ -38,18 +38,18 @@ export function FinalNotesEditor({ defaultValue, editedByUser, includeInExport, 
       <div className="report-section-heading generated-report-heading">
         <div>
           <p className="eyebrow">Final Notes</p>
-          <h2>Final Notes / Work Order Notes</h2>
-          <p className="muted">Copy/paste-ready technician summary for an outside work order system.</p>
+          <h2>Final Summary / Report Notes</h2>
+          <p className="muted">Copy/paste-ready report summary based on technician-authored content.</p>
         </div>
       </div>
       <form action={saveAction} className="form-stack">
         <label className="field-stack">
-          <span className="label">Work order notes</span>
+          <span className="label">Final summary / report notes</span>
           <textarea ref={textareaRef} className="input text-area" name="final_notes" rows={10} defaultValue={defaultValue} />
         </label>
         <label className="checkline neutral acknowledgement-row">
           <input type="checkbox" name="include_final_notes_in_export" defaultChecked={includeInExport} />
-          Include Final Notes in export
+          Include final summary in export
         </label>
         <div className="form-actions report-inline-actions">
           <button className="button button-primary touch-target">Save Notes</button>
