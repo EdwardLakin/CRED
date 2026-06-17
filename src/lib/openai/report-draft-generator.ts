@@ -180,10 +180,10 @@ If no structure-defining document exists, use a generic evidence report structur
 Technicians capture evidence naturally; synthesize technician-captured evidence into a professional, human-reviewable draft instead of dumping captures.
 Do not invent unsupported facts.
 Technician Truth precedence is mandatory: technician notes, manual captions, voice transcripts, and verified findings are primary source-of-truth observations. You may organize and summarize them, but must not replace, reinterpret, embellish, overwrite, or contradict technician-provided observations.
-Prioritize draft inputs in this order: 1) technician notes/manual captions/voice transcripts/verified findings on evidence captures, 2) source document identity fields, 3) selected Form Profile/report context. Do not create findings, recommendations, severity, components, or observed conditions from image interpretation, image OCR, image classification, or unverified extracted image fields.
-Source documents/forms provide the report skeleton, field labels, and filled values. Do not convert prior work-order lines into findings unless technician evidence explicitly supports them.
+Prioritize draft inputs in this order: 1) technician notes/manual captions/voice transcripts/verified findings on evidence captures, 2) OCR/text extracted from uploaded source documents/forms/reports/images, 3) verified form fields, 4) selected Form Profile/report context. Do not create findings, recommendations, severity, components, or observed conditions from image interpretation, visual appearance, image classification, or unverified image-derived fields.
+Source documents/forms provide the report skeleton, field labels, filled values, documented tester results, and neutral section summaries when OCR/text exists. OCR/text from a user-uploaded report/form/image is document truth; summarize it as documented/tester-reported, not as independent AI diagnosis. Do not convert prior work-order lines into findings unless technician evidence or document text explicitly supports them.
 Each section should include metadata for form/evidence rendering when available: section_type ('form_section' or 'evidence_group'), source_field_group, fields [{key,label,value,source_capture_id}], related_capture_ids, observations, findings, recommendations. Attach findings/recommendations to the evidence capture IDs that support them.
-Every finding or recommendation must be based on technician-authored notes/transcripts or manually verified findings/recommendations and must reference those source_capture_ids.
+Every finding or recommendation must be based on technician-authored notes/transcripts, verified fields, or explicit OCR/document text and must reference those source_capture_ids. Do not invent unsupported findings/recommendations; if OCR states results such as GOOD BATTERY, STARTER SYSTEM CRANKING NORMAL, or CHARGING SYSTEM EXCESSIVE RIPPLE, phrase them as documented/tester-reported results.
 Use needs_review when uncertain or when evidence is incomplete.
 Organize around captured form/report/template/checklist sections first when a structure-defining document is present, then supporting evidence. When no structure-defining document is present, organize into the generic CRED evidence report structure: Report Summary, Evidence Captured, Technician Notes, Findings, Recommendations, Final Summary / Report Notes, Inspector / Facility Details, Signoff.
 Do not claim official CVIP/compliance completion, automatic compliance, or final inspection approval.
@@ -256,7 +256,12 @@ function getExtractionFields(capture: ReportDraftCaptureContext) {
 
 function getSourceDocumentContext(capture: ReportDraftCaptureContext) {
   const extractedData = isRecord(capture.extracted_data) ? capture.extracted_data : {}
-  return isRecord(extractedData.source_document) ? extractedData.source_document : null
+  if (isRecord(extractedData.source_document)) return extractedData.source_document
+  if (capture.media_kind === 'document' || capture.type === 'document') return { type: 'uploaded_document', label: 'Uploaded document' }
+  if ((capture.ocr_text?.trim() || getExtractedDocumentText(capture)) && (capture.type === 'document' || capture.media_kind === 'image')) {
+    return { type: 'uploaded_image_document', label: 'Uploaded image/document OCR' }
+  }
+  return null
 }
 
 function buildSourceDocumentDraftContext(capture: ReportDraftCaptureContext) {
@@ -273,8 +278,18 @@ function buildSourceDocumentDraftContext(capture: ReportDraftCaptureContext) {
     captured_at: capture.captured_at,
     source_document: sourceDocument,
     technician_note: capture.technician_note,
+    ocr_text: capture.ocr_text,
+    extracted_text: getExtractedDocumentText(capture),
+    extracted_fields: fields,
     identity_fields: identityFields,
   }
+}
+
+function getExtractedDocumentText(capture: ReportDraftCaptureContext) {
+  const extractedData = isRecord(capture.extracted_data) ? capture.extracted_data : {}
+  const extraction = isRecord(extractedData.extraction) ? extractedData.extraction : {}
+  const text = sanitizeText(extraction.text, 8000) ?? sanitizeText(extraction.extracted_text, 8000)
+  return text
 }
 
 function buildEvidenceDraftContext(capture: ReportDraftCaptureContext) {
@@ -345,7 +360,7 @@ function buildDraftContext(input: GenerateReportDraftInput) {
 
   return {
     source_document_policy:
-      'Source documents provide identity/header context only. Work order line descriptions, complaints, corrections, prior notes, labour/parts lines, and recommendations are not findings unless the technician note explicitly asks to include them.',
+      'Uploaded source documents/forms/reports/images with OCR or extracted text are report context. Use OCR/text and verified fields for title/type, report fields, neutral summaries, documented tester-reported results, findings, and recommendations only when explicitly stated. Never use visual image interpretation or image classification as factual truth.',
     report_context: input.reportContext,
     session: input.session,
     source_documents: sourceDocuments.map(buildSourceDocumentDraftContext),

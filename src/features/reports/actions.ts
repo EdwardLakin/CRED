@@ -520,6 +520,103 @@ function safeJson(value: unknown): Json {
   return null
 }
 
+
+function cleanDraftField(value: unknown, maxLength = 240) {
+  return typeof value === 'string' ? stripConfidenceText(value).replace(/\s+/g, ' ').trim().slice(0, maxLength) : ''
+}
+
+function extractDocumentReportInformation(captures: Array<{ ocr_text?: string | null; extracted_data: Json | null }>) {
+  const info: Record<string, string> = {}
+  const normalizedFields = buildNormalizedReportFields(captures.map((capture, index) => ({
+    id: `document-info-${index}`,
+    type: 'document',
+    media_kind: 'document',
+    extracted_data: capture.extracted_data,
+    ocr_text: capture.ocr_text ?? null,
+  })))
+  const setIfEmpty = (key: string, value: unknown) => {
+    const cleaned = cleanDraftField(value)
+    if (cleaned && !info[key]) info[key] = cleaned
+  }
+
+  for (const field of normalizedFields) {
+    if (field.key === 'customer') setIfEmpty('customer_client', field.display_value)
+    if (field.key === 'asset') setIfEmpty('asset_equipment', field.display_value)
+    if (field.key === 'vin') setIfEmpty('asset_equipment', field.display_value)
+    if (field.key === 'work_order' || field.key === 'po_number') setIfEmpty('reference_number', field.display_value)
+  }
+
+  for (const capture of captures) {
+    const extractedData = isRecord(capture.extracted_data) ? capture.extracted_data : {}
+    const extraction = isRecord(extractedData.extraction) ? extractedData.extraction : {}
+    const fields = isRecord(extraction.fields) ? extraction.fields : {}
+    Object.entries(fields).forEach(([key, value]) => {
+      const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]+/g, '_')
+      if (/subject|inspect(ed)?_?by|report_for/.test(normalizedKey)) setIfEmpty('subject_name', value)
+      if (/customer|client|owner/.test(normalizedKey)) setIfEmpty('customer_client', value)
+      if (/asset|equipment|vehicle|unit|vin|serial/.test(normalizedKey)) setIfEmpty('asset_equipment', value)
+      if (/location|address|site/.test(normalizedKey)) setIfEmpty('location_address', value)
+      if (/work_order|repair_order|reference|job|invoice|po|purchase_order/.test(normalizedKey)) setIfEmpty('reference_number', value)
+    })
+  }
+
+  return info
+}
+
+function detectDocumentReportType(captures: Array<{ ocr_text?: string | null; extracted_data: Json | null }>) {
+  const text = captures.map((capture) => {
+    const extractedData = isRecord(capture.extracted_data) ? capture.extracted_data : {}
+    const extraction = isRecord(extractedData.extraction) ? extractedData.extraction : {}
+    return `${capture.ocr_text ?? ''} ${typeof extraction.text === 'string' ? extraction.text : ''} ${typeof extraction.extracted_text === 'string' ? extraction.extracted_text : ''} ${JSON.stringify(isRecord(extraction.fields) ? extraction.fields : {})}`
+  }).join(' ').toLowerCase()
+  if (/battery|charging system|starter system|alternator|ripple|cca|cranking/.test(text)) return 'Battery and Charging System Inspection Report'
+  if (/electrical|voltage|circuit|wiring|connector|current draw/.test(text)) return 'Vehicle Electrical System Report'
+  if (/inspection|inspect|checklist/.test(text)) return 'Inspection Report'
+  if (/report/.test(text)) return 'Report'
+  return null
+}
+
+function mergeDocumentContextIntoDraft(args: {
+  draftOutput: Awaited<ReturnType<typeof generateReportDraft>>
+  captures: Array<{ ocr_text?: string | null; extracted_data: Json | null }>
+  session: { title: string; customer_name: string | null; asset_label: string | null; vin: string | null; unit_number: string | null; suggested_details: Json | null }
+}) {
+  const documentInfo = extractDocumentReportInformation(args.captures)
+  const savedInfo = isRecord(args.session.suggested_details) && isRecord(args.session.suggested_details.report_information)
+    ? args.session.suggested_details.report_information
+    : {}
+  const headerFields = isRecord(args.draftOutput.header_fields) ? { ...args.draftOutput.header_fields } : {}
+  const setHeaderIfEmpty = (key: string, value: unknown) => {
+    const cleaned = cleanDraftField(value)
+    if (cleaned && !cleanDraftField(headerFields[key])) headerFields[key] = cleaned
+  }
+
+  Object.entries(documentInfo).forEach(([key, value]) => {
+    if (!cleanDraftField(savedInfo[key])) setHeaderIfEmpty(key, value)
+  })
+  setHeaderIfEmpty('customer_name', args.session.customer_name || documentInfo.customer_client)
+  setHeaderIfEmpty('asset_label', args.session.asset_label || documentInfo.asset_equipment)
+  setHeaderIfEmpty('vin', args.session.vin)
+  setHeaderIfEmpty('unit_number', args.session.unit_number)
+
+  const detectedType = detectDocumentReportType(args.captures)
+  const subject = cleanDraftField(savedInfo.subject_name) || documentInfo.subject_name || args.session.customer_name || documentInfo.customer_client || args.session.asset_label || documentInfo.asset_equipment || documentInfo.reference_number
+  const contextualTitle = detectedType
+    ? detectedType === 'Inspection Report' && subject
+      ? `Inspection Report — ${subject}`
+      : detectedType
+    : null
+  const reportTitle = cleanDraftField(savedInfo.report_title) || contextualTitle || args.draftOutput.title
+  if (reportTitle) headerFields.report_title = reportTitle
+  Object.entries(documentInfo).forEach(([key, value]) => setHeaderIfEmpty(key, value))
+
+  return {
+    ...args.draftOutput,
+    title: reportTitle,
+    header_fields: headerFields as Json,
+  }
+}
+
 function getDraftStatus(confidence: number, sectionCount: number): 'draft' | 'needs_review' {
   return confidence >= 0.7 && sectionCount > 0 ? 'draft' : 'needs_review'
 }
@@ -691,6 +788,18 @@ export async function generateAiReportDraft(sessionId: string) {
     transcript: capture.transcript,
     extracted_data: capture.extracted_data,
   })), profile.organization.image_ai_assist_enabled)
+  draftOutput = mergeDocumentContextIntoDraft({
+    draftOutput,
+    captures: normalizedCaptures,
+    session: {
+      title: fullSession.title,
+      customer_name: fullSession.customer_name,
+      asset_label: fullSession.asset_label,
+      vin: fullSession.vin,
+      unit_number: fullSession.unit_number,
+      suggested_details: fullSession.suggested_details,
+    },
+  })
   const structureSourceMetadata = getReportStructureSourceMetadata(normalizedCaptures)
   const formSections = deriveFormSectionsFromCaptures(normalizedCaptures)
   const formBlueprint = extractFormBlueprint(normalizedCaptures)
