@@ -4395,3 +4395,64 @@ a:focus-visible {
   color: var(--danger, #f87171);
   border-color: rgba(248, 113, 113, 0.45);
 }
+
+.modal-backdrop {
+  align-items: center;
+  background: rgb(15 23 42 / 64%);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 18px;
+  position: fixed;
+  z-index: 1000;
+}
+
+.confirmation-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow-lg);
+  display: grid;
+  gap: 12px;
+  max-width: 420px;
+  padding: 20px;
+  width: min(100%, 420px);
+}
+
+.confirmation-modal h2,
+.confirmation-modal p {
+  margin: 0;
+}
+
+.confirmation-modal-actions,
+.report-edit-evidence-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.danger-button,
+.danger-action {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+  color: var(--danger);
+}
+
+.danger-button {
+  background: var(--danger);
+  color: white;
+}
+
+@media (max-width: 520px) {
+  .confirmation-modal-actions,
+  .report-edit-evidence-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .confirmation-modal-actions .button,
+  .report-edit-evidence-actions .button {
+    width: 100%;
+  }
+}

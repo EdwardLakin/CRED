@@ -4,9 +4,9 @@ import { useActionState, useRef, useState } from 'react'
 import { useFormStatus } from 'react-dom'
 
 import {
-  removeCaptureItem,
   updateCaptureReview,
 } from '@/features/capture/actions'
+import { DeleteEvidenceButton } from '@/features/capture/components/DeleteEvidenceButton'
 import { formatDateTimeInTimeZone } from '@/lib/date-format'
 import type { Json } from '@/lib/supabase/database.types'
 
@@ -353,7 +353,7 @@ function EvidenceCard({
   const processingStatus = getCaptureProcessingStatus(capture)
 
   return (
-    <article className="capture-list-item evidence-preview-card">
+    <article className="capture-list-item evidence-preview-card" data-evidence-card>
       <div className="capture-list-main">
         <div>
           <h3>{label}</h3>
@@ -488,12 +488,7 @@ function EvidenceCard({
         >
           {isEditing ? 'Hide edit' : 'Edit'}
         </button>
-        <form action={removeCaptureItem}>
-          <input type="hidden" name="capture_id" value={capture.id} />
-          <button className="secondary-link danger-link" type="submit">
-            Remove
-          </button>
-        </form>
+        <DeleteEvidenceButton captureId={capture.id} />
         {signedUrl ? (
           <a
             href={signedUrl}
