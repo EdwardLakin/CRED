@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 
 import { getPlanLimits, parseBillingPlan } from '@/features/billing'
 import { AddCaptureForm, RecentCapturesList } from '@/features/capture'
+import { getDisplayReportTitle } from '@/features/reports/report-title'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
 export default async function GuidedCapturePage({
@@ -48,12 +49,13 @@ export default async function GuidedCapturePage({
   )
 
   const planLimits = getPlanLimits(parseBillingPlan(profile.organization.plan))
+  const displaySessionTitle = getDisplayReportTitle(null, session)
   return (
     <main className="page-shell dashboard-shell focused-capture-shell">
       <div className="section-header page-header focused-capture-header">
         <div>
           <h1>Capture Evidence</h1>
-          <p className="muted">{session.title}</p>
+          <p className="muted">{displaySessionTitle}</p>
           <p className="muted">If you have a paper form, capture it first.</p>
           <p className="status-pill neutral">AI Assist: {profile.organization.image_ai_assist_enabled ? 'On' : 'Off'}</p>
         </div>
@@ -85,7 +87,7 @@ export default async function GuidedCapturePage({
           </div>
           <span className="status-pill neutral">{captureItems.length} saved</span>
         </div>
-        <RecentCapturesList captures={captureItems} signedUrls={signedUrls} />
+        <RecentCapturesList captures={captureItems} signedUrls={signedUrls} timeZone={profile.timezone} />
       </section>
     </main>
   )

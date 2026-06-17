@@ -26,7 +26,7 @@ function getCaptureMeta(capture: CaptureItem) {
   return typeLabel
 }
 
-export function RecentCapturesList({ captures, signedUrls, limit = 6 }: { captures: CaptureItem[]; signedUrls: Record<string, string>; limit?: number }) {
+export function RecentCapturesList({ captures, signedUrls, limit = 6, timeZone = null }: { captures: CaptureItem[]; signedUrls: Record<string, string>; limit?: number; timeZone?: string | null }) {
   const recentCaptures = captures.filter((capture) => !capture.deleted_at).slice(0, limit)
 
   if (recentCaptures.length === 0) {
@@ -39,7 +39,7 @@ export function RecentCapturesList({ captures, signedUrls, limit = 6 }: { captur
         <article key={capture.id} className="recent-capture-card">
           <div>
             <h3>{getCaptureLabel(capture)}</h3>
-            <p className="muted">{getCaptureMeta(capture)} · {formatDateTime(capture.captured_at ?? capture.created_at)}</p>
+            <p className="muted">{getCaptureMeta(capture)} · {formatDateTime(capture.captured_at ?? capture.created_at, timeZone)}</p>
           </div>
           <div className="capture-card-actions">
             <span className={`ai-status-pill ${getCaptureStatusVariant(getCaptureProcessingStatus(capture))}`}>

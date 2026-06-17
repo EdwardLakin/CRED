@@ -11,6 +11,7 @@ import {
   normalizeFieldServiceDetails,
 } from '@/features/field-service'
 import { buildCustomerAssetRows, buildNormalizedReportModel, classifyReferenceDocumentTitle, dedupeEvidenceDetails, deriveFormSectionsFromCaptures, getNormalizedFindingModels, getNormalizedRecommendedActions, isMeaningfulCustomerReportText, normalizeDraftSections, shouldRenderDetail, splitRecommendationText, stripConfidenceText, sanitizeCapturesForImageAiAssist } from '@/features/reports/report-structure'
+import { getDisplayReportTitle, getReportInfoValue } from '@/features/reports/report-title'
 import { asDiagnosticRecordArray, getDiagnosticProcedureProgress, getDiagnosticStepCompleteness } from '@/features/diagnostic-procedures/progress'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { recordUsageEvent } from '@/features/usage'
@@ -46,31 +47,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function isPlaceholderReportTitle(value: string | null | undefined) {
-  const title = stripConfidenceText(value ?? '').trim()
-  return !title || /^(new session|session|untitled session)\b/i.test(title) || /\d{4}-\d{2}-\d{2}t\d{2}:\d{2}|\butc\b/i.test(title)
-}
-
-function getReportInfoValue(draft: ReportDraft | null | undefined, session: ReportSession, key: string) {
-  if (isRecord(draft?.header_fields) && typeof draft.header_fields[key] === 'string') return draft.header_fields[key] as string
-  if (isRecord(session.suggested_details) && isRecord(session.suggested_details.report_information) && typeof session.suggested_details.report_information[key] === 'string') return session.suggested_details.report_information[key] as string
-  return ''
-}
-
-function titleFromSubject(subject: string) {
-  const clean = stripConfidenceText(subject).replace(/\s+/g, ' ').trim()
-  if (!clean) return null
-  if (/\b(evidence report|inspection documentation|property documentation|documentation)\b/i.test(clean)) return clean
-  if (/\b(property|site|facility|building|home|house|condo|address)\b/i.test(clean)) return `${clean} Documentation`
-  if (/\b(inspection|inspect)\b/i.test(clean)) return `${clean} Documentation`
-  return `${clean} Evidence Report`
-}
-
 function cleanReportTitle(preferred: string | null | undefined, session: ReportSession, draft: ReportDraft | null | undefined) {
-  const explicit = getReportInfoValue(draft, session, 'report_title') || preferred
-  if (!isPlaceholderReportTitle(explicit)) return stripConfidenceText(explicit ?? '').trim()
-  const subject = getReportInfoValue(draft, session, 'subject_name') || getReportInfoValue(draft, session, 'asset_equipment') || session.asset_label || getReportInfoValue(draft, session, 'customer_client') || session.customer_name || session.unit_number || session.vin || ''
-  return titleFromSubject(subject) ?? 'General Evidence Report'
+  return getDisplayReportTitle(preferred ? { ...draft, title: preferred } : draft, session)
 }
 
 function escapeRawHtml(value: unknown) {

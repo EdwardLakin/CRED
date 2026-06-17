@@ -22,6 +22,7 @@ import {
   isMeaningfulCustomerReportText,
   sanitizeCapturesForImageAiAssist,
 } from "@/features/reports/report-structure";
+import { getDisplayReportTitle, getReportInfoValue } from "@/features/reports/report-title";
 import {
   createReportShareLink,
   disableReportShareLink,
@@ -126,12 +127,6 @@ function getEvidenceNote(capture: CaptureItem) {
 }
 
 
-function getReportInfoValue(draft: AiReportDraft | null | undefined, session: Pick<DocumentationSession, "suggested_details">, key: string) {
-  if (isRecord(draft?.header_fields) && typeof draft.header_fields[key] === "string") return draft.header_fields[key] as string;
-  if (isRecord(session.suggested_details) && isRecord(session.suggested_details.report_information) && typeof session.suggested_details.report_information[key] === "string") return session.suggested_details.report_information[key] as string;
-  return "";
-}
-
 function getDiagnosticStepMetadata(section: AiReportDraftSection) {
   return isRecord(section.metadata) ? section.metadata as Record<string, unknown> : {}
 }
@@ -174,6 +169,7 @@ function DiagnosticProcedureReport({
   reportPath,
   origin,
   markReviewedAction,
+  timeZone,
 }: {
   session: Pick<DocumentationSession, 'id' | 'title'>
   currentReport: AiReportDraft
@@ -183,6 +179,7 @@ function DiagnosticProcedureReport({
   reportPath: string
   origin: string
   markReviewedAction: ServerAction
+  timeZone: string | null
 }) {
   const info = getDiagnosticProcedureInfo(currentReport)
   const steps = sections.filter((section) => { const metadata = getDiagnosticStepMetadata(section); return metadata.section_type === 'diagnostic_procedure_step' && metadata.visible !== false })
@@ -197,7 +194,7 @@ function DiagnosticProcedureReport({
           <h1>{info?.title ?? session.title}</h1>
           <p className="notice info"><strong>Documentation support only.</strong> Follow OEM procedure. Technician owns all conclusions and recommendations. AI does not diagnose, determine root cause, or recommend repair.</p>
           <p className="muted">{[info?.manufacturer, info?.documentType, info?.sourceFile].filter(Boolean).join(' · ')}</p>
-          {info?.signedOff ? <p className="notice success"><strong>Signed off by {info.signOffName ?? 'technician'}</strong>{info.signedOffAt ? ` at ${formatDateTime(info.signedOffAt)}` : ''}. {info.signOffStatement}</p> : <p className="notice warning"><strong>Technician sign-off pending.</strong> Complete sign-off in the Diagnostic Procedure Workspace before final delivery.</p>}
+          {info?.signedOff ? <p className="notice success"><strong>Signed off by {info.signOffName ?? 'technician'}</strong>{info.signedOffAt ? ` at ${formatDateTime(info.signedOffAt, timeZone)}` : ''}. {info.signOffStatement}</p> : <p className="notice warning"><strong>Technician sign-off pending.</strong> Complete sign-off in the Diagnostic Procedure Workspace before final delivery.</p>}
         </div>
         <div className="page-actions report-preview-actions compact-report-actions">
           <Link href={`/dashboard/sessions/${session.id}/diagnostic-procedure`} className="button button-secondary touch-target">Edit procedure documentation</Link>
@@ -229,7 +226,7 @@ function DiagnosticProcedureReport({
           </div>
           {hasUnlinkedIncludedEvidence ? <p className="notice warning">Some evidence is not linked to generated sections. It will still appear in the Evidence Appendix.</p> : null}
         </section>
-        <EvidenceAppendix supportingEvidence={supportingEvidence} timeZone={null} />
+        <EvidenceAppendix supportingEvidence={supportingEvidence} timeZone={timeZone} />
         <div className="report-document-flow">
           {steps.length === 0 ? <p className="notice warning">No visible procedure steps are included in this diagnostic report.</p> : null}
           {steps.map((section) => {
@@ -450,6 +447,7 @@ export default async function SessionReportPreviewPage({
     ? saveReportEdits.bind(null, currentReport.id)
     : null;
   const sourceFieldEntries = getDisplayEntries(currentReport?.header_fields);
+  const displayReportTitle = getDisplayReportTitle(currentReport, session);
   const isEditingReport = Boolean(currentReport);
   if (currentReport && getDiagnosticProcedureInfo(currentReport)) {
     return (
@@ -462,6 +460,7 @@ export default async function SessionReportPreviewPage({
         reportPath={reportPath}
         origin={origin}
         markReviewedAction={markReviewedAction}
+        timeZone={profile.timezone}
       />
     );
   }
@@ -470,7 +469,7 @@ export default async function SessionReportPreviewPage({
       <div className="section-header page-header report-preview-header report-review-header">
         <div>
           <p className="eyebrow guided-eyebrow">Review</p>
-          <h1>{session.title}</h1>
+          <h1>{displayReportTitle}</h1>
           <p className="muted">
             Review the professional report CRED built from your evidence.
             Approve it, then export.
@@ -536,6 +535,7 @@ export default async function SessionReportPreviewPage({
             facilityName={profile.company_profile?.facility_name ?? profile.company_profile?.company_name ?? profile.organization.name}
             facilityLocation={[profile.company_profile?.facility_city, profile.company_profile?.facility_region].filter(Boolean).join(", ")}
             timeZone={profile.timezone}
+            displayReportTitle={displayReportTitle}
           />
 
           <FinalNotesEditor
@@ -596,6 +596,7 @@ function GeneratedReportReview({
   facilityName,
   facilityLocation,
   timeZone,
+  displayReportTitle,
 }: {
   reportSections: AiReportDraftSection[];
   currentReport: AiReportDraft | null;
@@ -618,6 +619,7 @@ function GeneratedReportReview({
   facilityName: string;
   facilityLocation: string;
   timeZone: string | null;
+  displayReportTitle: string;
 }) {
   const editableSections = reportSections;
   const includedEvidenceCount = [
@@ -639,7 +641,7 @@ function GeneratedReportReview({
       <div className="report-section-heading generated-report-heading">
         <div>
           <p className="eyebrow">Report Overview</p>
-          <h2>{stripConfidenceText(currentReport?.title ?? session.title)}</h2>
+          <h2>{displayReportTitle}</h2>
           <p className="muted">
             Evidence-first review built from included captures and technician-authored content.
           </p>
@@ -657,7 +659,7 @@ function GeneratedReportReview({
         <div className="report-logo-mark" aria-hidden="true">{facilityName.slice(0, 1).toUpperCase()}</div>
         <div>
           <p className="eyebrow">Professional Evidence Report</p>
-          <h3>{stripConfidenceText(currentReport?.title ?? session.title)}</h3>
+          <h3>{displayReportTitle}</h3>
           <p className="muted">{facilityName}{facilityLocation ? ` · ${facilityLocation}` : ""}</p>
         </div>
       </div>
@@ -749,7 +751,7 @@ function GeneratedReportReview({
           </div>
         </div>
         <div className="report-field-grid">{[
-          ["Report Title", currentReport?.title ?? session.title],
+          ["Report Title", displayReportTitle],
           ["Subject Name", getReportInfoValue(currentReport, session, "subject_name")],
           ["Customer / Client", getReportInfoValue(currentReport, session, "customer_client") || session.customer_name],
           ["Asset / Equipment", getReportInfoValue(currentReport, session, "asset_equipment") || session.asset_label],
@@ -780,7 +782,7 @@ function GeneratedReportReview({
               <input
                 className="input"
                 name="report_title"
-                defaultValue={stripConfidenceText(currentReport.title ?? session.title)}
+                defaultValue={displayReportTitle}
               />
             </label>
             <div className="report-field-grid">
