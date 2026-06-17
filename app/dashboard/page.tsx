@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 
 import { Card } from '@/components/ui'
 import { SessionCard } from '@/features/sessions'
+import { getSessionWorkflowState } from '@/features/sessions/status'
 import { createQuickCaptureSession } from '@/features/sessions/actions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
@@ -23,8 +24,8 @@ function getCaptureCounts(captures: Array<{ documentation_session_id: string }> 
   return captureCountBySession
 }
 
-function getContinueSession(sessions: Array<{ id: string; status: string }>) {
-  return sessions.find((session) => session.status !== 'finalized') ?? sessions[0]
+function getContinueSession(sessions: Parameters<typeof getSessionWorkflowState>[0][]) {
+  return sessions.find((session) => getSessionWorkflowState(session) === 'capturing') ?? sessions[0]
 }
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {

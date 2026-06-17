@@ -4,18 +4,7 @@ import type { DocumentationSession } from '../types'
 import { formatDate, formatDateTime } from '../utils'
 import { archiveDocumentationSession, restoreDocumentationSession } from '../actions'
 import { SessionStatusBadge } from './SessionStatusBadge'
-
-function getOperationalAction(session: DocumentationSession) {
-  if (session.status === 'finalized' || session.review_status === 'ready_for_delivery') {
-    return { href: `/dashboard/sessions/${session.id}/report`, label: 'Open Report' }
-  }
-
-  if (session.status === 'review') {
-    return { href: `/dashboard/sessions/${session.id}/report`, label: 'Review Report' }
-  }
-
-  return { href: `/dashboard/sessions/${session.id}/capture`, label: 'Continue Capture' }
-}
+import { getSessionOperationalAction, getSessionWorkflowStatus } from '../status'
 
 function canArchiveFromCard(session: DocumentationSession) {
   const reviewableStatuses = new Set(['review', 'ready', 'finalized', 'completed'])
@@ -39,7 +28,7 @@ export function SessionCard({
   showArchiveAction?: boolean
   timeZone?: string | null
 }) {
-  const action = showOperationalAction ? getOperationalAction(session) : null
+  const action = showOperationalAction ? getSessionOperationalAction(session) : null
   const href = action?.href ?? `/dashboard/sessions/${session.id}`
   const dateLabel = dateMode === 'created' ? 'Created' : 'Last updated'
   const dateValue =
@@ -58,7 +47,7 @@ export function SessionCard({
             <h3>{session.title}</h3>
             <p className="muted">{session.asset_label || session.unit_number || 'Evidence session'}</p>
           </div>
-          <SessionStatusBadge status={isArchived ? 'archived' : session.status} />
+          <SessionStatusBadge status={getSessionWorkflowStatus(session)} />
         </div>
         <dl className="session-meta-grid">
           <div>

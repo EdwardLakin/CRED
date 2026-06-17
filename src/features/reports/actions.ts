@@ -558,7 +558,7 @@ export async function completeCaptureAndPrepareReport(sessionId: string, formDat
   revalidatePath(`/dashboard/sessions/${session.id}/capture`)
   revalidatePath(`/dashboard/sessions/${session.id}/report`)
 
-  if (activeReport) {
+  if (activeReport || !profile.organization.image_ai_assist_enabled) {
     redirect(getReportRedirectPath(session.id))
   }
 
