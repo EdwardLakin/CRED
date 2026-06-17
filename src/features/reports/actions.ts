@@ -14,6 +14,7 @@ import { AI_REPORT_DRAFT_MODEL, AI_REPORT_DRAFT_PROMPT_VERSION, generateReportDr
 import type { OrganizationPlan } from '@/lib/stripe'
 import { buildEvidenceGroups, buildEvidencePackages,
   sanitizeReportStructureForSession, buildNormalizedReportFields, deriveFormSectionsFromCaptures, extractFormBlueprint, mapEvidenceToFormBlueprint, scoreFormReferenceCapture, selectPrimaryFormCaptures, stripConfidenceText, GENERIC_REPORT_SECTION_TITLES, getReportStructureSourceMetadata, sanitizeCapturesForImageAiAssist } from '@/features/reports/report-structure'
+import { buildSafeReportTitle, buildSubjectReportTitle, isPlaceholderReportTitle } from '@/features/reports/report-title'
 import type { Json } from '@/lib/supabase/database.types'
 
 const REPORT_SHARE_EXPIRATION_DAYS = 30
@@ -71,37 +72,7 @@ function ensureDraftSectionsReferenceCaptures<T extends { title: string; source_
 
 
 function isPlaceholderSessionTitle(title: string | null | undefined) {
-  const value = stripConfidenceText(title ?? '').trim()
-  return !value || /^(new session|session|untitled session)\b/i.test(value) || /\d{4}-\d{2}-\d{2}t\d{2}:\d{2}/i.test(value)
-}
-
-function buildSubjectReportTitle(subject: string) {
-  const cleanSubject = stripConfidenceText(subject).replace(/\s+/g, ' ').trim()
-  if (!cleanSubject) return null
-  if (/\b(evidence report|inspection documentation|property documentation|documentation)\b/i.test(cleanSubject)) return cleanSubject
-  if (/\b(property|site|facility|building|home|house|condo|address)\b/i.test(cleanSubject)) return `${cleanSubject} Documentation`
-  if (/\b(inspection|inspect)\b/i.test(cleanSubject)) return `${cleanSubject} Documentation`
-  return `${cleanSubject} Evidence Report`
-}
-
-function buildSafeReportTitle(args: {
-  draftTitle: string | null | undefined
-  sessionTitle: string | null | undefined
-  structureSource: string | null | undefined
-  sourceDocumentName: string | null | undefined
-  customerName: string | null | undefined
-  assetLabel: string | null | undefined
-  unitNumber: string | null | undefined
-  vin: string | null | undefined
-}) {
-  const cleanedDraftTitle = stripConfidenceText(args.draftTitle ?? '').trim()
-  if (cleanedDraftTitle && !isPlaceholderSessionTitle(cleanedDraftTitle) && !/automotive|vehicle inspection/i.test(cleanedDraftTitle)) return cleanedDraftTitle
-  if (args.structureSource && args.structureSource !== 'generic_fallback' && args.sourceDocumentName) return stripConfidenceText(args.sourceDocumentName).trim()
-  const identity = [args.customerName, args.assetLabel, args.unitNumber, args.vin].map((value) => stripConfidenceText(value ?? '').trim()).filter(Boolean).slice(0, 2).join(' — ')
-  if (identity) return buildSubjectReportTitle(identity) ?? 'General Evidence Report'
-  const sessionTitle = stripConfidenceText(args.sessionTitle ?? '').trim()
-  if (sessionTitle && !isPlaceholderSessionTitle(sessionTitle)) return sessionTitle
-  return 'General Evidence Report'
+  return isPlaceholderReportTitle(title)
 }
 
 function getString(formData: FormData, field: string) {
