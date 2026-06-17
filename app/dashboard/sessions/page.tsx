@@ -27,12 +27,14 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
   const { q, filter } = await searchParams
   const sessionFilter = normalizeFilter(filter)
   const searchTerm = q?.trim() ?? ''
+  const querySearchTerm = searchTerm.replace(/[%,]/g, ' ').trim()
   const { supabase, profile } = await requireSessionWorkspace()
 
   let query = supabase
     .from('documentation_sessions')
     .select('*')
     .eq('organization_id', profile.organization_id)
+    .is('deleted_at', null)
     .order('updated_at', { ascending: false })
 
   if (sessionFilter === 'archived') {
@@ -46,8 +48,8 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
     }
   }
 
-  if (searchTerm) {
-    query = query.ilike('title', `%${searchTerm}%`)
+  if (querySearchTerm) {
+    query = query.or(`title.ilike.%${querySearchTerm}%,display_id.ilike.%${querySearchTerm}%,customer_name.ilike.%${querySearchTerm}%,asset_label.ilike.%${querySearchTerm}%,unit_number.ilike.%${querySearchTerm}%,vin.ilike.%${querySearchTerm}%`)
   }
 
   const { data: sessions, error } = await query

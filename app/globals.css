@@ -4383,3 +4383,15 @@ a:focus-visible {
 .featured-workflow-section > .section-copy {
   color: var(--muted);
 }
+
+.session-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.danger-action {
+  color: var(--danger, #f87171);
+  border-color: rgba(248, 113, 113, 0.45);
+}

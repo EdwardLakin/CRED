@@ -2,15 +2,14 @@ import Link from 'next/link'
 
 import type { DocumentationSession } from '../types'
 import { formatDate, formatDateTime } from '../utils'
-import { archiveDocumentationSession, restoreDocumentationSession } from '../actions'
+import { archiveDocumentationSession, deleteDocumentationSession, restoreDocumentationSession } from '../actions'
 import { SessionStatusBadge } from './SessionStatusBadge'
 import { getSessionOperationalAction, getSessionWorkflowStatus } from '../status'
+import { getSessionPrimaryTitle, getSessionSecondarySummary } from '../display'
+import { ConfirmSubmitButton } from './ConfirmSubmitButton'
 
 function canArchiveFromCard(session: DocumentationSession) {
-  const reviewableStatuses = new Set(['review', 'ready', 'finalized', 'completed'])
-  const reviewableReviewStatuses = new Set(['review_required', 'ready_for_delivery', 'approved', 'completed', 'finalized'])
-  const activelyCapturing = session.status === 'draft' || session.status === 'capturing' || session.status === 'active'
-  return !session.archived_at && (!activelyCapturing || reviewableStatuses.has(session.status) || reviewableReviewStatuses.has(session.review_status ?? ''))
+  return !session.archived_at
 }
 
 export function SessionCard({
@@ -37,6 +36,9 @@ export function SessionCard({
   const isArchived = Boolean(session.archived_at)
   const archiveAction = archiveDocumentationSession.bind(null, session.id)
   const restoreAction = restoreDocumentationSession.bind(null, session.id)
+  const deleteAction = deleteDocumentationSession.bind(null, session.id)
+  const primaryTitle = getSessionPrimaryTitle(session)
+  const secondarySummary = getSessionSecondarySummary(session, evidenceCount, timeZone)
   const renderArchiveAction = showArchiveAction && (isArchived || canArchiveFromCard(session))
 
   return (
@@ -44,8 +46,8 @@ export function SessionCard({
       <Link href={href} className="session-card-link">
         <div className="session-card-header">
           <div className="session-card-title-block">
-            <h3>{session.title}</h3>
-            <p className="muted">{session.asset_label || session.unit_number || 'Evidence session'}</p>
+            <h3>{primaryTitle}</h3>
+            <p className="muted">{secondarySummary}</p>
           </div>
           <SessionStatusBadge status={getSessionWorkflowStatus(session)} />
         </div>
@@ -73,11 +75,18 @@ export function SessionCard({
           )}
         </dl>
       </Link>
-      {renderArchiveAction ? (
-        <form action={isArchived ? restoreAction : archiveAction} className="session-card-inline-action">
-          <button className="button button-secondary touch-target">{isArchived ? 'Restore' : 'Archive'}</button>
+      <div className="session-card-actions">
+        {renderArchiveAction ? (
+          <form action={isArchived ? restoreAction : archiveAction} className="session-card-inline-action">
+            <button className="button button-secondary touch-target">{isArchived ? 'Restore' : 'Archive'}</button>
+          </form>
+        ) : null}
+        <form action={deleteAction} className="session-card-inline-action">
+          <ConfirmSubmitButton className="button button-secondary touch-target danger-action" message={`Delete ${primaryTitle}? This safely removes the session from normal and archived lists without deleting capture files.`}>
+            Delete
+          </ConfirmSubmitButton>
         </form>
-      ) : null}
+      </div>
     </article>
   )
 }

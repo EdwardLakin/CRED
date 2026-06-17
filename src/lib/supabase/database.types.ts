@@ -232,6 +232,8 @@ export interface Database {
           session_type: string
           status: string
           archived_at: string | null
+          deleted_at: string | null
+          display_id: string | null
           asset_label: string | null
           vin: string | null
           odometer: string | null
@@ -259,6 +261,8 @@ export interface Database {
           session_type: string
           status?: string
           archived_at?: string | null
+          deleted_at?: string | null
+          display_id?: string | null
           asset_label?: string | null
           vin?: string | null
           odometer?: string | null
@@ -286,6 +290,8 @@ export interface Database {
           session_type?: string
           status?: string
           archived_at?: string | null
+          deleted_at?: string | null
+          display_id?: string | null
           asset_label?: string | null
           vin?: string | null
           odometer?: string | null

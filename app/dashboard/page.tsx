@@ -43,6 +43,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     .from('documentation_sessions')
     .select('*')
     .eq('organization_id', profile.organization_id)
+    .is('deleted_at', null)
     .is('archived_at', null)
     .order('updated_at', { ascending: false })
     .limit(6)
