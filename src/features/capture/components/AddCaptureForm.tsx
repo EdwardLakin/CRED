@@ -12,7 +12,6 @@ import {
 } from 'react'
 import { useRouter } from 'next/navigation'
 
-import { Button } from '@/components/ui'
 import {
   createCaptureRecordFromUploadedFile,
   createTextNoteCaptureRecord,
@@ -26,7 +25,6 @@ import {
 import { createClient } from '@/lib/supabase/client'
 
 const MAX_BATCH_FILES = 10
-const VOICE_NOTE_TIMEOUT_MS = 60_000
 const MEDIA_NOTE_AUTOSAVE_DELAY_MS = 800
 
 type UploadStatus = 'queued' | 'uploading' | 'saved' | 'ai_queued' | 'needs_queue_retry' | 'failed'
@@ -74,8 +72,6 @@ type SpeechRecognitionInstance = {
   abort?: () => void
 }
 
-type SpeechRecognitionConstructor = new () => SpeechRecognitionInstance
-
 type VoiceNoteStatus =
   | 'idle'
   | 'listening'
@@ -84,11 +80,6 @@ type VoiceNoteStatus =
   | 'unsupported'
   | 'denied'
   | 'error'
-
-type SpeechWindow = Window & {
-  SpeechRecognition?: SpeechRecognitionConstructor
-  webkitSpeechRecognition?: SpeechRecognitionConstructor
-}
 
 const FILE_INPUT_CONFIG: Record<
   CaptureType | 'auto_evidence',
@@ -203,30 +194,6 @@ function formatFileSize(bytes: number) {
   return `${Number.isInteger(megabytes) ? megabytes.toFixed(0) : megabytes.toFixed(1)}MB`
 }
 
-function SubmitButton({
-  hasEvidence,
-  pending,
-  retryOnly,
-}: {
-  hasEvidence: boolean
-  pending: boolean
-  retryOnly: boolean
-}) {
-  return (
-    <Button
-      type="submit"
-      className="button button-primary touch-target"
-      disabled={pending || !hasEvidence}
-    >
-      {pending
-        ? 'Saving…'
-        : retryOnly
-          ? 'Retry failed upload'
-          : 'Save general note'}
-    </Button>
-  )
-}
-
 function getUploadStatusLabel(status: UploadStatus, error?: string) {
   if (status === 'uploading') return 'Uploading'
   if (status === 'ai_queued') return 'Saved — AI queued'
@@ -293,12 +260,10 @@ export function AddCaptureForm({
 }) {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const noteTextareaRef = useRef<HTMLTextAreaElement>(null)
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null)
   const voiceNoteTimeoutRef = useRef<number | null>(
     null,
   )
-  const voiceNoteBaseRef = useRef('')
   const selectedFilesRef = useRef<SelectedEvidenceFile[]>([])
   const isSavingRef = useRef(false)
   const uploadStartedFileIdsRef = useRef(new Set<string>())
@@ -322,7 +287,6 @@ export function AddCaptureForm({
   >('not_started')
   const [voiceNoteStatus, setVoiceNoteStatus] =
     useState<VoiceNoteStatus>('idle')
-  const [isVoiceSupported, setIsVoiceSupported] = useState<boolean | null>(null)
   const isDiagnosticProcedureAttachment = workflow === 'diagnostic_procedure'
   const activeType =
     captureIntent === 'auto_evidence' || captureIntent === 'auto_image'
@@ -602,11 +566,6 @@ export function AddCaptureForm({
     window.setTimeout(() => fileInputRef.current?.click(), 0)
   }
 
-  function focusTextNote() {
-    noteTextareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    noteTextareaRef.current?.focus({ preventScroll: true })
-  }
-
   function triggerBackgroundProcessing() {
     fetch(`/api/dashboard/sessions/${sessionId}/captures/process`, {
       method: 'POST',
@@ -876,7 +835,7 @@ export function AddCaptureForm({
         setNote('')
         setNoteSource('manual')
         setTranscriptStatus('not_started')
-        setVoiceNoteStatus(isVoiceSupported === false ? 'unsupported' : 'idle')
+        setVoiceNoteStatus('idle')
         setPreferCameraCapture(true)
       }, 900)
 
@@ -948,133 +907,6 @@ export function AddCaptureForm({
     setVoiceNoteStatus('stopped')
     setSaveMessage(message)
   }, [clearVoiceNoteTimeout])
-
-  function cancelVoiceNote() {
-    cleanupRecognition()
-    setNote(voiceNoteBaseRef.current)
-    setNoteSource('manual')
-    setTranscriptStatus('not_started')
-    setVoiceNoteStatus('cancelled')
-    setSaveMessage(null)
-    setClientError(null)
-  }
-
-  function clearNote() {
-    if (voiceNoteStatus === 'listening') {
-      cleanupRecognition()
-    }
-
-    voiceNoteBaseRef.current = ''
-    setNote('')
-    setNoteSource('manual')
-    setTranscriptStatus('not_started')
-    setVoiceNoteStatus('idle')
-    setSaveMessage(null)
-    setClientError(null)
-  }
-
-  function startVoiceNote() {
-    if (voiceNoteStatus === 'listening') {
-      return
-    }
-
-    const speechWindow = window as SpeechWindow
-    const Recognition =
-      speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition
-
-    if (!Recognition) {
-      setIsVoiceSupported(false)
-      setTranscriptStatus('unavailable')
-      setVoiceNoteStatus('unsupported')
-      setClientError(
-        'Voice notes are not supported in this browser. Type your note instead.',
-      )
-      return
-    }
-
-    cleanupRecognition()
-    voiceNoteBaseRef.current = note.trim()
-
-    const recognition = new Recognition()
-    recognition.continuous = false
-    recognition.interimResults = true
-    recognition.lang = 'en-US'
-    recognition.onresult = (event) => {
-      const transcript = Array.from(event.results)
-        .map((result) => result[0]?.transcript?.trim() ?? '')
-        .filter(Boolean)
-        .join(' ')
-        .trim()
-
-      if (!transcript) {
-        return
-      }
-
-      const baseNote = voiceNoteBaseRef.current
-      setNote(baseNote ? `${baseNote} ${transcript}` : transcript)
-      setNoteSource('voice')
-    }
-    recognition.onerror = (event) => {
-      cleanupRecognition()
-      setTranscriptStatus('not_started')
-
-      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-        setVoiceNoteStatus('denied')
-        setClientError(
-          'Microphone permission was denied. Type your note instead.',
-        )
-        return
-      }
-
-      setVoiceNoteStatus('error')
-      setClientError('Voice note stopped. Type your note instead.')
-    }
-    recognition.onend = () => {
-      clearVoiceNoteTimeout()
-      recognitionRef.current = null
-      setTranscriptStatus((current) =>
-        current === 'pending' ? 'completed' : current,
-      )
-      setVoiceNoteStatus((current) =>
-        current === 'listening' ? 'stopped' : current,
-      )
-    }
-
-    recognitionRef.current = recognition
-    setTranscriptStatus('pending')
-    setVoiceNoteStatus('listening')
-    setClientError(null)
-    setSaveMessage(null)
-
-    voiceNoteTimeoutRef.current = window.setTimeout(() => {
-      stopVoiceNote('Voice note stopped.')
-    }, VOICE_NOTE_TIMEOUT_MS)
-
-    try {
-      recognition.start()
-    } catch {
-      cleanupRecognition()
-      setTranscriptStatus('not_started')
-      setVoiceNoteStatus('error')
-      setClientError('Voice note stopped. Type your note instead.')
-    }
-  }
-
-  useEffect(() => {
-    const supportCheckId = window.setTimeout(() => {
-      const speechWindow = window as SpeechWindow
-      const Recognition =
-        speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition
-
-      setIsVoiceSupported(Boolean(Recognition))
-      if (!Recognition) {
-        setTranscriptStatus('unavailable')
-        setVoiceNoteStatus('unsupported')
-      }
-    }, 0)
-
-    return () => window.clearTimeout(supportCheckId)
-  }, [])
 
   useEffect(() => {
     function stopOnPageExit() {
@@ -1169,24 +1001,6 @@ export function AddCaptureForm({
           >
             <span className="capture-evidence-icon" aria-hidden="true">🖼️</span>
             <span><strong>Gallery</strong><small>Choose media, then add note</small></span>
-          </button>
-          <button
-            type="button"
-            className="capture-evidence-button touch-target"
-            onClick={startVoiceNote}
-            disabled={isSaving || voiceNoteStatus === 'listening'}
-          >
-            <span className="capture-evidence-icon" aria-hidden="true">🎙️</span>
-            <span><strong>Voice Note</strong><small>Speak context quickly</small></span>
-          </button>
-          <button
-            type="button"
-            className="capture-evidence-button touch-target"
-            onClick={focusTextNote}
-            disabled={isSaving}
-          >
-            <span className="capture-evidence-icon" aria-hidden="true">✍️</span>
-            <span><strong>Text Note</strong><small>Type what matters</small></span>
           </button>
         </div>
       </div>
@@ -1353,89 +1167,6 @@ export function AddCaptureForm({
           Maximum file size is {captureSizeLabel} per capture file and {videoSizeLabel} per video.
         </p>
       </div>
-
-      <div className="field-stack capture-note-composer report-note-editor capture-secondary-panel">
-        <label htmlFor={`technician-note-${guidanceKey}`} className="label">
-          General note without media
-        </label>
-        <textarea
-          ref={noteTextareaRef}
-          id={`technician-note-${guidanceKey}`}
-          name="technician_note"
-          className="input note-textarea prominent-note-textarea"
-          value={note}
-          placeholder={isDiagnosticProcedureAttachment ? 'Speak or type step documentation: reading, connector/pin context, scan screenshot context, or technician note.' : 'Speak or type what matters: location, component, measurement, condition, recommendation.'}
-          onChange={(event) => {
-            setNote(event.target.value)
-            setNoteSource(noteSource === 'voice' ? 'edited' : 'manual')
-            if (voiceNoteStatus === 'listening') {
-              stopVoiceNote('Voice note stopped.')
-            }
-          }}
-          rows={4}
-        />
-        <p className="muted note-helper-text">
-          {isDiagnosticProcedureAttachment ? 'Use this for text-only or voice-only documentation for the OEM procedure step. Media captions save inside each media card above.' : 'Use this only for text-only evidence, voice-only evidence, or a general note without media. Media captions save inside each media card above.'}
-        </p>
-        {isVoiceSupported === false ? (
-          <p className="muted capture-upload-hint" role="status">
-            Voice notes are not supported in this browser. Type your note instead.
-          </p>
-        ) : (
-          <div className="capture-note-actions" aria-label="Voice note controls">
-            <button
-              type="button"
-              className="button button-secondary touch-target"
-              onClick={startVoiceNote}
-              disabled={isSaving || voiceNoteStatus === 'listening'}
-            >
-              Start
-            </button>
-            <button
-              type="button"
-              className="button button-secondary touch-target"
-              onClick={() => stopVoiceNote('Voice note stopped.')}
-              disabled={isSaving || voiceNoteStatus !== 'listening'}
-              aria-label="Stop Voice Note"
-            >
-              Stop
-            </button>
-            <button
-              type="button"
-              className="button button-secondary touch-target"
-              onClick={cancelVoiceNote}
-              disabled={isSaving || voiceNoteStatus !== 'listening'}
-            >
-              Cancel Voice Note
-            </button>
-            <button
-              type="button"
-              className="button button-secondary touch-target"
-              onClick={clearNote}
-              disabled={isSaving || (!note && voiceNoteStatus !== 'listening')}
-            >
-              Clear Note
-            </button>
-            <span className="muted" role="status" aria-live="polite">
-              {voiceNoteStatus === 'listening'
-                ? 'Listening…'
-                : voiceNoteStatus === 'denied'
-                  ? 'Microphone permission was denied. Type your note instead.'
-                  : voiceNoteStatus === 'unsupported'
-                    ? 'Voice notes are not supported in this browser. Type your note instead.'
-                    : voiceNoteStatus === 'stopped'
-                      ? 'Voice note stopped.'
-                      : 'Editable before and after saving'}
-            </span>
-          </div>
-        )}
-      </div>
-
-      <SubmitButton
-        hasEvidence={uploadableFiles.length > 0 || note.trim().length > 0}
-        pending={isSaving}
-        retryOnly={failedFiles.length > 0}
-      />
 
       {stickyDoneHref ? (
         <div className="guided-sticky-actions focused-capture-done-actions">
