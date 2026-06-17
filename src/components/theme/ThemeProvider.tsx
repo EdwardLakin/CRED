@@ -1,6 +1,8 @@
 'use client'
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useTransition, type ReactNode } from 'react'
+
+import { saveThemePreference } from './actions'
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 type ResolvedTheme = 'light' | 'dark'
@@ -12,25 +14,14 @@ interface ThemeContextValue {
 }
 
 const THEME_STORAGE_KEY = 'cred-theme'
-const THEME_OPTIONS = new Set<ThemeMode>(['light', 'dark', 'system'])
 const ThemeContext = createContext<ThemeContextValue | null>(null)
 
 function getSystemTheme(): ResolvedTheme {
   if (typeof window === 'undefined') {
-    return 'light'
+    return 'dark'
   }
 
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-}
-
-function getStoredTheme(): ThemeMode {
-  if (typeof window === 'undefined') {
-    return 'system'
-  }
-
-  const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY)
-
-  return THEME_OPTIONS.has(storedTheme as ThemeMode) ? (storedTheme as ThemeMode) : 'system'
 }
 
 function applyTheme(mode: ThemeMode) {
@@ -41,20 +32,20 @@ function applyTheme(mode: ThemeMode) {
   return resolvedTheme
 }
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [mode, setModeState] = useState<ThemeMode>('system')
-  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>('light')
+export function ThemeProvider({ children, initialMode = 'dark' }: { children: ReactNode; initialMode?: ThemeMode }) {
+  const [mode, setModeState] = useState<ThemeMode>(initialMode)
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(initialMode === 'system' ? 'dark' : initialMode)
+  const [, startTransition] = useTransition()
 
   useEffect(() => {
-    const storedMode = getStoredTheme()
-    const resolvedStoredTheme = applyTheme(storedMode)
+    const resolvedInitialTheme = applyTheme(initialMode)
     const timerId = window.setTimeout(() => {
-      setModeState(storedMode)
-      setResolvedTheme(resolvedStoredTheme)
+      setModeState(initialMode)
+      setResolvedTheme(resolvedInitialTheme)
     }, 0)
 
     return () => window.clearTimeout(timerId)
-  }, [])
+  }, [initialMode])
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
@@ -78,7 +69,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     window.localStorage.setItem(THEME_STORAGE_KEY, nextMode)
     setModeState(nextMode)
     setResolvedTheme(applyTheme(nextMode))
-  }, [])
+    startTransition(() => {
+      void saveThemePreference(nextMode)
+    })
+  }, [startTransition])
 
   const value = useMemo(() => ({ mode, resolvedTheme, setMode }), [mode, resolvedTheme, setMode])
 

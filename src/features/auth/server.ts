@@ -44,7 +44,7 @@ export async function getCurrentProfile(): Promise<CurrentProfile | null> {
   const supabase = await createClient()
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
-.select('id, user_id, organization_id, full_name, role, created_at, inspector_role_or_title, technician_license_number, inspector_phone, inspector_email, timezone, default_signature_path, use_default_signature')
+.select('id, user_id, organization_id, full_name, role, created_at, inspector_role_or_title, technician_license_number, inspector_phone, inspector_email, timezone, default_signature_path, use_default_signature, theme_preference')
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -82,6 +82,7 @@ export async function getCurrentProfile(): Promise<CurrentProfile | null> {
     timezone: profile.timezone,
     default_signature_path: profile.default_signature_path,
     use_default_signature: profile.use_default_signature,
+    theme_preference: profile.theme_preference,
     organization,
     company_profile: companyProfile,
   }

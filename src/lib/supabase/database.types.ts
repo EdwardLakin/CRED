@@ -114,6 +114,7 @@ export interface Database {
           timezone: string
           default_signature_path: string | null
           use_default_signature: boolean
+          theme_preference: 'light' | 'dark' | 'system' | null
         }
         Insert: {
           id?: string
@@ -129,6 +130,7 @@ export interface Database {
           timezone?: string
           default_signature_path?: string | null
           use_default_signature?: boolean
+          theme_preference?: 'light' | 'dark' | 'system' | null
         }
         Update: {
           id?: string
@@ -144,6 +146,7 @@ export interface Database {
           timezone?: string
           default_signature_path?: string | null
           use_default_signature?: boolean
+          theme_preference?: 'light' | 'dark' | 'system' | null
         }
         Relationships: [
           {
