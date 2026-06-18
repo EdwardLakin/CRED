@@ -11,8 +11,11 @@ export function ConfirmSubmitButton({
 }) {
   return (
     <button
+      type="submit"
       className={className}
       onClick={(event) => {
+        event.stopPropagation()
+
         if (!window.confirm(message)) {
           event.preventDefault()
         }
