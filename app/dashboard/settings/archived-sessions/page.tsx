@@ -28,7 +28,7 @@ export default async function ArchivedSessionsPage({ searchParams }: { searchPar
     .eq('organization_id', profile.organization_id)
     .is('deleted_at', null)
     .not('archived_at', 'is', null)
-    .order('updated_at', { ascending: false })
+    .order('created_at', { ascending: false })
 
   if (querySearchTerm) {
     query = query.or(`title.ilike.%${querySearchTerm}%,display_id.ilike.%${querySearchTerm}%,customer_name.ilike.%${querySearchTerm}%,asset_label.ilike.%${querySearchTerm}%,unit_number.ilike.%${querySearchTerm}%,vin.ilike.%${querySearchTerm}%`)

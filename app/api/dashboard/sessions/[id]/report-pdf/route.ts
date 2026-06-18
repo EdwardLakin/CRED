@@ -151,8 +151,12 @@ function getProfessionalRows(rows: Array<{ label: string; value: string }>) {
 }
 
 
-function renderReportInformationHtml(draft: ReportDraft | null | undefined, session: ReportSession) {
+function renderReportInformationHtml(draft: ReportDraft | null | undefined, session: ReportSession, timeZone?: string | null) {
   const rows = [
+    { label: 'Capture Session Date', value: formatDateTimeInTimeZone(session.created_at, timeZone) },
+    { label: 'Last Updated', value: formatDateTimeInTimeZone(session.updated_at ?? session.created_at, timeZone) },
+    { label: 'Report Approved Date', value: draft?.approved_at ? formatDateTimeInTimeZone(draft.approved_at, timeZone) : (session.reviewed_at ? formatDateTimeInTimeZone(session.reviewed_at, timeZone) : '') },
+    { label: 'Exported Date', value: '' },
     { label: 'Report Title', value: cleanReportTitle(draft?.title || session.title, session, draft) },
     { label: 'Subject Name', value: getReportInfoValue(draft, session, 'subject_name') },
     { label: 'Customer / Client', value: getReportInfoValue(draft, session, 'customer_client') || session.customer_name || '' },
@@ -441,7 +445,7 @@ function buildFieldServiceReportHtml({
     { label: 'PO #', value: getDetailValue(details, 'purchase_order_number') },
     { label: 'Unit #', value: getDetailValue(details, 'unit_number') || session.unit_number || '' },
     { label: 'Licence #', value: getDetailValue(details, 'licence_number') },
-    { label: 'Date', value: formatDateInTimeZone(new Date(), timeZone) },
+    { label: 'Date', value: formatDateInTimeZone(session.created_at, timeZone) },
     { label: 'Job completed', value: getDetailValue(details, 'job_completed') },
   ]
   const travelRows = ['travel_start_location', 'travel_end_location', 'travel_start_odometer', 'travel_end_odometer', 'kilometers_traveled', 'travel_started_at', 'travel_ended_at', 'gps_distance_km', 'gps_distance_source']
@@ -455,7 +459,7 @@ function buildFieldServiceReportHtml({
   const reviewDocument = buildNormalizedReportModel({ captures: captureItems, sections: [], draftSections: reportSections, measurements: reportDraft?.measurements ?? [], findings: reportDraft?.findings ?? [] })
   const reportTitle = cleanReportTitle(reportDraft?.title || session.title, session, reportDraft)
   const findingModels = reviewDocument.findingModels
-  const summaryHtml = buildExecutiveSummaryHtml({ reportTitle, organizationName, dateLabel: formatDateInTimeZone(new Date(), timeZone), findings: findingModels, referenceCount: reviewDocument.referenceDocuments.length, evidenceCount: captureItems.length })
+  const summaryHtml = buildExecutiveSummaryHtml({ reportTitle, organizationName, dateLabel: formatDateInTimeZone(session.created_at, timeZone), findings: findingModels, referenceCount: reviewDocument.referenceDocuments.length, evidenceCount: captureItems.length })
   const appendixHtml = buildEvidenceAppendixHtml(getAppendixCaptures(captureItems).captures, signedUrls, timeZone)
   const evidenceHtml = [buildFindingCardsHtml(reviewDocument.findings, signedUrls), buildRecommendedActionsHtml(findingModels), buildReferenceDocumentsHtml(reviewDocument.referenceDocuments, signedUrls), buildEvidenceSectionHtml('Additional Notes', reviewDocument.additionalNotes.filter((entry) => isMeaningfulCustomerReportText([entry.capture.technician_note, entry.capture.transcript, ...entry.group.findings, ...entry.group.recommendations].filter(Boolean).join(' '))), signedUrls), buildEvidenceSectionHtml('Supporting Evidence', reviewDocument.supportingEvidence, signedUrls)].join('')
   const toolbarHtml = showToolbar ? '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>' : ''
@@ -672,11 +676,11 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const reportTitle = cleanReportTitle(reportDraft?.title || session.title, session, reportDraft, isGenericEvidenceReport)
   const customerAssetHtml = renderDefinitionRows(buildCustomerAssetRows(formSections, session as unknown as Record<string, unknown>))
   const structuredFormDataHtml = buildStructuredFormDataHtml(reportDraft?.report_structure ?? null)
-  const reportInfoHtml = renderReportInformationHtml(reportDraft, session)
+  const reportInfoHtml = renderReportInformationHtml(reportDraft, session, timeZone)
   const reviewDocument = buildNormalizedReportModel({ captures: captureItems, sections: formSections, draftSections: visibleReportSections, measurements: reportDraft?.measurements ?? [], findings: reportDraft?.findings ?? [] })
   const unattachedHtml = ''
   const findingModels = reviewDocument.findingModels
-  const summaryHtml = buildExecutiveSummaryHtml({ reportTitle, organizationName, dateLabel: formatDateInTimeZone(new Date(), timeZone), findings: findingModels, referenceCount: reviewDocument.referenceDocuments.length, evidenceCount: captureItems.length })
+  const summaryHtml = buildExecutiveSummaryHtml({ reportTitle, organizationName, dateLabel: formatDateInTimeZone(session.created_at, timeZone), findings: findingModels, referenceCount: reviewDocument.referenceDocuments.length, evidenceCount: captureItems.length })
   const appendixHtml = buildEvidenceAppendixHtml(appendixCaptureItems, signedUrls, timeZone, { showDebugDetails })
   const draftReferencedCaptureCount = new Set(visibleReportSections.flatMap((section) => section.source_capture_ids ?? []).filter((id) => captureItems.some((capture) => capture.id === id))).size
   const evidenceSectionIsEmpty = reviewDocument.findings.length === 0 && reviewDocument.referenceDocuments.length === 0 && reviewDocument.additionalNotes.length === 0 && reviewDocument.supportingEvidence.length === 0 && reviewDocument.unattachedDetails.length === 0
@@ -688,7 +692,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
 
   const toolbarHtml = previewOnly ? '' : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>'
   const html = `<!doctype html><html><head><meta charset="utf-8" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Professional Evidence Report</p><p class="meta">${escapeHtml(normalizeReportType(session.session_type))} · ${escapeHtml(assetDetails || 'General evidence report')} · ${escapeHtml(formatDateInTimeZone(new Date(), timeZone))}</p></header>${summaryHtml}${reportInfoHtml}${structuredFormDataHtml}${customerAssetHtml ? `<section class="item service-section"><h2>Report Information</h2>${customerAssetHtml}</section>` : ''}${buildFinalNotesHtml(session)}${findingsHtml}${unattachedHtml}${supportingHtml}${appendixHtml}${referenceHtml}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile, reportSignatures, signatureUrls)}</main></body></html>`
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Professional Evidence Report</p><p class="meta">${escapeHtml(normalizeReportType(session.session_type))} · ${escapeHtml(assetDetails || 'General evidence report')} · ${escapeHtml(formatDateInTimeZone(session.created_at, timeZone))}</p></header>${summaryHtml}${reportInfoHtml}${structuredFormDataHtml}${customerAssetHtml ? `<section class="item service-section"><h2>Report Information</h2>${customerAssetHtml}</section>` : ''}${buildFinalNotesHtml(session)}${findingsHtml}${unattachedHtml}${supportingHtml}${appendixHtml}${referenceHtml}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile, reportSignatures, signatureUrls)}</main></body></html>`
 
   return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
 }

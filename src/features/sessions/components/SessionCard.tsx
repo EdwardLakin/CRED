@@ -1,7 +1,7 @@
 import Link from 'next/link'
 
 import type { DocumentationSession } from '../types'
-import { formatDate, formatDateTime } from '../utils'
+import { formatDateTime } from '../utils'
 import { archiveDocumentationSession, deleteDocumentationSession, restoreDocumentationSession } from '../actions'
 import { SessionStatusBadge } from './SessionStatusBadge'
 import { getSessionOperationalAction, getSessionWorkflowStatus } from '../status'
@@ -14,14 +14,12 @@ function canArchiveFromCard(session: DocumentationSession) {
 
 export function SessionCard({
   session,
-  dateMode = 'updated',
   evidenceCount,
   showOperationalAction = false,
   showArchiveAction = false,
   timeZone,
 }: {
   session: DocumentationSession
-  dateMode?: 'created' | 'updated'
   evidenceCount?: number
   showOperationalAction?: boolean
   showArchiveAction?: boolean
@@ -29,9 +27,8 @@ export function SessionCard({
 }) {
   const action = showOperationalAction ? getSessionOperationalAction(session) : null
   const href = action?.href ?? `/dashboard/sessions/${session.id}`
-  const dateLabel = dateMode === 'created' ? 'Created' : 'Last updated'
-  const dateValue =
-    dateMode === 'created' ? formatDate(session.created_at, timeZone) : formatDateTime(session.updated_at ?? session.created_at, timeZone)
+  const createdValue = formatDateTime(session.created_at, timeZone)
+  const updatedValue = formatDateTime(session.updated_at ?? session.created_at, timeZone)
   const evidenceLabel = evidenceCount === undefined ? 'Not available' : `${evidenceCount} item${evidenceCount === 1 ? '' : 's'}`
   const isArchived = Boolean(session.archived_at)
   const archiveAction = archiveDocumentationSession.bind(null, session.id)
@@ -53,26 +50,23 @@ export function SessionCard({
         </div>
         <dl className="session-meta-grid">
           <div>
-            <dt>{showOperationalAction ? 'Updated' : dateLabel}</dt>
-            <dd>{showOperationalAction ? formatDateTime(session.updated_at ?? session.created_at, timeZone) : dateValue}</dd>
+            <dt>Created</dt>
+            <dd>{createdValue}</dd>
+          </div>
+          <div>
+            <dt>Updated</dt>
+            <dd>{updatedValue}</dd>
+          </div>
+          <div>
+            <dt>Evidence</dt>
+            <dd>{evidenceLabel}</dd>
           </div>
           {showOperationalAction ? (
-            <>
-              <div>
-                <dt>Evidence</dt>
-                <dd>{evidenceLabel}</dd>
-              </div>
-              <div>
-                <dt>Action</dt>
-                <dd className="session-card-action">{action?.label}</dd>
-              </div>
-            </>
-          ) : (
             <div>
-              <dt>Evidence</dt>
-              <dd>{evidenceLabel}</dd>
+              <dt>Action</dt>
+              <dd className="session-card-action">{action?.label}</dd>
             </div>
-          )}
+          ) : null}
         </dl>
       </Link>
       <div className="session-card-actions">

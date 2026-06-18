@@ -34,8 +34,8 @@ function isAllowedStatus(status: string): status is SessionStatus {
 }
 
 
-function getDefaultSessionTitle() {
-  return `New Session ${formatDateTimeInTimeZone(new Date(), null)}`
+function getDefaultSessionTitle(createdAt = new Date()) {
+  return `New Session ${formatDateTimeInTimeZone(createdAt, null)}`
 }
 
 function createSessionDisplayId(date = new Date()) {
@@ -78,7 +78,8 @@ function buildFieldServiceDetails(formData: FormData, existingDetails: Json | nu
 export async function createDocumentationSession(formData: FormData) {
   const requestedTitle = getTrimmedValue(formData, 'title')
   const requestedSessionType = getTrimmedValue(formData, 'session_type')
-  const title = requestedTitle || getDefaultSessionTitle()
+  const createdAt = new Date()
+  const title = requestedTitle || getDefaultSessionTitle(createdAt)
   const sessionType = normalizeReportType(requestedSessionType || DEFAULT_REPORT_TYPE)
   const requestedWorkflowTemplateId = getNullableValue(formData, 'workflow_template_id')
 
@@ -100,7 +101,8 @@ export async function createDocumentationSession(formData: FormData) {
       created_by: profile.id,
       organization_id: profile.organization_id,
       workflow_template_id: workflowTemplateId,
-      display_id: createSessionDisplayId(),
+      display_id: createSessionDisplayId(createdAt),
+      created_at: createdAt.toISOString(),
     })
     .select('id')
     .single()

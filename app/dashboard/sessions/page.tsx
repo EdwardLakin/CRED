@@ -35,7 +35,7 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
     .select('*')
     .eq('organization_id', profile.organization_id)
     .is('deleted_at', null)
-    .order('updated_at', { ascending: false })
+    .order('created_at', { ascending: false })
 
   if (sessionFilter === 'archived') {
     query = query.not('archived_at', 'is', null)

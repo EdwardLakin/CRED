@@ -185,7 +185,7 @@ function DiagnosticProcedureReport({
   markReviewedAction,
   timeZone,
 }: {
-  session: Pick<DocumentationSession, 'id' | 'title'>
+  session: Pick<DocumentationSession, 'id' | 'title' | 'created_at' | 'updated_at' | 'reviewed_at'>
   currentReport: AiReportDraft
   sections: AiReportDraftSection[]
   captures: CaptureItem[]
@@ -297,7 +297,7 @@ export default async function SessionReportPreviewPage({
   const { data: session, error: sessionError } = await supabase
     .from("documentation_sessions")
     .select(
-      "id, title, session_type, session_metadata, organization_id, workflow_template_id, review_status, reviewed_at, reviewed_by, asset_label, vin, unit_number, customer_name, suggested_details, final_notes, final_notes_ai_generated, final_notes_updated_at, final_notes_edited_by_user, include_final_notes_in_export, updated_at",
+      "id, title, session_type, session_metadata, organization_id, workflow_template_id, review_status, reviewed_at, reviewed_by, asset_label, vin, unit_number, customer_name, suggested_details, final_notes, final_notes_ai_generated, final_notes_updated_at, final_notes_edited_by_user, include_final_notes_in_export, created_at, updated_at",
     )
     .eq("id", id)
     .eq("organization_id", profile.organization_id)
@@ -555,6 +555,7 @@ export default async function SessionReportPreviewPage({
             displayReportTitle={displayReportTitle}
             isGenericEvidenceReport={isGenericEvidenceReport}
             reportDocument={reportDocument}
+            timeZone={profile.timezone}
           />
 
           <FinalNotesEditor
@@ -614,6 +615,7 @@ function GeneratedReportReview({
   displayReportTitle,
   isGenericEvidenceReport,
   reportDocument,
+  timeZone,
 }: {
   reportSections: AiReportDraftSection[];
   currentReport: AiReportDraft | null;
@@ -627,7 +629,7 @@ function GeneratedReportReview({
   reviewDocument: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>;
   supportingEvidence: SupportingEvidenceItem[];
   reportEvidenceDiagnostics: { capturesSaved: number; includedInReport: number; referencedByDraft: number; hiddenFromReport: number };
-  session: Pick<DocumentationSession, "id" | "title" | "session_type" | "session_metadata" | "asset_label" | "customer_name" | "suggested_details">;
+  session: Pick<DocumentationSession, "id" | "title" | "session_type" | "session_metadata" | "asset_label" | "customer_name" | "suggested_details" | "created_at" | "updated_at" | "reviewed_at">;
   saveReportEditsAction: ServerAction | null;
   sourceFieldEntries: [string, unknown][];
   facilityName: string;
@@ -635,6 +637,7 @@ function GeneratedReportReview({
   displayReportTitle: string;
   isGenericEvidenceReport: boolean;
   reportDocument: ReturnType<typeof buildUniversalReportDocument<CaptureItem>>;
+  timeZone: string | null;
 }) {
   const editableSections = reportSections;
   const includedEvidenceCount = [
@@ -722,6 +725,10 @@ function GeneratedReportReview({
           </div>
         </summary>
         <div className="report-field-grid">{[
+          ["Capture Session Date", formatDateTime(session.created_at, timeZone)],
+          ["Last Updated", formatDateTime(session.updated_at ?? session.created_at, timeZone)],
+          ["Report Approved Date", session.reviewed_at ? formatDateTime(session.reviewed_at, timeZone) : null],
+          ["Exported Date", "Tracked per export in the exports table"],
           ["Report Title", displayReportTitle],
           ["Subject Name", getReportInfoValue(currentReport, session, "subject_name")],
           ["Customer / Client", getReportInfoValue(currentReport, session, "customer_client") || session.customer_name],
