@@ -226,7 +226,7 @@ const plans: Array<{
   {
     key: 'team',
     name: 'Team',
-    price: '$99/month',
+    price: '$129/month',
     description: 'Shared capture, review, and report workflow for growing field teams.',
     features: [
       'Up to 5 users',
@@ -239,15 +239,14 @@ const plans: Array<{
   {
     key: 'shop',
     name: 'Shop',
-    price: '$199/month',
+    price: '$249/month',
     description:
       'Built for teams that want technicians to capture messy field evidence while CRED prepares consistent, professional reports for review.',
     features: [
-      'Up to 25 users',
+      'Up to 15 users',
       'Everything in Team',
       'Shared report history',
       'Team-wide evidence management',
-      'User-entered findings and recommendations',
       'Customer-ready professional reports',
       'Shop branding and report customization',
       'Session history and audit trail',
@@ -343,7 +342,7 @@ export default async function HomePage() {
         <div className="section-kicker">Product workflow</div>
         <h2 id="workflow-screenshots-title">See the full workflow</h2>
         <p className="section-copy">
-          CRED captures messy field evidence, turns it into a review-ready draft, keeps every finding tied to its source, and exports a professional report.
+          CRED captures messy field evidence, organizes it into review-ready documentation, keeps details tied to sources, and exports a professional human-approved report.
         </p>
         <div className="screenshot-grid product-screenshot-grid">
           {workflowScreenshots.map((screenshot) => (
@@ -391,7 +390,7 @@ export default async function HomePage() {
           <article className="screenshot-card wide-card">
             <div className="screenshot-topbar"><span /><span /><span /></div>
             <h3>Evidence organization</h3>
-            <p>CRED organizes user-provided captures, notes, and optional blueprint layouts into a review-ready report without diagnosing or creating findings.</p>
+            <p>CRED organizes user-provided captures, notes, forms, and documents into a review-ready report without diagnosing, classifying images, or creating findings.</p>
             <div className="mock-list">
               {aiDraftCapabilities.map((capability) => (
                 <div key={capability}>✓ {capability}</div>

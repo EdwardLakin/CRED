@@ -826,7 +826,7 @@ export async function createCaptureRecordFromUploadedFile(
   }
 
   if (existingCapture) {
-    if (!profile.organization.image_ai_assist_enabled || !mimeTypeIsImage(mimeType)) {
+    if (!mimeTypeIsImage(mimeType)) {
       return { ok: true, sessionId: session.id, captureItemId: existingCapture.id, processingStatus: 'saved' }
     }
 
@@ -874,8 +874,8 @@ export async function createCaptureRecordFromUploadedFile(
       type: itemCaptureType,
       storage_path: storagePath,
       captured_at: capturedAt,
-      ai_status: profile.organization.image_ai_assist_enabled && itemMediaKind === 'image' ? 'queued' : 'needs_review',
-      processing_status: profile.organization.image_ai_assist_enabled && itemMediaKind === 'image' ? 'uploaded' : 'needs_review',
+      ai_status: itemMediaKind === 'image' ? 'queued' : 'needs_review',
+      processing_status: itemMediaKind === 'image' ? 'uploaded' : 'needs_review',
       extracted_data: itemExtractedData,
       technician_note: technicianNote || null,
       transcript:
@@ -937,7 +937,7 @@ export async function createCaptureRecordFromUploadedFile(
     return captureError(timelineError.message, session.id)
   }
 
-  if (profile.organization.image_ai_assist_enabled && itemMediaKind === 'image') {
+  if (itemMediaKind === 'image') {
     try {
       await queueCaptureAnalysisJobs({
         supabase,
@@ -1002,7 +1002,7 @@ export async function createCaptureRecordFromUploadedFile(
   revalidatePath(`/dashboard/sessions/${session.id}`)
   revalidatePath(`/dashboard/sessions/${session.id}/capture`)
 
-  return { ok: true, sessionId: session.id, captureItemId: captureItem.id, processingStatus: profile.organization.image_ai_assist_enabled && itemMediaKind === 'image' ? 'queued' : 'saved' }
+  return { ok: true, sessionId: session.id, captureItemId: captureItem.id, processingStatus: itemMediaKind === 'image' ? 'queued' : 'saved' }
 }
 
 export type CaptureClassificationActionState = {
@@ -1229,9 +1229,6 @@ export async function classifyPendingCaptures(
 
   const { supabase, profile } = await requireSessionWorkspace()
 
-  if (!profile.organization.image_ai_assist_enabled) {
-    return { ok: false, message: 'Image AI Assist is disabled for this organization.' }
-  }
 
   const billingAccess = requireActiveBillingAccess(profile)
 
@@ -1845,9 +1842,6 @@ export async function extractCaptureDetails(
 
   const { supabase, profile } = await requireSessionWorkspace()
 
-  if (!profile.organization.image_ai_assist_enabled) {
-    return { ok: false, message: 'Image AI Assist is disabled for this organization.' }
-  }
 
   const billingAccess = requireActiveBillingAccess(profile)
 

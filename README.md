@@ -34,7 +34,7 @@ STRIPE_PRICE_SHOP=price_1ThAboITYwJQigUIKi1yfGRe
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
-The app reads `STRIPE_PRICE_INDIVIDUAL`, `STRIPE_PRICE_TEAM`, and `STRIPE_PRICE_SHOP` when creating subscription Checkout Sessions. These values should match the Individual ($39/month), Team ($99/month), and Shop ($199/month) prices in Stripe Dashboard.
+The app reads `STRIPE_PRICE_INDIVIDUAL`, `STRIPE_PRICE_TEAM`, and `STRIPE_PRICE_SHOP` when creating subscription Checkout Sessions. These values should match the Individual ($39/month), Team ($129/month), and Shop ($249/month) prices in Stripe Dashboard.
 
 ### Coupons and promotion codes
 

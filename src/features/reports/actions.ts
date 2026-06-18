@@ -205,7 +205,7 @@ export async function generateFinalNotesForSession(sessionId: string) {
   try {
     notes = await generateFinalNotes({
       session: fullSession,
-      captures: sanitizeCapturesForImageAiAssist(captures ?? [], profile.organization.image_ai_assist_enabled),
+      captures: sanitizeCapturesForImageAiAssist(captures ?? [], true),
       findings: currentDraft?.findings ?? [],
       recommendations: currentDraft?.measurements ?? [],
     })
@@ -660,7 +660,7 @@ export async function completeCaptureAndPrepareReport(sessionId: string, formDat
   revalidatePath(`/dashboard/sessions/${session.id}/capture`)
   revalidatePath(`/dashboard/sessions/${session.id}/report`)
 
-  if (activeReport || !profile.organization.image_ai_assist_enabled) {
+  if (activeReport || !true) {
     redirect(getReportRedirectPath(session.id))
   }
 
@@ -770,7 +770,7 @@ export async function generateAiReportDraft(sessionId: string) {
         technician_note: capture.technician_note,
         transcript: capture.transcript,
         extracted_data: capture.extracted_data,
-      })), profile.organization.image_ai_assist_enabled),
+      })), true),
       signatures: signatures ?? [],
     })
   } catch (error) {
@@ -786,7 +786,7 @@ export async function generateAiReportDraft(sessionId: string) {
     technician_note: capture.technician_note,
     transcript: capture.transcript,
     extracted_data: capture.extracted_data,
-  })), profile.organization.image_ai_assist_enabled)
+  })), true)
   draftOutput = mergeDocumentContextIntoDraft({
     draftOutput,
     captures: normalizedCaptures,

@@ -393,7 +393,7 @@ export default async function SessionReportPreviewPage({
     session.session_type,
     template?.required_evidence ?? null,
   );
-  const allCaptures = sanitizeCapturesForImageAiAssist(captures ?? [], profile.organization.image_ai_assist_enabled);
+  const allCaptures = sanitizeCapturesForImageAiAssist(captures ?? [], true);
   const visibleCaptures = allCaptures.filter((capture) => capture.include_in_report);
   const signedEvidenceUrls: Record<string, string> = {};
   await Promise.all(

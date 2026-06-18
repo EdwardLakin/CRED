@@ -32,7 +32,7 @@ type ReportSignature = Database['public']['Tables']['signature_captures']['Row']
 type ReportDraft = Database['public']['Tables']['ai_report_drafts']['Row']
 type ReportDraftSection = Database['public']['Tables']['ai_report_draft_sections']['Row']
 type ReportSession = Database['public']['Tables']['documentation_sessions']['Row'] & {
-  organizations: { name: string; image_ai_assist_enabled?: boolean | null } | null
+  organizations: { name: string } | null
 }
 
 
@@ -490,7 +490,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     supabase = createAdminClient()
     const { data: shareToken, error: shareError } = await supabase
       .from('report_share_tokens')
-      .select('*, documentation_sessions(*, organizations(name, image_ai_assist_enabled))')
+      .select('*, documentation_sessions(*, organizations(name))')
       .eq('token', shareTokenValue)
       .maybeSingle()
 
@@ -528,7 +528,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
 
     const { data: ownedSession, error: sessionError } = await supabase
       .from('documentation_sessions')
-      .select('*, organizations(name, image_ai_assist_enabled)')
+      .select('*, organizations(name)')
       .eq('id', id)
       .eq('organization_id', organizationId)
       .single()
@@ -554,8 +554,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     .order('report_order', { ascending: true, nullsFirst: false })
     .order('captured_at', { ascending: true })
 
-  const imageAiAssistEnabled = isRecord(session.organizations) && session.organizations.image_ai_assist_enabled === true
-  const captureItems = sanitizeCapturesForImageAiAssist(captures ?? [], imageAiAssistEnabled) as ReportCapture[]
+  const captureItems = sanitizeCapturesForImageAiAssist(captures ?? [], true) as ReportCapture[]
   const appendixCaptureResult = getAppendixCaptures(captureItems)
   const appendixCaptureItems = appendixCaptureResult.captures
   logExportIntegrity({

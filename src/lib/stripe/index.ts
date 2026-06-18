@@ -10,8 +10,8 @@ export const BILLING_PLANS: Record<
   { name: string; price: string; envKey: StripePriceEnvKey }
 > = {
   individual: { name: 'Individual', price: '$39/month', envKey: 'STRIPE_PRICE_INDIVIDUAL' },
-  team: { name: 'Team', price: '$99/month', envKey: 'STRIPE_PRICE_TEAM' },
-  shop: { name: 'Shop', price: '$199/month', envKey: 'STRIPE_PRICE_SHOP' },
+  team: { name: 'Team', price: '$129/month', envKey: 'STRIPE_PRICE_TEAM' },
+  shop: { name: 'Shop', price: '$249/month', envKey: 'STRIPE_PRICE_SHOP' },
 }
 
 const LEGACY_PLAN_MAP: Record<LegacyBillingPlan, BillingPlan> = {

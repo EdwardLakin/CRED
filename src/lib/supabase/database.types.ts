@@ -21,7 +21,6 @@ export interface Database {
           current_period_end: string | null
           trial_ends_at: string | null
           billing_started_at: string | null
-          image_ai_assist_enabled: boolean
           created_at: string | null
         }
         Insert: {
@@ -35,7 +34,6 @@ export interface Database {
           current_period_end?: string | null
           trial_ends_at?: string | null
           billing_started_at?: string | null
-          image_ai_assist_enabled?: boolean
           created_at?: string | null
         }
         Update: {
@@ -49,7 +47,6 @@ export interface Database {
           current_period_end?: string | null
           trial_ends_at?: string | null
           billing_started_at?: string | null
-          image_ai_assist_enabled?: boolean
           created_at?: string | null
         }
         Relationships: []
@@ -99,13 +96,19 @@ export interface Database {
           },
         ]
       }
+      organization_invitations: {
+        Row: { id: string; organization_id: string; email: string; role: 'admin' | 'inspector' | 'reviewer'; status: 'pending_invite' | 'accepted' | 'revoked' | 'expired'; invited_by: string | null; invited_at: string; last_sent_at: string | null; accepted_by: string | null; accepted_at: string | null; revoked_at: string | null }
+        Insert: { id?: string; organization_id: string; email: string; role: 'admin' | 'inspector' | 'reviewer'; status?: 'pending_invite' | 'accepted' | 'revoked' | 'expired'; invited_by?: string | null; invited_at?: string; last_sent_at?: string | null; accepted_by?: string | null; accepted_at?: string | null; revoked_at?: string | null }
+        Update: { id?: string; organization_id?: string; email?: string; role?: 'admin' | 'inspector' | 'reviewer'; status?: 'pending_invite' | 'accepted' | 'revoked' | 'expired'; invited_by?: string | null; invited_at?: string; last_sent_at?: string | null; accepted_by?: string | null; accepted_at?: string | null; revoked_at?: string | null }
+        Relationships: []
+      }
       profiles: {
         Row: {
           id: string
           user_id: string
           organization_id: string
           full_name: string
-          role: 'owner' | 'admin' | 'member'
+          role: 'owner' | 'admin' | 'inspector' | 'reviewer'
           created_at: string | null
           inspector_role_or_title: string | null
           technician_license_number: string | null
@@ -121,7 +124,7 @@ export interface Database {
           user_id: string
           organization_id: string
           full_name: string
-          role: 'owner' | 'admin' | 'member'
+          role: 'owner' | 'admin' | 'inspector' | 'reviewer'
           created_at?: string | null
           inspector_role_or_title?: string | null
           technician_license_number?: string | null
@@ -137,7 +140,7 @@ export interface Database {
           user_id?: string
           organization_id?: string
           full_name?: string
-          role?: 'owner' | 'admin' | 'member'
+          role?: 'owner' | 'admin' | 'inspector' | 'reviewer'
           created_at?: string | null
           inspector_role_or_title?: string | null
           technician_license_number?: string | null
