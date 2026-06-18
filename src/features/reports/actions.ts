@@ -564,16 +564,14 @@ function extractDocumentReportInformation(captures: Array<{ ocr_text?: string | 
 }
 
 function detectDocumentReportType(captures: Array<{ ocr_text?: string | null; extracted_data: Json | null }>) {
-  const text = captures.map((capture) => {
+  const titles = captures.flatMap((capture) => {
     const extractedData = isRecord(capture.extracted_data) ? capture.extracted_data : {}
+    const sourceDocument = isRecord(extractedData.source_document) ? extractedData.source_document : {}
     const extraction = isRecord(extractedData.extraction) ? extractedData.extraction : {}
-    return `${capture.ocr_text ?? ''} ${typeof extraction.text === 'string' ? extraction.text : ''} ${typeof extraction.extracted_text === 'string' ? extraction.extracted_text : ''} ${JSON.stringify(isRecord(extraction.fields) ? extraction.fields : {})}`
-  }).join(' ').toLowerCase()
-  if (/battery|charging system|starter system|alternator|ripple|cca|cranking/.test(text)) return 'Battery and Charging System Inspection Report'
-  if (/electrical|voltage|circuit|wiring|connector|current draw/.test(text)) return 'Vehicle Electrical System Report'
-  if (/inspection|inspect|checklist/.test(text)) return 'Inspection Report'
-  if (/report/.test(text)) return 'Report'
-  return null
+    return [sourceDocument.title, extraction.document_title, extraction.form_title]
+  }).filter((value): value is string => typeof value === 'string' && value.trim().length >= 8)
+  const trustedTitle = titles.find((title) => /\b(report|inspection|form|checklist)\b/i.test(title) && !/\b(battery|charging|electrical|starter|alternator)\b/i.test(title))
+  return trustedTitle ? cleanDraftField(trustedTitle, 120) : null
 }
 
 function mergeDocumentContextIntoDraft(args: {

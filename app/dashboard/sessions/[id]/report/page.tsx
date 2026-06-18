@@ -465,8 +465,8 @@ export default async function SessionReportPreviewPage({
     ? saveReportEdits.bind(null, currentReport.id)
     : null;
   const sourceFieldEntries = getDisplayEntries(currentReport?.header_fields);
-  const displayReportTitle = getDisplayReportTitle(currentReport, session);
   const isGenericEvidenceReport = formStructureSummary.source === "generic_fallback";
+  const displayReportTitle = getDisplayReportTitle(currentReport, session, { genericFallback: isGenericEvidenceReport });
   const isEditingReport = Boolean(currentReport);
   if (currentReport && getDiagnosticProcedureInfo(currentReport)) {
     return (
@@ -490,7 +490,7 @@ export default async function SessionReportPreviewPage({
           <p className="eyebrow guided-eyebrow">Review</p>
           <h1>{displayReportTitle}</h1>
           <p className="muted">
-            Review the professional report CRED built from your evidence.
+            Review the report CRED prepared from your saved evidence.
             Approve it, then export.
           </p>
         </div>
@@ -680,8 +680,7 @@ function GeneratedReportReview({
 
       {hasPendingEvidence ? (
         <p className="notice info compact-report-notice">
-          Your evidence is saved. CRED is organizing the review workspace. You can
-          continue capturing while this finishes.
+          Saved. Ready for review. You can continue capturing while preparing the report.
         </p>
       ) : null}
 
@@ -728,7 +727,7 @@ function GeneratedReportReview({
           ["Location / Address", getReportInfoValue(currentReport, session, "location_address")],
           ["Reference Number", getReportInfoValue(currentReport, session, "reference_number")],
         ].map(([label, value]) => <div key={label} className="report-field-card"><span>{label}</span><strong className={value ? undefined : "not-provided"}>{value ? stripConfidenceText(String(value)) : "Not provided"}</strong></div>)}</div>
-        <ReferenceDocumentList items={reviewDocument.referenceDocuments} supportingEvidence={supportingEvidence} />
+        {reviewDocument.referenceDocuments.length > 0 ? <ReferenceDocumentList items={reviewDocument.referenceDocuments} supportingEvidence={supportingEvidence} /> : null}
       </details>
 
       <EvidenceAppendix supportingEvidence={supportingEvidence} reportDocument={reportDocument} isGenericEvidenceReport={isGenericEvidenceReport} />
@@ -738,12 +737,12 @@ function GeneratedReportReview({
           action={saveReportEditsAction}
           className="form-stack report-edit-form"
         >
-          <details className="report-subsection report-edit-panel" open>
+          <details className="report-subsection report-edit-panel">
             <summary className="report-section-title-row">
               <div>
-                <h3>Review and correct report</h3>
+                <h3>Advanced report editing</h3>
                 <p className="muted">
-                  Edit this report directly, then save changes before approval or export.
+Optional raw section and field editing. Use only when you need to change the assembled report structure.
                 </p>
               </div>
             </summary>
@@ -832,7 +831,7 @@ function GeneratedReportReview({
             })}
           </div>
 
-          <details className="report-subsection report-edit-panel" open>
+          <details className="report-subsection report-edit-panel">
             <summary>
               <h3>Report evidence</h3>
               <p className="muted">
@@ -847,7 +846,7 @@ function GeneratedReportReview({
             />
           </details>
 
-          <details className="report-subsection report-edit-panel" open>
+          <details className="report-subsection report-edit-panel">
             <summary>
               <h3>Form fields</h3>
               <p className="muted">
@@ -1122,9 +1121,8 @@ function EvidenceAppendix({ supportingEvidence, reportDocument, timeZone, isGene
               </div>
               <div className="evidence-first-body">
                 <h4>{metadata?.evidenceId ?? "Evidence"} · {item.title}</h4>
-                <p className="muted">Source capture ID: {item.capture.id}</p>
                 {item.note ? <p><strong>Technician note / caption:</strong> {stripConfidenceText(item.note)}</p> : <p className="muted">No technician note provided.</p>}
-                <p className="muted">{metadata?.evidenceType ?? item.kind} · Captured {metadata?.capturedAtLabel ?? "Not captured"}</p>
+                <p className="muted">Captured {metadata?.capturedAtLabel ?? "Not captured"} · {metadata?.evidenceType ?? item.kind}</p><details><summary>Evidence details</summary><p className="muted">Source capture ID: {item.capture.id}</p></details>
               </div>
             </article>
           })}

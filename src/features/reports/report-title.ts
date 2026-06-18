@@ -43,9 +43,11 @@ export function getReportInfoValue(draft: ReportTitleDraft, session: Pick<Report
   return ''
 }
 
-export function getDisplayReportTitle(draft: ReportTitleDraft, session: ReportTitleSession) {
+export function getDisplayReportTitle(draft: ReportTitleDraft, session: ReportTitleSession, options: { genericFallback?: boolean } = {}) {
   const explicitReportTitle = getReportInfoValue(draft, session, 'report_title')
   if (explicitReportTitle && !isPlaceholderReportTitle(explicitReportTitle)) return stripConfidenceText(explicitReportTitle).trim()
+
+  if (options.genericFallback) return 'General Evidence Report'
 
   const subject = getReportInfoValue(draft, session, 'subject_name')
     || getReportInfoValue(draft, session, 'customer_client')
