@@ -199,7 +199,7 @@ export function getCaptureEventTitle(type: CaptureType, intent: CaptureIntent = 
   }
 }
 
-export type CaptureProcessingStatus = 'pending' | 'processing' | 'extracted' | 'needs_review' | 'failed' | 'blocked_by_limit' | 'ready_for_review' | 'queued' | 'analyzing' | 'analyzed' | 'grouped' | 'report_ready' | 'analysis_failed' | 'grouping_failed' | 'ignored'
+export type CaptureProcessingStatus = 'pending' | 'saved' | 'processing' | 'extracted' | 'needs_review' | 'failed' | 'blocked_by_limit' | 'ready_for_review' | 'queued' | 'analyzing' | 'analyzed' | 'grouped' | 'report_ready' | 'analysis_failed' | 'grouping_failed' | 'ignored'
 
 export function getCaptureProcessingStatus(capture: CaptureItem): CaptureProcessingStatus {
   const extractedData = isRecord(capture.extracted_data) ? capture.extracted_data : null
@@ -208,6 +208,7 @@ export function getCaptureProcessingStatus(capture: CaptureItem): CaptureProcess
   const extraction = extractedData && isRecord(extractedData.extraction) ? extractedData.extraction : null
   const extractionStatus = typeof extraction?.status === 'string' ? extraction.status : null
 
+  if (capture.processing_status === 'saved') return 'saved'
   if (capture.processing_status === 'queued' || capture.ai_status === 'queued') return 'queued'
   if (capture.processing_status === 'analyzing') return 'analyzing'
   if (capture.processing_status === 'analyzed') return 'analyzed'
@@ -227,11 +228,14 @@ export function getCaptureProcessingStatus(capture: CaptureItem): CaptureProcess
 
 export function getCaptureProcessingLabel(status: CaptureProcessingStatus, imageAiAssistEnabled = true) {
   if (!imageAiAssistEnabled) {
+    if (status === 'saved') return 'Saved'
     if (status === 'report_ready' || status === 'extracted' || status === 'analyzed' || status === 'grouped') return 'Report ready'
     if (status === 'queued' || status === 'processing' || status === 'analyzing' || status === 'pending') return 'Saved'
     return 'Ready for review'
   }
   switch (status) {
+    case 'saved':
+      return 'Saved'
     case 'queued':
       return 'Queued for AI'
     case 'analyzing':

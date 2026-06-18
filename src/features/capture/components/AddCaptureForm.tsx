@@ -28,7 +28,7 @@ import { createClient } from '@/lib/supabase/client'
 const MAX_BATCH_FILES = 50
 const MEDIA_NOTE_AUTOSAVE_DELAY_MS = 800
 
-type UploadStatus = 'queued' | 'uploading' | 'saved' | 'ai_queued' | 'needs_queue_retry' | 'failed'
+type UploadStatus = 'queued' | 'uploading' | 'saved' | 'needs_queue_retry' | 'failed'
 type DiagnosticEvidenceRole = 'meter_reading_photo' | 'scan_tool_screenshot' | 'connector_photo' | 'wiring_reference' | 'voice_note' | 'technician_note' | 'other'
 
 const DIAGNOSTIC_EVIDENCE_ROLE_OPTIONS: Array<{ value: DiagnosticEvidenceRole; label: string }> = [
@@ -261,7 +261,6 @@ function formatFileSize(bytes: number) {
 
 function getUploadStatusLabel(status: UploadStatus, error?: string) {
   if (status === 'uploading') return 'Uploading'
-  if (status === 'ai_queued') return 'Saved — AI queued'
   if (status === 'needs_queue_retry') return 'Saved — AI retry needed'
   if (status === 'saved') return 'Saved'
   if (status === 'failed') return error ?? 'Upload failed. Please retry.'
@@ -839,7 +838,7 @@ export function AddCaptureForm({
         savedCount += 1
         updateSelectedFileStatus(
           selectedFile.id,
-          result.processingStatus === 'queued' ? 'ai_queued' : result.processingStatus === 'needs_queue_retry' ? 'needs_queue_retry' : 'saved',
+          'saved',
           undefined,
           result.captureItemId,
         )
