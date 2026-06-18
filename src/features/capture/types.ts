@@ -225,7 +225,12 @@ export function getCaptureProcessingStatus(capture: CaptureItem): CaptureProcess
   return 'pending'
 }
 
-export function getCaptureProcessingLabel(status: CaptureProcessingStatus) {
+export function getCaptureProcessingLabel(status: CaptureProcessingStatus, imageAiAssistEnabled = true) {
+  if (!imageAiAssistEnabled) {
+    if (status === 'report_ready' || status === 'extracted' || status === 'analyzed' || status === 'grouped') return 'Report ready'
+    if (status === 'queued' || status === 'processing' || status === 'analyzing' || status === 'pending') return 'Saved'
+    return 'Ready for review'
+  }
   switch (status) {
     case 'queued':
       return 'Queued for AI'

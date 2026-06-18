@@ -27,7 +27,7 @@ function getCaptureMeta(capture: CaptureItem) {
   return typeLabel
 }
 
-export function RecentCapturesList({ captures, signedUrls, limit = 6, timeZone = null }: { captures: CaptureItem[]; signedUrls: Record<string, string>; limit?: number; timeZone?: string | null }) {
+export function RecentCapturesList({ captures, signedUrls, limit = 6, timeZone = null, imageAiAssistEnabled = true }: { captures: CaptureItem[]; signedUrls: Record<string, string>; limit?: number; timeZone?: string | null; imageAiAssistEnabled?: boolean }) {
   const recentCaptures = captures.filter((capture) => !capture.deleted_at).slice(0, limit)
 
   if (recentCaptures.length === 0) {
@@ -44,7 +44,7 @@ export function RecentCapturesList({ captures, signedUrls, limit = 6, timeZone =
           </div>
           <div className="capture-card-actions">
             <span className={`ai-status-pill ${getCaptureStatusVariant(getCaptureProcessingStatus(capture))}`}>
-              {getCaptureProcessingLabel(getCaptureProcessingStatus(capture))}
+              {getCaptureProcessingLabel(getCaptureProcessingStatus(capture), imageAiAssistEnabled)}
             </span>
             {signedUrls[capture.id] ? (
               <a href={signedUrls[capture.id]} target="_blank" rel="noreferrer" className="secondary-link touch-target">

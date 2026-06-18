@@ -77,6 +77,7 @@ export default async function GuidedCapturePage({
           stickyDoneHref={`/dashboard/sessions/${session.id}/report`}
           maxCaptureFileSizeBytes={planLimits.maxCaptureFileSizeBytes}
           maxVideoFileSizeBytes={planLimits.maxVideoFileSizeBytes}
+          imageAiAssistEnabled={profile.organization.image_ai_assist_enabled}
         />
       </section>
 
@@ -88,7 +89,7 @@ export default async function GuidedCapturePage({
           </div>
           <span className="status-pill neutral">{captureItems.length} saved</span>
         </div>
-        <RecentCapturesList captures={captureItems} signedUrls={signedUrls} timeZone={profile.timezone} />
+        <RecentCapturesList captures={captureItems} signedUrls={signedUrls} timeZone={profile.timezone} imageAiAssistEnabled={profile.organization.image_ai_assist_enabled} />
       </section>
     </main>
   )

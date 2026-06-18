@@ -409,7 +409,7 @@ function isNoteCapture(capture: CaptureLike) {
 }
 
 function isDocumentCapture(capture: CaptureLike) {
-  return capture.media_kind === 'document' || Boolean(capture.ocr_text?.trim()) || Boolean(isRecord(capture.extracted_data) && (isRecord(capture.extracted_data.source_document) || isRecord(capture.extracted_data.extraction)))
+  return capture.media_kind === 'document' || Boolean(isRecord(capture.extracted_data) && isRecord(capture.extracted_data.source_document))
 }
 
 function normalizeForMatch(value: string) {
@@ -917,7 +917,7 @@ export function classifyCapture(capture: CaptureLike, group?: EvidenceGroup): Ca
   const text = textForCapture(capture)
   if (/\b(hidden_from_report|internal_only|debug)\b/i.test(text)) return 'ignored_internal'
   if (getDeterministicFinding(capture)) return 'inspection_finding'
-  if (getDeterministicReferenceTitle(capture)) return 'reference_document'
+  if (capture.media_kind === 'document' && getDeterministicReferenceTitle(capture)) return 'reference_document'
   if (isHardReferenceDocument(capture)) return 'reference_document'
   if (isNoteCapture(capture) && !hasTrueDefectEvidence(capture, group)) return 'additional_note'
   if (hasTrueDefectEvidence(capture, group)) return 'inspection_finding'
@@ -1375,7 +1375,6 @@ export function buildNormalizedReportModel<TCapture extends CaptureLike>(params:
 
 
 const EVIDENCE_PACKAGE_RULES = [
-  { key: 'battery_charging', title: 'Battery and Charging System Test', terms: ['battery', 'cca', 'voltage', 'volt', 'current draw', 'amp clamp', 'multimeter', 'ripple', 'alternator', 'charging', 'starter'] },
   { key: 'corrosion', title: 'Corrosion Inspection', terms: ['corrosion', 'rust', 'terminal', 'post'] },
   { key: 'brakes', title: 'Brake Inspection', terms: ['brake', 'pad', 'rotor', 'lining', 'caliper', 'drum'] },
   { key: 'tires', title: 'Tire and Tread Inspection', terms: ['tire', 'tyre', 'tread', 'sidewall'] },
