@@ -25,7 +25,7 @@ import {
 } from '@/features/capture/types'
 import { createClient } from '@/lib/supabase/client'
 
-const MAX_BATCH_FILES = 10
+const MAX_BATCH_FILES = 50
 const MEDIA_NOTE_AUTOSAVE_DELAY_MS = 800
 
 type UploadStatus = 'queued' | 'uploading' | 'saved' | 'ai_queued' | 'needs_queue_retry' | 'failed'
@@ -52,6 +52,7 @@ type SelectedEvidenceFile = {
   error?: string
   note: string
   captureItemId?: string
+  storagePath?: string
   noteSaveStatus?: 'idle' | 'unsaved' | 'saving' | 'saved' | 'failed'
 }
 
@@ -155,6 +156,69 @@ const ALLOWED_MIME_TYPES: Record<CaptureType, readonly string[]> = {
     'video/x-msvideo',
     'video/mpeg',
   ],
+}
+
+
+const UPLOAD_QUEUE_DB_NAME = 'cred-capture-upload-queue'
+const UPLOAD_QUEUE_STORE_NAME = 'pending_files'
+const UPLOAD_QUEUE_DB_VERSION = 1
+const LOCAL_UPLOAD_PENDING_STATUSES: UploadStatus[] = ['queued', 'uploading', 'failed']
+
+type PersistedSelectedEvidenceFile = Omit<SelectedEvidenceFile, 'previewUrl'> & {
+  sessionId: string
+  organizationId: string
+  storagePath?: string
+}
+
+function isLocalUploadPending(status: UploadStatus) {
+  return LOCAL_UPLOAD_PENDING_STATUSES.includes(status)
+}
+
+function openUploadQueueDb() {
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(UPLOAD_QUEUE_DB_NAME, UPLOAD_QUEUE_DB_VERSION)
+    request.onupgradeneeded = () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains(UPLOAD_QUEUE_STORE_NAME)) {
+        db.createObjectStore(UPLOAD_QUEUE_STORE_NAME, { keyPath: 'id' })
+      }
+    }
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => resolve(request.result)
+  })
+}
+
+async function writeUploadQueueRecord(record: PersistedSelectedEvidenceFile) {
+  const db = await openUploadQueueDb()
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(UPLOAD_QUEUE_STORE_NAME, 'readwrite')
+    transaction.objectStore(UPLOAD_QUEUE_STORE_NAME).put(record)
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () => reject(transaction.error)
+  })
+  db.close()
+}
+
+async function deleteUploadQueueRecord(fileId: string) {
+  const db = await openUploadQueueDb()
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(UPLOAD_QUEUE_STORE_NAME, 'readwrite')
+    transaction.objectStore(UPLOAD_QUEUE_STORE_NAME).delete(fileId)
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () => reject(transaction.error)
+  })
+  db.close()
+}
+
+async function readUploadQueueRecords(sessionId: string) {
+  const db = await openUploadQueueDb()
+  const records = await new Promise<PersistedSelectedEvidenceFile[]>((resolve, reject) => {
+    const request = db.transaction(UPLOAD_QUEUE_STORE_NAME, 'readonly').objectStore(UPLOAD_QUEUE_STORE_NAME).getAll()
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => resolve((request.result as PersistedSelectedEvidenceFile[]).filter((record) => record.sessionId === sessionId))
+  })
+  db.close()
+  return records
 }
 
 function sanitizeFilename(filename: string) {
@@ -331,10 +395,30 @@ export function AddCaptureForm({
     }
   }, [])
 
+  function persistSelectedFile(file: SelectedEvidenceFile) {
+    if (!isLocalUploadPending(file.status)) {
+      void deleteUploadQueueRecord(file.id).catch((error: unknown) => {
+        console.warn('Unable to clear persisted capture upload', error)
+      })
+      return
+    }
+
+    void writeUploadQueueRecord({
+      ...file,
+      sessionId,
+      organizationId,
+    }).catch((error: unknown) => {
+      console.warn('Unable to persist pending capture upload', error)
+    })
+  }
+
   function replaceSelectedFiles(files: SelectedEvidenceFile[]) {
     selectedFilesRef.current.forEach((file) =>
       URL.revokeObjectURL(file.previewUrl),
     )
+    selectedFilesRef.current.forEach((file) => {
+      void deleteUploadQueueRecord(file.id)
+    })
     uploadStartedFileIdsRef.current = new Set(
       files
         .filter((file) => file.status === 'uploading' || file.status === 'saved')
@@ -375,6 +459,8 @@ export function AddCaptureForm({
         file.id === fileId ? { ...file, status, error, ...(captureItemId ? { captureItemId } : {}) } : file,
       )
       selectedFilesRef.current = nextFiles
+      const updatedFile = nextFiles.find((file) => file.id === fileId)
+      if (updatedFile) persistSelectedFile(updatedFile)
       return nextFiles
     })
   }
@@ -542,6 +628,7 @@ export function AddCaptureForm({
 
     const remainingFiles = selectedFilesRef.current.filter((file) => file.id !== fileId)
     URL.revokeObjectURL(fileToRemove?.previewUrl ?? '')
+    void deleteUploadQueueRecord(fileId)
     selectedFilesRef.current = remainingFiles
     setSelectedFiles(remainingFiles)
 
@@ -567,6 +654,7 @@ export function AddCaptureForm({
 
     const remainingFiles = selectedFilesRef.current.filter((file) => file.id !== fileId)
     URL.revokeObjectURL(fileToRemove?.previewUrl ?? '')
+    void deleteUploadQueueRecord(fileId)
     selectedFilesRef.current = remainingFiles
     setSelectedFiles(remainingFiles)
     setClientError(null)
@@ -639,6 +727,37 @@ export function AddCaptureForm({
     }
   }
 
+  useEffect(() => {
+    let cancelled = false
+
+    readUploadQueueRecords(sessionId)
+      .then((records) => {
+        if (cancelled || records.length === 0) return
+
+        const restoredFiles = records.map((record) => ({
+          ...record,
+          status: record.status === 'uploading' ? 'queued' : record.status,
+          previewUrl: URL.createObjectURL(record.file),
+        }))
+        const nextFiles = [...selectedFilesRef.current, ...restoredFiles]
+        selectedFilesRef.current = nextFiles
+        setSelectedFiles(nextFiles)
+
+        const resumableFiles = restoredFiles.filter((file) => file.status === 'queued')
+        if (resumableFiles.length > 0) {
+          setSaveMessage(`Resuming ${resumableFiles.length} pending upload${resumableFiles.length === 1 ? '' : 's'}…`)
+          void autoSaveSelectedMedia(resumableFiles)
+        }
+      })
+      .catch((error: unknown) => {
+        console.warn('Unable to restore pending capture uploads', error)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [sessionId])
+
   async function uploadSelectedFiles(filesToUpload: SelectedEvidenceFile[]) {
     const supabase = createClient()
     let savedCount = 0
@@ -663,7 +782,18 @@ export function AddCaptureForm({
 
     for (const selectedFile of filesToUpload) {
       const { file } = selectedFile
-      const storagePath = `organizations/${organizationId}/sessions/${sessionId}/captures/${buildStorageFilename(file)}`
+      const storagePath = selectedFile.storagePath ?? `organizations/${organizationId}/sessions/${sessionId}/captures/${buildStorageFilename(file)}`
+      if (!selectedFile.storagePath) {
+        selectedFile.storagePath = storagePath
+        setSelectedFiles((currentFiles) => {
+          const nextFiles = currentFiles.map((currentFile) =>
+            currentFile.id === selectedFile.id ? { ...currentFile, storagePath } : currentFile,
+          )
+          selectedFilesRef.current = nextFiles
+          return nextFiles
+        })
+        persistSelectedFile({ ...selectedFile, storagePath })
+      }
 
       updateSelectedFileStatus(selectedFile.id, 'uploading')
 
@@ -978,7 +1108,8 @@ export function AddCaptureForm({
     }
 
     function warnAboutUnsavedMediaNotes(event: BeforeUnloadEvent) {
-      if (!hasUnsavedMediaNotes()) return
+      const hasPendingLocalUploads = selectedFilesRef.current.some((file) => isLocalUploadPending(file.status))
+      if (!hasUnsavedMediaNotes() && !hasPendingLocalUploads) return
 
       event.preventDefault()
       event.returnValue = ''
@@ -997,6 +1128,15 @@ export function AddCaptureForm({
   }, [cleanupRecognition])
 
   async function handleDoneNavigation(event: MouseEvent<HTMLAnchorElement>) {
+    const pendingLocalUploads = selectedFilesRef.current.filter((file) => isLocalUploadPending(file.status))
+
+    if (pendingLocalUploads.length > 0) {
+      event.preventDefault()
+      setClientError(`Still uploading ${pendingLocalUploads.length} file${pendingLocalUploads.length === 1 ? '' : 's'}. Done will unlock after uploads are persisted.`)
+      void autoSaveSelectedMedia(pendingLocalUploads.filter((file) => file.status !== 'uploading'))
+      return
+    }
+
     if (!hasUnsavedMediaNotes()) return
 
     event.preventDefault()

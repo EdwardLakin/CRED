@@ -926,15 +926,12 @@ export async function createCaptureRecordFromUploadedFile(
   if (timelineError) {
     logCaptureFailure({
       step: 'timeline_event_insert',
+      captureId: captureItem.id,
       ...getSafeErrorDetails(timelineError),
     })
-    await supabase
-      .from('capture_items')
-      .delete()
-      .eq('id', captureItem.id)
-      .eq('organization_id', profile.organization_id)
-    await removeUploadedObject(supabase, storagePath)
-    return captureError(timelineError.message, session.id)
+    // Timeline/audit decoration must not make evidence disappear after the
+    // binary object and capture row are durable. Evidence persistence is the
+    // source of truth; downstream enrichment can be retried independently.
   }
 
   if (itemMediaKind === 'image') {
