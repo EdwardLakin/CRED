@@ -111,6 +111,91 @@ function isHiddenFromReport(metadata: Json) {
   return isRecord(metadata) && metadata.hidden_from_report === true;
 }
 
+function getApprovalDate(draft: ReportDraft | null | undefined, session: ReportSession) {
+  return draft?.approved_at ?? session.reviewed_at ?? null;
+}
+
+function getOrganizationDisplayName(organizationName: string, companyProfile?: { company_name?: string | null; facility_name?: string | null } | null) {
+  return companyProfile?.company_name || companyProfile?.facility_name || organizationName;
+}
+
+function getCoverImageHtml(captures: ReportCapture[], signedUrls: Record<string, string>) {
+  const coverCapture = captures.find((capture) => isImageEvidence(capture) && signedUrls[capture.id]);
+  if (!coverCapture) return "";
+  return `<div class="cover-image"><img src="${escapeHtml(signedUrls[coverCapture.id])}" alt="${escapeHtml(getPrimaryEvidenceLabel(coverCapture))}" /></div>`;
+}
+
+function buildReportCoverHtml(params: {
+  reportTitle: string;
+  reportType: string;
+  session: ReportSession;
+  draft: ReportDraft | null;
+  organizationName: string;
+  companyProfile?: { company_name?: string | null; facility_name?: string | null } | null;
+  captures: ReportCapture[];
+  signedUrls: Record<string, string>;
+  timeZone: string | null;
+}) {
+  const approvedAt = getApprovalDate(params.draft, params.session);
+  const rows = [
+    { label: "Report type", value: params.reportType },
+    { label: "Customer / Client", value: getReportInfoValue(params.draft, params.session, "customer_client") || params.session.customer_name || "" },
+    { label: "Subject", value: getReportInfoValue(params.draft, params.session, "subject_name") || params.session.title || "" },
+    { label: "Asset / Equipment", value: getReportInfoValue(params.draft, params.session, "asset_equipment") || params.session.asset_label || params.session.unit_number || "" },
+    { label: "Location", value: getReportInfoValue(params.draft, params.session, "location") },
+    { label: "Capture session date", value: formatDateTimeInTimeZone(params.session.created_at, params.timeZone) },
+    { label: "Approved date", value: approvedAt ? formatDateTimeInTimeZone(approvedAt, params.timeZone) : "" },
+    { label: "Organization", value: getOrganizationDisplayName(params.organizationName, params.companyProfile) },
+  ];
+  return `<section class="report-cover item"><div class="cover-copy"><p class="eyebrow">Professional Evidence Report</p><h1>${escapeHtml(params.reportTitle)}</h1><p class="cover-trust">CRED assembles user-provided evidence and approved report text. Users remain the source of truth.</p>${renderDefinitionRows(rows)}</div>${getCoverImageHtml(params.captures, params.signedUrls)}</section>`;
+}
+
+function buildReportOverviewHtml(params: {
+  capturedCount: number;
+  includedCount: number;
+  finalNotesIncluded: boolean;
+  approved: boolean;
+  preparedBy: string;
+  organization: string;
+}) {
+  return `<section class="item service-section overview-section"><h2>Executive Report Overview</h2><p class="muted">CRED assembles user-provided evidence and approved report text. Users remain the source of truth.</p>${renderDefinitionRows([
+    { label: "Evidence items captured", value: String(params.capturedCount) },
+    { label: "Included evidence items", value: String(params.includedCount) },
+    { label: "Final notes included", value: params.finalNotesIncluded ? "Yes" : "No" },
+    { label: "Report approved", value: params.approved ? "Yes" : "No" },
+    { label: "Prepared by", value: params.preparedBy },
+    { label: "Organization", value: params.organization },
+  ])}</section>`;
+}
+
+function buildEvidenceGalleryHtml(captures: ReportCapture[], signedUrls: Record<string, string>, timeZone: string | null) {
+  const images = captures.filter(isImageEvidence);
+  if (!images.length) return "";
+  const reportDocument = buildUniversalReportDocument({ captures, timeZone });
+  const evidenceByCaptureId = new Map(reportDocument.evidenceItems.map((item) => [item.sourceCaptureId, item]));
+  return `<section class="item service-section gallery-section"><h2>Captured Evidence Gallery</h2><p class="muted">Compact visual scan of included image evidence.</p><div class="gallery-grid">${images.map((capture) => {
+    const meta = evidenceByCaptureId.get(capture.id);
+    const evidenceId = meta?.evidenceId ?? "Evidence";
+    const label = getPrimaryEvidenceLabel(capture);
+    const captured = meta?.capturedAtLabel ?? formatDateTimeInTimeZone(capture.captured_at, timeZone);
+    const media = signedUrls[capture.id] ? `<img src="${escapeHtml(signedUrls[capture.id])}" alt="${escapeHtml(label)}" />` : '<div class="media-fallback">Image unavailable in printable export.</div>';
+    return `<article class="gallery-card"><div class="gallery-thumb">${media}</div><div class="gallery-caption"><h3>${escapeHtml(`${evidenceId} · ${label}`)}</h3><p>${escapeHtml(captured)}</p></div></article>`;
+  }).join("")}</div></section>`;
+}
+
+function buildApprovalHtml(params: { profile: { full_name?: string | null; inspector_role_or_title?: string | null } | null; signatures: ReportSignature[]; signatureUrls: Record<string, string>; draft: ReportDraft | null; session: ReportSession; timeZone: string | null }) {
+  const signature = params.signatures.find((item) => /inspector|technician/i.test(item.signature_type)) ?? params.signatures[0];
+  const signatureUrl = signature ? params.signatureUrls[signature.id] : params.signatureUrls.__default_signature;
+  const approvedAt = getApprovalDate(params.draft, params.session) ?? signature?.signed_at ?? null;
+  const rows = [
+    { label: "Approved by", value: signature?.signer_name || params.profile?.full_name || "" },
+    { label: "Role / Title", value: params.profile?.inspector_role_or_title || signature?.signature_type?.replace(/_/g, " ") || "" },
+    { label: "Approved date / time", value: approvedAt ? formatDateTimeInTimeZone(approvedAt, params.timeZone) : "" },
+  ];
+  const sig = signatureUrl ? `<div class="signature-block approval-signature"><img class="signature-image" src="${escapeHtml(signatureUrl)}" alt="Approval signature" /></div>` : '<div class="signature-block signature-empty"><p class="muted">No signature captured</p></div>';
+  return `<section class="item service-section approval-section"><h2>Signature / Approval</h2>${renderDefinitionRows(rows)}${sig}</section>`;
+}
+
 function buildFinalNotesHtml(
   session: Pick<ReportSession, "final_notes" | "include_final_notes_in_export">,
 ) {
@@ -435,8 +520,6 @@ function buildInspectorFacilityHtml(
     technician_license_number?: string | null;
     inspector_email?: string | null;
     inspector_phone?: string | null;
-    default_signature_path?: string | null;
-    use_default_signature?: boolean | null;
   } | null,
   companyProfile: {
     company_name?: string | null;
@@ -452,9 +535,7 @@ function buildInspectorFacilityHtml(
     facility_email?: string | null;
     permit_number?: string | null;
     certification_number?: string | null;
-  } | null,
-  signatures: ReportSignature[],
-  signatureUrls: Record<string, string>,
+  } | null
 ) {
   const address = [
     companyProfile?.facility_address_line_1,
@@ -463,54 +544,21 @@ function buildInspectorFacilityHtml(
     companyProfile?.facility_region,
     companyProfile?.facility_postal_code,
     companyProfile?.facility_country,
-  ]
-    .filter(Boolean)
-    .join(", ");
+  ].filter(Boolean).join(", ");
   const rows = [
-    { label: "Inspector Name", value: profile?.full_name ?? "" },
-    {
-      label: "Organization Name",
-      value:
-        companyProfile?.company_name ?? companyProfile?.facility_name ?? "",
-    },
+    { label: "Inspector", value: profile?.full_name ?? "" },
     { label: "Role / Title", value: profile?.inspector_role_or_title ?? "" },
-    {
-      label: "Email",
-      value: profile?.inspector_email ?? companyProfile?.facility_email ?? "",
-    },
-    {
-      label: "Phone",
-      value: profile?.inspector_phone ?? companyProfile?.facility_phone ?? "",
-    },
-    { label: "Organization Address", value: address },
-    {
-      label: "Licence Number",
-      value: profile?.technician_license_number ?? "",
-    },
+    { label: "Organization", value: companyProfile?.company_name ?? companyProfile?.facility_name ?? "" },
+    { label: "Facility Number", value: companyProfile?.facility_number ?? "" },
+    { label: "Address", value: address },
+    { label: "Email", value: profile?.inspector_email ?? companyProfile?.facility_email ?? "" },
+    { label: "Phone", value: profile?.inspector_phone ?? companyProfile?.facility_phone ?? "" },
+    { label: "Licence Number", value: profile?.technician_license_number ?? "" },
     { label: "Permit Number", value: companyProfile?.permit_number ?? "" },
-    {
-      label: "Certification Number",
-      value: companyProfile?.certification_number ?? "",
-    },
+    { label: "Certification Number", value: companyProfile?.certification_number ?? "" },
   ];
-  const signature =
-    signatures.find((item) =>
-      /inspector|technician/i.test(item.signature_type),
-    ) ?? signatures[0];
-  const defaultSignatureUrl =
-    profile?.use_default_signature && profile.default_signature_path
-      ? signatureUrls.__default_signature
-      : null;
-  const signatureUrl = signature
-    ? signatureUrls[signature.id]
-    : defaultSignatureUrl;
-  const signatureLabel = signature
-    ? "Report-specific signature"
-    : "Default saved signature";
-  const signatureHtml = signatureUrl
-    ? `<div class="signature-block"><p class="muted">${escapeHtml(signatureLabel)}</p><img class="signature-image" src="${escapeHtml(signatureUrl)}" alt="Inspector signature" /></div>`
-    : '<div class="signature-block signature-empty"><p class="muted">No signature available.</p></div>';
-  return `<section class="item service-section"><h2>Inspector / Organization Details</h2>${renderDefinitionRows(rows)}${signatureHtml}</section>`;
+  const rowsHtml = renderDefinitionRows(rows);
+  return rowsHtml ? `<section class="item service-section org-section"><h2>Inspector / Organization Details</h2>${rowsHtml}</section>` : "";
 }
 
 function getEvidenceTitle(capture: ReportCapture) {
@@ -540,17 +588,6 @@ function renderTextList(
   visible.forEach((value) => existingRenderedText.push(value));
   if (visible.length === 0) return "";
   return `<section class="finding"><h3>${escapeHtml(title)}</h3>${visible.map((value) => `<p>${escapeHtml(value)}</p>`).join("")}</section>`;
-}
-
-function buildExecutiveSummaryHtml(params: {
-  reportTitle: string;
-  organizationName: string;
-  dateLabel: string;
-  findings: ReturnType<typeof getNormalizedFindingModels<ReportCapture>>;
-  referenceCount: number;
-  evidenceCount: number;
-}) {
-  return `<section class="item premium-cover"><p class="eyebrow">Professional Evidence Report</p><h1>${escapeHtml(params.reportTitle)}</h1><p class="meta">${escapeHtml(params.organizationName)} · ${escapeHtml(params.dateLabel)}</p></section><section class="item service-section"><h2>Report Overview</h2><p>Evidence-first report assembled from included captures and user-authored content. CRED does not diagnose, classify photos, determine findings, or recommend repairs.</p><dl><div><dt>Technician-authored findings</dt><dd>${params.findings.length}</dd></div><div><dt>Reference Documents Captured</dt><dd>${params.referenceCount}</dd></div><div><dt>Evidence Items Captured</dt><dd>${params.evidenceCount}</dd></div></dl></section>`;
 }
 
 function buildFindingCardsHtml(
@@ -654,7 +691,7 @@ function buildEvidenceItemsHtml(
                 : mediaKind === "audio"
                   ? '<div class="video-still">Voice Note</div>'
                   : mediaKind === "image"
-                    ? '<div class="media-fallback">Image unavailable for export.</div>'
+                    ? '<div class="media-fallback">Image unavailable in printable export.</div>'
                     : `<div class="media-fallback">Saved evidence file unavailable for export.</div>`;
       const group = entry.group;
       const renderedText: string[] = [];
@@ -727,7 +764,7 @@ function buildEvidenceAppendixHtml(
           : signedUrl
             ? `<p><a href="${escapeHtml(signedUrl)}">Open ${escapeHtml(mediaKind)} evidence</a></p>`
             : mediaKind === "image"
-              ? '<div class="media-fallback">Image unavailable for export.</div>'
+              ? '<div class="media-fallback">Image unavailable in printable export.</div>'
               : `<div class="media-fallback">${escapeHtml(getEvidenceTitle(capture))}</div>`;
       const technicianFields = isRecord(capture.extracted_data)
         ? capture.extracted_data
@@ -1071,20 +1108,20 @@ function buildFieldServiceReportHtml({
     session,
     reportDraft,
   );
-  const findingModels = reviewDocument.findingModels;
-  const summaryHtml = buildExecutiveSummaryHtml({
-    reportTitle,
-    organizationName,
-    dateLabel: formatDateInTimeZone(session.created_at, timeZone),
-    findings: findingModels,
-    referenceCount: reviewDocument.referenceDocuments.length,
-    evidenceCount: captureItems.length,
+  const summaryHtml = buildReportOverviewHtml({
+    capturedCount: captureItems.length,
+    includedCount: captureItems.length,
+    finalNotesIncluded: Boolean(session.include_final_notes_in_export && session.final_notes),
+    approved: Boolean(getApprovalDate(reportDraft, session)),
+    preparedBy: "",
+    organization: organizationName,
   });
   const appendixHtml = buildEvidenceAppendixHtml(
     getAppendixCaptures(captureItems).captures,
     signedUrls,
     timeZone,
   );
+  const findingModels = reviewDocument.findingModels;
   const evidenceHtml = [
     buildFindingCardsHtml(reviewDocument.findings, signedUrls),
     buildRecommendedActionsHtml(findingModels),
@@ -1116,11 +1153,11 @@ function buildFieldServiceReportHtml({
     : "";
 
   return `<!doctype html><html><head><meta charset="utf-8" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable field service report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Report Header</p>${renderDefinitionRows(headerRows)}</header>${summaryHtml}${renderFieldServiceSection(details, "equipment")}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work performed</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Evidence</h2><p class="muted">Evidence items reference captured photos, videos, documents, and technician notes.</p></section>${buildFinalNotesHtml(session)}${evidenceHtml}${appendixHtml}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges / documentation only</h2>${renderDefinitionRows(chargeRows)}</section>${buildInspectorFacilityHtml(null, null, signatures, signatureUrls)}</main></body></html>`;
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, captures: captureItems, signedUrls, timeZone })}${summaryHtml}<section class="item service-section"><h2>Report Information</h2>${renderDefinitionRows(headerRows)}</section>${renderFieldServiceSection(details, "equipment")}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work performed</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Evidence</h2><p class="muted">Evidence items reference captured photos, videos, documents, and technician notes.</p></section>${buildFinalNotesHtml(session)}${evidenceHtml}${buildEvidenceGalleryHtml(captureItems, signedUrls, timeZone)}${appendixHtml}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges / documentation only</h2>${renderDefinitionRows(chargeRows)}</section>${buildInspectorFacilityHtml(null, null)}${buildApprovalHtml({ profile: null, signatures, signatureUrls, draft: reportDraft, session, timeZone })}</main></body></html>`;
 }
 
 const REPORT_STYLES = `
-    body{font-family:Arial,Helvetica,sans-serif;background:#f7f8fc;color:#13213a;margin:0;padding:32px}.report{max-width:980px;margin:0 auto}.header,.item{background:white;border:1px solid #d8e2ef;border-radius:18px;box-shadow:0 12px 34px rgba(20,33,61,.08);padding:24px;margin-bottom:18px}.eyebrow{color:#155dfc;font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}.meta,.muted{color:#5f6f89}.media{position:relative;border-radius:16px;overflow:hidden;background:#f8fafc;border:1px solid #d8e2ef}.media img{display:block;width:100%;max-height:620px;object-fit:contain;background:white}.media-fallback{align-items:center;aspect-ratio:16/9;background:#f8fafc;color:#5f6f89;display:flex;font-size:15px;font-weight:700;justify-content:center;padding:16px;text-align:center}.note{background:rgba(15,23,42,.86);bottom:0;color:white;left:0;padding:14px 18px;position:absolute;right:0}.note p{margin:6px 0 0}.finding{margin-top:16px}.finding h3{margin-bottom:8px}dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}dl div{background:#f1f5fb;border:1px solid #d8e2ef;border-radius:12px;padding:10px}dt{font-weight:800}dd{margin:4px 0 0}.video-still{align-items:center;aspect-ratio:16/9;background:#eef4ff;color:#13213a;display:flex;font-size:20px;font-weight:800;justify-content:center;padding:16px;text-align:center}.video-link{padding:12px 16px}.toolbar{margin-bottom:16px}.print-help{color:#5f6f89;font-size:13px;margin:8px 0 0}.service-section h2{border-bottom:1px solid #d8e2ef;padding-bottom:8px}.signature-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.signature-block{background:#f8fafc;border:1px solid #d8e2ef;border-radius:14px;padding:14px}.signature-image{background:white;border:1px solid #d8e2ef;border-radius:10px;display:block;max-height:120px;max-width:100%;object-fit:contain;padding:8px}.premium-cover{background:linear-gradient(135deg,#fff,#eef4ff)}.finding-card,.reference-card{border:1px solid #d8e2ef;border-radius:14px;margin:12px 0;padding:14px}.finding-card{display:grid;gap:16px;grid-template-columns:1fr}.finding-image{align-self:start;background:#f8fafc;border:1px solid #d8e2ef;border-radius:12px;overflow:hidden}.finding-image img{display:block;width:100%;max-height:360px;object-fit:contain}.reference-card details{margin-top:10px}.reference-card details:not([open]) .item{display:none}.evidence-grid{display:grid;gap:16px;grid-template-columns:repeat(2,minmax(0,1fr))}.evidence-card{border:1px solid #d8e2ef;border-radius:14px;display:grid;gap:12px;grid-template-rows:auto 1fr;padding:12px;break-inside:avoid;page-break-inside:avoid}.evidence-card h3{font-size:16px;margin:0 0 8px}.evidence-card p{margin-top:0}.evidence-media img{height:230px;max-height:230px;object-fit:contain}.evidence-copy dl{grid-template-columns:1fr}.evidence-copy dl div{padding:8px}.severity,.evidence-pill{background:#f8fafc;border:1px solid #d8e2ef;border-radius:999px;display:inline-block;font-size:12px;font-weight:800;padding:7px 10px}.evidence-pill-row{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #d8e2ef;padding:10px;text-align:left}th{background:#f1f5fb}@media (max-width:700px){body{padding:14px}dl,.evidence-grid{grid-template-columns:1fr}.header,.item{border-radius:14px;padding:16px}.finding-card{grid-template-columns:1fr}}@media print{body{background:white;padding:0}.toolbar{display:none}.header,.item,.finding-card,.evidence-card{break-inside:avoid;box-shadow:none}.media img,.evidence-media img,.signature-image,.finding-image,.finding-image img{break-inside:avoid;visibility:visible}.reference-card details:not([open])>*:not(summary){display:none}.note{position:static;background:#14213d}a,a:visited{color:#13213a;text-decoration:none}.report{color:#13213a;-webkit-text-size-adjust:100%}}
+    :root{color-scheme:light}*{box-sizing:border-box}html{background:#eef2f7}body{font-family:Inter,Arial,Helvetica,sans-serif;background:#eef2f7;color:#18243a;margin:0;padding:36px;line-height:1.45}.report{max-width:1040px;margin:0 auto}.toolbar{align-items:center;background:#13213a;border-radius:16px;color:white;display:flex;justify-content:space-between;margin:0 0 18px;padding:14px 16px}.toolbar button{background:white;border:0;border-radius:999px;color:#13213a;cursor:pointer;font-weight:800;padding:10px 16px}.print-help{color:#dbe7ff;font-size:13px;margin:0}.header,.item{background:white;border:1px solid #d9e2ee;border-radius:20px;box-shadow:0 16px 45px rgba(24,36,58,.08);margin-bottom:20px;padding:28px}.report-cover{display:grid;gap:24px;grid-template-columns:minmax(0,1.25fr) minmax(280px,.75fr);overflow:hidden;padding:0}.cover-copy{padding:34px}.cover-copy h1{font-size:40px;letter-spacing:-.035em;line-height:1.05;margin:10px 0 12px}.cover-trust{border-left:4px solid #155dfc;color:#4c5d75;margin:18px 0;padding-left:14px}.cover-image{background:#f7f9fc;min-height:100%;overflow:hidden}.cover-image img{display:block;height:100%;max-height:520px;object-fit:cover;width:100%}.eyebrow{color:#155dfc;font-size:11px;font-weight:900;letter-spacing:.16em;text-transform:uppercase}.meta,.muted{color:#62728a}.service-section h2{border-bottom:1px solid #e3eaf3;font-size:22px;letter-spacing:-.02em;margin-top:0;padding-bottom:10px}dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:14px 0 0}dl div{background:#f8fafc;border:1px solid #e2e9f2;border-radius:13px;padding:10px 12px}dt{color:#5a6a81;font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}dd{font-weight:750;margin:4px 0 0;overflow-wrap:anywhere}a,a:visited{color:#18243a;text-decoration:none}.media{position:relative;border-radius:14px;overflow:hidden;background:#f8fafc;border:1px solid #d8e2ef}.media img{display:block;width:100%;max-height:520px;object-fit:contain;background:white}.media-fallback{align-items:center;aspect-ratio:4/3;background:#f8fafc;border:1px dashed #cbd6e5;color:#697890;display:flex;font-size:14px;font-weight:800;justify-content:center;padding:18px;text-align:center}.video-still{align-items:center;aspect-ratio:16/9;background:#eef4ff;color:#13213a;display:flex;font-size:18px;font-weight:800;justify-content:center;padding:16px;text-align:center}.finding{margin-top:14px}.finding-card,.reference-card{border:1px solid #d8e2ef;border-radius:16px;margin:12px 0;padding:16px;break-inside:avoid;page-break-inside:avoid}.finding-image{align-self:start;background:#f8fafc;border:1px solid #d8e2ef;border-radius:12px;overflow:hidden}.finding-image img{display:block;width:100%;max-height:330px;object-fit:contain}.gallery-grid{display:grid;gap:14px;grid-template-columns:repeat(2,minmax(0,1fr))}.gallery-card{background:#fff;border:1px solid #d8e2ef;border-radius:16px;break-inside:avoid;overflow:hidden}.gallery-thumb{background:#f8fafc}.gallery-thumb img{display:block;height:260px;object-fit:cover;width:100%}.gallery-caption{padding:12px 14px}.gallery-caption h3{font-size:16px;margin:0}.gallery-caption p{color:#62728a;font-size:13px;margin:4px 0 0}.evidence-grid{display:grid;gap:14px;grid-template-columns:1fr}.evidence-card{align-items:start;border:1px solid #d8e2ef;border-radius:16px;display:grid;gap:14px;grid-template-columns:220px minmax(0,1fr);padding:14px;break-inside:avoid;page-break-inside:avoid}.evidence-card h3{font-size:17px;margin:0 0 8px}.evidence-card p{margin:0 0 10px}.evidence-media img{height:170px;max-height:170px;object-fit:contain}.evidence-copy dl{grid-template-columns:repeat(3,minmax(0,1fr))}.evidence-copy dl div{padding:8px}.severity,.evidence-pill{background:#f8fafc;border:1px solid #d8e2ef;border-radius:999px;display:inline-block;font-size:11px;font-weight:900;padding:6px 9px}.evidence-pill-row{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}.signature-block{background:#f8fafc;border:1px solid #d8e2ef;border-radius:14px;margin-top:14px;padding:14px}.signature-image{background:white;border:1px solid #d8e2ef;border-radius:10px;display:block;max-height:130px;max-width:360px;object-fit:contain;padding:8px}.approval-signature{display:inline-block;min-width:360px}.signature-empty{color:#62728a;font-weight:800}table{border-collapse:collapse;width:100%}td,th{border:1px solid #d8e2ef;padding:10px;text-align:left}th{background:#f1f5fb}@media (max-width:800px){body{padding:14px}.report-cover,.evidence-card{grid-template-columns:1fr}.cover-copy{padding:22px}.cover-copy h1{font-size:30px}dl,.gallery-grid,.evidence-copy dl{grid-template-columns:1fr}.header,.item{border-radius:16px;padding:18px}.toolbar{align-items:flex-start;flex-direction:column;gap:8px}.gallery-thumb img{height:230px}}@media print{@page{margin:14mm}html,body{background:white}body{padding:0}.report{max-width:none}.toolbar{display:none!important}.header,.item,.finding-card,.reference-card,.evidence-card,.gallery-card{break-inside:avoid;box-shadow:none}.report-cover,.gallery-section,.org-section,.approval-section{break-before:page}.report-cover:first-of-type{break-before:auto}.media img,.evidence-media img,.signature-image,.finding-image img,.gallery-thumb img{break-inside:avoid;visibility:visible}.note{position:static;background:#14213d}a,a:visited{color:#18243a!important;text-decoration:none!important}.report{color:#18243a;-webkit-text-size-adjust:100%;print-color-adjust:exact;-webkit-print-color-adjust:exact}}
   `;
 
 export async function GET(_request: Request, { params }: RouteContext) {
@@ -1346,18 +1383,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     });
   }
 
-  const assetDetails = [
-    session.asset_label,
-    session.vin,
-    session.unit_number,
-    session.odometer,
-    session.customer_name,
-  ]
-    .filter(
-      (value): value is string =>
-        typeof value === "string" && value.trim().length > 0,
-    )
-    .join(" · ");
+
 
   const visibleReportSections = reportSections.filter(
     (section) => !isHiddenFromReport(section.metadata),
@@ -1409,14 +1435,13 @@ export async function GET(_request: Request, { params }: RouteContext) {
     findings: reportDraft?.findings ?? [],
   });
   const unattachedHtml = "";
-  const findingModels = reviewDocument.findingModels;
-  const summaryHtml = buildExecutiveSummaryHtml({
-    reportTitle,
-    organizationName,
-    dateLabel: formatDateInTimeZone(session.created_at, timeZone),
-    findings: findingModels,
-    referenceCount: reviewDocument.referenceDocuments.length,
-    evidenceCount: captureItems.length,
+  const summaryHtml = buildReportOverviewHtml({
+    capturedCount: captureItems.length,
+    includedCount: appendixCaptureItems.length,
+    finalNotesIncluded: Boolean(session.include_final_notes_in_export && session.final_notes),
+    approved: Boolean(getApprovalDate(reportDraft, session)),
+    preparedBy: reportProfile?.full_name ?? "",
+    organization: getOrganizationDisplayName(organizationName, reportCompanyProfile),
   });
   const appendixHtml = buildEvidenceAppendixHtml(
     appendixCaptureItems,
@@ -1462,7 +1487,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     ? ""
     : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>';
   const html = `<!doctype html><html><head><meta charset="utf-8" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Professional Evidence Report</p><p class="meta">${escapeHtml(normalizeReportType(session.session_type))} · ${escapeHtml(assetDetails || "General evidence report")} · ${escapeHtml(formatDateInTimeZone(session.created_at, timeZone))}</p></header>${summaryHtml}${reportInfoHtml}${structuredFormDataHtml}${customerAssetHtml ? `<section class="item service-section"><h2>Subject Details</h2>${customerAssetHtml}</section>` : ""}${buildFinalNotesHtml(session)}${findingsHtml}${unattachedHtml}${supportingHtml}${appendixHtml}${referenceHtml}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile, reportSignatures, signatureUrls)}</main></body></html>`;
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, companyProfile: reportCompanyProfile, captures: appendixCaptureItems, signedUrls, timeZone })}${summaryHtml}${reportInfoHtml}${customerAssetHtml ? `<section class="item service-section"><h2>Subject Details</h2>${customerAssetHtml}</section>` : ""}${structuredFormDataHtml}${buildFinalNotesHtml(session)}${findingsHtml}${unattachedHtml}${supportingHtml}${buildEvidenceGalleryHtml(appendixCaptureItems, signedUrls, timeZone)}${appendixHtml}${referenceHtml}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile)}${buildApprovalHtml({ profile: reportProfile, signatures: reportSignatures, signatureUrls, draft: reportDraft, session, timeZone })}</main></body></html>`;
 
   return new Response(html, {
     headers: { "Content-Type": "text/html; charset=utf-8" },
