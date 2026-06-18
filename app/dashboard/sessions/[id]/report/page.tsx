@@ -34,8 +34,9 @@ import {
   saveReport,
   saveReportEdits,
 } from "@/features/reports/actions";
+import { updateSessionMetadata } from "@/features/sessions/actions";
 import { formatDateTime } from "@/features/sessions";
-import { SESSION_TYPES } from "@/features/sessions/types";
+import { REPORT_TYPES, SESSION_METADATA_FIELDS, normalizeSessionMetadata, normalizeReportType } from "@/features/sessions/report-types";
 import { requireSessionWorkspace } from "@/features/sessions/data";
 import { SignatureCaptureForm } from "@/features/signatures";
 import { useSavedSignature } from "@/features/signatures/actions";
@@ -725,10 +726,25 @@ function GeneratedReportReview({
           ["Subject Name", getReportInfoValue(currentReport, session, "subject_name")],
           ["Customer / Client", getReportInfoValue(currentReport, session, "customer_client") || session.customer_name],
           ["Asset / Equipment", getReportInfoValue(currentReport, session, "asset_equipment") || session.asset_label],
-          ["Location / Address", getReportInfoValue(currentReport, session, "location_address")],
+          ["Location", getReportInfoValue(currentReport, session, "location")],
           ["Reference Number", getReportInfoValue(currentReport, session, "reference_number")],
         ].map(([label, value]) => <div key={label} className="report-field-card"><span>{label}</span><strong className={value ? undefined : "not-provided"}>{value ? stripConfidenceText(String(value)) : "Not provided"}</strong></div>)}</div>
         {reviewDocument.referenceDocuments.length > 0 ? <ReferenceDocumentList items={reviewDocument.referenceDocuments} supportingEvidence={supportingEvidence} /> : null}
+        <form action={updateSessionMetadata.bind(null, session.id)} className="form-stack report-edit-form">
+          <label className="field-stack">
+            <span className="label">Report Type</span>
+            <select className="input" name="session_type" defaultValue={normalizeReportType(session.session_type)}>
+              {REPORT_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+            </select>
+          </label>
+          <div className="report-field-grid">
+            {SESSION_METADATA_FIELDS.map((field) => {
+              const metadata = normalizeSessionMetadata(session.session_metadata, session)
+              return <label className="field-stack" key={field.name}><span className="label">{field.label}</span><input className="input" name={field.name} maxLength={field.maxLength} defaultValue={metadata[field.name]} /></label>
+            })}
+          </div>
+          <div className="form-actions"><button className="button button-secondary touch-target">Save report information</button></div>
+        </form>
       </details>
 
       <EvidenceAppendix supportingEvidence={supportingEvidence} reportDocument={reportDocument} isGenericEvidenceReport={isGenericEvidenceReport} />
@@ -749,8 +765,8 @@ Optional raw section and field editing. Use only when you need to change the ass
             </summary>
             <label className="field-stack">
               <span className="label">Report type</span>
-              <select className="input" name="session_type" defaultValue={session.session_type}>
-                {SESSION_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+              <select className="input" name="session_type" defaultValue={normalizeReportType(session.session_type)}>
+                {REPORT_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
               </select>
             </label>
             <label className="field-stack">
@@ -765,7 +781,7 @@ Optional raw section and field editing. Use only when you need to change the ass
               <label className="field-stack"><span className="label">Subject Name</span><input className="input" name="subject_name" defaultValue={getReportInfoValue(currentReport, session, "subject_name")} /></label>
               <label className="field-stack"><span className="label">Customer / Client</span><input className="input" name="customer_client" defaultValue={getReportInfoValue(currentReport, session, "customer_client") || session.customer_name || ""} /></label>
               <label className="field-stack"><span className="label">Asset / Equipment</span><input className="input" name="asset_equipment" defaultValue={getReportInfoValue(currentReport, session, "asset_equipment") || session.asset_label || ""} /></label>
-              <label className="field-stack"><span className="label">Location / Address</span><input className="input" name="location_address" defaultValue={getReportInfoValue(currentReport, session, "location_address")} /></label>
+              <label className="field-stack"><span className="label">Location</span><input className="input" name="location" defaultValue={getReportInfoValue(currentReport, session, "location")} /></label>
               <label className="field-stack"><span className="label">Reference Number</span><input className="input" name="reference_number" defaultValue={getReportInfoValue(currentReport, session, "reference_number")} /></label>
             </div>
             <label className="field-stack">

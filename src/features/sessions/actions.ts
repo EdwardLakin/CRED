@@ -16,7 +16,8 @@ import {
 import type { Database, Json } from '@/lib/supabase/database.types'
 
 import { hasInternalAdminAccess, requireSessionWorkspace } from './data'
-import { DEFAULT_SESSION_TYPE, SESSION_STATUSES, SESSION_TYPES, type SessionStatus } from './types'
+import { SESSION_STATUSES, type SessionStatus } from './types'
+import { DEFAULT_REPORT_TYPE, SESSION_METADATA_FIELDS, normalizeReportType, normalizeSessionMetadata, sessionMetadataToJson } from './report-types'
 
 function getTrimmedValue(formData: FormData, field: string) {
   const value = formData.get(field)
@@ -32,9 +33,6 @@ function isAllowedStatus(status: string): status is SessionStatus {
   return SESSION_STATUSES.some((sessionStatus) => sessionStatus.value === status)
 }
 
-function isAllowedSessionType(sessionType: string) {
-  return SESSION_TYPES.some((type) => type.value === sessionType)
-}
 
 function getDefaultSessionTitle() {
   return `New Session ${formatDateTimeInTimeZone(new Date(), null)}`
@@ -49,19 +47,12 @@ function createSessionDisplayId(date = new Date()) {
 }
 
 function buildSessionMetadata(formData: FormData): Json {
-  const metadata: Record<string, Json> = {}
-  for (const [field, key] of [
-    ['report_title', 'report_title'],
-    ['subject_name', 'subject_name'],
-    ['customer_client', 'customer_client'],
-    ['asset_equipment', 'asset_equipment'],
-    ['location_address', 'location_address'],
-    ['reference_number', 'reference_number'],
-  ] as const) {
-    const value = getNullableValue(formData, field)
-    if (value) metadata[key] = value
+  const metadataInput: Record<string, string> = {}
+  for (const field of SESSION_METADATA_FIELDS) {
+    metadataInput[field.name] = getTrimmedValue(formData, field.name)
   }
-  return metadata
+  metadataInput.location ||= getTrimmedValue(formData, 'location_address')
+  return sessionMetadataToJson(normalizeSessionMetadata(metadataInput))
 }
 
 function buildFieldServiceDetails(formData: FormData, existingDetails: Json | null | undefined): Json {
@@ -88,7 +79,7 @@ export async function createDocumentationSession(formData: FormData) {
   const requestedTitle = getTrimmedValue(formData, 'title')
   const requestedSessionType = getTrimmedValue(formData, 'session_type')
   const title = requestedTitle || getDefaultSessionTitle()
-  const sessionType = isAllowedSessionType(requestedSessionType) ? requestedSessionType : DEFAULT_SESSION_TYPE
+  const sessionType = normalizeReportType(requestedSessionType || DEFAULT_REPORT_TYPE)
   const requestedWorkflowTemplateId = getNullableValue(formData, 'workflow_template_id')
 
   const { supabase, profile } = await requireSessionWorkspace()
@@ -161,7 +152,7 @@ export async function updateDocumentationSession(sessionId: string, formData: Fo
     .update({
       title,
       status,
-      session_type: isAllowedSessionType(requestedSessionType) ? requestedSessionType : undefined,
+      session_type: normalizeReportType(requestedSessionType),
       session_metadata: buildSessionMetadata(formData),
       asset_label: getNullableValue(formData, 'asset_label'),
       vin: getNullableValue(formData, 'vin'),
@@ -182,6 +173,46 @@ export async function updateDocumentationSession(sessionId: string, formData: Fo
   revalidatePath('/dashboard/sessions')
   revalidatePath(`/dashboard/sessions/${sessionId}`)
   redirect(`/dashboard/sessions/${sessionId}?saved=1`)
+}
+
+
+export async function updateSessionMetadata(sessionId: string, formData: FormData) {
+  const requestedSessionType = getTrimmedValue(formData, 'session_type')
+  const sessionType = normalizeReportType(requestedSessionType)
+
+  const { supabase, profile } = await requireSessionWorkspace()
+  const billingAccess = requireActiveBillingAccess(profile)
+
+  if (!billingAccess.ok) {
+    redirect(`/dashboard/sessions/${sessionId}/report?error=${encodeURIComponent(billingAccess.message)}`)
+  }
+
+  const metadata = normalizeSessionMetadata(Object.fromEntries(
+    SESSION_METADATA_FIELDS.map((field) => [field.name, getTrimmedValue(formData, field.name)]),
+  ))
+
+  const { error } = await supabase
+    .from('documentation_sessions')
+    .update({
+      title: sessionType,
+      session_type: sessionType,
+      session_metadata: sessionMetadataToJson(metadata),
+      customer_name: metadata.customer_client || null,
+      asset_label: metadata.asset_equipment || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', sessionId)
+    .eq('organization_id', profile.organization_id)
+
+  if (error) {
+    redirect(`/dashboard/sessions/${sessionId}/report?error=${encodeURIComponent(error.message)}`)
+  }
+
+  revalidatePath('/dashboard')
+  revalidatePath('/dashboard/sessions')
+  revalidatePath(`/dashboard/sessions/${sessionId}`)
+  revalidatePath(`/dashboard/sessions/${sessionId}/report`)
+  redirect(`/dashboard/sessions/${sessionId}/report?saved=1`)
 }
 
 export async function archiveDocumentationSession(sessionId: string) {

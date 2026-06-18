@@ -6,7 +6,7 @@ import { redirect } from 'next/navigation'
 
 import { requireActiveBillingAccess } from '@/features/billing'
 import { requireSessionWorkspace } from '@/features/sessions/data'
-import { DEFAULT_SESSION_TYPE, SESSION_TYPES } from '@/features/sessions/types'
+import { DEFAULT_REPORT_TYPE, SESSION_METADATA_FIELDS, normalizeReportType, normalizeSessionMetadata, sessionMetadataToJson } from '@/features/sessions/report-types'
 import { appendDiagnosticReportApprovedAuditEvent } from '@/features/diagnostic-procedures/actions'
 import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import { ReportEmailError, sendReportEmail, validateReportEmailRecipients } from '@/lib/email/reports'
@@ -556,7 +556,7 @@ function extractDocumentReportInformation(captures: Array<{ ocr_text?: string | 
       if (/subject|inspect(ed)?_?by|report_for/.test(normalizedKey)) setIfEmpty('subject_name', value)
       if (/customer|client|owner/.test(normalizedKey)) setIfEmpty('customer_client', value)
       if (/asset|equipment|vehicle|unit|vin|serial/.test(normalizedKey)) setIfEmpty('asset_equipment', value)
-      if (/location|address|site/.test(normalizedKey)) setIfEmpty('location_address', value)
+      if (/location|address|site/.test(normalizedKey)) setIfEmpty('location', value)
       if (/work_order|repair_order|reference|job|invoice|po|purchase_order/.test(normalizedKey)) setIfEmpty('reference_number', value)
     })
   }
@@ -980,7 +980,7 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
 
   const { data: session, error: sessionError } = await supabase
     .from('documentation_sessions')
-    .select('id, organization_id, session_type, asset_label, customer_name, suggested_details')
+    .select('id, organization_id, session_type, session_metadata, asset_label, customer_name, suggested_details')
     .eq('id', draft.documentation_session_id)
     .eq('organization_id', profile.organization_id)
     .single()
@@ -990,14 +990,9 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
   }
 
   const fieldCount = Number(getString(formData, 'field_count') || 0)
-  const reportInfoFields: Record<string, string> = {
-    report_title: sanitizeReportText(formData.get('report_title'), 180) ?? '',
-    subject_name: sanitizeReportText(formData.get('subject_name'), 180) ?? '',
-    customer_client: sanitizeReportText(formData.get('customer_client'), 180) ?? '',
-    asset_equipment: sanitizeReportText(formData.get('asset_equipment'), 180) ?? '',
-    location_address: sanitizeReportText(formData.get('location_address'), 240) ?? '',
-    reference_number: sanitizeReportText(formData.get('reference_number'), 120) ?? '',
-  }
+  const reportInfoFields = normalizeSessionMetadata(Object.fromEntries(
+    SESSION_METADATA_FIELDS.map((field) => [field.name, sanitizeReportText(formData.get(field.name), field.maxLength) ?? '']),
+  ), session)
   const editedHeaderFields: Record<string, string> = {}
   for (let index = 0; index < fieldCount; index += 1) {
     const key = getString(formData, `field_key_${index}`)
@@ -1009,15 +1004,15 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
   Object.entries(reportInfoFields).forEach(([key, value]) => { if (value) editedHeaderFields[key] = value })
 
   const requestedSessionType = sanitizeReportText(formData.get('session_type'), 120) ?? ''
-  const sessionType = SESSION_TYPES.some((type) => type.value === requestedSessionType) ? requestedSessionType : (session.session_type || DEFAULT_SESSION_TYPE)
-  const reportTitle = reportInfoFields.report_title || sessionType || 'General Evidence Report'
+  const sessionType = normalizeReportType(requestedSessionType || session.session_type || DEFAULT_REPORT_TYPE)
+  const reportTitle = sessionType
   const now = new Date().toISOString()
   const { error: updateSessionError } = await supabase
     .from('documentation_sessions')
     .update({
       title: reportTitle,
       session_type: sessionType,
-      session_metadata: reportInfoFields as Json,
+      session_metadata: sessionMetadataToJson(reportInfoFields),
       customer_name: reportInfoFields.customer_client || session.customer_name,
       asset_label: reportInfoFields.asset_equipment || reportInfoFields.subject_name || session.asset_label,
       suggested_details: { ...((session.suggested_details && typeof session.suggested_details === 'object' && !Array.isArray(session.suggested_details)) ? session.suggested_details : {}), report_information: reportInfoFields } as Json,
