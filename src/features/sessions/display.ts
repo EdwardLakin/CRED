@@ -33,6 +33,7 @@ export function getSessionSecondarySummary(session: DocumentationSession, eviden
   const parts = [
     session.display_id,
     getSessionTypeLabel(session.session_type),
+    `Created ${formatDateTime(session.created_at, timeZone)}`,
     `Updated ${formatDateTime(session.updated_at ?? session.created_at, timeZone)}`,
   ].filter(Boolean)
 

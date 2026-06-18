@@ -45,7 +45,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     .eq('organization_id', profile.organization_id)
     .is('deleted_at', null)
     .is('archived_at', null)
-    .order('updated_at', { ascending: false })
+    .order('created_at', { ascending: false })
     .limit(6)
 
   if (error) {
