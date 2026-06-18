@@ -230,6 +230,7 @@ export interface Database {
           created_by: string
           title: string
           session_type: string
+          session_metadata: Json
           status: string
           archived_at: string | null
           deleted_at: string | null
@@ -259,6 +260,7 @@ export interface Database {
           created_by: string
           title: string
           session_type: string
+          session_metadata?: Json
           status?: string
           archived_at?: string | null
           deleted_at?: string | null
@@ -288,6 +290,7 @@ export interface Database {
           created_by?: string
           title?: string
           session_type?: string
+          session_metadata?: Json
           status?: string
           archived_at?: string | null
           deleted_at?: string | null

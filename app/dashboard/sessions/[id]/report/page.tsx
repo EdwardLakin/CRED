@@ -35,6 +35,7 @@ import {
   saveReportEdits,
 } from "@/features/reports/actions";
 import { formatDateTime } from "@/features/sessions";
+import { SESSION_TYPES } from "@/features/sessions/types";
 import { requireSessionWorkspace } from "@/features/sessions/data";
 import { SignatureCaptureForm } from "@/features/signatures";
 import { useSavedSignature } from "@/features/signatures/actions";
@@ -295,7 +296,7 @@ export default async function SessionReportPreviewPage({
   const { data: session, error: sessionError } = await supabase
     .from("documentation_sessions")
     .select(
-      "id, title, session_type, organization_id, workflow_template_id, review_status, reviewed_at, reviewed_by, asset_label, vin, unit_number, customer_name, suggested_details, final_notes, final_notes_ai_generated, final_notes_updated_at, final_notes_edited_by_user, include_final_notes_in_export, updated_at",
+      "id, title, session_type, session_metadata, organization_id, workflow_template_id, review_status, reviewed_at, reviewed_by, asset_label, vin, unit_number, customer_name, suggested_details, final_notes, final_notes_ai_generated, final_notes_updated_at, final_notes_edited_by_user, include_final_notes_in_export, updated_at",
     )
     .eq("id", id)
     .eq("organization_id", profile.organization_id)
@@ -625,7 +626,7 @@ function GeneratedReportReview({
   reviewDocument: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>;
   supportingEvidence: SupportingEvidenceItem[];
   reportEvidenceDiagnostics: { capturesSaved: number; includedInReport: number; referencedByDraft: number; hiddenFromReport: number };
-  session: Pick<DocumentationSession, "id" | "title" | "asset_label" | "customer_name" | "suggested_details">;
+  session: Pick<DocumentationSession, "id" | "title" | "session_type" | "session_metadata" | "asset_label" | "customer_name" | "suggested_details">;
   saveReportEditsAction: ServerAction | null;
   sourceFieldEntries: [string, unknown][];
   facilityName: string;
@@ -746,6 +747,12 @@ Optional raw section and field editing. Use only when you need to change the ass
                 </p>
               </div>
             </summary>
+            <label className="field-stack">
+              <span className="label">Report type</span>
+              <select className="input" name="session_type" defaultValue={session.session_type}>
+                {SESSION_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+              </select>
+            </label>
             <label className="field-stack">
               <span className="label">Report title</span>
               <input
