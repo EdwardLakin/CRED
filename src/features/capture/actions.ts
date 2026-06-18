@@ -8,7 +8,6 @@ import {
   requireActiveBillingAccess,
 } from '@/features/billing'
 import { requireSessionWorkspace } from '@/features/sessions/data'
-import { queueCaptureAnalysisJobs } from '@/lib/capture-processing/queue'
 import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import {
   buildClassifiedImageData,
@@ -114,7 +113,7 @@ type CaptureActionFailure = {
 type CaptureActionSuccess = {
   ok: true
   sessionId: string
-  processingStatus?: 'saved' | 'queued' | 'needs_queue_retry'
+  processingStatus?: 'saved'
 }
 
 type SafeFailureDetails = {
@@ -826,32 +825,7 @@ export async function createCaptureRecordFromUploadedFile(
   }
 
   if (existingCapture) {
-    if (!mimeTypeIsImage(mimeType)) {
-      return { ok: true, sessionId: session.id, captureItemId: existingCapture.id, processingStatus: 'saved' }
-    }
-
-    try {
-      await queueCaptureAnalysisJobs({
-        supabase,
-        organizationId: profile.organization_id,
-        sessionId: session.id,
-        captureItemId: existingCapture.id,
-        metadata: { filename, mime_type: mimeType, capture_intent: rawCaptureIntent, repaired_duplicate: true },
-      })
-      return { ok: true, sessionId: session.id, captureItemId: existingCapture.id, processingStatus: 'queued' }
-    } catch (queueError) {
-      logCaptureFailure({
-        step: 'capture_processing_queue_duplicate_repair',
-        captureId: existingCapture.id,
-        ...getSafeErrorDetails(queueError),
-      })
-      await supabase
-        .from('capture_items')
-        .update({ processing_status: 'needs_queue_retry', ai_status: 'needs_review', ai_summary: 'Saved. AI processing needs retry.' })
-        .eq('id', existingCapture.id)
-        .eq('organization_id', profile.organization_id)
-      return { ok: true, sessionId: session.id, captureItemId: existingCapture.id, processingStatus: 'needs_queue_retry' }
-    }
+    return { ok: true, sessionId: session.id, captureItemId: existingCapture.id, processingStatus: 'saved' }
   }
 
   const { count: existingCaptureCount } = await supabase
@@ -874,8 +848,8 @@ export async function createCaptureRecordFromUploadedFile(
       type: itemCaptureType,
       storage_path: storagePath,
       captured_at: capturedAt,
-      ai_status: itemMediaKind === 'image' ? 'queued' : 'needs_review',
-      processing_status: itemMediaKind === 'image' ? 'uploaded' : 'needs_review',
+      ai_status: 'needs_review',
+      processing_status: 'saved',
       extracted_data: itemExtractedData,
       technician_note: technicianNote || null,
       transcript:
@@ -934,30 +908,6 @@ export async function createCaptureRecordFromUploadedFile(
     // source of truth; downstream enrichment can be retried independently.
   }
 
-  if (itemMediaKind === 'image') {
-    try {
-      await queueCaptureAnalysisJobs({
-        supabase,
-        organizationId: profile.organization_id,
-        sessionId: session.id,
-        captureItemId: captureItem.id,
-        metadata: { filename, mime_type: mimeType, capture_intent: rawCaptureIntent },
-      })
-    } catch (queueError) {
-      logCaptureFailure({
-        step: 'capture_processing_queue_insert',
-        captureId: captureItem.id,
-        ...getSafeErrorDetails(queueError),
-      })
-      await supabase
-        .from('capture_items')
-        .update({ processing_status: 'needs_queue_retry', ai_status: 'needs_review', ai_summary: 'Saved. AI processing needs retry.' })
-        .eq('id', captureItem.id)
-        .eq('organization_id', profile.organization_id)
-      // The file and capture row are durable. Queue repair/backfill will pick this up later.
-      return { ok: true, sessionId: session.id, captureItemId: captureItem.id, processingStatus: 'needs_queue_retry' }
-    }
-  }
 
   try {
     await recordUsageEvent({
@@ -999,7 +949,7 @@ export async function createCaptureRecordFromUploadedFile(
   revalidatePath(`/dashboard/sessions/${session.id}`)
   revalidatePath(`/dashboard/sessions/${session.id}/capture`)
 
-  return { ok: true, sessionId: session.id, captureItemId: captureItem.id, processingStatus: itemMediaKind === 'image' ? 'queued' : 'saved' }
+  return { ok: true, sessionId: session.id, captureItemId: captureItem.id, processingStatus: 'saved' }
 }
 
 export type CaptureClassificationActionState = {

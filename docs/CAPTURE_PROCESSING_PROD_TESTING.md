@@ -9,12 +9,16 @@ Required environment variables:
 - Backward-compatible alias: `CAPTURE_PROCESSING_INTERNAL_SECRET`
 - Optional Vercel Cron compatibility: set `CRON_SECRET` to the same value if the deployment relies on Vercel's `Authorization: Bearer $CRON_SECRET` cron header.
 
-## Upload and queue
+## Upload does not queue automatically
 
 1. Sign in to the deployed app and open a documentation session.
 2. Upload several photo captures from `/dashboard/sessions/<session-id>/capture`.
-3. In Supabase, inspect `capture_items` for that session and confirm new image captures have `processing_status = queued`.
-4. Inspect `capture_processing_jobs` and confirm each image capture has one queued job for each of:
+3. In Supabase, inspect `capture_items` for that session and confirm normal uploads remain `processing_status = saved`.
+4. Inspect `capture_processing_jobs` and confirm upload alone did not create jobs for the new captures.
+
+## Explicit queue processing
+
+When a capture is explicitly queued for processing, inspect `capture_processing_jobs` and confirm each queued image capture has one queued job for each of:
    - `classify_capture`
    - `extract_capture`
    - `generate_capture_note`
