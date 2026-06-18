@@ -34,7 +34,7 @@ const workflowScreenshots: ProductScreenshotCardProps[] = [
     title: 'Review and correct',
     eyebrow: 'Review',
     description:
-      'Generated sections, extracted fields, recommendations, and evidence captions remain editable before approval.',
+      'User-entered sections, notes, recommendations, and evidence captions remain editable before approval.',
     src: '/marketing/cred/review-edit.png',
     alt: 'CRED review edit screen with editable generated report content',
   },
@@ -141,31 +141,31 @@ function BeforeAfterScreenshot({
 
 const steps = [
   ['Capture evidence', 'Photos, forms, documents, voice notes, measurements, and field observations enter one evidence-first session.'],
-  ['AI organizes and drafts', 'CRED extracts context, groups evidence, identifies findings, and drafts structured documentation.'],
+  ['CRED assembles the report', 'CRED organizes user-provided captures, notes, and approved details into review-ready documentation.'],
   ['Human reviews and approves', 'Technicians edit, verify, show or hide sections, and approve what appears in the final report.'],
-  ['Export professional report', 'Deliver approved documentation as PDF, email, share link, print, or saved record.'],
+  ['Export professional report', 'Deliver approved documentation as a printable report, email, share link, printout, or saved record.'],
 ] as const
 
 const liveMetrics = [
   ['Inspection completeness', '78%'],
   ['Evidence completeness', '84%'],
-  ['Finding confidence', 'Review'],
+  ['Human review', 'Required'],
   ['Report readiness', 'Drafting'],
   ['Missing required evidence', 'Panel serial photo'],
   ['Suggested next capture', 'Voice note on corrective action'],
 ] as const
 
 const aiDraftCapabilities = [
-  'Extract details from photos, notes, forms, documents, and observations',
-  'Organize and group related evidence under findings',
-  'Reconstruct form and document structure for review',
-  'Prepare draft summaries, recommendations, and report sections',
+  'Use user-provided details from photos, notes, forms, documents, and observations',
+  'Organize included evidence under user-reviewed report sections',
+  'Use uploaded forms or reports as optional layout references',
+  'Assemble summaries and sections from user-entered notes and evidence',
 ] as const
 
 const reviewControls = [
   'Edit report title and summary',
   'Show or hide report sections',
-  'Correct extracted fields',
+  'Correct report fields',
   'Review evidence captions',
   'Verify form fields',
   'Approve before export',
@@ -184,11 +184,11 @@ const contextItems = [
 const reportOutputs = [
   'Inspection summary',
   'Findings',
-  'Recommended actions',
+  'User-entered recommendations',
   'Reference documents',
   'Inspector and facility details',
   'Signatures',
-  'Export as PDF',
+  'Print or save report',
   'Email, share link, print, or save',
 ] as const
 
@@ -217,10 +217,10 @@ const plans: Array<{
     features: [
       '1 user',
       'Unlimited evidence sessions',
-      'AI-assisted draft reports',
+      'Human-reviewed report assembly',
       'Paper form and document capture',
       'Human approval before export',
-      'PDF, print, email, and share-ready reports',
+      'Printable, email, and share-ready reports',
     ],
   },
   {
@@ -247,7 +247,7 @@ const plans: Array<{
       'Everything in Team',
       'Shared report history',
       'Team-wide evidence management',
-      'Draft findings and recommendations',
+      'User-entered findings and recommendations',
       'Customer-ready professional reports',
       'Shop branding and report customization',
       'Session history and audit trail',
@@ -258,11 +258,11 @@ const plans: Array<{
 
 const faqs = [
   ['Who is CRED built for?', 'CRED is built for technicians, inspectors, maintenance teams, and field organizations that need evidence-first documentation and professional reports without turning every job into paperwork.'],
-  ['Does CRED diagnose problems?', 'No. CRED assists with evidence organization and documentation. Final diagnosis, approval, certification, and signing remain with the user or technician.'],
-  ['What evidence can I capture?', 'Capture photos, voice notes, text observations, forms, documents, measurements, reference captures, and recommendations in one session.'],
+  ['Does CRED diagnose problems?', 'No. CRED assembles user-provided evidence and notes into documentation. Findings, recommendations, approval, certification, and signing remain with the user or technician.'],
+  ['What evidence can I capture?', 'Capture photos, voice notes, text observations, forms, documents, measurements, reference captures, and user-entered recommendations in one session.'],
   ['Can I capture paper forms or reference documents?', 'Yes. Capture paper forms, labels, manuals, prior reports, reference documents, and job site context so CRED can keep them connected to the draft documentation.'],
-  ['Can I review and edit before export?', 'Yes. CRED drafts the documentation, then humans review titles, summaries, sections, captions, fields, findings, and recommendations before approval.'],
-  ['Can I save reports as PDF or share them?', 'Yes. Approved reports can be exported as PDF, emailed, shared by link, printed, or saved for customers, claims, compliance packages, and internal records.'],
+  ['Can I review and edit before export?', 'Yes. CRED assembles documentation from user-provided material, then humans review titles, summaries, sections, captions, fields, findings, and recommendations before approval.'],
+  ['Can I print, save, or share reports?', 'Yes. Approved reports can be opened as printable HTML, printed or saved from the browser, emailed, shared by link, or saved for records.'],
 ] as const
 
 export default async function HomePage() {
@@ -296,7 +296,7 @@ export default async function HomePage() {
           </p>
           <div className="workflow-pills" aria-label="CRED workflow">
             <span>Capture evidence</span>
-            <span>AI drafts</span>
+            <span>CRED assembles</span>
             <span>Human approves</span>
             <span>Export report</span>
           </div>
@@ -325,16 +325,16 @@ export default async function HomePage() {
             </div>
             <div className="flow-arrow" aria-hidden="true">→</div>
             <div className="flow-column ai-status-card">
-              <span className="flow-label">AI draft status</span>
+              <span className="flow-label">Report status</span>
               <div><span>Evidence completeness</span><strong>84%</strong></div>
-              <div><span>Finding confidence</span><strong>Review</strong></div>
+              <div><span>Human review</span><strong>Required</strong></div>
               <div><span>Report readiness</span><strong>Draft ready</strong></div>
             </div>
           </div>
           <div className="mock-report-output">
             <span className="flow-label">Output</span>
             <strong>Approved professional inspection report</strong>
-            <p>AI assists with organization and drafting. A technician approves before export.</p>
+            <p>CRED organizes user-provided evidence and notes. A technician approves before export.</p>
           </div>
         </div>
       </section>
@@ -385,13 +385,13 @@ export default async function HomePage() {
       </section>
 
       <section className="landing-section product-preview-section">
-        <div className="section-kicker">AI-assisted draft generation</div>
+        <div className="section-kicker">Evidence-to-report assembly</div>
         <h2>CRED organizes the evidence into a structured draft.</h2>
         <div className="screenshot-grid">
           <article className="screenshot-card wide-card">
             <div className="screenshot-topbar"><span /><span /><span /></div>
-            <h3>Evidence extraction and grouping</h3>
-            <p>CRED can extract, organize, group evidence, reconstruct form/document structure, identify findings, and prepare recommendations for review.</p>
+            <h3>Evidence organization</h3>
+            <p>CRED organizes user-provided captures, notes, and optional blueprint layouts into a review-ready report without diagnosing or creating findings.</p>
             <div className="mock-list">
               {aiDraftCapabilities.map((capability) => (
                 <div key={capability}>✓ {capability}</div>
@@ -401,13 +401,13 @@ export default async function HomePage() {
           <article className="screenshot-card review-card">
             <div className="screenshot-topbar"><span /><span /><span /></div>
             <h3>Human review remains in control</h3>
-            <p>CRED drafts the documentation. Technicians decide what appears in the final report.</p>
+            <p>CRED assembles the documentation from user-provided material. Technicians decide what appears in the final report.</p>
             <div className="mock-list compact-list">
               {reviewControls.map((control) => (
                 <div key={control}>✓ {control}</div>
               ))}
             </div>
-            <div className="trust-line">AI cannot auto-approve, certify, or sign reports.</div>
+            <div className="trust-line">CRED cannot diagnose, auto-approve, certify, or sign reports.</div>
           </article>
         </div>
       </section>
@@ -435,7 +435,7 @@ export default async function HomePage() {
           <div className="section-kicker">Professional reports ready for delivery</div>
           <h2>Approved reports are built for customers, claims, compliance, and records.</h2>
           <p className="section-copy">
-            Export the final documentation as a PDF, send it by email, share a link, print it, or save it with the job record.
+            Open the final documentation as a printable report, send it by email, share a link, print it, or save it with the job record.
           </p>
         </div>
         <div className="report-output-card">
@@ -449,9 +449,9 @@ export default async function HomePage() {
         <div className="section-kicker">Before and after</div>
         <h2 id="featured-workflow-title">From captured evidence to professional report</h2>
         <p className="section-copy">
-          AI assists with extraction, organization, and drafting. Final review, approval, signatures, and certification remain with the user.
+          CRED assembles user-provided evidence and notes. Final review, approval, findings, recommendations, signatures, and certification remain with the user.
         </p>
-        <div className="workflow-screenshot-strip" aria-label="Capture evidence becomes an AI-assisted draft and then a professional report">
+        <div className="workflow-screenshot-strip" aria-label="Capture evidence becomes a human-reviewed professional report">
           <BeforeAfterScreenshot
             label="Captured evidence"
             src="/marketing/cred/capture-page.png"
@@ -460,7 +460,7 @@ export default async function HomePage() {
           />
           <div className="workflow-draft-arrow" aria-hidden="true">
             <span>→</span>
-            <strong>AI-assisted draft</strong>
+            <strong>Human-reviewed report</strong>
           </div>
           <BeforeAfterScreenshot
             label="Professional report"

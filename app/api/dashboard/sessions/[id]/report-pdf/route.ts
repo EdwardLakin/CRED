@@ -10,6 +10,7 @@ import {
   isFieldServiceSessionType,
   normalizeFieldServiceDetails,
 } from '@/features/field-service'
+import { buildUniversalReportDocument } from '@/features/reports/report-document'
 import { buildCustomerAssetRows, buildNormalizedReportModel, classifyReferenceDocumentTitle, dedupeEvidenceDetails, deriveFormSectionsFromCaptures, getNormalizedFindingModels, getNormalizedRecommendedActions, isMeaningfulCustomerReportText, normalizeDraftSections, shouldRenderDetail, splitRecommendationText, stripConfidenceText, sanitizeCapturesForImageAiAssist } from '@/features/reports/report-structure'
 import { getDisplayReportTitle, getReportInfoValue } from '@/features/reports/report-title'
 import { asDiagnosticRecordArray, getDiagnosticProcedureProgress, getDiagnosticStepCompleteness } from '@/features/diagnostic-procedures/progress'
@@ -163,7 +164,8 @@ function buildStructuredFormDataHtml(reportStructure: Json | null) {
   const sections = Array.isArray(blueprint.sections) ? blueprint.sections : []
   const fields = Array.isArray(blueprint.fields) ? blueprint.fields : []
   const mappings = Array.isArray(structure.evidence_field_mappings) ? structure.evidence_field_mappings : []
-  const classification = typeof blueprint.classification === 'string' ? blueprint.classification.replace(/_/g, ' ') : 'CUSTOM FORM'
+  const confidence = typeof blueprint.confidence === 'number' ? blueprint.confidence : null
+  const classification = typeof blueprint.classification === 'string' && confidence !== null && confidence >= 0.7 ? blueprint.classification.replace(/_/g, ' ') : 'Optional layout reference'
   const sectionRows = sections.slice(0, 12).flatMap((section) => {
     if (!isRecord(section)) return []
     const sectionId = typeof section.id === 'string' ? section.id : ''
@@ -171,7 +173,7 @@ function buildStructuredFormDataHtml(reportStructure: Json | null) {
     const count = fields.filter((field) => isRecord(field) && field.section_id === sectionId).length
     return [{ label: title, value: `${count} fields` }]
   })
-  return `<section class="item service-section"><h2>Structured Form Data</h2><p class="muted">Export package follows the uploaded form blueprint (${escapeHtml(classification)}). Evidence mappings are stored once and referenced from findings and appendix.</p>${renderDefinitionRows([...sectionRows, { label: 'Evidence-field mappings', value: String(mappings.length) }])}</section>`
+  return `<section class="item service-section"><h2>Structured Form Data</h2><p class="muted">Optional uploaded form/report blueprint is used only as a layout reference when confidence is sufficient; otherwise the universal professional evidence report is used (${escapeHtml(classification)}). Evidence mappings reference user-provided captures and notes only.</p>${renderDefinitionRows([...sectionRows, { label: 'Evidence-field mappings', value: String(mappings.length) }])}</section>`
 }
 
 function renderDefinitionRows(rows: Array<{ label: string; value: string }>) {
@@ -229,7 +231,7 @@ function renderTextList(title: string, values: string[], existingRenderedText: s
 
 
 function buildExecutiveSummaryHtml(params: { reportTitle: string; organizationName: string; dateLabel: string; findings: ReturnType<typeof getNormalizedFindingModels<ReportCapture>>; referenceCount: number; evidenceCount: number }) {
-  return `<section class="item premium-cover"><p class="eyebrow">Professional Evidence Report</p><h1>${escapeHtml(params.reportTitle)}</h1><p class="meta">${escapeHtml(params.organizationName)} · ${escapeHtml(params.dateLabel)}</p></section><section class="item service-section"><h2>Report Overview</h2><p>Evidence-first report prepared from included captures and technician-authored content.</p><dl><div><dt>Technician-authored findings</dt><dd>${params.findings.length}</dd></div><div><dt>Reference Documents Captured</dt><dd>${params.referenceCount}</dd></div><div><dt>Evidence Items Captured</dt><dd>${params.evidenceCount}</dd></div></dl></section>`
+  return `<section class="item premium-cover"><p class="eyebrow">Professional Evidence Report</p><h1>${escapeHtml(params.reportTitle)}</h1><p class="meta">${escapeHtml(params.organizationName)} · ${escapeHtml(params.dateLabel)}</p></section><section class="item service-section"><h2>Report Overview</h2><p>Evidence-first report assembled from included captures and user-authored content. CRED does not diagnose, classify photos, determine findings, or recommend repairs.</p><dl><div><dt>Technician-authored findings</dt><dd>${params.findings.length}</dd></div><div><dt>Reference Documents Captured</dt><dd>${params.referenceCount}</dd></div><div><dt>Evidence Items Captured</dt><dd>${params.evidenceCount}</dd></div></dl></section>`
 }
 
 function buildFindingCardsHtml(items: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>['findings'], signedUrls: Record<string, string>, options: { renderImages?: boolean } = {}) {
@@ -242,14 +244,14 @@ function buildFindingCardsHtml(items: ReturnType<typeof buildNormalizedReportMod
     const shouldRenderImage = options.renderImages !== false && signedUrl && (capture.media_kind === 'image' || capture.type === 'photo' || isImageFile)
     const imageHtml = shouldRenderImage ? `<div class="finding-image"><img src="${escapeHtml(signedUrl)}" alt="${escapeHtml(finding.title)} evidence image" /></div>` : ''
     const details = finding.details.filter((detail) => !finding.observations.some((observation) => observation.includes(detail.value)))
-    return `<article class="finding-card">${imageHtml}<div class="finding-content"><p class="eyebrow">Finding ${index + 1}</p><h3>${escapeHtml(finding.title)}</h3><h4>Technician / Verified Condition</h4>${finding.observations.length ? finding.observations.map((item) => `<p>${escapeHtml(item)}</p>`).join('') : '<p class="muted">Condition documented in supporting evidence.</p>'}${details.length ? `<h4>Key Details</h4>${renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value })))}` : ''}<h4>Verified Recommendation</h4>${finding.recommendations.length ? `<ul>${finding.recommendations.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : '<p class="muted">No verified recommendation captured.</p>'}</div></article>`
+    return `<article class="finding-card">${imageHtml}<div class="finding-content"><p class="eyebrow">Finding ${index + 1}</p><h3>${escapeHtml(finding.title)}</h3><h4>Technician / Verified Condition</h4>${finding.observations.length ? finding.observations.map((item) => `<p>${escapeHtml(item)}</p>`).join('') : '<p class="muted">Condition documented in supporting evidence.</p>'}${details.length ? `<h4>Key Details</h4>${renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value })))}` : ''}<h4>User-entered Recommendation</h4>${finding.recommendations.length ? `<ul>${finding.recommendations.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : '<p class="muted">No user-entered recommendation captured.</p>'}</div></article>`
   }).join('')}</section>`
 }
 
 function buildRecommendedActionsHtml(findings: ReturnType<typeof getNormalizedFindingModels<ReportCapture>>) {
   const actions = getNormalizedRecommendedActions(findings)
   if (!actions.length) return ''
-  return `<section class="item service-section"><h2>Recommended Actions</h2><table><thead><tr><th>Priority</th><th>Action</th></tr></thead><tbody>${actions.map((item) => `<tr><td>${escapeHtml(item.priority)}</td><td>${escapeHtml(item.action)}</td></tr>`).join('')}</tbody></table></section>`
+  return `<section class="item service-section"><h2>Recommendations (User-entered)</h2><table><thead><tr><th>Priority</th><th>Action</th></tr></thead><tbody>${actions.map((item) => `<tr><td>${escapeHtml(item.priority)}</td><td>${escapeHtml(item.action)}</td></tr>`).join('')}</tbody></table></section>`
 }
 
 function buildReferenceDocumentsHtml(items: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>['findings'], signedUrls: Record<string, string>, options: { includeOriginal?: boolean } = {}) {
@@ -302,11 +304,14 @@ function buildEvidenceSectionHtml(title: string, items: ReturnType<typeof buildN
 }
 
 function buildEvidenceAppendixHtml(captures: ReportCapture[], signedUrls: Record<string, string>, timeZone: string | null, options: { showDebugDetails?: boolean } = {}) {
-  if (captures.length === 0) return '<section class="item service-section"><h2>Evidence Captured</h2><p class="muted">No included evidence selected for this report.</p></section>'
-  return `<section class="item service-section"><h2>Evidence Captured</h2><p class="muted">Included captures are listed once from the reviewed report state.</p><div class="evidence-grid">${captures.map((capture) => {
+  if (captures.length === 0) return '<section class="item service-section"><h2>Evidence Appendix</h2><p class="muted">No included evidence selected for this report.</p></section>'
+  const reportDocument = buildUniversalReportDocument({ captures, timeZone })
+  const evidenceByCaptureId = new Map(reportDocument.evidenceItems.map((item) => [item.sourceCaptureId, item]))
+  return `<section class="item service-section"><h2>Evidence Appendix</h2><p class="muted">Included captures are listed once from the reviewed report state. Each section traces back to capture IDs where available.</p><div class="evidence-grid">${captures.map((capture) => {
     const signedUrl = signedUrls[capture.id]
     const mediaKind = getEvidenceKind(capture)
-    const primaryNote = getPrimaryEvidenceDescription(capture) || 'No technician note provided.'
+    const evidenceMeta = evidenceByCaptureId.get(capture.id)
+    const primaryNote = evidenceMeta?.note || getPrimaryEvidenceDescription(capture) || 'No technician note provided.'
     const mediaHtml = signedUrl && mediaKind === 'image'
       ? `<img src="${escapeHtml(signedUrl)}" alt="${escapeHtml(getEvidenceTitle(capture))}" />`
       : signedUrl
@@ -319,9 +324,9 @@ function buildEvidenceAppendixHtml(captures: ReportCapture[], signedUrls: Record
     ].filter((value): value is string => Boolean(value?.trim()))
     const neutralPills = [getEvidenceTitle(capture), 'Included', 'Captured']
     const pillsHtml = `<div class="evidence-pill-row">${[...technicianPills, ...neutralPills].map((pill) => `<span class="evidence-pill">${escapeHtml(pill.replace(/_/g, ' '))}</span>`).join('')}</div>`
-    const detailRows = [{ label: 'Captured', value: formatDateTimeInTimeZone(new Date(capture.captured_at), timeZone) }]
+    const detailRows = [{ label: 'Evidence ID', value: evidenceMeta?.evidenceId ?? '' }, { label: 'Captured', value: evidenceMeta?.capturedAtLabel ?? formatDateTimeInTimeZone(new Date(capture.captured_at), timeZone) }, { label: 'Evidence type', value: evidenceMeta?.evidenceType ?? mediaKind }, { label: 'Source capture ID', value: capture.id }]
     if (options.showDebugDetails) detailRows.unshift({ label: 'Capture ID', value: capture.id }, { label: 'Media kind', value: String(capture.media_kind ?? mediaKind) })
-    return `<article class="evidence-card"${options.showDebugDetails ? ` data-capture-id="${escapeHtml(capture.id)}"` : ''}><div class="media evidence-media">${mediaHtml}</div><div class="evidence-copy"><h3>${escapeHtml(getEvidenceTitle(capture))}</h3>${pillsHtml}<p>${escapeHtml(primaryNote)}</p>${renderDefinitionRows(detailRows)}</div></article>`
+    return `<article class="evidence-card"${options.showDebugDetails ? ` data-capture-id="${escapeHtml(capture.id)}"` : ''}><div class="media evidence-media">${mediaHtml}</div><div class="evidence-copy"><h3>${escapeHtml(`${evidenceMeta?.evidenceId ?? 'Evidence'} · ${getEvidenceTitle(capture)}`)}</h3>${pillsHtml}<p>${escapeHtml(primaryNote)}</p>${renderDefinitionRows(detailRows)}</div></article>`
   }).join('')}</div></section>`
 }
 
