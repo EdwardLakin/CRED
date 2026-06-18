@@ -21,6 +21,7 @@ import {
   isMeaningfulCustomerReportText,
   sanitizeCapturesForImageAiAssist,
 } from "@/features/reports/report-structure";
+import { buildUniversalReportDocument } from "@/features/reports/report-document";
 import { getDisplayReportTitle, getReportInfoValue } from "@/features/reports/report-title";
 import {
   createReportShareLink,
@@ -430,6 +431,7 @@ export default async function SessionReportPreviewPage({
     measurements: currentReport?.measurements ?? [],
     findings: currentReport?.findings ?? [],
   });
+  const reportDocument = buildUniversalReportDocument({ captures: visibleCaptures, timeZone: profile.timezone });
   const photoEvidence = supportingEvidence.filter(
     (item) => item.kind === "photo",
   );
@@ -548,9 +550,9 @@ export default async function SessionReportPreviewPage({
             sourceFieldEntries={sourceFieldEntries}
             facilityName={profile.company_profile?.facility_name ?? profile.company_profile?.company_name ?? profile.organization.name}
             facilityLocation={[profile.company_profile?.facility_city, profile.company_profile?.facility_region].filter(Boolean).join(", ")}
-            timeZone={profile.timezone}
             displayReportTitle={displayReportTitle}
             isGenericEvidenceReport={isGenericEvidenceReport}
+            reportDocument={reportDocument}
           />
 
           <FinalNotesEditor
@@ -607,9 +609,9 @@ function GeneratedReportReview({
   sourceFieldEntries,
   facilityName,
   facilityLocation,
-  timeZone,
   displayReportTitle,
   isGenericEvidenceReport,
+  reportDocument,
 }: {
   reportSections: AiReportDraftSection[];
   currentReport: AiReportDraft | null;
@@ -628,9 +630,9 @@ function GeneratedReportReview({
   sourceFieldEntries: [string, unknown][];
   facilityName: string;
   facilityLocation: string;
-  timeZone: string | null;
   displayReportTitle: string;
   isGenericEvidenceReport: boolean;
+  reportDocument: ReturnType<typeof buildUniversalReportDocument<CaptureItem>>;
 }) {
   const editableSections = reportSections;
   const includedEvidenceCount = [
@@ -645,7 +647,7 @@ function GeneratedReportReview({
           <p className="eyebrow">Report Overview</p>
           <h2>{displayReportTitle}</h2>
           <p className="muted">
-            Evidence-first review built from included captures and technician-authored content.
+            {reportDocument.trustStatement}
           </p>
         </div>
         {currentReport?.status === "approved" ? (
@@ -729,7 +731,7 @@ function GeneratedReportReview({
         <ReferenceDocumentList items={reviewDocument.referenceDocuments} supportingEvidence={supportingEvidence} />
       </details>
 
-      <EvidenceAppendix supportingEvidence={supportingEvidence} timeZone={timeZone} isGenericEvidenceReport={isGenericEvidenceReport} />
+      <EvidenceAppendix supportingEvidence={supportingEvidence} reportDocument={reportDocument} isGenericEvidenceReport={isGenericEvidenceReport} />
 
       {currentReport && isEditingReport && saveReportEditsAction ? (
         <form
@@ -915,7 +917,7 @@ function GeneratedReportReview({
               <summary className="report-section-title-row">
                 <div>
                   <h3>Report Sections</h3>
-                  <p className="muted">Technician notes and verified findings grouped by system/component. Suggestions remain review-only until verified.</p>
+                  <p className="muted">Technician notes and verified findings grouped by system/component. Every section is assembled from user-provided evidence and notes; recommendations appear only when user-entered.</p>
                 </div>
                 <span className="status-pill neutral compact">{includedEvidenceCount} included</span>
               </summary>
@@ -1090,7 +1092,9 @@ function EvidenceGroupList({
   );
 }
 
-function EvidenceAppendix({ supportingEvidence, timeZone, isGenericEvidenceReport }: { supportingEvidence: SupportingEvidenceItem[]; timeZone: string | null; isGenericEvidenceReport: boolean }) {
+function EvidenceAppendix({ supportingEvidence, reportDocument, timeZone, isGenericEvidenceReport }: { supportingEvidence: SupportingEvidenceItem[]; reportDocument?: ReturnType<typeof buildUniversalReportDocument<CaptureItem>>; timeZone?: string | null; isGenericEvidenceReport: boolean }) {
+  const documentModel = reportDocument ?? buildUniversalReportDocument({ captures: supportingEvidence.map((item) => item.capture), timeZone: timeZone ?? null });
+  const evidenceMetadata = new Map(documentModel.evidenceItems.map((item) => [item.sourceCaptureId, item]));
   return (
     <details className="report-subsection report-supporting-section" open>
       <summary className="report-section-title-row">
@@ -1103,8 +1107,9 @@ function EvidenceAppendix({ supportingEvidence, timeZone, isGenericEvidenceRepor
       </summary>
       {supportingEvidence.length > 0 ? (
         <div className="evidence-first-list">
-          {supportingEvidence.map((item) => (
-            <article key={item.capture.id} className="evidence-first-card">
+          {supportingEvidence.map((item) => {
+            const metadata = evidenceMetadata.get(item.capture.id);
+            return <article key={item.capture.id} className="evidence-first-card">
               <div className="evidence-first-media">
                 {item.kind === "photo" && item.signedUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured.
@@ -1116,12 +1121,13 @@ function EvidenceAppendix({ supportingEvidence, timeZone, isGenericEvidenceRepor
                 )}
               </div>
               <div className="evidence-first-body">
-                <h4>{item.title}</h4>
-                {item.note ? <p><strong>Technician note:</strong> {stripConfidenceText(item.note)}</p> : <p className="muted">No technician note provided.</p>}
-                <p className="muted">{item.kind === "photo" ? "Photo evidence" : item.kind === "video" ? "Video evidence" : item.kind === "audio" ? "Voice note" : item.kind === "note" ? "Technician note" : "Supporting file"} · Captured {formatDateTime(item.capture.captured_at, timeZone)}</p>
+                <h4>{metadata?.evidenceId ?? "Evidence"} · {item.title}</h4>
+                <p className="muted">Source capture ID: {item.capture.id}</p>
+                {item.note ? <p><strong>Technician note / caption:</strong> {stripConfidenceText(item.note)}</p> : <p className="muted">No technician note provided.</p>}
+                <p className="muted">{metadata?.evidenceType ?? item.kind} · Captured {metadata?.capturedAtLabel ?? "Not captured"}</p>
               </div>
             </article>
-          ))}
+          })}
         </div>
       ) : <p className="muted">No included evidence selected for this report.</p>}
     </details>
@@ -1342,7 +1348,7 @@ function ExportPanel({
       id="export-report"
       className="card detail-card report-sidebar-card report-delivery-tabs export-panel form-stack compact-export-panel"
     >
-      <summary className="export-summary-row">Export Report{isReadyForExport ? " · Print / Save PDF" : ""}</summary>
+      <summary className="export-summary-row">Export Report{isReadyForExport ? " · Print / Save Report" : ""}</summary>
       <div>
         <p className="eyebrow">Export</p>
         <h2>Export Report</h2>
@@ -1444,7 +1450,7 @@ function ExportPanel({
           <div>
             <h3>Save</h3>
             <p className="muted">
-              Save a PDF copy or keep this report in CRED.
+              Print or save the printable report from your browser, or keep this report in CRED.
             </p>
           </div>
           {isReadyForExport ? (
@@ -1453,14 +1459,14 @@ function ExportPanel({
               className="button button-secondary touch-target"
               target="_blank"
             >
-              Print / Save PDF
+              Print / Save Report
             </Link>
           ) : (
             <span
               className="button button-secondary touch-target disabled-action"
               aria-disabled="true"
             >
-              Save PDF
+              Save Report
             </span>
           )}
           <form action={saveAction}>
