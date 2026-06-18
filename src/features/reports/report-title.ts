@@ -7,6 +7,7 @@ type ReportTitleSession = {
   unit_number?: string | null
   vin?: string | null
   suggested_details?: unknown
+  session_metadata?: unknown
 }
 
 type ReportTitleDraft = {
@@ -37,7 +38,8 @@ export function buildSubjectReportTitle(subject: string) {
   return `${cleanSubject} Evidence Report`
 }
 
-export function getReportInfoValue(draft: ReportTitleDraft, session: Pick<ReportTitleSession, 'suggested_details'>, key: string) {
+export function getReportInfoValue(draft: ReportTitleDraft, session: Pick<ReportTitleSession, 'suggested_details' | 'session_metadata'>, key: string) {
+  if (isRecord(session.session_metadata) && typeof session.session_metadata[key] === 'string') return session.session_metadata[key] as string
   if (isRecord(draft?.header_fields) && typeof draft.header_fields[key] === 'string') return draft.header_fields[key] as string
   if (isRecord(session.suggested_details) && isRecord(session.suggested_details.report_information) && typeof session.suggested_details.report_information[key] === 'string') return session.suggested_details.report_information[key] as string
   return ''

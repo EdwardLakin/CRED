@@ -48,6 +48,22 @@ function createSessionDisplayId(date = new Date()) {
   return `EV-${date.getUTCFullYear()}-${suffix}`
 }
 
+function buildSessionMetadata(formData: FormData): Json {
+  const metadata: Record<string, Json> = {}
+  for (const [field, key] of [
+    ['report_title', 'report_title'],
+    ['subject_name', 'subject_name'],
+    ['customer_client', 'customer_client'],
+    ['asset_equipment', 'asset_equipment'],
+    ['location_address', 'location_address'],
+    ['reference_number', 'reference_number'],
+  ] as const) {
+    const value = getNullableValue(formData, field)
+    if (value) metadata[key] = value
+  }
+  return metadata
+}
+
 function buildFieldServiceDetails(formData: FormData, existingDetails: Json | null | undefined): Json {
   const details: Record<string, Json> = isFieldServiceRecord(existingDetails) ? { ...(existingDetails as Record<string, Json>) } : {}
 
@@ -88,6 +104,7 @@ export async function createDocumentationSession(formData: FormData) {
     .insert({
       title,
       session_type: sessionType,
+      session_metadata: buildSessionMetadata(formData),
       status: 'capturing',
       created_by: profile.id,
       organization_id: profile.organization_id,
@@ -115,6 +132,7 @@ export async function createQuickCaptureSession() {
 export async function updateDocumentationSession(sessionId: string, formData: FormData) {
   const title = getTrimmedValue(formData, 'title')
   const status = getTrimmedValue(formData, 'status')
+  const requestedSessionType = getTrimmedValue(formData, 'session_type')
 
   if (!title || !isAllowedStatus(status)) {
     redirect(`/dashboard/sessions/${sessionId}?error=Please%20enter%20a%20title%20and%20valid%20status.`)
@@ -143,6 +161,8 @@ export async function updateDocumentationSession(sessionId: string, formData: Fo
     .update({
       title,
       status,
+      session_type: isAllowedSessionType(requestedSessionType) ? requestedSessionType : undefined,
+      session_metadata: buildSessionMetadata(formData),
       asset_label: getNullableValue(formData, 'asset_label'),
       vin: getNullableValue(formData, 'vin'),
       odometer: getNullableValue(formData, 'odometer'),
