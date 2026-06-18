@@ -13,6 +13,7 @@ import {
 import { buildUniversalReportDocument } from '@/features/reports/report-document'
 import { buildCustomerAssetRows, buildNormalizedReportModel, classifyReferenceDocumentTitle, dedupeEvidenceDetails, deriveFormSectionsFromCaptures, getFormStructureSummary, getNormalizedFindingModels, getNormalizedRecommendedActions, isMeaningfulCustomerReportText, normalizeDraftSections, shouldRenderDetail, splitRecommendationText, stripConfidenceText, sanitizeCapturesForImageAiAssist } from '@/features/reports/report-structure'
 import { getDisplayReportTitle, getReportInfoValue } from '@/features/reports/report-title'
+import { normalizeReportType } from '@/features/sessions/report-types'
 import { asDiagnosticRecordArray, getDiagnosticProcedureProgress, getDiagnosticStepCompleteness } from '@/features/diagnostic-procedures/progress'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { recordUsageEvent } from '@/features/usage'
@@ -156,7 +157,7 @@ function renderReportInformationHtml(draft: ReportDraft | null | undefined, sess
     { label: 'Subject Name', value: getReportInfoValue(draft, session, 'subject_name') },
     { label: 'Customer / Client', value: getReportInfoValue(draft, session, 'customer_client') || session.customer_name || '' },
     { label: 'Asset / Equipment', value: getReportInfoValue(draft, session, 'asset_equipment') || session.asset_label || '' },
-    { label: 'Location / Address', value: getReportInfoValue(draft, session, 'location_address') },
+    { label: 'Location', value: getReportInfoValue(draft, session, 'location') },
     { label: 'Reference Number', value: getReportInfoValue(draft, session, 'reference_number') },
   ]
   const html = renderDefinitionRows(rows)
@@ -687,7 +688,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
 
   const toolbarHtml = previewOnly ? '' : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>'
   const html = `<!doctype html><html><head><meta charset="utf-8" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Professional Evidence Report</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'General evidence report')} · ${escapeHtml(formatDateInTimeZone(new Date(), timeZone))}</p></header>${summaryHtml}${reportInfoHtml}${structuredFormDataHtml}${customerAssetHtml ? `<section class="item service-section"><h2>Report Information</h2>${customerAssetHtml}</section>` : ''}${buildFinalNotesHtml(session)}${findingsHtml}${unattachedHtml}${supportingHtml}${appendixHtml}${referenceHtml}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile, reportSignatures, signatureUrls)}</main></body></html>`
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Professional Evidence Report</p><p class="meta">${escapeHtml(normalizeReportType(session.session_type))} · ${escapeHtml(assetDetails || 'General evidence report')} · ${escapeHtml(formatDateInTimeZone(new Date(), timeZone))}</p></header>${summaryHtml}${reportInfoHtml}${structuredFormDataHtml}${customerAssetHtml ? `<section class="item service-section"><h2>Report Information</h2>${customerAssetHtml}</section>` : ''}${buildFinalNotesHtml(session)}${findingsHtml}${unattachedHtml}${supportingHtml}${appendixHtml}${referenceHtml}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile, reportSignatures, signatureUrls)}</main></body></html>`
 
   return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
 }

@@ -1,5 +1,7 @@
 import type { Database } from '@/lib/supabase/database.types'
 
+import { DEFAULT_REPORT_TYPE, REPORT_TYPES, normalizeReportType, type ReportType } from './report-types'
+
 export type DocumentationSession = Database['public']['Tables']['documentation_sessions']['Row']
 
 export type SessionStatus = 'draft' | 'capturing' | 'review' | 'finalized' | 'archived'
@@ -12,21 +14,12 @@ export const SESSION_STATUSES: Array<{ value: SessionStatus; label: string }> = 
   { value: 'archived', label: 'Archived' },
 ]
 
-export const DEFAULT_SESSION_TYPE = 'General Evidence Report'
-
-export const SESSION_TYPES = [
-  { value: 'General Evidence Report', label: 'General Evidence Report' },
-  { value: 'Inspection Report', label: 'Inspection Report' },
-  { value: 'Service Report', label: 'Service Report' },
-  { value: 'field_service_report', label: 'Service Report (Legacy)' },
-  { value: 'General Documentation', label: 'General Documentation (Legacy)' },
-  { value: 'diagnostic_procedure', label: 'Diagnostic Procedure Workspace' },
-] as const
-
-export type SessionType = (typeof SESSION_TYPES)[number]['value']
+export const DEFAULT_SESSION_TYPE = DEFAULT_REPORT_TYPE
+export const SESSION_TYPES = REPORT_TYPES
+export type SessionType = ReportType
 
 export function getSessionTypeLabel(sessionType: string) {
-  return SESSION_TYPES.find((type) => type.value === sessionType)?.label ?? sessionType
+  return normalizeReportType(sessionType)
 }
 
 export function getSessionStatusLabel(status: string) {

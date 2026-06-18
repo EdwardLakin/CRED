@@ -1,3 +1,5 @@
+import { normalizeReportType, normalizeSessionMetadata } from '@/features/sessions/report-types'
+
 import { stripConfidenceText } from './report-structure'
 
 type ReportTitleSession = {
@@ -8,6 +10,7 @@ type ReportTitleSession = {
   vin?: string | null
   suggested_details?: unknown
   session_metadata?: unknown
+  session_type?: string | null
 }
 
 type ReportTitleDraft = {
@@ -38,18 +41,19 @@ export function buildSubjectReportTitle(subject: string) {
   return `${cleanSubject} Evidence Report`
 }
 
-export function getReportInfoValue(draft: ReportTitleDraft, session: Pick<ReportTitleSession, 'suggested_details' | 'session_metadata'>, key: string) {
-  if (isRecord(session.session_metadata) && typeof session.session_metadata[key] === 'string') return session.session_metadata[key] as string
+export function getReportInfoValue(draft: ReportTitleDraft, session: Pick<ReportTitleSession, 'suggested_details' | 'session_metadata' | 'customer_name' | 'asset_label'>, key: string) {
+  const normalizedKey = key === 'location_address' ? 'location' : key
+  const metadata = normalizeSessionMetadata(session.session_metadata, session)
+  if (normalizedKey in metadata && metadata[normalizedKey as keyof typeof metadata]) return metadata[normalizedKey as keyof typeof metadata]
   if (isRecord(draft?.header_fields) && typeof draft.header_fields[key] === 'string') return draft.header_fields[key] as string
   if (isRecord(session.suggested_details) && isRecord(session.suggested_details.report_information) && typeof session.suggested_details.report_information[key] === 'string') return session.suggested_details.report_information[key] as string
   return ''
 }
 
 export function getDisplayReportTitle(draft: ReportTitleDraft, session: ReportTitleSession, options: { genericFallback?: boolean } = {}) {
-  const explicitReportTitle = getReportInfoValue(draft, session, 'report_title')
-  if (explicitReportTitle && !isPlaceholderReportTitle(explicitReportTitle)) return stripConfidenceText(explicitReportTitle).trim()
-
-  if (options.genericFallback) return 'General Evidence Report'
+  void options
+  const selectedReportType = normalizeReportType(session.session_type)
+  if (selectedReportType) return selectedReportType
 
   const subject = getReportInfoValue(draft, session, 'subject_name')
     || getReportInfoValue(draft, session, 'customer_client')
