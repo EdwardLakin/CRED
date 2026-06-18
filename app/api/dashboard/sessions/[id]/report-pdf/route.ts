@@ -63,6 +63,13 @@ type ReportSession =
     organizations: { name: string } | null;
   };
 
+type ExportImageAsset = {
+  classification: "webSafeImage" | "nonWebSafeImage";
+  signedUrl?: string;
+  originalSignedUrl?: string;
+  reason?: string;
+};
+
 const UUID_PATTERN =
   /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
 
@@ -119,10 +126,10 @@ function getOrganizationDisplayName(organizationName: string, companyProfile?: {
   return companyProfile?.company_name || companyProfile?.facility_name || organizationName;
 }
 
-function getCoverImageHtml(captures: ReportCapture[], signedUrls: Record<string, string>) {
-  const coverCapture = captures.find((capture) => isImageEvidence(capture) && signedUrls[capture.id]);
+function getCoverImageHtml(captures: ReportCapture[], imageAssets: Record<string, ExportImageAsset>) {
+  const coverCapture = captures.find((capture) => isImageEvidence(capture) && imageAssets[capture.id]?.classification === "webSafeImage" && imageAssets[capture.id]?.signedUrl);
   if (!coverCapture) return "";
-  return `<div class="cover-image"><img src="${escapeHtml(signedUrls[coverCapture.id])}" alt="${escapeHtml(getPrimaryEvidenceLabel(coverCapture))}" /></div>`;
+  return `<div class="cover-image">${renderExportImage(imageAssets[coverCapture.id], getPrimaryEvidenceLabel(coverCapture), "Preview unavailable in printable export. Original evidence retained.")}</div>`;
 }
 
 function buildReportCoverHtml(params: {
@@ -133,7 +140,7 @@ function buildReportCoverHtml(params: {
   organizationName: string;
   companyProfile?: { company_name?: string | null; facility_name?: string | null } | null;
   captures: ReportCapture[];
-  signedUrls: Record<string, string>;
+  imageAssets: Record<string, ExportImageAsset>;
   timeZone: string | null;
 }) {
   const approvedAt = getApprovalDate(params.draft, params.session);
@@ -147,7 +154,7 @@ function buildReportCoverHtml(params: {
     { label: "Approved date", value: approvedAt ? formatDateTimeInTimeZone(approvedAt, params.timeZone) : "" },
     { label: "Organization", value: getOrganizationDisplayName(params.organizationName, params.companyProfile) },
   ];
-  return `<section class="report-cover item"><div class="cover-copy"><p class="eyebrow">Professional Evidence Report</p><h1>${escapeHtml(params.reportTitle)}</h1><p class="cover-trust">CRED assembles user-provided evidence and approved report text. Users remain the source of truth.</p>${renderDefinitionRows(rows)}</div>${getCoverImageHtml(params.captures, params.signedUrls)}</section>`;
+  return `<section class="report-cover item"><div class="cover-copy"><p class="eyebrow">Professional Evidence Report</p><h1>${escapeHtml(params.reportTitle)}</h1><p class="cover-trust">CRED assembles user-provided evidence and approved report text. Users remain the source of truth.</p>${renderDefinitionRows(rows)}</div>${getCoverImageHtml(params.captures, params.imageAssets)}</section>`;
 }
 
 function buildReportOverviewHtml(params: {
@@ -168,7 +175,7 @@ function buildReportOverviewHtml(params: {
   ])}</section>`;
 }
 
-function buildEvidenceGalleryHtml(captures: ReportCapture[], signedUrls: Record<string, string>, timeZone: string | null) {
+function buildEvidenceGalleryHtml(captures: ReportCapture[], imageAssets: Record<string, ExportImageAsset>, timeZone: string | null) {
   const images = captures.filter(isImageEvidence);
   if (!images.length) return "";
   const reportDocument = buildUniversalReportDocument({ captures, timeZone });
@@ -178,7 +185,7 @@ function buildEvidenceGalleryHtml(captures: ReportCapture[], signedUrls: Record<
     const evidenceId = meta?.evidenceId ?? "Evidence";
     const label = getPrimaryEvidenceLabel(capture);
     const captured = meta?.capturedAtLabel ?? formatDateTimeInTimeZone(capture.captured_at, timeZone);
-    const media = signedUrls[capture.id] ? `<img src="${escapeHtml(signedUrls[capture.id])}" alt="${escapeHtml(label)}" />` : '<div class="media-fallback">Image unavailable in printable export.</div>';
+    const media = renderExportImage(imageAssets[capture.id], label, "Preview unavailable in printable export. Original evidence retained.");
     return `<article class="gallery-card"><div class="gallery-thumb">${media}</div><div class="gallery-caption"><h3>${escapeHtml(`${evidenceId} · ${label}`)}</h3><p>${escapeHtml(captured)}</p></div></article>`;
   }).join("")}</div></section>`;
 }
@@ -247,20 +254,51 @@ function getPrimaryEvidenceLabel(capture: ReportCapture) {
   return caption || getEvidenceTitle(capture);
 }
 
+function getUploadMimeType(capture: ReportCapture) {
+  if (!isRecord(capture.extracted_data)) return "";
+  const upload = capture.extracted_data.upload;
+  if (!isRecord(upload)) return "";
+  return typeof upload.mime_type === "string" ? upload.mime_type.toLowerCase() : "";
+}
+
+function getImageExtension(capture: ReportCapture) {
+  const source = capture.storage_path || capture.thumbnail_path || getCaptureFilename(capture);
+  const match = source.match(/\.([a-z0-9]+)(?:[?#].*)?$/i);
+  return match?.[1]?.toLowerCase() ?? "";
+}
+
+function classifyExportImage(capture: ReportCapture): ExportImageAsset["classification"] {
+  const mimeType = getUploadMimeType(capture);
+  const extension = getImageExtension(capture);
+  if (["jpg", "jpeg", "png", "webp", "gif"].includes(extension) || ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"].includes(mimeType)) return "webSafeImage";
+  return "nonWebSafeImage";
+}
+
+function renderExportImage(asset: ExportImageAsset | undefined, alt: string, fallbackText: string) {
+  const originalLink = asset?.originalSignedUrl ? `<p class="original-link"><a href="${escapeHtml(asset.originalSignedUrl)}" target="_blank" rel="noreferrer">Open original evidence</a></p>` : "";
+  const fallback = `<div class="media-fallback export-image-fallback">${escapeHtml(fallbackText)}${originalLink}</div>`;
+  if (asset?.classification === "webSafeImage" && asset.signedUrl) {
+    return `<img src="${escapeHtml(asset.signedUrl)}" alt="${escapeHtml(alt)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />${fallback.replace('<div class="media-fallback export-image-fallback">', '<div class="media-fallback export-image-fallback" style="display:none">')}`;
+  }
+  return fallback;
+}
+
 async function signCaptureImageUrls(
   supabase: SupabaseClient<Database>,
   captures: ReportCapture[],
 ) {
-  const signedUrls: Record<string, string> = {};
+  const imageAssets: Record<string, ExportImageAsset> = {};
   await Promise.all(
     captures.map(async (capture) => {
       if (!isImageEvidence(capture)) return;
+      const classification = classifyExportImage(capture);
       if (!capture.storage_path) {
         console.warn("[report-export-image-signing]", {
           capture_id: capture.id,
           has_storage_path: false,
           error: "Missing storage_path for image evidence",
         });
+        imageAssets[capture.id] = { classification, reason: "missing_storage_path" };
         return;
       }
 
@@ -268,7 +306,9 @@ async function signCaptureImageUrls(
         .from("documentation-captures")
         .createSignedUrl(capture.storage_path, 60 * 60);
       if (data?.signedUrl) {
-        signedUrls[capture.id] = data.signedUrl;
+        imageAssets[capture.id] = classification === "webSafeImage"
+          ? { classification, signedUrl: data.signedUrl, originalSignedUrl: data.signedUrl }
+          : { classification, originalSignedUrl: data.signedUrl, reason: `${getUploadMimeType(capture) || getImageExtension(capture) || "unknown"} is not browser/export safe` };
         return;
       }
 
@@ -279,7 +319,7 @@ async function signCaptureImageUrls(
       });
     }),
   );
-  return signedUrls;
+  return imageAssets;
 }
 
 async function signSignatureUrls(
@@ -594,7 +634,7 @@ function buildFindingCardsHtml(
   items: ReturnType<
     typeof buildNormalizedReportModel<ReportCapture>
   >["findings"],
-  signedUrls: Record<string, string>,
+  imageAssets: Record<string, ExportImageAsset>,
   options: { renderImages?: boolean } = {},
 ) {
   const findings = getNormalizedFindingModels(items);
@@ -602,18 +642,19 @@ function buildFindingCardsHtml(
   return `<section class="item service-section"><h2>Technician-Authored Findings</h2>${findings
     .map((finding, index) => {
       const capture = finding.entry.capture;
-      const signedUrl = signedUrls[capture.id];
+      const imageAsset = imageAssets[capture.id];
       const isImageFile = Boolean(
         capture.storage_path?.match(/\.(jpg|jpeg|png|webp|gif|heic)$/i),
       );
       const shouldRenderImage =
         options.renderImages !== false &&
-        signedUrl &&
+        imageAsset?.classification === "webSafeImage" &&
+        imageAsset.signedUrl &&
         (capture.media_kind === "image" ||
           capture.type === "photo" ||
           isImageFile);
       const imageHtml = shouldRenderImage
-        ? `<div class="finding-image"><img src="${escapeHtml(signedUrl)}" alt="${escapeHtml(finding.title)} evidence image" /></div>`
+        ? `<div class="finding-image">${renderExportImage(imageAsset, `${finding.title} evidence image`, "Preview unavailable in printable export. Original evidence retained.")}</div>`
         : "";
       const details = finding.details.filter(
         (detail) =>
@@ -638,7 +679,7 @@ function buildReferenceDocumentsHtml(
   items: ReturnType<
     typeof buildNormalizedReportModel<ReportCapture>
   >["findings"],
-  signedUrls: Record<string, string>,
+  imageAssets: Record<string, ExportImageAsset>,
   options: { includeOriginal?: boolean } = {},
 ) {
   if (!items.length) return "";
@@ -650,7 +691,7 @@ function buildReferenceDocumentsHtml(
       const originalHtml =
         options.includeOriginal === false
           ? ""
-          : `<details><summary>View Original Reference</summary>${buildEvidenceItemsHtml([entry], signedUrls)}</details>`;
+          : `<details><summary>View Original Reference</summary>${buildEvidenceItemsHtml([entry], imageAssets)}</details>`;
       return `<article class="reference-card"><h3>${escapeHtml(getEvidenceTitle(entry.capture))}</h3>${details.length ? renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value }))) : '<p class="muted">Reference captured for report support.</p>'}${originalHtml}</article>`;
     })
     .join("")}</section>`;
@@ -660,12 +701,12 @@ function buildEvidenceItemsHtml(
   items: ReturnType<
     typeof buildNormalizedReportModel<ReportCapture>
   >["findings"],
-  signedUrls: Record<string, string>,
+  imageAssets: Record<string, ExportImageAsset>,
 ) {
   return items
     .map((entry) => {
       const capture = entry.capture;
-      const signedUrl = signedUrls[capture.id];
+      const imageAsset = imageAssets[capture.id];
       const isImageFile = Boolean(
         capture.storage_path?.match(/\.(jpg|jpeg|png|webp|gif|heic)$/i),
       );
@@ -682,12 +723,12 @@ function buildEvidenceItemsHtml(
       const mediaHtml =
         mediaKind === "note"
           ? `<div class="video-still">${escapeHtml(stripConfidenceText(capture.technician_note || capture.transcript || "Technician Note"))}</div>`
-          : signedUrl && mediaKind === "image"
-            ? `<img src="${escapeHtml(signedUrl)}" alt="${escapeHtml(getPrimaryEvidenceLabel(capture))}" />`
-            : signedUrl && mediaKind === "video"
-              ? `<div class="video-still">Video reference</div><p class="video-link"><a href="${escapeHtml(signedUrl)}">Open video evidence</a></p>`
-              : signedUrl
-                ? `<p><a href="${escapeHtml(signedUrl)}">Open saved file</a></p>`
+          : mediaKind === "image"
+            ? renderExportImage(imageAsset, getPrimaryEvidenceLabel(capture), "Preview unavailable in printable export. Original evidence retained.")
+            : imageAsset?.originalSignedUrl && mediaKind === "video"
+              ? `<div class="video-still">Video reference</div><p class="video-link"><a href="${escapeHtml(imageAsset.originalSignedUrl)}">Open video evidence</a></p>`
+              : imageAsset?.originalSignedUrl
+                ? `<p><a href="${escapeHtml(imageAsset.originalSignedUrl)}">Open saved file</a></p>`
                 : mediaKind === "audio"
                   ? '<div class="video-still">Voice Note</div>'
                   : mediaKind === "image"
@@ -730,17 +771,17 @@ function buildEvidenceSectionHtml(
   items: ReturnType<
     typeof buildNormalizedReportModel<ReportCapture>
   >["findings"],
-  signedUrls: Record<string, string>,
+  imageAssets: Record<string, ExportImageAsset>,
 ) {
   if (items.length === 0) return "";
-  return `<section class="item service-section"><h2>${escapeHtml(title)}</h2><div class="evidence-children">${buildEvidenceItemsHtml(items, signedUrls)}</div></section>`;
+  return `<section class="item service-section"><h2>${escapeHtml(title)}</h2><div class="evidence-children">${buildEvidenceItemsHtml(items, imageAssets)}</div></section>`;
 }
 
 function buildEvidenceAppendixHtml(
   captures: ReportCapture[],
-  signedUrls: Record<string, string>,
+  imageAssets: Record<string, ExportImageAsset>,
   timeZone: string | null,
-  options: { showDebugDetails?: boolean } = {},
+  options: { showDebugDetails?: boolean; renderImages?: boolean } = {},
 ) {
   if (captures.length === 0)
     return '<section class="item service-section"><h2>Evidence Appendix</h2><p class="muted">No included evidence selected for this report.</p></section>';
@@ -750,7 +791,7 @@ function buildEvidenceAppendixHtml(
   );
   return `<section class="item service-section"><h2>Evidence Appendix</h2><p class="muted">Included captures are listed once from the reviewed report state.</p><div class="evidence-grid">${captures
     .map((capture) => {
-      const signedUrl = signedUrls[capture.id];
+      const imageAsset = imageAssets[capture.id];
       const mediaKind = getEvidenceKind(capture);
       const evidenceMeta = evidenceByCaptureId.get(capture.id);
       const primaryNote =
@@ -759,10 +800,10 @@ function buildEvidenceAppendixHtml(
         "No technician note provided.";
       const itemLabel = getPrimaryEvidenceLabel(capture);
       const mediaHtml =
-        signedUrl && mediaKind === "image"
-          ? `<img src="${escapeHtml(signedUrl)}" alt="${escapeHtml(itemLabel)}" />`
-          : signedUrl
-            ? `<p><a href="${escapeHtml(signedUrl)}">Open ${escapeHtml(mediaKind)} evidence</a></p>`
+        options.renderImages !== false && mediaKind === "image"
+          ? renderExportImage(imageAsset, itemLabel, "Preview unavailable in printable export. Original evidence retained.")
+          : imageAsset?.originalSignedUrl
+            ? `<p><a href="${escapeHtml(imageAsset.originalSignedUrl)}">Open original evidence</a></p>`
             : mediaKind === "image"
               ? '<div class="media-fallback">Image unavailable in printable export.</div>'
               : `<div class="media-fallback">${escapeHtml(getEvidenceTitle(capture))}</div>`;
@@ -889,7 +930,7 @@ function buildDiagnosticProcedureReportHtml(params: {
   reportDraft: ReportDraft;
   reportSections: ReportDraftSection[];
   captureItems: ReportCapture[];
-  signedUrls: Record<string, string>;
+  signedUrls: Record<string, ExportImageAsset>;
   showToolbar: boolean;
   timeZone: string | null;
 }) {
@@ -1007,7 +1048,7 @@ function buildFieldServiceReportHtml({
   session: ReportSession;
   organizationName: string;
   captureItems: ReportCapture[];
-  signedUrls: Record<string, string>;
+  signedUrls: Record<string, ExportImageAsset>;
   signatures: ReportSignature[];
   signatureUrls: Record<string, string>;
   reportDraft: ReportDraft | null;
@@ -1116,10 +1157,13 @@ function buildFieldServiceReportHtml({
     preparedBy: "",
     organization: organizationName,
   });
+  const fieldAppendixCaptures = getAppendixCaptures(captureItems).captures;
+  const fieldUseGalleryMode = fieldAppendixCaptures.filter(isImageEvidence).length >= 6;
   const appendixHtml = buildEvidenceAppendixHtml(
-    getAppendixCaptures(captureItems).captures,
+    fieldAppendixCaptures,
     signedUrls,
     timeZone,
+    { renderImages: !fieldUseGalleryMode },
   );
   const findingModels = reviewDocument.findingModels;
   const evidenceHtml = [
@@ -1153,7 +1197,7 @@ function buildFieldServiceReportHtml({
     : "";
 
   return `<!doctype html><html><head><meta charset="utf-8" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable field service report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, captures: captureItems, signedUrls, timeZone })}${summaryHtml}<section class="item service-section"><h2>Report Information</h2>${renderDefinitionRows(headerRows)}</section>${renderFieldServiceSection(details, "equipment")}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work performed</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Evidence</h2><p class="muted">Evidence items reference captured photos, videos, documents, and technician notes.</p></section>${buildFinalNotesHtml(session)}${evidenceHtml}${buildEvidenceGalleryHtml(captureItems, signedUrls, timeZone)}${appendixHtml}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges / documentation only</h2>${renderDefinitionRows(chargeRows)}</section>${buildInspectorFacilityHtml(null, null)}${buildApprovalHtml({ profile: null, signatures, signatureUrls, draft: reportDraft, session, timeZone })}</main></body></html>`;
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, captures: captureItems, imageAssets: signedUrls, timeZone })}${summaryHtml}<section class="item service-section"><h2>Report Information</h2>${renderDefinitionRows(headerRows)}</section>${renderFieldServiceSection(details, "equipment")}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work performed</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Evidence</h2><p class="muted">Evidence items reference captured photos, videos, documents, and technician notes.</p></section>${buildFinalNotesHtml(session)}${evidenceHtml}${fieldUseGalleryMode ? buildEvidenceGalleryHtml(captureItems, signedUrls, timeZone) : ""}${appendixHtml}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges / documentation only</h2>${renderDefinitionRows(chargeRows)}</section>${buildInspectorFacilityHtml(null, null)}${buildApprovalHtml({ profile: null, signatures, signatureUrls, draft: reportDraft, session, timeZone })}</main></body></html>`;
 }
 
 const REPORT_STYLES = `
@@ -1260,7 +1304,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     duplicateCaptureIds: appendixCaptureResult.duplicateCaptureIds,
     finalNotesSource: "documentation_sessions.final_notes",
   });
-  const signedUrls = await signCaptureImageUrls(supabase, captureItems);
+  const imageAssets = await signCaptureImageUrls(supabase, captureItems);
 
   const { data: signatures } = await supabase
     .from("signature_captures")
@@ -1353,7 +1397,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
       reportDraft,
       reportSections,
       captureItems,
-      signedUrls,
+      signedUrls: imageAssets,
       showToolbar: !previewOnly,
       timeZone,
     });
@@ -1370,7 +1414,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
       session,
       organizationName,
       captureItems,
-      signedUrls,
+      signedUrls: imageAssets,
       signatures: reportSignatures,
       signatureUrls,
       reportDraft,
@@ -1443,11 +1487,13 @@ export async function GET(_request: Request, { params }: RouteContext) {
     preparedBy: reportProfile?.full_name ?? "",
     organization: getOrganizationDisplayName(organizationName, reportCompanyProfile),
   });
+  const imageCount = appendixCaptureItems.filter(isImageEvidence).length;
+  const useGalleryMode = imageCount >= 6;
   const appendixHtml = buildEvidenceAppendixHtml(
     appendixCaptureItems,
-    signedUrls,
+    imageAssets,
     timeZone,
-    { showDebugDetails },
+    { showDebugDetails, renderImages: !useGalleryMode },
   );
   const draftReferencedCaptureCount = new Set(
     visibleReportSections
@@ -1472,13 +1518,13 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const referenceHtml = reviewDocument.referenceDocuments.length
     ? buildReferenceDocumentsHtml(
         reviewDocument.referenceDocuments,
-        signedUrls,
+        imageAssets,
         { includeOriginal: false },
       )
     : "";
   const findingsHtml = buildFindingCardsHtml(
     reviewDocument.findings,
-    signedUrls,
+    imageAssets,
     { renderImages: false },
   );
   const supportingHtml = "";
@@ -1487,7 +1533,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     ? ""
     : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>';
   const html = `<!doctype html><html><head><meta charset="utf-8" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, companyProfile: reportCompanyProfile, captures: appendixCaptureItems, signedUrls, timeZone })}${summaryHtml}${reportInfoHtml}${customerAssetHtml ? `<section class="item service-section"><h2>Subject Details</h2>${customerAssetHtml}</section>` : ""}${structuredFormDataHtml}${buildFinalNotesHtml(session)}${findingsHtml}${unattachedHtml}${supportingHtml}${buildEvidenceGalleryHtml(appendixCaptureItems, signedUrls, timeZone)}${appendixHtml}${referenceHtml}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile)}${buildApprovalHtml({ profile: reportProfile, signatures: reportSignatures, signatureUrls, draft: reportDraft, session, timeZone })}</main></body></html>`;
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, companyProfile: reportCompanyProfile, captures: appendixCaptureItems, imageAssets: imageAssets, timeZone })}${summaryHtml}${reportInfoHtml}${customerAssetHtml ? `<section class="item service-section"><h2>Subject Details</h2>${customerAssetHtml}</section>` : ""}${structuredFormDataHtml}${buildFinalNotesHtml(session)}${findingsHtml}${unattachedHtml}${supportingHtml}${useGalleryMode ? buildEvidenceGalleryHtml(appendixCaptureItems, imageAssets, timeZone) : ""}${appendixHtml}${referenceHtml}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile)}${buildApprovalHtml({ profile: reportProfile, signatures: reportSignatures, signatureUrls, draft: reportDraft, session, timeZone })}</main></body></html>`;
 
   return new Response(html, {
     headers: { "Content-Type": "text/html; charset=utf-8" },
