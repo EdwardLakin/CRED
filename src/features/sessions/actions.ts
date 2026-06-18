@@ -17,6 +17,7 @@ import type { Database, Json } from '@/lib/supabase/database.types'
 
 import { hasInternalAdminAccess, requireSessionWorkspace } from './data'
 import { DEFAULT_SESSION_TYPE, SESSION_STATUSES, SESSION_TYPES, type SessionStatus } from './types'
+import { normalizeReportType, normalizeSessionMetadata, sessionMetadataToJson } from './report-types'
 
 function getTrimmedValue(formData: FormData, field: string) {
   const value = formData.get(field)
@@ -72,7 +73,7 @@ export async function createDocumentationSession(formData: FormData) {
   const requestedTitle = getTrimmedValue(formData, 'title')
   const requestedSessionType = getTrimmedValue(formData, 'session_type')
   const title = requestedTitle || getDefaultSessionTitle()
-  const sessionType = isAllowedSessionType(requestedSessionType) ? requestedSessionType : DEFAULT_SESSION_TYPE
+  const sessionType = isAllowedSessionType(requestedSessionType) ? normalizeReportType(requestedSessionType) : DEFAULT_SESSION_TYPE
   const requestedWorkflowTemplateId = getNullableValue(formData, 'workflow_template_id')
 
   const { supabase, profile } = await requireSessionWorkspace()
@@ -88,6 +89,15 @@ export async function createDocumentationSession(formData: FormData) {
     .insert({
       title,
       session_type: sessionType,
+      session_metadata: sessionMetadataToJson({
+        customer_client: getNullableValue(formData, 'customer_client'),
+        asset_equipment: getNullableValue(formData, 'asset_equipment'),
+        reference_number: getNullableValue(formData, 'reference_number'),
+        location: getNullableValue(formData, 'location'),
+        subject_name: getNullableValue(formData, 'subject_name'),
+      }),
+      customer_name: getNullableValue(formData, 'customer_client'),
+      asset_label: getNullableValue(formData, 'asset_equipment'),
       status: 'capturing',
       created_by: profile.id,
       organization_id: profile.organization_id,
@@ -108,6 +118,7 @@ export async function createDocumentationSession(formData: FormData) {
 
 export async function createQuickCaptureSession() {
   const formData = new FormData()
+  formData.set('session_type', DEFAULT_SESSION_TYPE)
   await createDocumentationSession(formData)
 }
 
@@ -129,7 +140,7 @@ export async function updateDocumentationSession(sessionId: string, formData: Fo
 
   const { data: existingSession, error: existingSessionError } = await supabase
     .from('documentation_sessions')
-    .select('field_service_details')
+    .select('field_service_details, session_metadata')
     .eq('id', sessionId)
     .eq('organization_id', profile.organization_id)
     .single()
@@ -143,11 +154,19 @@ export async function updateDocumentationSession(sessionId: string, formData: Fo
     .update({
       title,
       status,
-      asset_label: getNullableValue(formData, 'asset_label'),
+      session_type: normalizeReportType(getTrimmedValue(formData, 'session_type')),
+      session_metadata: sessionMetadataToJson(normalizeSessionMetadata({
+        customer_client: getNullableValue(formData, 'customer_client'),
+        asset_equipment: getNullableValue(formData, 'asset_equipment'),
+        reference_number: getNullableValue(formData, 'reference_number'),
+        location: getNullableValue(formData, 'location'),
+        subject_name: getNullableValue(formData, 'subject_name'),
+      })),
+      asset_label: getNullableValue(formData, 'asset_equipment') ?? getNullableValue(formData, 'asset_label'),
       vin: getNullableValue(formData, 'vin'),
       odometer: getNullableValue(formData, 'odometer'),
       unit_number: getNullableValue(formData, 'unit_number'),
-      customer_name: getNullableValue(formData, 'customer_name'),
+      customer_name: getNullableValue(formData, 'customer_client') ?? getNullableValue(formData, 'customer_name'),
       field_service_details: buildFieldServiceDetails(formData, existingSession.field_service_details),
       updated_at: new Date().toISOString(),
     })
@@ -162,6 +181,35 @@ export async function updateDocumentationSession(sessionId: string, formData: Fo
   revalidatePath('/dashboard/sessions')
   revalidatePath(`/dashboard/sessions/${sessionId}`)
   redirect(`/dashboard/sessions/${sessionId}?saved=1`)
+}
+export async function updateSessionMetadata(sessionId: string, formData: FormData) {
+  const { supabase, profile } = await requireSessionWorkspace()
+  const reportType = normalizeReportType(getTrimmedValue(formData, 'session_type'))
+  const metadata = normalizeSessionMetadata({
+    customer_client: getNullableValue(formData, 'customer_client'),
+    asset_equipment: getNullableValue(formData, 'asset_equipment'),
+    reference_number: getNullableValue(formData, 'reference_number'),
+    location: getNullableValue(formData, 'location'),
+    subject_name: getNullableValue(formData, 'subject_name'),
+  })
+
+  const { error } = await supabase
+    .from('documentation_sessions')
+    .update({
+      session_type: reportType,
+      title: getTrimmedValue(formData, 'title') || reportType,
+      session_metadata: sessionMetadataToJson(metadata),
+      customer_name: metadata.customer_client,
+      asset_label: metadata.asset_equipment,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', sessionId)
+    .eq('organization_id', profile.organization_id)
+
+  if (error) redirect(`/dashboard/sessions/${sessionId}/report?error=${encodeURIComponent(error.message)}`)
+  revalidatePath(`/dashboard/sessions/${sessionId}`)
+  revalidatePath(`/dashboard/sessions/${sessionId}/report`)
+  redirect(`/dashboard/sessions/${sessionId}/report?saved=1`)
 }
 
 export async function archiveDocumentationSession(sessionId: string) {

@@ -14,7 +14,8 @@ import { AI_REPORT_DRAFT_MODEL, AI_REPORT_DRAFT_PROMPT_VERSION, generateReportDr
 import type { OrganizationPlan } from '@/lib/stripe'
 import { buildEvidenceGroups, buildEvidencePackages,
   sanitizeReportStructureForSession, buildNormalizedReportFields, deriveFormSectionsFromCaptures, extractFormBlueprint, mapEvidenceToFormBlueprint, scoreFormReferenceCapture, selectPrimaryFormCaptures, stripConfidenceText, GENERIC_REPORT_SECTION_TITLES, getReportStructureSourceMetadata, sanitizeCapturesForImageAiAssist } from '@/features/reports/report-structure'
-import { buildSafeReportTitle, buildSubjectReportTitle, isPlaceholderReportTitle } from '@/features/reports/report-title'
+import { buildSubjectReportTitle, isPlaceholderReportTitle } from '@/features/reports/report-title'
+import { getDefaultReportTitle, normalizeReportType } from '@/features/sessions/report-types'
 import type { Json } from '@/lib/supabase/database.types'
 
 const REPORT_SHARE_EXPIRATION_DAYS = 30
@@ -833,16 +834,7 @@ export async function generateAiReportDraft(sessionId: string) {
   }) ?? {}
   const reportStructure = sanitizeReportStructureForSession(rawReportStructure, normalizedCaptures.map((capture) => capture.id))
 
-  const safeReportTitle = buildSafeReportTitle({
-    draftTitle: draftOutput.title,
-    sessionTitle: fullSession.title,
-    structureSource: structureSourceMetadata.report_structure_source,
-    sourceDocumentName: structureSourceMetadata.source_document_name,
-    customerName: fullSession.customer_name,
-    assetLabel: fullSession.asset_label,
-    unitNumber: fullSession.unit_number,
-    vin: fullSession.vin,
-  })
+  const safeReportTitle = getDefaultReportTitle(normalizeReportType(fullSession.session_type))
   draftOutput = { ...draftOutput, title: safeReportTitle }
   if (isPlaceholderSessionTitle(fullSession.title)) {
     await supabase

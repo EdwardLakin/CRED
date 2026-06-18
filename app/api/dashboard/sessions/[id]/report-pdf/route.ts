@@ -12,7 +12,7 @@ import {
 } from '@/features/field-service'
 import { buildUniversalReportDocument } from '@/features/reports/report-document'
 import { buildCustomerAssetRows, buildNormalizedReportModel, classifyReferenceDocumentTitle, dedupeEvidenceDetails, deriveFormSectionsFromCaptures, getNormalizedFindingModels, getNormalizedRecommendedActions, isMeaningfulCustomerReportText, normalizeDraftSections, shouldRenderDetail, splitRecommendationText, stripConfidenceText, sanitizeCapturesForImageAiAssist } from '@/features/reports/report-structure'
-import { getDisplayReportTitle, getReportInfoValue } from '@/features/reports/report-title'
+import { getDefaultReportTitle, normalizeReportType, normalizeSessionMetadata } from '@/features/sessions/report-types'
 import { asDiagnosticRecordArray, getDiagnosticProcedureProgress, getDiagnosticStepCompleteness } from '@/features/diagnostic-procedures/progress'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { recordUsageEvent } from '@/features/usage'
@@ -48,8 +48,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function cleanReportTitle(preferred: string | null | undefined, session: ReportSession, draft: ReportDraft | null | undefined) {
-  return getDisplayReportTitle(preferred ? { ...draft, title: preferred } : draft, session)
+function cleanReportTitle(_preferred: string | null | undefined, session: ReportSession) {
+  return getDefaultReportTitle(normalizeReportType(session.session_type))
 }
 
 function escapeRawHtml(value: unknown) {
@@ -145,13 +145,15 @@ function getProfessionalRows(rows: Array<{ label: string; value: string }>) {
 
 
 function renderReportInformationHtml(draft: ReportDraft | null | undefined, session: ReportSession) {
+  const metadata = normalizeSessionMetadata(session.session_metadata, session)
   const rows = [
-    { label: 'Report Title', value: cleanReportTitle(draft?.title || session.title, session, draft) },
-    { label: 'Subject Name', value: getReportInfoValue(draft, session, 'subject_name') },
-    { label: 'Customer / Client', value: getReportInfoValue(draft, session, 'customer_client') || session.customer_name || '' },
-    { label: 'Asset / Equipment', value: getReportInfoValue(draft, session, 'asset_equipment') || session.asset_label || '' },
-    { label: 'Location / Address', value: getReportInfoValue(draft, session, 'location_address') },
-    { label: 'Reference Number', value: getReportInfoValue(draft, session, 'reference_number') },
+    { label: 'Report Type', value: normalizeReportType(session.session_type) },
+    { label: 'Report Title', value: cleanReportTitle(draft?.title || session.title, session) },
+    { label: 'Subject Name', value: metadata.subject_name || '' },
+    { label: 'Customer / Client', value: metadata.customer_client || '' },
+    { label: 'Asset / Equipment', value: metadata.asset_equipment || '' },
+    { label: 'Location', value: metadata.location || '' },
+    { label: 'Reference Number', value: metadata.reference_number || '' },
   ]
   const html = renderDefinitionRows(rows)
   return html ? `<section class="item service-section"><h2>Report Information</h2>${html}</section>` : ''
@@ -305,7 +307,7 @@ function buildEvidenceSectionHtml(title: string, items: ReturnType<typeof buildN
 
 function buildEvidenceAppendixHtml(captures: ReportCapture[], signedUrls: Record<string, string>, timeZone: string | null, options: { showDebugDetails?: boolean } = {}) {
   if (captures.length === 0) return '<section class="item service-section"><h2>Evidence Appendix</h2><p class="muted">No included evidence selected for this report.</p></section>'
-  const reportDocument = buildUniversalReportDocument({ captures, timeZone })
+  const reportDocument = buildUniversalReportDocument({ captures, timeZone, reportType: undefined })
   const evidenceByCaptureId = new Map(reportDocument.evidenceItems.map((item) => [item.sourceCaptureId, item]))
   return `<section class="item service-section"><h2>Evidence Appendix</h2><p class="muted">Included captures are listed once from the reviewed report state. Each section traces back to capture IDs where available.</p><div class="evidence-grid">${captures.map((capture) => {
     const signedUrl = signedUrls[capture.id]
@@ -446,7 +448,7 @@ function buildFieldServiceReportHtml({
   const chargeRows = ['labour_charge', 'parts_charge', 'mileage_charge', 'expenses_charge', 'misc_charges', 'subtotal', 'tax', 'total']
     .map((fieldName) => ({ label: FIELD_SERVICE_FIELD_LABELS[fieldName] ?? fieldName, value: getDetailValue(details, fieldName) }))
   const reviewDocument = buildNormalizedReportModel({ captures: captureItems, sections: [], draftSections: reportSections, measurements: reportDraft?.measurements ?? [], findings: reportDraft?.findings ?? [] })
-  const reportTitle = cleanReportTitle(reportDraft?.title || session.title, session, reportDraft)
+  const reportTitle = cleanReportTitle(reportDraft?.title || session.title, session)
   const findingModels = reviewDocument.findingModels
   const summaryHtml = buildExecutiveSummaryHtml({ reportTitle, organizationName, dateLabel: formatDateInTimeZone(new Date(), timeZone), findings: findingModels, referenceCount: reviewDocument.referenceDocuments.length, evidenceCount: captureItems.length })
   const appendixHtml = buildEvidenceAppendixHtml(getAppendixCaptures(captureItems).captures, signedUrls, timeZone)
@@ -657,7 +659,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     .join(' · ')
 
   const visibleReportSections = reportSections.filter((section) => !isHiddenFromReport(section.metadata))
-  const reportTitle = cleanReportTitle(reportDraft?.title || session.title, session, reportDraft)
+  const reportTitle = cleanReportTitle(reportDraft?.title || session.title, session)
 
   const documentSections = normalizeDraftSections(visibleReportSections, captureItems)
   const derivedFormSections = deriveFormSectionsFromCaptures(captureItems)
@@ -680,7 +682,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
 
   const toolbarHtml = previewOnly ? '' : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>'
   const html = `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Professional Evidence Report</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'General evidence report')} · ${escapeHtml(formatDateInTimeZone(new Date(), timeZone))}</p></header>${summaryHtml}${reportInfoHtml}${structuredFormDataHtml}${customerAssetHtml || referenceHtml ? `<section class="item service-section"><h2>Report Metadata</h2>${customerAssetHtml}${referenceHtml}</section>` : ''}${findingsHtml}${unattachedHtml}${buildFinalNotesHtml(session)}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile, reportSignatures, signatureUrls)}${supportingHtml}${appendixHtml}</main></body></html>`
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">${escapeHtml(normalizeReportType(session.session_type))}</p><p class="meta">${escapeHtml(session.session_type)} · ${escapeHtml(assetDetails || 'General evidence report')} · ${escapeHtml(formatDateInTimeZone(new Date(), timeZone))}</p></header>${summaryHtml}${reportInfoHtml}${structuredFormDataHtml}${customerAssetHtml || referenceHtml ? `<section class="item service-section"><h2>Report Metadata</h2>${customerAssetHtml}${referenceHtml}</section>` : ''}${findingsHtml}${unattachedHtml}${buildFinalNotesHtml(session)}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile, reportSignatures, signatureUrls)}${supportingHtml}${appendixHtml}</main></body></html>`
 
   return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
 }

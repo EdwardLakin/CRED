@@ -409,7 +409,9 @@ function isNoteCapture(capture: CaptureLike) {
 }
 
 function isDocumentCapture(capture: CaptureLike) {
-  return capture.media_kind === 'document' || Boolean(capture.ocr_text?.trim()) || Boolean(isRecord(capture.extracted_data) && (isRecord(capture.extracted_data.source_document) || isRecord(capture.extracted_data.extraction)))
+  // Reference Documents are user-uploaded documents only. Image captures may have OCR/extraction
+  // data, but they remain evidence photos and must not be counted as reference documents.
+  return capture.media_kind === 'document' || capture.type === 'document'
 }
 
 function normalizeForMatch(value: string) {

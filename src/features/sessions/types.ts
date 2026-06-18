@@ -12,12 +12,16 @@ export const SESSION_STATUSES: Array<{ value: SessionStatus; label: string }> = 
   { value: 'archived', label: 'Archived' },
 ]
 
-export const DEFAULT_SESSION_TYPE = 'General Documentation'
+export const DEFAULT_SESSION_TYPE = 'General Evidence Report'
 
 export const SESSION_TYPES = [
-  { value: 'Inspection', label: 'Inspection' },
-  { value: 'field_service_report', label: 'Service Report' },
-  { value: 'General Documentation', label: 'General Documentation' },
+  { value: 'General Evidence Report', label: 'General Evidence Report' },
+  { value: 'Vehicle Inspection', label: 'Vehicle Inspection' },
+  { value: 'Property Inspection', label: 'Property Inspection' },
+  { value: 'Insurance Claim', label: 'Insurance Claim' },
+  { value: 'Incident Report', label: 'Incident Report' },
+  { value: 'Safety Inspection', label: 'Safety Inspection' },
+  { value: 'Custom Report', label: 'Custom Report' },
   { value: 'diagnostic_procedure', label: 'Diagnostic Procedure Workspace' },
 ] as const
 

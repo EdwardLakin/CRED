@@ -240,6 +240,7 @@ export interface Database {
           unit_number: string | null
           customer_name: string | null
           suggested_details: Json
+          session_metadata: Json
           field_service_details: Json
           workflow_template_id: string | null
           review_status: string
@@ -269,6 +270,7 @@ export interface Database {
           unit_number?: string | null
           customer_name?: string | null
           suggested_details?: Json
+          session_metadata?: Json
           field_service_details?: Json
           workflow_template_id?: string | null
           review_status?: string
@@ -298,6 +300,7 @@ export interface Database {
           unit_number?: string | null
           customer_name?: string | null
           suggested_details?: Json
+          session_metadata?: Json
           field_service_details?: Json
           workflow_template_id?: string | null
           review_status?: string

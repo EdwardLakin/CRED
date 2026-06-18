@@ -1,7 +1,6 @@
 import Link from 'next/link'
 
 import { EmptyState, SessionCard } from '@/features/sessions'
-import { createQuickCaptureSession } from '@/features/sessions/actions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 
 function getCaptureCounts(captures: Array<{ documentation_session_id: string }> | null) {
@@ -78,9 +77,7 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
           <p className="muted">Open a session and keep moving: capture, review, export.</p>
         </div>
         <div className="page-actions">
-          <form action={createQuickCaptureSession}>
-            <button className="button button-primary touch-target">New Session</button>
-          </form>
+          <Link href="/dashboard/sessions/new" className="button button-primary touch-target">New Session</Link>
           <Link href="/dashboard" className="button button-secondary touch-target">
             Dashboard
           </Link>

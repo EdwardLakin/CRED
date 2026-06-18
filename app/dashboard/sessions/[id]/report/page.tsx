@@ -11,8 +11,6 @@ import {
   buildNormalizedReportModel,
   classifyReferenceDocumentTitle,
   deriveFormSectionsFromCaptures,
-  getFormStructureSummary,
-  sanitizeReportStructureForSession,
   normalizeDraftSections,
   shouldRenderDetail,
   splitRecommendationText,
@@ -22,7 +20,7 @@ import {
   sanitizeCapturesForImageAiAssist,
 } from "@/features/reports/report-structure";
 import { buildUniversalReportDocument } from "@/features/reports/report-document";
-import { getDisplayReportTitle, getReportInfoValue } from "@/features/reports/report-title";
+import { getReportInfoValue } from "@/features/reports/report-title";
 import {
   createReportShareLink,
   disableReportShareLink,
@@ -35,6 +33,8 @@ import {
   saveReportEdits,
 } from "@/features/reports/actions";
 import { formatDateTime } from "@/features/sessions";
+import { updateSessionMetadata } from "@/features/sessions/actions";
+import { DEFAULT_REPORT_TYPE, REPORT_TYPES, SESSION_METADATA_FIELDS, getDefaultReportTitle, normalizeReportType, normalizeSessionMetadata } from "@/features/sessions/report-types";
 import { requireSessionWorkspace } from "@/features/sessions/data";
 import { SignatureCaptureForm } from "@/features/signatures";
 import { useSavedSignature } from "@/features/signatures/actions";
@@ -295,7 +295,7 @@ export default async function SessionReportPreviewPage({
   const { data: session, error: sessionError } = await supabase
     .from("documentation_sessions")
     .select(
-      "id, title, session_type, organization_id, workflow_template_id, review_status, reviewed_at, reviewed_by, asset_label, vin, unit_number, customer_name, suggested_details, final_notes, final_notes_ai_generated, final_notes_updated_at, final_notes_edited_by_user, include_final_notes_in_export, updated_at",
+      "id, title, session_type, session_metadata, organization_id, workflow_template_id, review_status, reviewed_at, reviewed_by, asset_label, vin, unit_number, customer_name, suggested_details, final_notes, final_notes_ai_generated, final_notes_updated_at, final_notes_edited_by_user, include_final_notes_in_export, updated_at",
     )
     .eq("id", id)
     .eq("organization_id", profile.organization_id)
@@ -422,8 +422,6 @@ export default async function SessionReportPreviewPage({
   const normalizedReportSections = normalizeDraftSections(visibleReportSections, visibleCaptures);
   const derivedFormSections = deriveFormSectionsFromCaptures(visibleCaptures);
   const documentSections = normalizedReportSections.length > 0 ? normalizedReportSections : derivedFormSections;
-  const sanitizedReportStructure = sanitizeReportStructureForSession(currentReport?.report_structure ?? null, visibleCaptures.map((capture) => capture.id));
-  const formStructureSummary = getFormStructureSummary(sanitizedReportStructure, documentSections);
   const reviewDocument = buildNormalizedReportModel({
     captures: visibleCaptures,
     sections: documentSections,
@@ -431,7 +429,6 @@ export default async function SessionReportPreviewPage({
     measurements: currentReport?.measurements ?? [],
     findings: currentReport?.findings ?? [],
   });
-  const reportDocument = buildUniversalReportDocument({ captures: visibleCaptures, timeZone: profile.timezone });
   const photoEvidence = supportingEvidence.filter(
     (item) => item.kind === "photo",
   );
@@ -465,8 +462,11 @@ export default async function SessionReportPreviewPage({
     ? saveReportEdits.bind(null, currentReport.id)
     : null;
   const sourceFieldEntries = getDisplayEntries(currentReport?.header_fields);
-  const displayReportTitle = getDisplayReportTitle(currentReport, session);
-  const isGenericEvidenceReport = formStructureSummary.source === "generic_fallback";
+  const reportType = normalizeReportType(session.session_type);
+  const sessionMetadata = normalizeSessionMetadata(session.session_metadata, session);
+  const displayReportTitle = getDefaultReportTitle(reportType);
+  const isGenericEvidenceReport = reportType === DEFAULT_REPORT_TYPE;
+  const reportDocument = buildUniversalReportDocument({ captures: visibleCaptures, timeZone: profile.timezone, reportType });
   const isEditingReport = Boolean(currentReport);
   if (currentReport && getDiagnosticProcedureInfo(currentReport)) {
     return (
@@ -546,6 +546,9 @@ export default async function SessionReportPreviewPage({
             supportingEvidence={supportingEvidence}
             reportEvidenceDiagnostics={reportEvidenceDiagnostics}
             session={session}
+            reportType={reportType}
+            sessionMetadata={sessionMetadata}
+            metadataAction={updateSessionMetadata.bind(null, session.id)}
             saveReportEditsAction={saveReportEditsAction}
             sourceFieldEntries={sourceFieldEntries}
             facilityName={profile.company_profile?.facility_name ?? profile.company_profile?.company_name ?? profile.organization.name}
@@ -605,6 +608,9 @@ function GeneratedReportReview({
   supportingEvidence,
   reportEvidenceDiagnostics,
   session,
+  reportType,
+  sessionMetadata,
+  metadataAction,
   saveReportEditsAction,
   sourceFieldEntries,
   facilityName,
@@ -626,6 +632,9 @@ function GeneratedReportReview({
   supportingEvidence: SupportingEvidenceItem[];
   reportEvidenceDiagnostics: { capturesSaved: number; includedInReport: number; referencedByDraft: number; hiddenFromReport: number };
   session: Pick<DocumentationSession, "id" | "title" | "asset_label" | "customer_name" | "suggested_details">;
+  reportType: string;
+  sessionMetadata: ReturnType<typeof normalizeSessionMetadata>;
+  metadataAction: ServerAction;
   saveReportEditsAction: ServerAction | null;
   sourceFieldEntries: [string, unknown][];
   facilityName: string;
@@ -720,14 +729,14 @@ function GeneratedReportReview({
             <p className="muted">Report metadata is optional for generic evidence reports and is used in export when present.</p>
           </div>
         </summary>
-        <div className="report-field-grid">{[
-          ["Report Title", displayReportTitle],
-          ["Subject Name", getReportInfoValue(currentReport, session, "subject_name")],
-          ["Customer / Client", getReportInfoValue(currentReport, session, "customer_client") || session.customer_name],
-          ["Asset / Equipment", getReportInfoValue(currentReport, session, "asset_equipment") || session.asset_label],
-          ["Location / Address", getReportInfoValue(currentReport, session, "location_address")],
-          ["Reference Number", getReportInfoValue(currentReport, session, "reference_number")],
-        ].map(([label, value]) => <div key={label} className="report-field-card"><span>{label}</span><strong className={value ? undefined : "not-provided"}>{value ? stripConfidenceText(String(value)) : "Not provided"}</strong></div>)}</div>
+        <form action={metadataAction} className="form-stack">
+          <input type="hidden" name="title" value={displayReportTitle} />
+          <div className="report-field-grid">
+            <label className="field-stack"><span className="label">Report Type</span><select className="select" name="session_type" defaultValue={reportType}>{REPORT_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
+            {SESSION_METADATA_FIELDS.map((field) => <label key={field.name} className="field-stack"><span className="label">{field.label}</span><input className="input" name={field.name} defaultValue={sessionMetadata[field.name] ?? ""} /></label>)}
+          </div>
+          <div className="form-actions report-inline-actions"><button className="button button-secondary touch-target">Save Report Information</button></div>
+        </form>
         <ReferenceDocumentList items={reviewDocument.referenceDocuments} supportingEvidence={supportingEvidence} />
       </details>
 
@@ -738,7 +747,7 @@ function GeneratedReportReview({
           action={saveReportEditsAction}
           className="form-stack report-edit-form"
         >
-          <details className="report-subsection report-edit-panel" open>
+          <details className="report-subsection report-edit-panel">
             <summary className="report-section-title-row">
               <div>
                 <h3>Review and correct report</h3>
@@ -832,9 +841,9 @@ function GeneratedReportReview({
             })}
           </div>
 
-          <details className="report-subsection report-edit-panel" open>
+          <details className="report-subsection report-edit-panel">
             <summary>
-              <h3>Report evidence</h3>
+              <h3>Advanced evidence editing</h3>
               <p className="muted">
                 Edit notes and choose what appears in the final report.
               </p>
@@ -847,9 +856,9 @@ function GeneratedReportReview({
             />
           </details>
 
-          <details className="report-subsection report-edit-panel" open>
+          <details className="report-subsection report-edit-panel">
             <summary>
-              <h3>Form fields</h3>
+              <h3>Advanced form fields</h3>
               <p className="muted">
                 Correct form details that should appear in the report.
               </p>

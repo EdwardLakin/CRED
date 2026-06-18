@@ -44,7 +44,9 @@ export function getEvidenceIdentifier(index: number) {
 export function buildUniversalReportDocument<TCapture extends EvidenceDocumentCapture>(params: {
   captures: TCapture[]
   timeZone: string | null
+  reportType?: string | null
 }): UniversalReportDocument<TCapture> {
+  const reportType = params.reportType || 'General Evidence Report'
   return {
     evidenceItems: params.captures.map((capture, index) => ({
       capture,
@@ -55,16 +57,16 @@ export function buildUniversalReportDocument<TCapture extends EvidenceDocumentCa
       sourceCaptureId: capture.id,
     })),
     sectionOrder: [
-      'Cover page',
+      'Cover',
+      'Report Overview',
       'Report Information',
-      'Summary',
-      'Observations / Findings',
-      'Recommendations (user-entered only)',
+      'Final Summary / Notes',
+      'Captured Evidence',
       'Evidence Appendix',
-      'Inspector / Organization Details',
-      'Signature / Approval',
+      'Inspector Details',
+      'Signature',
     ],
     trustStatement:
-      'CRED assembles user-provided captures, notes, and approved report text. Users remain the source of truth; CRED does not diagnose, classify photos, determine findings, or recommend repairs.',
+      `CRED assembles this ${reportType} from user-selected session metadata, approved report text, and included evidence. Users remain the source of truth; CRED does not infer report type, diagnose, determine findings, or recommend repairs.`,
   }
 }
