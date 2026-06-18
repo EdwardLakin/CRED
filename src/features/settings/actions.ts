@@ -18,20 +18,6 @@ function getString(formData: FormData, field: string) {
   return typeof value === 'string' ? value.trim() || null : null
 }
 
-export async function saveImageAiAssistSetting(formData: FormData) {
-  const { supabase, profile } = await requireSessionWorkspace()
-  const { error } = await supabase
-    .from('organizations')
-    .update({ image_ai_assist_enabled: formData.get('image_ai_assist_enabled') === 'on' })
-    .eq('id', profile.organization_id)
-
-  if (error) redirect(`/dashboard/settings?error=${encodeURIComponent(error.message)}`)
-
-  revalidatePath('/dashboard/settings')
-  revalidatePath('/dashboard')
-  redirect('/dashboard/settings?saved=image-ai-assist')
-}
-
 export async function saveInspectorFacilitySettings(formData: FormData) {
   const { supabase, profile } = await requireSessionWorkspace()
 
@@ -101,4 +87,59 @@ export async function clearDefaultSignature() {
   if (error) redirect(`/dashboard/settings?error=${encodeURIComponent(error.message)}`)
   revalidatePath('/dashboard/settings')
   redirect('/dashboard/settings?saved=signature-cleared')
+}
+
+
+function requireTeamManager(role: string) {
+  if (role !== 'owner' && role !== 'admin') {
+    redirect(`/dashboard/settings?error=${encodeURIComponent('Only owners and admins can manage team members.')}`)
+  }
+}
+
+function getInviteRole(formData: FormData) {
+  const role = getString(formData, 'role')
+  return role === 'admin' || role === 'inspector' || role === 'reviewer' ? role : 'inspector'
+}
+
+export async function inviteTeamMember(formData: FormData) {
+  const { supabase, profile } = await requireSessionWorkspace()
+  requireTeamManager(profile.role)
+  const email = getString(formData, 'email')?.toLowerCase()
+  if (!email) redirect(`/dashboard/settings?error=${encodeURIComponent('Enter an email address to invite.')}`)
+  const { getCurrentSeatCount, getAllowedSeatCount } = await import('@/features/team')
+  const currentSeats = await getCurrentSeatCount(supabase, profile.organization_id)
+  if (currentSeats >= getAllowedSeatCount(profile.organization.plan)) {
+    redirect(`/dashboard/settings?error=${encodeURIComponent('No seats remain on the current plan.')}`)
+  }
+  const { error } = await supabase.from('organization_invitations').upsert({ organization_id: profile.organization_id, email, role: getInviteRole(formData), status: 'pending_invite', invited_by: profile.id, last_sent_at: new Date().toISOString() }, { onConflict: 'organization_id,email' })
+  if (error) redirect(`/dashboard/settings?error=${encodeURIComponent(error.message)}`)
+  revalidatePath('/dashboard/settings')
+  redirect('/dashboard/settings?saved=invite-created')
+}
+
+export async function resendTeamInvite(formData: FormData) {
+  const { supabase, profile } = await requireSessionWorkspace()
+  requireTeamManager(profile.role)
+  const inviteId = getString(formData, 'invite_id')
+  if (!inviteId) redirect('/dashboard/settings')
+  const { error } = await supabase.from('organization_invitations').update({ last_sent_at: new Date().toISOString() }).eq('id', inviteId).eq('organization_id', profile.organization_id).eq('status', 'pending_invite')
+  if (error) redirect(`/dashboard/settings?error=${encodeURIComponent(error.message)}`)
+  revalidatePath('/dashboard/settings')
+  redirect('/dashboard/settings?saved=invite-resend-placeholder')
+}
+
+export async function removeTeamMember(formData: FormData) {
+  const { supabase, profile } = await requireSessionWorkspace()
+  requireTeamManager(profile.role)
+  const inviteId = getString(formData, 'invite_id')
+  const profileId = getString(formData, 'profile_id')
+  if (inviteId) {
+    const { error } = await supabase.from('organization_invitations').update({ status: 'revoked', revoked_at: new Date().toISOString() }).eq('id', inviteId).eq('organization_id', profile.organization_id)
+    if (error) redirect(`/dashboard/settings?error=${encodeURIComponent(error.message)}`)
+  } else if (profileId && profile.role === 'owner') {
+    const { error } = await supabase.from('profiles').delete().eq('id', profileId).eq('organization_id', profile.organization_id).neq('role', 'owner')
+    if (error) redirect(`/dashboard/settings?error=${encodeURIComponent(error.message)}`)
+  }
+  revalidatePath('/dashboard/settings')
+  redirect('/dashboard/settings?saved=team-member-removed')
 }

@@ -4,7 +4,8 @@ import { signOut } from '../actions'
 import { ThemeToggle } from '@/components/theme'
 import { Button, Card } from '@/components/ui'
 import { BrowserTimeZoneInput, SignaturePad } from '@/components/ui/SignaturePad'
-import { clearDefaultSignature, saveDefaultSignature, saveImageAiAssistSetting, saveInspectorFacilitySettings } from '@/features/settings/actions'
+import { clearDefaultSignature, inviteTeamMember, removeTeamMember, resendTeamInvite, saveDefaultSignature, saveInspectorFacilitySettings } from '@/features/settings/actions'
+import { getAllowedSeatCount, getCurrentSeatCount, getRemainingSeatCount, TEAM_ROLE_LABELS, TEAM_STATUS_LABELS, type TeamRole } from '@/features/team'
 import { hasInternalAdminAccess, requireSessionWorkspace } from '@/features/sessions/data'
 
 export default async function SettingsPage() {
@@ -13,6 +14,12 @@ export default async function SettingsPage() {
   const industry = organization.industry || 'Not set'
   const canManageInternalTools = hasInternalAdminAccess(profile)
   const settingsSaved = false
+  const showTeamMembers = organization.plan === 'team' || organization.plan === 'shop'
+  const allowedSeats = getAllowedSeatCount(organization.plan)
+  const currentSeats = showTeamMembers ? await getCurrentSeatCount(supabase, profile.organization_id) : 1
+  const remainingSeats = getRemainingSeatCount(currentSeats, organization.plan)
+  const { data: activeMembers } = showTeamMembers ? await supabase.from('profiles').select('id, full_name, role').eq('organization_id', profile.organization_id).order('created_at', { ascending: true }) : { data: [] }
+  const { data: pendingInvites } = showTeamMembers ? await supabase.from('organization_invitations').select('id, email, role, status').eq('organization_id', profile.organization_id).eq('status', 'pending_invite').order('invited_at', { ascending: false }) : { data: [] }
   const { data: defaultSignatureUrl } = profile.default_signature_path ? await supabase.storage.from('documentation-signatures').createSignedUrl(profile.default_signature_path, 60 * 10) : { data: null }
   const fields = [
     ['inspector_name', 'Inspector name', profile.full_name],
@@ -41,20 +48,6 @@ export default async function SettingsPage() {
       <Card className="dashboard-card workspace-card"><div className="dashboard-grid settings-summary-grid"><div><strong>User</strong><p className="muted">{profile.full_name}</p></div><div><strong>Organization</strong><p className="muted">{organization.name}</p></div><div><strong>Industry</strong><p className="muted">{industry}</p></div><div className="workspace-actions"><ThemeToggle /><form action={signOut} className="sign-out-form"><Button type="submit" variant="secondary">Sign out</Button></form></div></div></Card>
 
       <Card className="dashboard-card workspace-card">
-        <form action={saveImageAiAssistSetting} className="form-stack">
-          <div>
-            <p className="eyebrow">AI Assist</p>
-            <h2>Image upload AI assist</h2>
-            <p className="muted">Controls whether uploaded images create AI processing jobs for classification, extraction, and generated notes. Uploads and manual review still work when disabled.</p>
-          </div>
-          <label className="report-visibility-toggle">
-            <input type="checkbox" name="image_ai_assist_enabled" defaultChecked={organization.image_ai_assist_enabled} />
-            <span>Enable Image AI Assist for this workspace</span>
-          </label>
-          <div className="form-actions"><Button type="submit">Save AI Assist Setting</Button></div>
-        </form>
-      </Card>
-      <Card className="dashboard-card workspace-card">
         <form action={saveInspectorFacilitySettings} className="form-stack">
           <div><p className="eyebrow">Reports</p><h2>Inspector / Facility Details</h2><p className="muted">Saved details autofill Review and exported reports. You can still capture a report-specific signature.</p></div>
           <label className="field-stack"><span className="label">Timezone</span><BrowserTimeZoneInput name="timezone" defaultValue={profile.timezone ?? 'UTC'} /></label>
@@ -72,6 +65,49 @@ export default async function SettingsPage() {
         <form action={saveDefaultSignature} className="form-stack signature-capture-form"><SignaturePad /><div className="form-actions"><Button type="submit">Save / Replace Default Signature</Button></div></form>
         {profile.default_signature_path ? <form action={clearDefaultSignature}><Button type="submit" variant="secondary">Clear Default Signature</Button></form> : null}
       </Card>
+
+      {showTeamMembers ? (
+        <Card className="dashboard-card workspace-card">
+          <div className="form-stack">
+            <div>
+              <p className="eyebrow">User management</p>
+              <h2>Team Members</h2>
+              <p className="muted">{currentSeats} of {allowedSeats} seats used. {remainingSeats} seats remaining. Additional users can be added as paid seat expansions.</p>
+            </div>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead><tr><th>User</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
+                <tbody>
+                  {(activeMembers ?? []).map((member) => (
+                    <tr key={member.id}>
+                      <td>{member.full_name}</td>
+                      <td>{TEAM_ROLE_LABELS[member.role as TeamRole]}</td>
+                      <td>{TEAM_STATUS_LABELS.active}</td>
+                      <td>{member.id !== profile.id && profile.role === 'owner' ? <form action={removeTeamMember}><input type="hidden" name="profile_id" value={member.id} /><Button type="submit" variant="secondary">Remove User</Button></form> : <span className="muted">Workspace owner</span>}</td>
+                    </tr>
+                  ))}
+                  {(pendingInvites ?? []).map((invite) => (
+                    <tr key={invite.id}>
+                      <td>{invite.email}</td>
+                      <td>{TEAM_ROLE_LABELS[invite.role as TeamRole]}</td>
+                      <td>{TEAM_STATUS_LABELS.pending_invite}</td>
+                      <td className="workspace-actions">
+                        <form action={resendTeamInvite}><input type="hidden" name="invite_id" value={invite.id} /><Button type="submit" variant="secondary">Resend Invite</Button></form>
+                        <form action={removeTeamMember}><input type="hidden" name="invite_id" value={invite.id} /><Button type="submit" variant="secondary">Remove User</Button></form>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <form action={inviteTeamMember} className="field-grid">
+              <label className="field-stack"><span className="label">Email</span><input className="input" type="email" name="email" required placeholder="teammate@example.com" /></label>
+              <label className="field-stack"><span className="label">Role</span><select className="input" name="role" defaultValue="inspector"><option value="admin">Admin</option><option value="inspector">Inspector</option><option value="reviewer">Reviewer</option></select></label>
+              <div className="form-actions"><Button type="submit" disabled={remainingSeats <= 0}>Invite User</Button></div>
+            </form>
+          </div>
+        </Card>
+      ) : null}
       <section className="settings-link-grid" aria-label="Settings areas">
         {canManageInternalTools ? <Link href="/dashboard/templates" className="card settings-link-card touch-target"><span className="eyebrow">Internal / Admin</span><h2>Report context library</h2><p className="muted">Admin-only compatibility tools for reusable report context. Normal evidence capture does not require setup.</p></Link> : null}
         <Link href="/dashboard/settings/archived-sessions" className="card settings-link-card touch-target"><span className="eyebrow">Sessions</span><h2>Archived sessions</h2><p className="muted">Search, restore, or safely delete archived workspace sessions.</p></Link>

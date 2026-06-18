@@ -58,7 +58,6 @@ export default async function GuidedCapturePage({
           <h1>Capture Evidence</h1>
           <p className="muted">{displaySessionTitle}</p>
           <p className="muted">If you have a paper form, capture it first.</p>
-          <p className="status-pill neutral">AI Assist: {profile.organization.image_ai_assist_enabled ? 'On' : 'Off'}</p>
         </div>
       </div>
 
@@ -77,7 +76,6 @@ export default async function GuidedCapturePage({
           stickyDoneHref={`/dashboard/sessions/${session.id}/report`}
           maxCaptureFileSizeBytes={planLimits.maxCaptureFileSizeBytes}
           maxVideoFileSizeBytes={planLimits.maxVideoFileSizeBytes}
-          imageAiAssistEnabled={profile.organization.image_ai_assist_enabled}
         />
       </section>
 
@@ -89,7 +87,7 @@ export default async function GuidedCapturePage({
           </div>
           <span className="status-pill neutral">{captureItems.length} saved</span>
         </div>
-        <RecentCapturesList captures={captureItems} signedUrls={signedUrls} timeZone={profile.timezone} imageAiAssistEnabled={profile.organization.image_ai_assist_enabled} />
+        <RecentCapturesList captures={captureItems} signedUrls={signedUrls} timeZone={profile.timezone} />
       </section>
     </main>
   )

@@ -20,7 +20,6 @@ export interface CurrentProfile extends ProfileRow {
     | 'current_period_end'
     | 'trial_ends_at'
     | 'billing_started_at'
-    | 'image_ai_assist_enabled'
   >
   company_profile: Pick<CompanyProfileRow, 'company_name' | 'facility_name' | 'facility_number' | 'facility_address_line_1' | 'facility_address_line_2' | 'facility_city' | 'facility_region' | 'facility_postal_code' | 'facility_country' | 'facility_phone' | 'facility_email' | 'permit_number' | 'certification_number'> | null
 }
@@ -54,7 +53,7 @@ export async function getCurrentProfile(): Promise<CurrentProfile | null> {
 
   const { data: organization, error: organizationError } = await supabase
     .from('organizations')
-    .select('id, name, industry, stripe_customer_id, stripe_subscription_id, plan, subscription_status, current_period_end, trial_ends_at, billing_started_at, image_ai_assist_enabled')
+    .select('id, name, industry, stripe_customer_id, stripe_subscription_id, plan, subscription_status, current_period_end, trial_ends_at, billing_started_at')
     .eq('id', profile.organization_id)
     .single()
 
