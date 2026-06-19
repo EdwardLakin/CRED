@@ -65,8 +65,8 @@ type ReportSession =
 
 type ExportImageAsset = {
   classification: "webSafeImage" | "nonWebSafeImage";
-  signedUrl?: string;
-  originalSignedUrl?: string;
+  mediaUrl?: string;
+  originalMediaUrl?: string;
   reason?: string;
 };
 
@@ -127,7 +127,7 @@ function getOrganizationDisplayName(organizationName: string, companyProfile?: {
 }
 
 function getCoverImageHtml(captures: ReportCapture[], imageAssets: Record<string, ExportImageAsset>) {
-  const coverCapture = captures.find((capture) => isImageEvidence(capture) && imageAssets[capture.id]?.classification === "webSafeImage" && imageAssets[capture.id]?.signedUrl);
+  const coverCapture = captures.find((capture) => isImageEvidence(capture) && imageAssets[capture.id]?.classification === "webSafeImage" && imageAssets[capture.id]?.mediaUrl);
   if (!coverCapture) return "";
   return `<div class="cover-image">${renderExportImage(imageAssets[coverCapture.id], getPrimaryEvidenceLabel(coverCapture), "Preview unavailable in printable export. Original evidence retained.")}</div>`;
 }
@@ -275,55 +275,75 @@ function classifyExportImage(capture: ReportCapture): ExportImageAsset["classifi
 }
 
 function renderExportImage(asset: ExportImageAsset | undefined, alt: string, fallbackText: string) {
-  const originalLink = asset?.originalSignedUrl ? `<p class="original-link"><a href="${escapeHtml(asset.originalSignedUrl)}" target="_blank" rel="noreferrer">Open original evidence</a></p>` : "";
+  const originalLink = asset?.originalMediaUrl ? `<p class="original-link"><a href="${escapeHtml(asset.originalMediaUrl)}" target="_blank" rel="noreferrer">Open original evidence</a></p>` : "";
   const fallback = `<div class="media-fallback export-image-fallback">${escapeHtml(fallbackText)}${originalLink}</div>`;
-  if (asset?.classification === "webSafeImage" && asset.signedUrl) {
-    return `<img src="${escapeHtml(asset.signedUrl)}" alt="${escapeHtml(alt)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />${fallback.replace('<div class="media-fallback export-image-fallback">', '<div class="media-fallback export-image-fallback" style="display:none">')}`;
+  if (asset?.classification === "webSafeImage" && asset.mediaUrl) {
+    return `<img src="${escapeHtml(asset.mediaUrl)}" alt="${escapeHtml(alt)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />${fallback.replace('<div class="media-fallback export-image-fallback">', '<div class="media-fallback export-image-fallback" style="display:none">')}`;
   }
   return fallback;
 }
 
-async function signCaptureImageUrls(
-  supabase: SupabaseClient<Database>,
+function appendMediaQuery(path: string, shareToken: string | null, download = false) {
+  const params = new URLSearchParams();
+  if (shareToken) params.set("share_token", shareToken);
+  if (download) params.set("download", "1");
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
+}
+
+function buildCaptureMediaUrl(sessionId: string, captureId: string, shareToken: string | null, download = false) {
+  return appendMediaQuery(
+    `/api/dashboard/sessions/${encodeURIComponent(sessionId)}/evidence/${encodeURIComponent(captureId)}/media`,
+    shareToken,
+    download,
+  );
+}
+
+function buildSignatureMediaUrl(sessionId: string, signatureId: string, shareToken: string | null) {
+  return appendMediaQuery(
+    `/api/dashboard/sessions/${encodeURIComponent(sessionId)}/signatures/${encodeURIComponent(signatureId)}/media`,
+    shareToken,
+  );
+}
+
+function buildCaptureImageUrls(
+  sessionId: string,
   captures: ReportCapture[],
+  shareToken: string | null,
 ) {
   const imageAssets: Record<string, ExportImageAsset> = {};
-  await Promise.all(
-    captures.map(async (capture) => {
-      if (!isImageEvidence(capture)) return;
-      const classification = classifyExportImage(capture);
-      if (!capture.storage_path) {
-        console.warn("[report-export-image-signing]", {
+  for (const capture of captures) {
+    const classification = isImageEvidence(capture)
+      ? classifyExportImage(capture)
+      : "nonWebSafeImage";
+    if (!capture.storage_path) {
+      if (isImageEvidence(capture)) {
+        console.warn("[report-export-image-media-route]", {
+          session_id: sessionId,
           capture_id: capture.id,
           has_storage_path: false,
           error: "Missing storage_path for image evidence",
         });
-        imageAssets[capture.id] = { classification, reason: "missing_storage_path" };
-        return;
       }
+      imageAssets[capture.id] = { classification, reason: "missing_storage_path" };
+      continue;
+    }
 
-      const { data, error } = await supabase.storage
-        .from("documentation-captures")
-        .createSignedUrl(capture.storage_path, 60 * 60);
-      if (data?.signedUrl) {
-        imageAssets[capture.id] = classification === "webSafeImage"
-          ? { classification, signedUrl: data.signedUrl, originalSignedUrl: data.signedUrl }
-          : { classification, originalSignedUrl: data.signedUrl, reason: `${getUploadMimeType(capture) || getImageExtension(capture) || "unknown"} is not browser/export safe` };
-        return;
-      }
-
-      console.warn("[report-export-image-signing]", {
-        capture_id: capture.id,
-        has_storage_path: true,
-        error: error?.message ?? "No signed URL returned",
-      });
-    }),
-  );
+    const mediaUrl = buildCaptureMediaUrl(sessionId, capture.id, shareToken);
+    const originalMediaUrl = buildCaptureMediaUrl(sessionId, capture.id, shareToken, true);
+    imageAssets[capture.id] = classification === "webSafeImage"
+      ? { classification, mediaUrl, originalMediaUrl }
+      : {
+          classification,
+          originalMediaUrl,
+          reason: `${getUploadMimeType(capture) || getImageExtension(capture) || "unknown"} is not browser/export safe`,
+        };
+  }
   return imageAssets;
 }
 
-async function signSignatureUrls(
-  supabase: SupabaseClient<Database>,
+function buildSignatureUrls(
+  sessionId: string,
   signatures: ReportSignature[],
   reportProfile:
     | {
@@ -332,24 +352,13 @@ async function signSignatureUrls(
       }
     | null
     | undefined,
+  shareToken: string | null,
 ) {
   const signatureUrls: Record<string, string> = {};
-  await Promise.all(
-    signatures.map(async (signature) => {
-      const { data, error } = await supabase.storage
-        .from("documentation-signatures")
-        .createSignedUrl(signature.signature_image_path, 60 * 60);
-      if (data?.signedUrl) {
-        signatureUrls[signature.id] = data.signedUrl;
-        return;
-      }
-      console.warn("[report-export-signature-signing]", {
-        signature_id: signature.id,
-        has_storage_path: Boolean(signature.signature_image_path),
-        error: error?.message ?? "No signed URL returned",
-      });
-    }),
-  );
+  for (const signature of signatures) {
+    if (!signature.signature_image_path) continue;
+    signatureUrls[signature.id] = buildSignatureMediaUrl(sessionId, signature.id, shareToken);
+  }
   if (
     (signatures.length === 0 ||
       !signatures.some((signature) =>
@@ -358,16 +367,7 @@ async function signSignatureUrls(
     reportProfile?.use_default_signature &&
     reportProfile.default_signature_path
   ) {
-    const { data, error } = await supabase.storage
-      .from("documentation-signatures")
-      .createSignedUrl(reportProfile.default_signature_path, 60 * 60);
-    if (data?.signedUrl) signatureUrls.__default_signature = data.signedUrl;
-    else
-      console.warn("[report-export-signature-signing]", {
-        signature_id: "__default_signature",
-        has_storage_path: true,
-        error: error?.message ?? "No signed URL returned",
-      });
+    signatureUrls.__default_signature = buildSignatureMediaUrl(sessionId, "__default_signature", shareToken);
   }
   return signatureUrls;
 }
@@ -649,7 +649,7 @@ function buildFindingCardsHtml(
       const shouldRenderImage =
         options.renderImages !== false &&
         imageAsset?.classification === "webSafeImage" &&
-        imageAsset.signedUrl &&
+        imageAsset.mediaUrl &&
         (capture.media_kind === "image" ||
           capture.type === "photo" ||
           isImageFile);
@@ -725,10 +725,10 @@ function buildEvidenceItemsHtml(
           ? `<div class="video-still">${escapeHtml(stripConfidenceText(capture.technician_note || capture.transcript || "Technician Note"))}</div>`
           : mediaKind === "image"
             ? renderExportImage(imageAsset, getPrimaryEvidenceLabel(capture), "Preview unavailable in printable export. Original evidence retained.")
-            : imageAsset?.originalSignedUrl && mediaKind === "video"
-              ? `<div class="video-still">Video reference</div><p class="video-link"><a href="${escapeHtml(imageAsset.originalSignedUrl)}">Open video evidence</a></p>`
-              : imageAsset?.originalSignedUrl
-                ? `<p><a href="${escapeHtml(imageAsset.originalSignedUrl)}">Open saved file</a></p>`
+            : imageAsset?.originalMediaUrl && mediaKind === "video"
+              ? `<div class="video-still">Video reference</div><p class="video-link"><a href="${escapeHtml(imageAsset.originalMediaUrl)}">Open video evidence</a></p>`
+              : imageAsset?.originalMediaUrl
+                ? `<p><a href="${escapeHtml(imageAsset.originalMediaUrl)}">Open saved file</a></p>`
                 : mediaKind === "audio"
                   ? '<div class="video-still">Voice Note</div>'
                   : mediaKind === "image"
@@ -802,8 +802,8 @@ function buildEvidenceAppendixHtml(
       const mediaHtml =
         options.renderImages !== false && mediaKind === "image"
           ? renderExportImage(imageAsset, itemLabel, "Preview unavailable in printable export. Original evidence retained.")
-          : imageAsset?.originalSignedUrl
-            ? `<p><a href="${escapeHtml(imageAsset.originalSignedUrl)}">Open original evidence</a></p>`
+          : imageAsset?.originalMediaUrl
+            ? `<p><a href="${escapeHtml(imageAsset.originalMediaUrl)}">Open original evidence</a></p>`
             : mediaKind === "image"
               ? '<div class="media-fallback">Image unavailable in printable export.</div>'
               : `<div class="media-fallback">${escapeHtml(getEvidenceTitle(capture))}</div>`;
@@ -1200,6 +1200,7 @@ function buildFieldServiceReportHtml({
   <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, captures: captureItems, imageAssets: signedUrls, timeZone })}${summaryHtml}<section class="item service-section"><h2>Report Information</h2>${renderDefinitionRows(headerRows)}</section>${renderFieldServiceSection(details, "equipment")}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work performed</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Evidence</h2><p class="muted">Evidence items reference captured photos, videos, documents, and technician notes.</p></section>${buildFinalNotesHtml(session)}${evidenceHtml}${fieldUseGalleryMode ? buildEvidenceGalleryHtml(captureItems, signedUrls, timeZone) : ""}${appendixHtml}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges / documentation only</h2>${renderDefinitionRows(chargeRows)}</section>${buildInspectorFacilityHtml(null, null)}${buildApprovalHtml({ profile: null, signatures, signatureUrls, draft: reportDraft, session, timeZone })}</main></body></html>`;
 }
 
+// TODO: Replace browser-print image loading with a real PDF asset embedding pipeline for long-term offline report fidelity.
 const REPORT_STYLES = `
     :root{color-scheme:light}*{box-sizing:border-box}html{background:#eef2f7}body{font-family:Inter,Arial,Helvetica,sans-serif;background:#eef2f7;color:#18243a;margin:0;padding:36px;line-height:1.45}.report{max-width:1040px;margin:0 auto}.toolbar{align-items:center;background:#13213a;border-radius:16px;color:white;display:flex;justify-content:space-between;margin:0 0 18px;padding:14px 16px}.toolbar button{background:white;border:0;border-radius:999px;color:#13213a;cursor:pointer;font-weight:800;padding:10px 16px}.print-help{color:#dbe7ff;font-size:13px;margin:0}.header,.item{background:white;border:1px solid #d9e2ee;border-radius:20px;box-shadow:0 16px 45px rgba(24,36,58,.08);margin-bottom:20px;padding:28px}.report-cover{display:grid;gap:24px;grid-template-columns:minmax(0,1.25fr) minmax(280px,.75fr);overflow:hidden;padding:0}.cover-copy{padding:34px}.cover-copy h1{font-size:40px;letter-spacing:-.035em;line-height:1.05;margin:10px 0 12px}.cover-trust{border-left:4px solid #155dfc;color:#4c5d75;margin:18px 0;padding-left:14px}.cover-image{background:#f7f9fc;min-height:100%;overflow:hidden}.cover-image img{display:block;height:100%;max-height:520px;object-fit:cover;width:100%}.eyebrow{color:#155dfc;font-size:11px;font-weight:900;letter-spacing:.16em;text-transform:uppercase}.meta,.muted{color:#62728a}.service-section h2{border-bottom:1px solid #e3eaf3;font-size:22px;letter-spacing:-.02em;margin-top:0;padding-bottom:10px}dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:14px 0 0}dl div{background:#f8fafc;border:1px solid #e2e9f2;border-radius:13px;padding:10px 12px}dt{color:#5a6a81;font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}dd{font-weight:750;margin:4px 0 0;overflow-wrap:anywhere}a,a:visited{color:#18243a;text-decoration:none}.media{position:relative;border-radius:14px;overflow:hidden;background:#f8fafc;border:1px solid #d8e2ef}.media img{display:block;width:100%;max-height:520px;object-fit:contain;background:white}.media-fallback{align-items:center;aspect-ratio:4/3;background:#f8fafc;border:1px dashed #cbd6e5;color:#697890;display:flex;font-size:14px;font-weight:800;justify-content:center;padding:18px;text-align:center}.video-still{align-items:center;aspect-ratio:16/9;background:#eef4ff;color:#13213a;display:flex;font-size:18px;font-weight:800;justify-content:center;padding:16px;text-align:center}.finding{margin-top:14px}.finding-card,.reference-card{border:1px solid #d8e2ef;border-radius:16px;margin:12px 0;padding:16px;break-inside:avoid;page-break-inside:avoid}.finding-image{align-self:start;background:#f8fafc;border:1px solid #d8e2ef;border-radius:12px;overflow:hidden}.finding-image img{display:block;width:100%;max-height:330px;object-fit:contain}.gallery-grid{display:grid;gap:14px;grid-template-columns:repeat(2,minmax(0,1fr))}.gallery-card{background:#fff;border:1px solid #d8e2ef;border-radius:16px;break-inside:avoid;overflow:hidden}.gallery-thumb{background:#f8fafc}.gallery-thumb img{display:block;height:260px;object-fit:cover;width:100%}.gallery-caption{padding:12px 14px}.gallery-caption h3{font-size:16px;margin:0}.gallery-caption p{color:#62728a;font-size:13px;margin:4px 0 0}.evidence-grid{display:grid;gap:14px;grid-template-columns:1fr}.evidence-card{align-items:start;border:1px solid #d8e2ef;border-radius:16px;display:grid;gap:14px;grid-template-columns:220px minmax(0,1fr);padding:14px;break-inside:avoid;page-break-inside:avoid}.evidence-card h3{font-size:17px;margin:0 0 8px}.evidence-card p{margin:0 0 10px}.evidence-media img{height:170px;max-height:170px;object-fit:contain}.evidence-copy dl{grid-template-columns:repeat(3,minmax(0,1fr))}.evidence-copy dl div{padding:8px}.severity,.evidence-pill{background:#f8fafc;border:1px solid #d8e2ef;border-radius:999px;display:inline-block;font-size:11px;font-weight:900;padding:6px 9px}.evidence-pill-row{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}.signature-block{background:#f8fafc;border:1px solid #d8e2ef;border-radius:14px;margin-top:14px;padding:14px}.signature-image{background:white;border:1px solid #d8e2ef;border-radius:10px;display:block;max-height:130px;max-width:360px;object-fit:contain;padding:8px}.approval-signature{display:inline-block;min-width:360px}.signature-empty{color:#62728a;font-weight:800}table{border-collapse:collapse;width:100%}td,th{border:1px solid #d8e2ef;padding:10px;text-align:left}th{background:#f1f5fb}@media (max-width:800px){body{padding:14px}.report-cover,.evidence-card{grid-template-columns:1fr}.cover-copy{padding:22px}.cover-copy h1{font-size:30px}dl,.gallery-grid,.evidence-copy dl{grid-template-columns:1fr}.header,.item{border-radius:16px;padding:18px}.toolbar{align-items:flex-start;flex-direction:column;gap:8px}.gallery-thumb img{height:230px}}@media print{@page{margin:14mm}html,body{background:white}body{padding:0}.report{max-width:none}.toolbar{display:none!important}.header,.item,.finding-card,.reference-card,.evidence-card,.gallery-card{break-inside:avoid;box-shadow:none}.report-cover,.gallery-section,.org-section,.approval-section{break-before:page}.report-cover:first-of-type{break-before:auto}.media img,.evidence-media img,.signature-image,.finding-image img,.gallery-thumb img{break-inside:avoid;visibility:visible}.note{position:static;background:#14213d}a,a:visited{color:#18243a!important;text-decoration:none!important}.report{color:#18243a;-webkit-text-size-adjust:100%;print-color-adjust:exact;-webkit-print-color-adjust:exact}}
   `;
@@ -1304,7 +1305,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     duplicateCaptureIds: appendixCaptureResult.duplicateCaptureIds,
     finalNotesSource: "documentation_sessions.final_notes",
   });
-  const imageAssets = await signCaptureImageUrls(supabase, captureItems);
+  const imageAssets = buildCaptureImageUrls(session.id, captureItems, shareTokenValue);
 
   const { data: signatures } = await supabase
     .from("signature_captures")
@@ -1332,10 +1333,11 @@ export async function GET(_request: Request, { params }: RouteContext) {
     )
     .eq("organization_id", organizationId)
     .maybeSingle();
-  const signatureUrls = await signSignatureUrls(
-    supabase,
+  const signatureUrls = buildSignatureUrls(
+    session.id,
     reportSignatures,
     reportProfile,
+    shareTokenValue,
   );
 
   const { data: reportDrafts } = await supabase
