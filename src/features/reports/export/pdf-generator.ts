@@ -7,9 +7,25 @@ export type BrowserPdfOptions = {
   timeoutMs?: number;
 };
 
-type PuppeteerModule = typeof import("puppeteer-core");
-type ChromiumModule = typeof import("@sparticuz/chromium");
 type BrowserPage = import("puppeteer-core").Page;
+
+export class BrowserPdfDependencyError extends Error {
+  constructor(
+    message: string,
+    readonly packageName: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = "BrowserPdfDependencyError";
+  }
+}
+
+function getMissingBrowserPackage(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes("puppeteer-core")) return "puppeteer-core";
+  if (message.includes("@sparticuz/chromium")) return "@sparticuz/chromium";
+  return "unknown";
+}
 
 async function getLocalChromeExecutablePath() {
   const candidates = [
@@ -50,13 +66,14 @@ function parseCookies(cookieHeader: string, url: string) {
 async function loadBrowserDependencies() {
   try {
     const [puppeteer, chromium] = await Promise.all([
-      (new Function("specifier", "return import(specifier)") as (specifier: string) => Promise<PuppeteerModule>)("puppeteer-core"),
-      (new Function("specifier", "return import(specifier)") as (specifier: string) => Promise<ChromiumModule>)("@sparticuz/chromium"),
+      import("puppeteer-core"),
+      import("@sparticuz/chromium"),
     ]);
     return { puppeteer, chromium };
   } catch (error) {
-    throw new Error(
+    throw new BrowserPdfDependencyError(
       "Browser PDF rendering requires puppeteer-core and @sparticuz/chromium to be installed.",
+      getMissingBrowserPackage(error),
       { cause: error },
     );
   }

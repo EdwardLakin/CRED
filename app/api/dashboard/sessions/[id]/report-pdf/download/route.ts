@@ -3,7 +3,10 @@ import { notFound, redirect } from "next/navigation";
 
 import { requireActiveBillingAccess } from "@/features/billing";
 import { getDisplayReportTitle } from "@/features/reports/report-title";
-import { renderPrintableReportPdf } from "@/features/reports/export/pdf-generator";
+import {
+  BrowserPdfDependencyError,
+  renderPrintableReportPdf,
+} from "@/features/reports/export/pdf-generator";
 import { safeReportPdfFileName } from "@/features/reports/export/filenames";
 import { requireSessionWorkspace } from "@/features/sessions/data";
 import { recordUsageEvent } from "@/features/usage";
@@ -15,6 +18,14 @@ export const maxDuration = 60;
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
+
+function isVercelAppOrigin(origin: string) {
+  try {
+    return new URL(origin).hostname.endsWith(".vercel.app");
+  } catch {
+    return false;
+  }
+}
 
 function getRequestOrigin(request: Request, headersList: Headers) {
   const requestUrl = new URL(request.url);
@@ -32,11 +43,12 @@ function getRequestOrigin(request: Request, headersList: Headers) {
     process.env.NEXT_PUBLIC_SITE_URL?.trim();
   const vercelEnvironment = process.env.VERCEL_ENV?.trim();
 
-  if (vercelEnvironment === "preview") {
+  if (vercelEnvironment === "preview" || isVercelAppOrigin(requestOrigin)) {
     if (configuredUrl && configuredUrl.replace(/\/$/, "") !== requestOrigin) {
       console.info("Using request host for PDF preview deployment", {
         configuredOrigin: configuredUrl.replace(/\/$/, ""),
         requestOrigin,
+        vercelEnvironment,
       });
     }
     return requestOrigin;
@@ -117,7 +129,23 @@ export async function GET(request: Request, { params }: RouteContext) {
       cookieHeader: cookie,
     });
   } catch (error) {
-    console.error("Browser PDF rendering failed", { error, sessionId: session.id });
+    if (error instanceof BrowserPdfDependencyError) {
+      console.error("Browser PDF rendering dependencies are missing", {
+        missingPackage: error.packageName,
+        nodeEnvironment: process.env.NODE_ENV,
+        vercelEnvironment: process.env.VERCEL_ENV,
+        resolvedOrigin: origin,
+        sessionId: session.id,
+      });
+    } else {
+      console.error("Browser PDF rendering failed", {
+        message: error instanceof Error ? error.message : String(error),
+        nodeEnvironment: process.env.NODE_ENV,
+        vercelEnvironment: process.env.VERCEL_ENV,
+        resolvedOrigin: origin,
+        sessionId: session.id,
+      });
+    }
     return new Response("Unable to render browser PDF for this report.", {
       status: 502,
     });
