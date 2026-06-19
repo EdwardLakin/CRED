@@ -79,7 +79,9 @@ function hasUniqueReportDetails(params: {
     params.reviewDocument.additionalNotes.length > 0 ||
     params.reviewDocument.supportingEvidence.length > 0 ||
     params.reviewDocument.unattachedDetails.length > 0 ||
-    params.reportSections.some((section) => isMeaningfulCustomerReportText(section.body ?? "")) ||
+    params.reportSections.some((section) =>
+      isMeaningfulCustomerReportText(section.body ?? ""),
+    ) ||
     params.finalNotesIncluded ||
     params.subjectDetailRows.length > 0 ||
     Boolean(params.structuredFormDataHtml)
@@ -94,7 +96,8 @@ function getReportPresentationMode(params: {
 }): ReportPresentationMode {
   if (params.includedImageCount < 6) return "detailed";
   if (params.hasDetailedContent) return "detailed";
-  if (params.hasUniqueDetails && !params.isGenericEvidenceReport) return "detailed";
+  if (params.hasUniqueDetails && !params.isGenericEvidenceReport)
+    return "detailed";
   return "gallery";
 }
 
@@ -156,17 +159,41 @@ function isHiddenFromReport(metadata: Json) {
   return isRecord(metadata) && metadata.hidden_from_report === true;
 }
 
-function getApprovalDate(draft: ReportDraft | null | undefined, session: ReportSession) {
+function getApprovalDate(
+  draft: ReportDraft | null | undefined,
+  session: ReportSession,
+) {
   return draft?.approved_at ?? session.reviewed_at ?? null;
 }
 
-function getOrganizationDisplayName(organizationName: string, companyProfile?: { company_name?: string | null; facility_name?: string | null } | null) {
-  return companyProfile?.company_name || companyProfile?.facility_name || organizationName;
+function getOrganizationDisplayName(
+  organizationName: string,
+  companyProfile?: {
+    company_name?: string | null;
+    facility_name?: string | null;
+  } | null,
+) {
+  return (
+    companyProfile?.company_name ||
+    companyProfile?.facility_name ||
+    organizationName
+  );
 }
 
-function getCoverImageHtml(captures: ReportCapture[], imageAssets: Record<string, ExportImageAsset>) {
-  const coverCapture = captures.find((capture) => isImageEvidence(capture) && imageAssets[capture.id]?.classification === "webSafeImage" && imageAssets[capture.id]?.mediaUrl);
-  if (!coverCapture) return "";
+function getCoverImageHtml(
+  captures: ReportCapture[],
+  imageAssets: Record<string, ExportImageAsset>,
+) {
+  const eligibleImages = captures.filter(
+    (capture) =>
+      isImageEvidence(capture) &&
+      imageAssets[capture.id]?.classification === "webSafeImage" &&
+      imageAssets[capture.id]?.mediaUrl,
+  );
+  if (eligibleImages.length < 3) return "";
+  const coverCapture =
+    eligibleImages.find((capture) => getUserEvidenceText(capture)) ??
+    eligibleImages[0];
   return `<div class="cover-image">${renderExportImage(imageAssets[coverCapture.id], getPrimaryEvidenceLabel(coverCapture), "Preview unavailable in printable export. Original evidence retained.")}</div>`;
 }
 
@@ -176,7 +203,10 @@ function buildReportCoverHtml(params: {
   session: ReportSession;
   draft: ReportDraft | null;
   organizationName: string;
-  companyProfile?: { company_name?: string | null; facility_name?: string | null } | null;
+  companyProfile?: {
+    company_name?: string | null;
+    facility_name?: string | null;
+  } | null;
   captures: ReportCapture[];
   imageAssets: Record<string, ExportImageAsset>;
   timeZone: string | null;
@@ -184,20 +214,66 @@ function buildReportCoverHtml(params: {
   const approvedAt = getApprovalDate(params.draft, params.session);
   const rows = [
     { label: "Report type", value: params.reportType },
-    { label: "Customer / Client", value: getReportInfoValue(params.draft, params.session, "customer_client") || params.session.customer_name || "" },
-    { label: "Subject", value: getReportInfoValue(params.draft, params.session, "subject_name") || params.session.title || "" },
-    { label: "Asset / Equipment", value: getReportInfoValue(params.draft, params.session, "asset_equipment") || params.session.asset_label || params.session.unit_number || "" },
-    { label: "Location", value: getReportInfoValue(params.draft, params.session, "location") },
-    { label: "Capture session date", value: formatDateTimeInTimeZone(params.session.created_at, params.timeZone) },
-    { label: "Approved date", value: approvedAt ? formatDateTimeInTimeZone(approvedAt, params.timeZone) : "" },
-    { label: "Organization", value: getOrganizationDisplayName(params.organizationName, params.companyProfile) },
+    {
+      label: "Customer / Client",
+      value:
+        getReportInfoValue(params.draft, params.session, "customer_client") ||
+        params.session.customer_name ||
+        "",
+    },
+    {
+      label: "Subject",
+      value:
+        getReportInfoValue(params.draft, params.session, "subject_name") ||
+        params.session.title ||
+        "",
+    },
+    {
+      label: "Asset / Equipment",
+      value:
+        getReportInfoValue(params.draft, params.session, "asset_equipment") ||
+        params.session.asset_label ||
+        params.session.unit_number ||
+        "",
+    },
+    {
+      label: "Location",
+      value: getReportInfoValue(params.draft, params.session, "location"),
+    },
+    {
+      label: "Capture session date",
+      value: formatDateTimeInTimeZone(
+        params.session.created_at,
+        params.timeZone,
+      ),
+    },
+    {
+      label: "Approved date",
+      value: approvedAt
+        ? formatDateTimeInTimeZone(approvedAt, params.timeZone)
+        : "",
+    },
+    {
+      label: "Organization",
+      value: getOrganizationDisplayName(
+        params.organizationName,
+        params.companyProfile,
+      ),
+    },
   ];
-  return `<section class="report-cover item"><div class="cover-copy"><p class="eyebrow">Professional Evidence Report</p><h1>${escapeHtml(params.reportTitle)}</h1><p class="cover-trust">CRED assembles user-provided evidence and approved report text. Users remain the source of truth.</p>${renderDefinitionRows(rows)}</div>${getCoverImageHtml(params.captures, params.imageAssets)}</section>`;
+  const coverImageHtml = getCoverImageHtml(params.captures, params.imageAssets);
+  return `<section class="report-cover item${coverImageHtml ? "" : " report-cover-no-image"}"><div class="cover-copy"><p class="eyebrow">Professional Evidence Report</p><h1>${escapeHtml(params.reportTitle)}</h1><p class="cover-trust">CRED assembles user-provided evidence and approved report text. Users remain the source of truth.</p>${renderDefinitionRows(rows)}</div>${coverImageHtml}</section>`;
 }
 
 function getCaptionChips(captures: ReportCapture[]) {
   const captions = captures
-    .map((capture) => (capture.technician_note?.trim() || capture.transcript?.trim() || "").replace(/\s+/g, " "))
+    .map((capture) =>
+      (
+        capture.technician_note?.trim() ||
+        capture.transcript?.trim() ||
+        ""
+      ).replace(/\s+/g, " "),
+    )
     .filter(Boolean);
   return Array.from(new Set(captions)).slice(0, 12);
 }
@@ -207,6 +283,7 @@ function buildReportOverviewHtml(params: {
   includedCount: number;
   finalNotesIncluded: boolean;
   approved: boolean;
+  approvedAt?: string;
   preparedBy: string;
   organization: string;
   reportTitle?: string;
@@ -214,48 +291,121 @@ function buildReportOverviewHtml(params: {
   captions?: string[];
   mode?: ReportPresentationMode;
 }) {
-  const isGallery = params.mode === "gallery";
-  const summaryText = isGallery
-    ? `This report documents ${params.includedImageCount ?? params.includedCount} included evidence photos captured for ${params.reportTitle || "this subject"}. Captions were provided by the user and are listed with each evidence item.`
-    : "CRED assembles user-provided evidence and approved report text. Users remain the source of truth.";
+  const approvedText = params.approved
+    ? `approved for delivery${params.approvedAt ? ` on ${params.approvedAt}` : ""}`
+    : "pending approval";
+  const photoText =
+    params.includedImageCount === undefined
+      ? ""
+      : `, including ${params.includedImageCount} photo${params.includedImageCount === 1 ? "" : "s"}`;
+  const notesText = params.finalNotesIncluded
+    ? " Final notes are included."
+    : " Final notes are not included.";
+  const preparedText = params.preparedBy
+    ? ` Prepared by ${params.preparedBy}.`
+    : "";
+  const summaryText = `This ${params.reportTitle ? `${params.reportTitle} ` : ""}report contains ${params.includedCount} included evidence item${params.includedCount === 1 ? "" : "s"}${photoText} and is ${approvedText}.${notesText}${preparedText}`;
   const chips = params.captions?.length
     ? `<div class="summary-chip-row">${params.captions.map((caption) => `<span>${escapeHtml(caption)}</span>`).join("")}</div>`
     : "";
-  return `<section class="item service-section overview-section"><h2>Report Summary</h2><p class="summary-lead">${escapeHtml(summaryText)}</p>${chips}${renderDefinitionRows([
-    { label: "Included evidence items", value: String(params.includedCount) },
-    { label: "Included photos", value: params.includedImageCount === undefined ? "" : String(params.includedImageCount) },
-    { label: "Report approved", value: params.approved ? "Yes" : "No" },
-    { label: "Final notes included", value: params.finalNotesIncluded ? "Yes" : "" },
-    { label: "Prepared by", value: params.preparedBy },
-    { label: "Organization", value: params.organization },
-  ])}</section>`;
+  return `<section class="item service-section overview-section"><h2>Report Summary</h2><p class="summary-lead">${escapeHtml(summaryText)}</p>${chips}${renderDefinitionRows(
+    [
+      { label: "Included evidence items", value: String(params.includedCount) },
+      {
+        label: "Included photos",
+        value:
+          params.includedImageCount === undefined
+            ? ""
+            : String(params.includedImageCount),
+      },
+      {
+        label: "Approval status",
+        value: params.approved ? "Approved" : "Pending",
+      },
+      { label: "Approved date", value: params.approvedAt ?? "" },
+      {
+        label: "Final notes included",
+        value: params.finalNotesIncluded ? "Yes" : "",
+      },
+      { label: "Prepared by", value: params.preparedBy },
+      { label: "Organization", value: params.organization },
+    ],
+  )}<p class="summary-trust">CRED organizes approved user-provided evidence. Users remain the source of truth.</p></section>`;
 }
 
-function buildEvidenceGalleryHtml(captures: ReportCapture[], imageAssets: Record<string, ExportImageAsset>, timeZone: string | null) {
+function buildEvidenceGalleryHtml(
+  captures: ReportCapture[],
+  imageAssets: Record<string, ExportImageAsset>,
+  timeZone: string | null,
+) {
   const images = captures.filter(isImageEvidence);
   if (!images.length) return "";
   const reportDocument = buildUniversalReportDocument({ captures, timeZone });
-  const evidenceByCaptureId = new Map(reportDocument.evidenceItems.map((item) => [item.sourceCaptureId, item]));
-  return `<section class="item service-section gallery-section"><h2>Photo Evidence Gallery</h2><p class="muted">Included photos are shown once for a clean visual review.</p><div class="gallery-grid">${images.map((capture) => {
-    const meta = evidenceByCaptureId.get(capture.id);
-    const evidenceId = meta?.evidenceId ?? "Evidence";
-    const label = getPrimaryEvidenceLabel(capture);
-    const captured = meta?.capturedAtLabel ?? formatDateTimeInTimeZone(capture.captured_at, timeZone);
-    const media = renderExportImage(imageAssets[capture.id], label, "Preview unavailable in printable export. Original evidence retained.");
-    return `<article class="gallery-card"><div class="gallery-thumb">${media}</div><div class="gallery-caption"><p class="gallery-evidence-id">${escapeHtml(evidenceId)}</p><h3>${escapeHtml(label)}</h3><p>${escapeHtml(captured)}</p></div></article>`;
-  }).join("")}</div></section>`;
+  const evidenceByCaptureId = new Map(
+    reportDocument.evidenceItems.map((item) => [item.sourceCaptureId, item]),
+  );
+  return `<section class="item service-section gallery-section"><h2>Photo Evidence Gallery</h2><p class="muted">Included photos are shown once for a clean visual review.</p><div class="gallery-grid">${images
+    .map((capture) => {
+      const meta = evidenceByCaptureId.get(capture.id);
+      const evidenceId = meta?.evidenceId ?? "Evidence";
+      const label = getPrimaryEvidenceLabel(capture);
+      const captured =
+        meta?.capturedAtLabel ??
+        formatDateTimeInTimeZone(capture.captured_at, timeZone);
+      const media = renderExportImage(
+        imageAssets[capture.id],
+        label,
+        "Preview unavailable in printable export. Original evidence retained.",
+      );
+      return `<article class="gallery-card"><div class="gallery-thumb">${media}</div><div class="gallery-caption"><p class="gallery-evidence-id">${escapeHtml(evidenceId)}</p><h3>${escapeHtml(label)}</h3><p>${escapeHtml(captured)}</p></div></article>`;
+    })
+    .join("")}</div></section>`;
 }
 
-function buildApprovalHtml(params: { profile: { full_name?: string | null; inspector_role_or_title?: string | null } | null; signatures: ReportSignature[]; signatureUrls: Record<string, string>; draft: ReportDraft | null; session: ReportSession; timeZone: string | null }) {
-  const signature = params.signatures.find((item) => /inspector|technician/i.test(item.signature_type)) ?? params.signatures[0];
-  const signatureUrl = signature ? params.signatureUrls[signature.id] : params.signatureUrls.__default_signature;
-  const approvedAt = getApprovalDate(params.draft, params.session) ?? signature?.signed_at ?? null;
+function buildApprovalHtml(params: {
+  profile: {
+    full_name?: string | null;
+    inspector_role_or_title?: string | null;
+  } | null;
+  signatures: ReportSignature[];
+  signatureUrls: Record<string, string>;
+  draft: ReportDraft | null;
+  session: ReportSession;
+  timeZone: string | null;
+}) {
+  const signature =
+    params.signatures.find((item) =>
+      /inspector|technician/i.test(item.signature_type),
+    ) ?? params.signatures[0];
+  const signatureUrl = signature
+    ? params.signatureUrls[signature.id]
+    : params.signatureUrls.__default_signature;
+  const approvedAt =
+    getApprovalDate(params.draft, params.session) ??
+    signature?.signed_at ??
+    null;
   const rows = [
-    { label: "Approved by", value: signature?.signer_name || params.profile?.full_name || "" },
-    { label: "Role / Title", value: params.profile?.inspector_role_or_title || signature?.signature_type?.replace(/_/g, " ") || "" },
-    { label: "Approved date / time", value: approvedAt ? formatDateTimeInTimeZone(approvedAt, params.timeZone) : "" },
+    {
+      label: "Approved by",
+      value: signature?.signer_name || params.profile?.full_name || "",
+    },
+    {
+      label: "Role / Title",
+      value:
+        params.profile?.inspector_role_or_title ||
+        signature?.signature_type?.replace(/_/g, " ") ||
+        "",
+    },
+    {
+      label: "Approved date / time",
+      value: approvedAt
+        ? formatDateTimeInTimeZone(approvedAt, params.timeZone)
+        : "",
+    },
   ];
-  const sig = signatureUrl ? `<div class="signature-block approval-signature"><img class="signature-image" src="${escapeHtmlAttributeRaw(signatureUrl)}" alt="Approval signature" /></div>` : '<div class="signature-block signature-empty"><p class="muted">No signature captured</p></div>';
+  const sig = signatureUrl
+    ? `<div class="signature-block approval-signature"><img class="signature-image" src="${escapeHtmlAttributeRaw(signatureUrl)}" alt="Approval signature" /></div>`
+    : '<div class="signature-block signature-empty"><p class="muted">No signature captured</p></div>';
   return `<section class="item service-section approval-section signoff-section"><h2>Inspector / Approval</h2>${renderDefinitionRows(rows)}${sig}</section>`;
 }
 
@@ -295,18 +445,16 @@ function isImageEvidence(capture: ReportCapture) {
   return getEvidenceKind(capture) === "image";
 }
 
+function getUserEvidenceText(capture: ReportCapture) {
+  return capture.technician_note?.trim() || capture.transcript?.trim() || "";
+}
+
 function getPrimaryEvidenceDescription(capture: ReportCapture) {
-  return (
-    capture.technician_note?.trim() ||
-    capture.transcript?.trim() ||
-    (capture.type === "text_note" ? capture.technician_note?.trim() : "") ||
-    getCaptureFilename(capture) ||
-    getEvidenceKind(capture)
-  );
+  return getUserEvidenceText(capture) || getEvidenceTitle(capture);
 }
 
 function getPrimaryEvidenceLabel(capture: ReportCapture) {
-  const caption = capture.technician_note?.trim() || capture.transcript?.trim();
+  const caption = getUserEvidenceText(capture);
   return caption || getEvidenceTitle(capture);
 }
 
@@ -314,24 +462,47 @@ function getUploadMimeType(capture: ReportCapture) {
   if (!isRecord(capture.extracted_data)) return "";
   const upload = capture.extracted_data.upload;
   if (!isRecord(upload)) return "";
-  return typeof upload.mime_type === "string" ? upload.mime_type.toLowerCase() : "";
+  return typeof upload.mime_type === "string"
+    ? upload.mime_type.toLowerCase()
+    : "";
 }
 
 function getImageExtension(capture: ReportCapture) {
-  const source = capture.storage_path || capture.thumbnail_path || getCaptureFilename(capture);
+  const source =
+    capture.storage_path ||
+    capture.thumbnail_path ||
+    getCaptureFilename(capture);
   const match = source.match(/\.([a-z0-9]+)(?:[?#].*)?$/i);
   return match?.[1]?.toLowerCase() ?? "";
 }
 
-function classifyExportImage(capture: ReportCapture): ExportImageAsset["classification"] {
+function classifyExportImage(
+  capture: ReportCapture,
+): ExportImageAsset["classification"] {
   const mimeType = getUploadMimeType(capture);
   const extension = getImageExtension(capture);
-  if (["jpg", "jpeg", "png", "webp", "gif"].includes(extension) || ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"].includes(mimeType)) return "webSafeImage";
+  if (
+    ["jpg", "jpeg", "png", "webp", "gif"].includes(extension) ||
+    [
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/webp",
+      "image/gif",
+    ].includes(mimeType)
+  )
+    return "webSafeImage";
   return "nonWebSafeImage";
 }
 
-function renderExportImage(asset: ExportImageAsset | undefined, alt: string, fallbackText: string) {
-  const originalLink = asset?.originalMediaUrl ? `<p class="original-link"><a href="${escapeHtmlAttributeRaw(asset.originalMediaUrl)}" target="_blank" rel="noreferrer">Open original evidence</a></p>` : "";
+function renderExportImage(
+  asset: ExportImageAsset | undefined,
+  alt: string,
+  fallbackText: string,
+) {
+  const originalLink = asset?.originalMediaUrl
+    ? `<p class="original-link"><a href="${escapeHtmlAttributeRaw(asset.originalMediaUrl)}" target="_blank" rel="noreferrer">Open original evidence</a></p>`
+    : "";
   const fallback = `<div class="media-fallback export-image-fallback">${escapeHtml(fallbackText)}${originalLink}</div>`;
   if (asset?.classification === "webSafeImage" && asset.mediaUrl) {
     return `<img src="${escapeHtmlAttributeRaw(asset.mediaUrl)}" alt="${escapeHtml(alt)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />${fallback.replace('<div class="media-fallback export-image-fallback">', '<div class="media-fallback export-image-fallback" style="display:none">')}`;
@@ -339,7 +510,11 @@ function renderExportImage(asset: ExportImageAsset | undefined, alt: string, fal
   return fallback;
 }
 
-function appendMediaQuery(path: string, shareToken: string | null, download = false) {
+function appendMediaQuery(
+  path: string,
+  shareToken: string | null,
+  download = false,
+) {
   const params = new URLSearchParams();
   if (shareToken) params.set("share_token", shareToken);
   if (download) params.set("download", "1");
@@ -347,7 +522,12 @@ function appendMediaQuery(path: string, shareToken: string | null, download = fa
   return query ? `${path}?${query}` : path;
 }
 
-function buildCaptureMediaUrl(sessionId: string, captureId: string, shareToken: string | null, download = false) {
+function buildCaptureMediaUrl(
+  sessionId: string,
+  captureId: string,
+  shareToken: string | null,
+  download = false,
+) {
   return appendMediaQuery(
     `/api/dashboard/sessions/${encodeURIComponent(sessionId)}/evidence/${encodeURIComponent(captureId)}/media`,
     shareToken,
@@ -355,7 +535,11 @@ function buildCaptureMediaUrl(sessionId: string, captureId: string, shareToken: 
   );
 }
 
-function buildSignatureMediaUrl(sessionId: string, signatureId: string, shareToken: string | null) {
+function buildSignatureMediaUrl(
+  sessionId: string,
+  signatureId: string,
+  shareToken: string | null,
+) {
   return appendMediaQuery(
     `/api/dashboard/sessions/${encodeURIComponent(sessionId)}/signatures/${encodeURIComponent(signatureId)}/media`,
     shareToken,
@@ -381,19 +565,28 @@ function buildCaptureImageUrls(
           error: "Missing storage_path for image evidence",
         });
       }
-      imageAssets[capture.id] = { classification, reason: "missing_storage_path" };
+      imageAssets[capture.id] = {
+        classification,
+        reason: "missing_storage_path",
+      };
       continue;
     }
 
     const mediaUrl = buildCaptureMediaUrl(sessionId, capture.id, shareToken);
-    const originalMediaUrl = buildCaptureMediaUrl(sessionId, capture.id, shareToken, true);
-    imageAssets[capture.id] = classification === "webSafeImage"
-      ? { classification, mediaUrl, originalMediaUrl }
-      : {
-          classification,
-          originalMediaUrl,
-          reason: `${getUploadMimeType(capture) || getImageExtension(capture) || "unknown"} is not browser/export safe`,
-        };
+    const originalMediaUrl = buildCaptureMediaUrl(
+      sessionId,
+      capture.id,
+      shareToken,
+      true,
+    );
+    imageAssets[capture.id] =
+      classification === "webSafeImage"
+        ? { classification, mediaUrl, originalMediaUrl }
+        : {
+            classification,
+            originalMediaUrl,
+            reason: `${getUploadMimeType(capture) || getImageExtension(capture) || "unknown"} is not browser/export safe`,
+          };
   }
   return imageAssets;
 }
@@ -413,7 +606,11 @@ function buildSignatureUrls(
   const signatureUrls: Record<string, string> = {};
   for (const signature of signatures) {
     if (!signature.signature_image_path) continue;
-    signatureUrls[signature.id] = buildSignatureMediaUrl(sessionId, signature.id, shareToken);
+    signatureUrls[signature.id] = buildSignatureMediaUrl(
+      sessionId,
+      signature.id,
+      shareToken,
+    );
   }
   if (
     (signatures.length === 0 ||
@@ -423,7 +620,11 @@ function buildSignatureUrls(
     reportProfile?.use_default_signature &&
     reportProfile.default_signature_path
   ) {
-    signatureUrls.__default_signature = buildSignatureMediaUrl(sessionId, "__default_signature", shareToken);
+    signatureUrls.__default_signature = buildSignatureMediaUrl(
+      sessionId,
+      "__default_signature",
+      shareToken,
+    );
   }
   return signatureUrls;
 }
@@ -501,10 +702,6 @@ function renderReportInformationHtml(
 ) {
   const rows = [
     {
-      label: "Capture Session Date",
-      value: formatDateTimeInTimeZone(session.created_at, timeZone),
-    },
-    {
       label: "Last Updated",
       value: formatDateTimeInTimeZone(
         session.updated_at ?? session.created_at,
@@ -518,32 +715,6 @@ function renderReportInformationHtml(
         : session.reviewed_at
           ? formatDateTimeInTimeZone(session.reviewed_at, timeZone)
           : "",
-    },
-    {
-      label: "Report Title",
-      value: cleanReportTitle(draft?.title || session.title, session, draft),
-    },
-    {
-      label: "Subject Name",
-      value: getReportInfoValue(draft, session, "subject_name"),
-    },
-    {
-      label: "Customer / Client",
-      value:
-        getReportInfoValue(draft, session, "customer_client") ||
-        session.customer_name ||
-        "",
-    },
-    {
-      label: "Asset / Equipment",
-      value:
-        getReportInfoValue(draft, session, "asset_equipment") ||
-        session.asset_label ||
-        "",
-    },
-    {
-      label: "Location",
-      value: getReportInfoValue(draft, session, "location"),
     },
     {
       label: "Reference Number",
@@ -631,7 +802,7 @@ function buildInspectorFacilityHtml(
     facility_email?: string | null;
     permit_number?: string | null;
     certification_number?: string | null;
-  } | null
+  } | null,
 ) {
   const address = [
     companyProfile?.facility_address_line_1,
@@ -640,21 +811,41 @@ function buildInspectorFacilityHtml(
     companyProfile?.facility_region,
     companyProfile?.facility_postal_code,
     companyProfile?.facility_country,
-  ].filter(Boolean).join(", ");
+  ]
+    .filter(Boolean)
+    .join(", ");
   const rows = [
     { label: "Inspector", value: profile?.full_name ?? "" },
     { label: "Role / Title", value: profile?.inspector_role_or_title ?? "" },
-    { label: "Organization", value: companyProfile?.company_name ?? companyProfile?.facility_name ?? "" },
+    {
+      label: "Organization",
+      value:
+        companyProfile?.company_name ?? companyProfile?.facility_name ?? "",
+    },
     { label: "Facility Number", value: companyProfile?.facility_number ?? "" },
     { label: "Address", value: address },
-    { label: "Email", value: profile?.inspector_email ?? companyProfile?.facility_email ?? "" },
-    { label: "Phone", value: profile?.inspector_phone ?? companyProfile?.facility_phone ?? "" },
-    { label: "Licence Number", value: profile?.technician_license_number ?? "" },
+    {
+      label: "Email",
+      value: profile?.inspector_email ?? companyProfile?.facility_email ?? "",
+    },
+    {
+      label: "Phone",
+      value: profile?.inspector_phone ?? companyProfile?.facility_phone ?? "",
+    },
+    {
+      label: "Licence Number",
+      value: profile?.technician_license_number ?? "",
+    },
     { label: "Permit Number", value: companyProfile?.permit_number ?? "" },
-    { label: "Certification Number", value: companyProfile?.certification_number ?? "" },
+    {
+      label: "Certification Number",
+      value: companyProfile?.certification_number ?? "",
+    },
   ];
   const rowsHtml = renderDefinitionRows(rows);
-  return rowsHtml ? `<section class="item service-section org-section signoff-section"><h2>Inspector / Organization</h2>${rowsHtml}</section>` : "";
+  return rowsHtml
+    ? `<section class="item service-section org-section signoff-section"><h2>Inspector / Organization</h2>${rowsHtml}</section>`
+    : "";
 }
 
 function getEvidenceTitle(capture: ReportCapture) {
@@ -731,6 +922,25 @@ function buildRecommendedActionsHtml(
   return `<section class="item service-section"><h2>Recommendations (User-entered)</h2><table><thead><tr><th>Priority</th><th>Action</th></tr></thead><tbody>${actions.map((item) => `<tr><td>${escapeHtml(item.priority)}</td><td>${escapeHtml(item.action)}</td></tr>`).join("")}</tbody></table></section>`;
 }
 
+function isTrueReferenceDocument(capture: ReportCapture) {
+  const data = isRecord(capture.extracted_data) ? capture.extracted_data : {};
+  const sourceType =
+    typeof data.source_type === "string" ? data.source_type : "";
+  const captureRole =
+    typeof data.capture_role === "string" ? data.capture_role : "";
+  return (
+    capture.media_kind === "document" ||
+    data.source_document === true ||
+    data.reference_document === true ||
+    /^(source_document|reference_document|document_reference)$/.test(
+      sourceType,
+    ) ||
+    /^(source_document|reference_document|document_reference)$/.test(
+      captureRole,
+    )
+  );
+}
+
 function buildReferenceDocumentsHtml(
   items: ReturnType<
     typeof buildNormalizedReportModel<ReportCapture>
@@ -738,8 +948,11 @@ function buildReferenceDocumentsHtml(
   imageAssets: Record<string, ExportImageAsset>,
   options: { includeOriginal?: boolean } = {},
 ) {
-  if (!items.length) return "";
-  return `<section class="item service-section"><h2>Reference Documents</h2>${items
+  const referenceItems = items.filter((entry) =>
+    isTrueReferenceDocument(entry.capture),
+  );
+  if (!referenceItems.length) return "";
+  return `<section class="item service-section"><h2>Reference Documents</h2>${referenceItems
     .map((entry) => {
       const details = dedupeEvidenceDetails(entry.group.details).filter(
         (detail) => isMeaningfulCustomerReportText(detail.value),
@@ -780,7 +993,11 @@ function buildEvidenceItemsHtml(
         mediaKind === "note"
           ? `<div class="video-still">${escapeHtml(stripConfidenceText(capture.technician_note || capture.transcript || "Technician Note"))}</div>`
           : mediaKind === "image"
-            ? renderExportImage(imageAsset, getPrimaryEvidenceLabel(capture), "Preview unavailable in printable export. Original evidence retained.")
+            ? renderExportImage(
+                imageAsset,
+                getPrimaryEvidenceLabel(capture),
+                "Preview unavailable in printable export. Original evidence retained.",
+              )
             : imageAsset?.originalMediaUrl && mediaKind === "video"
               ? `<div class="video-still">Video reference</div><p class="video-link original-link"><a href="${escapeHtmlAttributeRaw(imageAsset.originalMediaUrl)}">Open video evidence</a></p>`
               : imageAsset?.originalMediaUrl
@@ -833,7 +1050,10 @@ function buildEvidenceSectionHtml(
   return `<section class="item service-section"><h2>${escapeHtml(title)}</h2><div class="evidence-children">${buildEvidenceItemsHtml(items, imageAssets)}</div></section>`;
 }
 
-function buildEvidenceIndexHtml(captures: ReportCapture[], timeZone: string | null) {
+function buildEvidenceIndexHtml(
+  captures: ReportCapture[],
+  timeZone: string | null,
+) {
   if (captures.length === 0)
     return '<section class="item service-section evidence-index-section"><h2>Evidence Index</h2><p class="muted">No included evidence selected for this report.</p></section>';
   const reportDocument = buildUniversalReportDocument({ captures, timeZone });
@@ -860,68 +1080,20 @@ function buildEvidenceAppendixHtml(
   const evidenceByCaptureId = new Map(
     reportDocument.evidenceItems.map((item) => [item.sourceCaptureId, item]),
   );
-  return `<section class="item service-section"><h2>Evidence Appendix</h2><p class="muted">Included captures are listed once from the reviewed report state.</p><div class="evidence-grid">${captures
+  return `<section class="item service-section evidence-appendix-section"><h2>Evidence Appendix</h2><p class="muted">Compact index of included captures from the reviewed report state.</p><table class="evidence-appendix"><thead><tr>${options.renderImages === false ? "" : "<th>Preview</th>"}<th>Evidence ID</th><th>Caption / Title</th><th>Captured</th><th>Type</th>${options.showDebugDetails ? "<th>Debug ID</th>" : ""}</tr></thead><tbody>${captures
     .map((capture) => {
       const imageAsset = imageAssets[capture.id];
       const mediaKind = getEvidenceKind(capture);
       const evidenceMeta = evidenceByCaptureId.get(capture.id);
-      const primaryNote =
-        evidenceMeta?.note ||
-        getPrimaryEvidenceDescription(capture) ||
-        "No technician note provided.";
-      const itemLabel = getPrimaryEvidenceLabel(capture);
-      const mediaHtml =
+      const thumbnailHtml =
         options.renderImages !== false && mediaKind === "image"
-          ? renderExportImage(imageAsset, itemLabel, "Preview unavailable in printable export. Original evidence retained.")
-          : imageAsset?.originalMediaUrl
-            ? `<p class="original-link"><a href="${escapeHtmlAttributeRaw(imageAsset.originalMediaUrl)}">Open original evidence</a></p>`
-            : mediaKind === "image"
-              ? '<div class="media-fallback">Image unavailable in printable export.</div>'
-              : `<div class="media-fallback">${escapeHtml(getEvidenceTitle(capture))}</div>`;
-      const technicianFields = isRecord(capture.extracted_data)
-        ? capture.extracted_data
-        : {};
-      const technicianPills = [
-        typeof technicianFields.technician_status === "string"
-          ? technicianFields.technician_status
-          : null,
-        typeof technicianFields.technician_category === "string"
-          ? technicianFields.technician_category
-          : null,
-      ].filter((value): value is string => Boolean(value?.trim()));
-      const neutralPills = [
-        evidenceMeta?.evidenceType ?? getEvidenceTitle(capture),
-        "Included",
-      ];
-      const pillsHtml = `<div class="evidence-pill-row">${[...technicianPills, ...neutralPills].map((pill) => `<span class="evidence-pill">${escapeHtml(pill.replace(/_/g, " "))}</span>`).join("")}</div>`;
-      const detailRows = [
-        { label: "Evidence ID", value: evidenceMeta?.evidenceId ?? "" },
-        {
-          label: "Captured",
-          value:
-            evidenceMeta?.capturedAtLabel ??
-            formatDateTimeInTimeZone(new Date(capture.captured_at), timeZone),
-        },
-        {
-          label: "Evidence type",
-          value: evidenceMeta?.evidenceType ?? mediaKind,
-        },
-        {
-          label: "Source capture ID",
-          value: options.showDebugDetails ? capture.id : "",
-        },
-      ];
-      if (options.showDebugDetails)
-        detailRows.unshift(
-          { label: "Capture ID", value: capture.id },
-          {
-            label: "Media kind",
-            value: String(capture.media_kind ?? mediaKind),
-          },
-        );
-      return `<article class="evidence-card"${options.showDebugDetails ? ` data-capture-id="${escapeHtmlAttributeRaw(capture.id)}"` : ""}><div class="media evidence-media">${mediaHtml}</div><div class="evidence-copy"><h3>${escapeHtml(`${evidenceMeta?.evidenceId ?? "Evidence"} · ${itemLabel}`)}</h3>${pillsHtml}<p>${escapeHtml(primaryNote)}</p>${renderDefinitionRows(detailRows)}</div></article>`;
+          ? `<td class="appendix-thumb">${renderExportImage(imageAsset, getPrimaryEvidenceLabel(capture), "Image unavailable")}</td>`
+          : options.renderImages === false
+            ? ""
+            : `<td class="appendix-thumb appendix-kind">${escapeHtml(getEvidenceTitle(capture))}</td>`;
+      return `<tr${options.showDebugDetails ? ` data-capture-id="${escapeHtmlAttributeRaw(capture.id)}"` : ""}>${thumbnailHtml}<td>${escapeHtml(evidenceMeta?.evidenceId ?? "Evidence")}</td><td>${escapeHtml(getPrimaryEvidenceLabel(capture))}</td><td>${escapeHtml(evidenceMeta?.capturedAtLabel ?? formatDateTimeInTimeZone(capture.captured_at, timeZone))}</td><td>${escapeHtml(evidenceMeta?.evidenceType ?? mediaKind)}</td>${options.showDebugDetails ? `<td>${escapeHtml(capture.id)}</td>` : ""}</tr>`;
     })
-    .join("")}</div></section>`;
+    .join("")}</tbody></table></section>`;
 }
 
 function getDiagnosticProcedureInfo(draft: ReportDraft | null) {
@@ -947,10 +1119,7 @@ function getDiagnosticProcedureInfo(draft: ReportDraft | null) {
       typeof procedure.document_type === "string"
         ? procedure.document_type.replace(/_/g, " ")
         : null,
-    sourceFile:
-      typeof procedure.source_file_name === "string"
-        ? procedure.source_file_name
-        : null,
+    sourceFile: null,
     signedOff: draft.report_structure.signed_off === true,
     signOffName:
       typeof draft.report_structure.sign_off_name === "string"
@@ -1223,13 +1392,22 @@ function buildFieldServiceReportHtml({
   const summaryHtml = buildReportOverviewHtml({
     capturedCount: captureItems.length,
     includedCount: captureItems.length,
-    finalNotesIncluded: Boolean(session.include_final_notes_in_export && session.final_notes),
+    finalNotesIncluded: Boolean(
+      session.include_final_notes_in_export && session.final_notes,
+    ),
     approved: Boolean(getApprovalDate(reportDraft, session)),
+    approvedAt: getApprovalDate(reportDraft, session)
+      ? formatDateTimeInTimeZone(
+          getApprovalDate(reportDraft, session),
+          timeZone,
+        )
+      : "",
     preparedBy: "",
     organization: organizationName,
   });
   const fieldAppendixCaptures = getAppendixCaptures(captureItems).captures;
-  const fieldUseGalleryMode = fieldAppendixCaptures.filter(isImageEvidence).length >= 6;
+  const fieldUseGalleryMode =
+    fieldAppendixCaptures.filter(isImageEvidence).length >= 6;
   const appendixHtml = buildEvidenceAppendixHtml(
     fieldAppendixCaptures,
     signedUrls,
@@ -1272,7 +1450,7 @@ function buildFieldServiceReportHtml({
 }
 
 const REPORT_STYLES = `
-    :root{color-scheme:light}*{box-sizing:border-box}html{background:#eef2f7}body{font-family:Inter,Arial,Helvetica,sans-serif;background:#eef2f7;color:#18243a;margin:0;padding:36px;line-height:1.45}.report{max-width:1040px;margin:0 auto}.toolbar{align-items:center;background:#13213a;border-radius:16px;color:white;display:flex;justify-content:space-between;margin:0 0 18px;padding:14px 16px}.toolbar button{background:white;border:0;border-radius:999px;color:#13213a;cursor:pointer;font-weight:800;padding:10px 16px}.print-help{color:#dbe7ff;font-size:13px;margin:0}.header,.item{background:white;border:1px solid #d9e2ee;border-radius:20px;box-shadow:0 16px 45px rgba(24,36,58,.08);margin-bottom:20px;padding:28px}.report-cover{display:grid;gap:24px;grid-template-columns:minmax(0,1.25fr) minmax(280px,.75fr);overflow:hidden;padding:0}.cover-copy{padding:34px}.cover-copy h1{font-size:40px;letter-spacing:-.035em;line-height:1.05;margin:10px 0 12px}.cover-trust{border-left:4px solid #155dfc;color:#4c5d75;margin:18px 0;padding-left:14px}.cover-image{background:#f7f9fc;min-height:100%;overflow:hidden}.cover-image img{display:block;height:100%;max-height:520px;object-fit:cover;width:100%}.eyebrow{color:#155dfc;font-size:11px;font-weight:900;letter-spacing:.16em;text-transform:uppercase}.meta,.muted{color:#62728a}.service-section h2{border-bottom:1px solid #e3eaf3;font-size:22px;letter-spacing:-.02em;margin-top:0;padding-bottom:10px}dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:14px 0 0}dl div{background:#f8fafc;border:1px solid #e2e9f2;border-radius:13px;padding:10px 12px}dt{color:#5a6a81;font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}dd{font-weight:750;margin:4px 0 0;overflow-wrap:anywhere}a,a:visited{color:#18243a;text-decoration:none}.original-link{font-size:12px;margin-top:8px;opacity:.55}.original-link a{text-decoration:underline;text-underline-offset:2px}.media{position:relative;border-radius:14px;overflow:hidden;background:#f8fafc;border:1px solid #d8e2ef}.media img{display:block;width:100%;max-height:520px;object-fit:contain;background:white}.media-fallback{align-items:center;aspect-ratio:4/3;background:#f8fafc;border:1px dashed #cbd6e5;color:#697890;display:flex;font-size:14px;font-weight:800;justify-content:center;padding:18px;text-align:center}.video-still{align-items:center;aspect-ratio:16/9;background:#eef4ff;color:#13213a;display:flex;font-size:18px;font-weight:800;justify-content:center;padding:16px;text-align:center}.finding{margin-top:14px}.finding-card,.reference-card{border:1px solid #d8e2ef;border-radius:16px;margin:12px 0;padding:16px;break-inside:avoid;page-break-inside:avoid}.finding-image{align-self:start;background:#f8fafc;border:1px solid #d8e2ef;border-radius:12px;overflow:hidden}.finding-image img{display:block;width:100%;max-height:330px;object-fit:contain}.gallery-grid{display:grid;gap:14px;grid-template-columns:repeat(2,minmax(0,1fr))}.gallery-card{background:#fff;border:1px solid #d8e2ef;border-radius:16px;break-inside:avoid;overflow:hidden}.gallery-thumb{background:#f8fafc}.gallery-thumb img{display:block;height:260px;object-fit:cover;width:100%}.gallery-caption{padding:12px 14px}.gallery-caption h3{font-size:17px;margin:2px 0 0}.gallery-caption p{color:#62728a;font-size:13px;margin:4px 0 0}.gallery-evidence-id{color:#155dfc!important;font-size:11px!important;font-weight:900;letter-spacing:.12em;margin:0!important;text-transform:uppercase}.summary-lead{color:#334155;font-size:16px;margin:0 0 12px}.summary-chip-row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 14px}.summary-chip-row span{background:#eef4ff;border:1px solid #cfe0ff;border-radius:999px;color:#14315f;font-size:12px;font-weight:800;padding:6px 10px}.evidence-grid{display:grid;gap:14px;grid-template-columns:1fr}.evidence-card{align-items:start;border:1px solid #d8e2ef;border-radius:16px;display:grid;gap:14px;grid-template-columns:220px minmax(0,1fr);padding:14px;break-inside:avoid;page-break-inside:avoid}.evidence-card h3{font-size:17px;margin:0 0 8px}.evidence-card p{margin:0 0 10px}.evidence-media img{height:170px;max-height:170px;object-fit:contain}.evidence-copy dl{grid-template-columns:repeat(3,minmax(0,1fr))}.evidence-copy dl div{padding:8px}.severity,.evidence-pill{background:#f8fafc;border:1px solid #d8e2ef;border-radius:999px;display:inline-block;font-size:11px;font-weight:900;padding:6px 9px}.evidence-pill-row{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}.signature-block{background:#f8fafc;border:1px solid #d8e2ef;border-radius:14px;margin-top:12px;padding:12px}.signoff-section{box-shadow:0 8px 24px rgba(24,36,58,.05);padding:20px}.signoff-section dl{grid-template-columns:repeat(3,minmax(0,1fr))}.signoff-section dl div{padding:8px 10px}.signature-image{background:white;border:1px solid #d8e2ef;border-radius:10px;display:block;max-height:130px;max-width:360px;object-fit:contain;padding:8px}.approval-signature{display:inline-block;min-width:360px}.signature-empty{color:#62728a;font-weight:800}table{border-collapse:collapse;width:100%}td,th{border:1px solid #d8e2ef;padding:10px;text-align:left}th{background:#f1f5fb}@media (max-width:800px){body{padding:14px}.report-cover,.evidence-card{grid-template-columns:1fr}.cover-copy{padding:22px}.cover-copy h1{font-size:30px}dl,.gallery-grid,.evidence-copy dl{grid-template-columns:1fr}.header,.item{border-radius:16px;padding:18px}.toolbar{align-items:flex-start;flex-direction:column;gap:8px}.gallery-thumb img{height:230px}}@media print{@page{margin:14mm}html,body{background:white}body{padding:0}.report{max-width:none}.toolbar,.original-link{display:none!important}.header,.item,.finding-card,.reference-card,.evidence-card,.gallery-card{break-inside:avoid;box-shadow:none}.report-cover{break-before:auto}.gallery-section,.org-section,.approval-section{break-before:auto}.approval-section{break-inside:avoid;page-break-inside:avoid}.media img,.evidence-media img,.signature-image,.finding-image img,.gallery-thumb img{break-inside:avoid;visibility:visible}.note{position:static;background:#14213d}a,a:visited{color:#18243a!important;text-decoration:none!important}.report{color:#18243a;-webkit-text-size-adjust:100%;print-color-adjust:exact;-webkit-print-color-adjust:exact}}
+    :root{color-scheme:light}*{box-sizing:border-box}html{background:#eef2f7}body{font-family:Inter,Arial,Helvetica,sans-serif;background:#eef2f7;color:#18243a;margin:0;padding:36px;line-height:1.45}.report{max-width:1040px;margin:0 auto}.toolbar{align-items:center;background:#13213a;border-radius:16px;color:white;display:flex;justify-content:space-between;margin:0 0 18px;padding:14px 16px}.toolbar button{background:white;border:0;border-radius:999px;color:#13213a;cursor:pointer;font-weight:800;padding:10px 16px}.print-help{color:#dbe7ff;font-size:13px;margin:0}.header,.item{background:white;border:1px solid #d9e2ee;border-radius:20px;box-shadow:0 16px 45px rgba(24,36,58,.08);margin-bottom:20px;padding:28px}.report-cover{display:grid;gap:20px;grid-template-columns:minmax(0,1.25fr) minmax(260px,.65fr);overflow:hidden;padding:0}.report-cover-no-image{display:block}.cover-copy{padding:34px}.cover-copy h1{font-size:40px;letter-spacing:-.035em;line-height:1.05;margin:10px 0 12px}.cover-trust{border-left:4px solid #155dfc;color:#4c5d75;margin:18px 0;padding-left:14px}.cover-image{background:#f7f9fc;min-height:100%;overflow:hidden}.cover-image img{display:block;height:100%;max-height:380px;object-fit:cover;width:100%}.eyebrow{color:#155dfc;font-size:11px;font-weight:900;letter-spacing:.16em;text-transform:uppercase}.meta,.muted{color:#62728a}.service-section h2{border-bottom:1px solid #e3eaf3;font-size:22px;letter-spacing:-.02em;margin-top:0;padding-bottom:10px}dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:14px 0 0}dl div{background:#f8fafc;border:1px solid #e2e9f2;border-radius:13px;padding:10px 12px}dt{color:#5a6a81;font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}dd{font-weight:750;margin:4px 0 0;overflow-wrap:anywhere}a,a:visited{color:#18243a;text-decoration:none}.original-link{font-size:12px;margin-top:8px;opacity:.55}.original-link a{text-decoration:underline;text-underline-offset:2px}.media{position:relative;border-radius:14px;overflow:hidden;background:#f8fafc;border:1px solid #d8e2ef}.media img{display:block;width:100%;max-height:520px;object-fit:contain;background:white}.media-fallback{align-items:center;aspect-ratio:4/3;background:#f8fafc;border:1px dashed #cbd6e5;color:#697890;display:flex;font-size:14px;font-weight:800;justify-content:center;padding:18px;text-align:center}.video-still{align-items:center;aspect-ratio:16/9;background:#eef4ff;color:#13213a;display:flex;font-size:18px;font-weight:800;justify-content:center;padding:16px;text-align:center}.finding{margin-top:14px}.finding-card,.reference-card{border:1px solid #d8e2ef;border-radius:16px;margin:12px 0;padding:16px;break-inside:avoid;page-break-inside:avoid}.finding-image{align-self:start;background:#f8fafc;border:1px solid #d8e2ef;border-radius:12px;overflow:hidden}.finding-image img{display:block;width:100%;max-height:330px;object-fit:contain}.gallery-grid{display:grid;gap:14px;grid-template-columns:repeat(2,minmax(0,1fr))}.gallery-card{background:#fff;border:1px solid #d8e2ef;border-radius:16px;break-inside:avoid;overflow:hidden}.gallery-thumb{background:#f8fafc}.gallery-thumb img{display:block;height:260px;object-fit:cover;width:100%}.gallery-caption{padding:12px 14px}.gallery-caption h3{font-size:17px;margin:2px 0 0}.gallery-caption p{color:#62728a;font-size:13px;margin:4px 0 0}.gallery-evidence-id{color:#155dfc!important;font-size:11px!important;font-weight:900;letter-spacing:.12em;margin:0!important;text-transform:uppercase}.summary-lead{color:#334155;font-size:16px;margin:0 0 12px}.summary-trust{color:#62728a;font-size:13px;margin:12px 0 0}.summary-chip-row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 14px}.summary-chip-row span{background:#eef4ff;border:1px solid #cfe0ff;border-radius:999px;color:#14315f;font-size:12px;font-weight:800;padding:6px 10px}.evidence-grid{display:grid;gap:10px;grid-template-columns:1fr}.evidence-card{align-items:start;border:1px solid #d8e2ef;border-radius:16px;display:grid;gap:14px;grid-template-columns:220px minmax(0,1fr);padding:14px;break-inside:avoid;page-break-inside:avoid}.evidence-card h3{font-size:17px;margin:0 0 8px}.evidence-card p{margin:0 0 10px}.evidence-media img{height:170px;max-height:170px;object-fit:contain}.evidence-copy dl{grid-template-columns:repeat(3,minmax(0,1fr))}.evidence-copy dl div{padding:8px}.severity,.evidence-pill{background:#f8fafc;border:1px solid #d8e2ef;border-radius:999px;display:inline-block;font-size:11px;font-weight:900;padding:6px 9px}.evidence-pill-row{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}.signature-block{background:#f8fafc;border:1px solid #d8e2ef;border-radius:12px;margin-top:10px;padding:10px}.signoff-section{box-shadow:0 8px 24px rgba(24,36,58,.05);padding:20px}.signoff-section dl{grid-template-columns:repeat(3,minmax(0,1fr))}.signoff-section dl div{padding:8px 10px}.signature-image{background:white;border:1px solid #d8e2ef;border-radius:10px;display:block;max-height:92px;max-width:280px;object-fit:contain;padding:6px}.approval-signature{display:inline-block;min-width:280px}.signature-empty{color:#62728a;font-weight:800}table{border-collapse:collapse;width:100%}td,th{border:1px solid #d8e2ef;padding:8px 10px;text-align:left;vertical-align:top;overflow-wrap:anywhere}th{background:#f1f5fb}.evidence-appendix{font-size:12px}.appendix-thumb{width:86px}.appendix-thumb img{display:block;height:54px;max-width:74px;object-fit:cover;border-radius:6px}.appendix-thumb .media-fallback{aspect-ratio:auto;min-height:54px;padding:6px;font-size:10px}.appendix-kind{color:#62728a;font-size:11px;font-weight:800}@media (max-width:800px){body{padding:14px}.report-cover,.evidence-card{grid-template-columns:1fr}.cover-copy{padding:22px}.cover-copy h1{font-size:30px}dl,.gallery-grid,.evidence-copy dl{grid-template-columns:1fr}.header,.item{border-radius:16px;padding:18px}.toolbar{align-items:flex-start;flex-direction:column;gap:8px}.gallery-thumb img{height:230px}}@media print{@page{margin:12mm}html,body{background:white}body{padding:0}.report{max-width:none}.toolbar,.original-link{display:none!important}.header,.item,.finding-card,.reference-card,.evidence-card,.gallery-card{box-shadow:none}.finding-card,.reference-card,.evidence-card,.gallery-card,.signoff-section{break-inside:avoid;page-break-inside:avoid}.report-cover{break-before:auto}.gallery-section,.org-section,.approval-section,.evidence-appendix-section{break-before:auto;page-break-before:auto}.approval-section{break-inside:avoid;page-break-inside:avoid}.media img,.evidence-media img,.signature-image,.finding-image img,.gallery-thumb img{break-inside:avoid;visibility:visible}.note{position:static;background:#14213d}a,a:visited{color:#18243a!important;text-decoration:none!important}.report{color:#18243a;-webkit-text-size-adjust:100%;print-color-adjust:exact;-webkit-print-color-adjust:exact}}
   `;
 
 export async function GET(_request: Request, { params }: RouteContext) {
@@ -1375,7 +1553,11 @@ export async function GET(_request: Request, { params }: RouteContext) {
     duplicateCaptureIds: appendixCaptureResult.duplicateCaptureIds,
     finalNotesSource: "documentation_sessions.final_notes",
   });
-  const imageAssets = buildCaptureImageUrls(session.id, captureItems, shareTokenValue);
+  const imageAssets = buildCaptureImageUrls(
+    session.id,
+    captureItems,
+    shareTokenValue,
+  );
 
   const { data: signatures } = await supabase
     .from("signature_captures")
@@ -1499,8 +1681,6 @@ export async function GET(_request: Request, { params }: RouteContext) {
     });
   }
 
-
-
   const visibleReportSections = reportSections.filter(
     (section) => !isHiddenFromReport(section.metadata),
   );
@@ -1552,7 +1732,9 @@ export async function GET(_request: Request, { params }: RouteContext) {
   });
   const unattachedHtml = "";
   const imageCount = appendixCaptureItems.filter(isImageEvidence).length;
-  const finalNotesIncluded = Boolean(session.include_final_notes_in_export && session.final_notes);
+  const finalNotesIncluded = Boolean(
+    session.include_final_notes_in_export && session.final_notes,
+  );
   const hasUniqueDetails = hasUniqueReportDetails({
     reviewDocument,
     reportSections: visibleReportSections,
@@ -1565,7 +1747,9 @@ export async function GET(_request: Request, { params }: RouteContext) {
     reviewDocument.findingModels.length > 0 ||
     reviewDocument.referenceDocuments.length > 0 ||
     finalNotesIncluded ||
-    visibleReportSections.some((section) => isMeaningfulCustomerReportText(section.body ?? ""));
+    visibleReportSections.some((section) =>
+      isMeaningfulCustomerReportText(section.body ?? ""),
+    );
   const presentationMode = getReportPresentationMode({
     includedImageCount: imageCount,
     isGenericEvidenceReport,
@@ -1579,20 +1763,27 @@ export async function GET(_request: Request, { params }: RouteContext) {
     includedImageCount: imageCount,
     finalNotesIncluded,
     approved: Boolean(getApprovalDate(reportDraft, session)),
+    approvedAt: getApprovalDate(reportDraft, session)
+      ? formatDateTimeInTimeZone(
+          getApprovalDate(reportDraft, session),
+          timeZone,
+        )
+      : "",
     preparedBy: reportProfile?.full_name ?? "",
-    organization: getOrganizationDisplayName(organizationName, reportCompanyProfile),
+    organization: getOrganizationDisplayName(
+      organizationName,
+      reportCompanyProfile,
+    ),
     reportTitle,
     captions: getCaptionChips(appendixCaptureItems),
     mode: presentationMode,
   });
   const appendixHtml = useGalleryMode
     ? buildEvidenceIndexHtml(appendixCaptureItems, timeZone)
-    : buildEvidenceAppendixHtml(
-        appendixCaptureItems,
-        imageAssets,
-        timeZone,
-        { showDebugDetails, renderImages: true },
-      );
+    : buildEvidenceAppendixHtml(appendixCaptureItems, imageAssets, timeZone, {
+        showDebugDetails,
+        renderImages: true,
+      });
   const draftReferencedCaptureCount = new Set(
     visibleReportSections
       .flatMap((section) => section.source_capture_ids ?? [])
@@ -1631,7 +1822,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     ? ""
     : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>';
   const html = `<!doctype html><html><head><meta charset="utf-8" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, companyProfile: reportCompanyProfile, captures: appendixCaptureItems, imageAssets: imageAssets, timeZone })}${summaryHtml}${useGalleryMode ? "" : reportInfoHtml}${!useGalleryMode && customerAssetHtml ? `<section class="item service-section"><h2>Subject Details</h2>${customerAssetHtml}</section>` : ""}${useGalleryMode ? "" : structuredFormDataHtml}${useGalleryMode ? "" : buildFinalNotesHtml(session)}${useGalleryMode ? "" : findingsHtml}${unattachedHtml}${supportingHtml}${useGalleryMode ? buildEvidenceGalleryHtml(appendixCaptureItems, imageAssets, timeZone) : ""}${appendixHtml}${useGalleryMode ? "" : referenceHtml}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile)}${buildApprovalHtml({ profile: reportProfile, signatures: reportSignatures, signatureUrls, draft: reportDraft, session, timeZone })}</main></body></html>`;
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, companyProfile: reportCompanyProfile, captures: appendixCaptureItems, imageAssets: imageAssets, timeZone })}${summaryHtml}${useGalleryMode ? "" : reportInfoHtml}${!useGalleryMode && customerAssetHtml ? `<section class="item service-section"><h2>Subject Details</h2>${customerAssetHtml}</section>` : ""}${useGalleryMode ? "" : structuredFormDataHtml}${useGalleryMode ? "" : buildFinalNotesHtml(session)}${useGalleryMode ? "" : findingsHtml}${unattachedHtml}${supportingHtml}${useGalleryMode ? buildEvidenceGalleryHtml(appendixCaptureItems, imageAssets, timeZone) : ""}${useGalleryMode ? "" : referenceHtml}${appendixHtml}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile)}${buildApprovalHtml({ profile: reportProfile, signatures: reportSignatures, signatureUrls, draft: reportDraft, session, timeZone })}</main></body></html>`;
 
   return new Response(html, {
     headers: { "Content-Type": "text/html; charset=utf-8" },
