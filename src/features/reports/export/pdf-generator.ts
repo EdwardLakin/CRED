@@ -7,7 +7,48 @@ export type BrowserPdfOptions = {
   timeoutMs?: number;
 };
 
-type BrowserPage = import("puppeteer-core").Page;
+type BrowserCookie = { name: string; value: string; domain: string; path: string };
+
+type BrowserPage = {
+  setDefaultNavigationTimeout(timeoutMs: number): void;
+  setDefaultTimeout(timeoutMs: number): void;
+  setCookie(...cookies: BrowserCookie[]): Promise<void>;
+  setExtraHTTPHeaders(headers: Record<string, string>): Promise<void>;
+  emulateMediaType(mediaType: "print"): Promise<void>;
+  goto(url: string, options: { waitUntil: "networkidle0"; timeout: number }): Promise<unknown>;
+  evaluate<Arg>(pageFunction: (arg: Arg) => Promise<void>, arg: Arg): Promise<void>;
+  pdf(options: {
+    format: "Letter";
+    printBackground: boolean;
+    preferCSSPageSize: boolean;
+    displayHeaderFooter: boolean;
+    tagged: boolean;
+    outline: boolean;
+  }): Promise<Uint8Array>;
+};
+
+type Browser = {
+  newPage(): Promise<BrowserPage>;
+  close(): Promise<void>;
+};
+
+type PuppeteerModule = {
+  launch(options: {
+    args: string[];
+    defaultViewport: { width: number; height: number; deviceScaleFactor: number };
+    executablePath: string;
+    headless: boolean;
+  }): Promise<Browser>;
+};
+
+type ChromiumDefaultExport = {
+  args: string[];
+  executablePath(input?: string): Promise<string>;
+};
+
+type ChromiumModule = {
+  default: ChromiumDefaultExport;
+};
 
 export class BrowserPdfDependencyError extends Error {
   constructor(
@@ -63,12 +104,40 @@ function parseCookies(cookieHeader: string, url: string) {
     .filter((cookie) => cookie.name);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isPuppeteerModule(value: unknown): value is PuppeteerModule {
+  return isRecord(value) && typeof value.launch === "function";
+}
+
+function isChromiumDefaultExport(value: unknown): value is ChromiumDefaultExport {
+  return (
+    isRecord(value)
+    && Array.isArray(value.args)
+    && value.args.every((arg) => typeof arg === "string")
+    && typeof value.executablePath === "function"
+  );
+}
+
+function isChromiumModule(value: unknown): value is ChromiumModule {
+  return isRecord(value) && isChromiumDefaultExport(value.default);
+}
+
+async function importBrowserPackage(packageName: string): Promise<unknown> {
+  return import(packageName);
+}
+
 async function loadBrowserDependencies() {
   try {
     const [puppeteer, chromium] = await Promise.all([
-      import("puppeteer-core"),
-      import("@sparticuz/chromium"),
+      importBrowserPackage("puppeteer-core"),
+      importBrowserPackage("@sparticuz/chromium"),
     ]);
+    if (!isPuppeteerModule(puppeteer) || !isChromiumModule(chromium)) {
+      throw new Error("Browser PDF dependencies did not expose the expected runtime APIs.");
+    }
     return { puppeteer, chromium };
   } catch (error) {
     throw new BrowserPdfDependencyError(
@@ -99,11 +168,12 @@ async function waitForImages(page: BrowserPage, timeoutMs: number) {
 export async function renderPrintableReportPdf(options: BrowserPdfOptions) {
   const timeoutMs = options.timeoutMs ?? 45_000;
   const { puppeteer, chromium } = await loadBrowserDependencies();
+  const sparticuzChromium = chromium.default;
   const localExecutablePath = await getLocalChromeExecutablePath();
-  const executablePath = localExecutablePath ?? await chromium.executablePath();
+  const executablePath = localExecutablePath ?? await sparticuzChromium.executablePath();
 
   const browser = await puppeteer.launch({
-    args: chromium.args,
+    args: sparticuzChromium.args,
     defaultViewport: { width: 1280, height: 1800, deviceScaleFactor: 1 },
     executablePath,
     headless: true,
