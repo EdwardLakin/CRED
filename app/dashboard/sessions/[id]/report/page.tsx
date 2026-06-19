@@ -42,6 +42,7 @@ import { SignatureCaptureForm } from "@/features/signatures";
 import { useSavedSignature } from "@/features/signatures/actions";
 import type { Database } from "@/lib/supabase/database.types";
 import { FinalNotesEditor } from "@/features/reports/components/FinalNotesEditor";
+import { PdfDownloadButton } from "@/features/reports/components/PdfDownloadButton";
 import { DeleteEvidenceButton } from "@/features/capture/components/DeleteEvidenceButton";
 
 type Tables = Database["public"]["Tables"];
@@ -1486,12 +1487,7 @@ function ExportPanel({
             </p>
           </div>
           {isReadyForExport ? (
-            <Link
-              href={pdfDownloadPath}
-              className="button button-primary touch-target"
-            >
-              Download PDF Report
-            </Link>
+            <PdfDownloadButton href={pdfDownloadPath} />
           ) : (
             <span
               className="button button-primary touch-target disabled-action"
