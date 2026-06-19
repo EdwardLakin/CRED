@@ -3,7 +3,10 @@ import { notFound, redirect } from "next/navigation";
 
 import { requireActiveBillingAccess } from "@/features/billing";
 import { getDisplayReportTitle } from "@/features/reports/report-title";
-import { collectPdfImages, renderReportPdf } from "@/features/reports/export/pdf-generator";
+import {
+  collectPdfImages,
+  renderReportPdf,
+} from "@/features/reports/export/pdf-generator";
 import { safeReportPdfFileName } from "@/features/reports/export/filenames";
 import { requireSessionWorkspace } from "@/features/sessions/data";
 import { recordUsageEvent } from "@/features/usage";
@@ -17,16 +20,45 @@ type RouteContext = {
 };
 
 function getRequestOrigin(request: Request, headersList: Headers) {
+  const requestUrl = new URL(request.url);
+  const host =
+    headersList.get("x-forwarded-host") ??
+    headersList.get("host") ??
+    requestUrl.host;
+  const protocol =
+    headersList.get("x-forwarded-proto") ??
+    requestUrl.protocol.replace(":", "") ??
+    "https";
+  const requestOrigin = `${protocol}://${host}`.replace(/\/$/, "");
   const configuredUrl =
     process.env.NEXT_PUBLIC_APP_URL?.trim() ??
     process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  if (configuredUrl) return configuredUrl.replace(/\/$/, "");
-  const requestUrl = new URL(request.url);
+  const vercelEnvironment = process.env.VERCEL_ENV?.trim();
+
+  if (vercelEnvironment === "preview") {
+    if (configuredUrl && configuredUrl.replace(/\/$/, "") !== requestOrigin) {
+      console.info("Using request host for PDF preview deployment", {
+        configuredOrigin: configuredUrl.replace(/\/$/, ""),
+        requestOrigin,
+      });
+    }
+    return requestOrigin;
+  }
+
+  if (configuredUrl) {
+    const configuredOrigin = configuredUrl.replace(/\/$/, "");
+    if (configuredOrigin !== requestOrigin) {
+      console.info("Using configured PDF origin", {
+        configuredOrigin,
+        requestOrigin,
+      });
+    }
+    return configuredOrigin;
+  }
+
   const vercelUrl = process.env.VERCEL_URL?.trim();
   if (vercelUrl) return `https://${vercelUrl.replace(/\/$/, "")}`;
-  const host = headersList.get("x-forwarded-host") ?? headersList.get("host") ?? requestUrl.host;
-  const protocol = headersList.get("x-forwarded-proto") ?? requestUrl.protocol.replace(":", "") ?? "https";
-  return `${protocol}://${host}`;
+  return requestOrigin;
 }
 
 export async function GET(request: Request, { params }: RouteContext) {
@@ -50,7 +82,9 @@ export async function GET(request: Request, { params }: RouteContext) {
   if (sessionError || !session) notFound();
 
   const requestUrl = new URL(request.url);
-  const internalPreview = requestUrl.searchParams.get("preview") === "1" && process.env.NODE_ENV !== "production";
+  const internalPreview =
+    requestUrl.searchParams.get("preview") === "1" &&
+    process.env.NODE_ENV !== "production";
   if (!internalPreview && session.review_status !== "ready_for_delivery") {
     redirect(
       `/dashboard/sessions/${id}/report?error=${encodeURIComponent("Approve this report before downloading the PDF.")}`,
@@ -69,7 +103,9 @@ export async function GET(request: Request, { params }: RouteContext) {
     (reportDrafts ?? []).find((draft) => draft.status !== "superseded") ??
     reportDrafts?.[0] ??
     null;
-  const title = getDisplayReportTitle(reportDraft, session, { genericFallback: true });
+  const title = getDisplayReportTitle(reportDraft, session, {
+    genericFallback: true,
+  });
   const generatedAt = new Date();
   const fileName = safeReportPdfFileName(title, generatedAt);
   const headersList = await headers();
@@ -77,9 +113,14 @@ export async function GET(request: Request, { params }: RouteContext) {
   const cookie = headersList.get("cookie") ?? "";
   const htmlUrl = `${origin}/api/dashboard/sessions/${encodeURIComponent(session.id)}/report-pdf?preview=1`;
   const forwardedHeaders: HeadersInit = cookie ? { cookie } : {};
-  const htmlResponse = await fetch(htmlUrl, { headers: forwardedHeaders, cache: "no-store" });
+  const htmlResponse = await fetch(htmlUrl, {
+    headers: forwardedHeaders,
+    cache: "no-store",
+  });
   if (!htmlResponse.ok) {
-    return new Response("Unable to render report HTML for PDF generation.", { status: 502 });
+    return new Response("Unable to render report HTML for PDF generation.", {
+      status: 502,
+    });
   }
   const html = await htmlResponse.text();
   const images = await collectPdfImages(html, origin, forwardedHeaders);
