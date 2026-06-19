@@ -7,7 +7,12 @@ export type BrowserPdfOptions = {
   timeoutMs?: number;
 };
 
-type BrowserCookie = { name: string; value: string; domain: string; path: string };
+type BrowserCookie = {
+  name: string;
+  value: string;
+  domain: string;
+  path: string;
+};
 
 type BrowserPage = {
   setDefaultNavigationTimeout(timeoutMs: number): void;
@@ -15,8 +20,14 @@ type BrowserPage = {
   setCookie(...cookies: BrowserCookie[]): Promise<void>;
   setExtraHTTPHeaders(headers: Record<string, string>): Promise<void>;
   emulateMediaType(mediaType: "print"): Promise<void>;
-  goto(url: string, options: { waitUntil: "networkidle0"; timeout: number }): Promise<unknown>;
-  evaluate<Arg>(pageFunction: (arg: Arg) => Promise<void>, arg: Arg): Promise<void>;
+  goto(
+    url: string,
+    options: { waitUntil: "networkidle0"; timeout: number },
+  ): Promise<unknown>;
+  evaluate<Arg>(
+    pageFunction: (arg: Arg) => Promise<void>,
+    arg: Arg,
+  ): Promise<void>;
   pdf(options: {
     format: "Letter";
     printBackground: boolean;
@@ -35,15 +46,23 @@ type Browser = {
 type PuppeteerModule = {
   launch(options: {
     args: string[];
-    defaultViewport: { width: number; height: number; deviceScaleFactor: number };
+    defaultViewport: {
+      width: number;
+      height: number;
+      deviceScaleFactor: number;
+    };
     executablePath: string;
     headless: boolean;
   }): Promise<Browser>;
 };
 
-type ChromiumRuntimeExport = {
+type ChromiumExecutablePathExport =
+  | string
+  | ((input?: string) => Promise<string> | string);
+
+type ChromiumRuntime = {
   args: string[];
-  executablePath: string | ((input?: string) => Promise<string> | string);
+  executablePath: string;
 };
 
 type BrowserPdfFailureStage =
@@ -170,7 +189,9 @@ function logBrowserRuntimeShape(puppeteer: unknown, chromium: unknown) {
   if (hasLoggedBrowserRuntimeShape) return;
   hasLoggedBrowserRuntimeShape = true;
   const chromiumDefault = isRecord(chromium) ? chromium.default : undefined;
-  const executablePath = isRecord(chromium) ? chromium.executablePath : undefined;
+  const executablePath = isRecord(chromium)
+    ? chromium.executablePath
+    : undefined;
   const defaultExecutablePath = isRecord(chromiumDefault)
     ? chromiumDefault.executablePath
     : undefined;
@@ -179,7 +200,9 @@ function logBrowserRuntimeShape(puppeteer: unknown, chromium: unknown) {
     chromiumExportKeys: isRecord(chromium) ? Object.keys(chromium) : [],
     executablePathType: describeExecutablePath(executablePath),
     defaultExecutablePathType: describeExecutablePath(defaultExecutablePath),
-    chromiumArgsType: Array.isArray(isRecord(chromium) ? chromium.args : undefined)
+    chromiumArgsType: Array.isArray(
+      isRecord(chromium) ? chromium.args : undefined,
+    )
       ? "array"
       : "missing",
     defaultChromiumArgsType: Array.isArray(
@@ -192,25 +215,67 @@ function logBrowserRuntimeShape(puppeteer: unknown, chromium: unknown) {
   });
 }
 
-function resolveChromiumRuntimeExport(chromium: unknown): ChromiumRuntimeExport | null {
-  const candidates = [chromium, isRecord(chromium) ? chromium.default : undefined];
+function getChromiumExportKeys(chromium: unknown) {
+  return isRecord(chromium) ? Object.keys(chromium) : [];
+}
+
+function isChromiumExecutablePathExport(
+  value: unknown,
+): value is ChromiumExecutablePathExport {
+  return typeof value === "function" || typeof value === "string";
+}
+
+async function resolveChromiumExecutablePath(
+  value: ChromiumExecutablePathExport,
+) {
+  const executablePath = typeof value === "function" ? await value() : value;
+
+  if (typeof executablePath !== "string" || !executablePath) {
+    throw new Error("No Chrome executable path was resolved.");
+  }
+
+  return executablePath;
+}
+
+async function resolveChromiumRuntime(
+  chromium: unknown,
+): Promise<ChromiumRuntime | null> {
+  const candidates = [
+    chromium,
+    isRecord(chromium) ? chromium.default : undefined,
+  ];
   for (const candidate of candidates) {
     if (!isRecord(candidate)) continue;
     if (
-      Array.isArray(candidate.args)
-      && candidate.args.every((arg) => typeof arg === "string")
-      && (
-        typeof candidate.executablePath === "function"
-        || typeof candidate.executablePath === "string"
-      )
+      Array.isArray(candidate.args) &&
+      candidate.args.every((arg) => typeof arg === "string") &&
+      isChromiumExecutablePathExport(candidate.executablePath)
     ) {
+      const localExecutablePath = await getLocalChromeExecutablePath();
+      const executablePath =
+        localExecutablePath ??
+        (await resolveChromiumExecutablePath(candidate.executablePath));
+
       return {
         args: candidate.args,
-        executablePath: candidate.executablePath,
+        executablePath,
       };
     }
   }
   return null;
+}
+
+function logResolvedChromiumRuntime(
+  chromium: unknown,
+  runtime: ChromiumRuntime,
+) {
+  console.info("Browser PDF resolved Chromium runtime", {
+    chromiumExportKeys: getChromiumExportKeys(chromium),
+    executablePathLength: runtime.executablePath.length,
+    argsCount: runtime.args.length,
+    nodeEnvironment: process.env.NODE_ENV,
+    vercelEnvironment: process.env.VERCEL_ENV,
+  });
 }
 
 async function importBrowserPackage(packageName: string): Promise<unknown> {
@@ -257,7 +322,18 @@ async function loadBrowserDependencies() {
     );
   }
 
-  const sparticuzChromium = resolveChromiumRuntimeExport(chromium);
+  let sparticuzChromium: ChromiumRuntime | null;
+  try {
+    sparticuzChromium = await resolveChromiumRuntime(chromium);
+  } catch (error) {
+    logBrowserPdfFailure("executablePath resolution", error);
+    throw new BrowserPdfRuntimeError(
+      "executablePath resolution",
+      "Browser PDF rendering could not resolve a Chrome executable path.",
+      { cause: error },
+    );
+  }
+
   if (!sparticuzChromium) {
     const error = new Error(
       "@sparticuz/chromium did not expose args and executablePath on its runtime export.",
@@ -271,27 +347,9 @@ async function loadBrowserDependencies() {
     );
   }
 
-  return { puppeteer, sparticuzChromium };
-}
+  logResolvedChromiumRuntime(chromium, sparticuzChromium);
 
-async function resolveExecutablePath(sparticuzChromium: ChromiumRuntimeExport) {
-  try {
-    const localExecutablePath = await getLocalChromeExecutablePath();
-    const chromiumExecutablePath = sparticuzChromium.executablePath;
-    const executablePath = localExecutablePath
-      ?? (typeof chromiumExecutablePath === "function"
-        ? await chromiumExecutablePath()
-        : chromiumExecutablePath);
-    if (!executablePath) throw new Error("No Chrome executable path was resolved.");
-    return executablePath;
-  } catch (error) {
-    logBrowserPdfFailure("executablePath resolution", error);
-    throw new BrowserPdfRuntimeError(
-      "executablePath resolution",
-      "Browser PDF rendering could not resolve a Chrome executable path.",
-      { cause: error },
-    );
-  }
+  return { puppeteer, sparticuzChromium };
 }
 
 async function waitForImages(page: BrowserPage, timeoutMs: number) {
@@ -302,8 +360,22 @@ async function waitForImages(page: BrowserPage, timeoutMs: number) {
         if (image.complete && image.naturalWidth > 0) return Promise.resolve();
         return new Promise<void>((resolve) => {
           const timer = window.setTimeout(resolve, imageTimeoutMs);
-          image.addEventListener("load", () => { window.clearTimeout(timer); resolve(); }, { once: true });
-          image.addEventListener("error", () => { window.clearTimeout(timer); resolve(); }, { once: true });
+          image.addEventListener(
+            "load",
+            () => {
+              window.clearTimeout(timer);
+              resolve();
+            },
+            { once: true },
+          );
+          image.addEventListener(
+            "error",
+            () => {
+              window.clearTimeout(timer);
+              resolve();
+            },
+            { once: true },
+          );
         });
       }),
     );
@@ -314,14 +386,13 @@ async function waitForImages(page: BrowserPage, timeoutMs: number) {
 export async function renderPrintableReportPdf(options: BrowserPdfOptions) {
   const timeoutMs = options.timeoutMs ?? 45_000;
   const { puppeteer, sparticuzChromium } = await loadBrowserDependencies();
-  const executablePath = await resolveExecutablePath(sparticuzChromium);
 
   let browser: Browser;
   try {
     browser = await puppeteer.launch({
       args: sparticuzChromium.args,
       defaultViewport: { width: 1280, height: 1800, deviceScaleFactor: 1 },
-      executablePath,
+      executablePath: sparticuzChromium.executablePath,
       headless: true,
     });
   } catch (error) {
@@ -343,7 +414,10 @@ export async function renderPrintableReportPdf(options: BrowserPdfOptions) {
     }
     await page.emulateMediaType("print");
     try {
-      await page.goto(options.url, { waitUntil: "networkidle0", timeout: timeoutMs });
+      await page.goto(options.url, {
+        waitUntil: "networkidle0",
+        timeout: timeoutMs,
+      });
       await waitForImages(page, Math.min(10_000, timeoutMs));
     } catch (error) {
       logBrowserPdfFailure("page.goto/html render", error);
@@ -354,14 +428,16 @@ export async function renderPrintableReportPdf(options: BrowserPdfOptions) {
       );
     }
     try {
-      return Buffer.from(await page.pdf({
-        format: "Letter",
-        printBackground: true,
-        preferCSSPageSize: true,
-        displayHeaderFooter: false,
-        tagged: true,
-        outline: false,
-      }));
+      return Buffer.from(
+        await page.pdf({
+          format: "Letter",
+          printBackground: true,
+          preferCSSPageSize: true,
+          displayHeaderFooter: false,
+          tagged: true,
+          outline: false,
+        }),
+      );
     } catch (error) {
       logBrowserPdfFailure("page.pdf", error);
       throw new BrowserPdfRuntimeError(
