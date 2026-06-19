@@ -4,6 +4,7 @@ export {
   getCurrentUsage,
   recordUsageEvent,
   requireUsageAllowance,
+  USAGE_EVENT_TYPES,
   type CurrentUsage,
   type UsageEventType,
   type UsagePeriod,

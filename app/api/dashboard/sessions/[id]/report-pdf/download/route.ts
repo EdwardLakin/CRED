@@ -139,19 +139,27 @@ export async function GET(request: Request, { params }: RouteContext) {
       generated_at: generatedAt.toISOString(),
     },
   });
-  await recordUsageEvent({
-    supabase: workspace.supabase,
-    organizationId: workspace.profile.organization_id,
-    eventType: "pdf_report_downloaded",
-    metadata: {
-      session_id: session.id,
-      item_count: images.length,
-      format: "pdf",
-      file_name: fileName,
-      generated_at: generatedAt.toISOString(),
-    },
-    createdBy: workspace.profile.id,
-  });
+  try {
+    await recordUsageEvent({
+      supabase: workspace.supabase,
+      organizationId: workspace.profile.organization_id,
+      eventType: "pdf_report_downloaded",
+      metadata: {
+        session_id: session.id,
+        item_count: images.length,
+        format: "pdf",
+        file_name: fileName,
+        generated_at: generatedAt.toISOString(),
+      },
+      createdBy: workspace.profile.id,
+    });
+  } catch (error) {
+    console.warn("PDF report download usage event tracking failed", {
+      error,
+      organizationId: workspace.profile.organization_id,
+      sessionId: session.id,
+    });
+  }
 
   return new Response(pdf, {
     headers: {
