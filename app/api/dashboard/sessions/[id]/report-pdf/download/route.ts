@@ -3,10 +3,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { requireActiveBillingAccess } from "@/features/billing";
 import { getDisplayReportTitle } from "@/features/reports/report-title";
-import {
-  collectPdfImages,
-  renderReportPdf,
-} from "@/features/reports/export/pdf-generator";
+import { renderPrintableReportPdf } from "@/features/reports/export/pdf-generator";
 import { safeReportPdfFileName } from "@/features/reports/export/filenames";
 import { requireSessionWorkspace } from "@/features/sessions/data";
 import { recordUsageEvent } from "@/features/usage";
@@ -112,19 +109,19 @@ export async function GET(request: Request, { params }: RouteContext) {
   const origin = getRequestOrigin(request, headersList);
   const cookie = headersList.get("cookie") ?? "";
   const htmlUrl = `${origin}/api/dashboard/sessions/${encodeURIComponent(session.id)}/report-pdf?preview=1`;
-  const forwardedHeaders: HeadersInit = cookie ? { cookie } : {};
-  const htmlResponse = await fetch(htmlUrl, {
-    headers: forwardedHeaders,
-    cache: "no-store",
-  });
-  if (!htmlResponse.ok) {
-    return new Response("Unable to render report HTML for PDF generation.", {
+  let pdf: Buffer;
+  try {
+    pdf = await renderPrintableReportPdf({
+      url: htmlUrl,
+      title,
+      cookieHeader: cookie,
+    });
+  } catch (error) {
+    console.error("Browser PDF rendering failed", { error, sessionId: session.id });
+    return new Response("Unable to render browser PDF for this report.", {
       status: 502,
     });
   }
-  const html = await htmlResponse.text();
-  const images = await collectPdfImages(html, origin, forwardedHeaders);
-  const pdf = renderReportPdf({ html, title, images, generatedAt });
 
   await workspace.supabase.from("exports").insert({
     documentation_session_id: session.id,
@@ -133,8 +130,8 @@ export async function GET(request: Request, { params }: RouteContext) {
     status: "completed",
     created_by: workspace.profile.id,
     metadata: {
-      item_count: images.length,
-      format: "pdf",
+      render_source: "printable_html",
+      format: "browser_pdf",
       file_name: fileName,
       generated_at: generatedAt.toISOString(),
     },
@@ -146,8 +143,8 @@ export async function GET(request: Request, { params }: RouteContext) {
       eventType: "pdf_report_downloaded",
       metadata: {
         session_id: session.id,
-        item_count: images.length,
-        format: "pdf",
+        render_source: "printable_html",
+        format: "browser_pdf",
         file_name: fileName,
         generated_at: generatedAt.toISOString(),
       },
@@ -161,7 +158,7 @@ export async function GET(request: Request, { params }: RouteContext) {
     });
   }
 
-  return new Response(pdf, {
+  return new Response(new Uint8Array(pdf), {
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="${fileName}"`,
