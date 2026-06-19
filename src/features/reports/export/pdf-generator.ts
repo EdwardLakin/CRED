@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
 export type BrowserPdfOptions = {
   url: string;
   title: string;
@@ -425,6 +428,25 @@ async function resolveSparticuzChromiumExport(
   );
 }
 
+function logChromiumBinaryAssetDiagnostics() {
+  const cwdBinPath = join(
+    process.cwd(),
+    "node_modules",
+    "@sparticuz",
+    "chromium",
+    "bin",
+  );
+  const vercelTaskBinPath =
+    "/var/task/node_modules/@sparticuz/chromium/bin";
+
+  console.info("Browser PDF Chromium binary asset diagnostics", {
+    cwdChromiumBinExists: existsSync(cwdBinPath),
+    vercelTaskChromiumBinExists: existsSync(vercelTaskBinPath),
+    nodeEnvironment: process.env.NODE_ENV,
+    vercelEnvironment: process.env.VERCEL_ENV,
+  });
+}
+
 function logResolvedChromiumRuntime(runtime: ChromiumRuntime) {
   console.info("Browser PDF resolved Chromium runtime", {
     executablePathLength: runtime.executablePath.length,
@@ -479,6 +501,7 @@ async function loadBrowserDependencies(): Promise<{
   }
 
   let executablePath: string;
+  logChromiumBinaryAssetDiagnostics();
   try {
     executablePath = await resolveChromiumExecutablePath(
       chromium.executablePath,
