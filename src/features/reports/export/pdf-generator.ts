@@ -281,8 +281,11 @@ function logResolvedChromiumRuntime(
   });
 }
 
-async function loadBrowserDependencies() {
-  let puppeteer: unknown;
+async function loadBrowserDependencies(): Promise<{
+  puppeteer: PuppeteerModule;
+  sparticuzChromium: ChromiumRuntime;
+}> {
+  let puppeteer: PuppeteerModule | null = null;
   try {
     const puppeteerModule = await import("puppeteer-core");
     puppeteer = normalizePuppeteerModule(puppeteerModule);
