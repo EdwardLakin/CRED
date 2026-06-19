@@ -13,6 +13,7 @@ export type UsageEventType =
   | 'email_report_sent'
   | 'share_link_created'
   | 'printable_report_opened'
+  | 'pdf_report_downloaded'
   | 'template_imported'
   | 'signature_captured'
 

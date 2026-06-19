@@ -89,3 +89,12 @@ npm run dev
 ```
 
 Logged-out pricing buttons route to `/sign-up?plan=individual`, `/sign-up?plan=team`, or `/sign-up?plan=shop`. After signup and onboarding, CRED preserves the selected plan on the organization and redirects to the dashboard for the 7-day app-controlled trial. Users can click Subscribe Now, or visit `/dashboard?checkout=individual`, `/dashboard?checkout=team`, or `/dashboard?checkout=shop`, to start hosted Stripe Checkout for the preserved plan.
+
+## PDF report downloads
+
+CRED exposes printable HTML report previews at `/api/dashboard/sessions/[id]/report-pdf` and true PDF downloads at `/api/dashboard/sessions/[id]/report-pdf/download`. The PDF download route runs in the Node.js runtime, reuses the approved printable report HTML as the report source, fetches report media during generation, and returns durable `application/pdf` bytes with a safe attachment filename.
+
+Deployment notes:
+- The current implementation avoids adding a bundled browser dependency because package installation for Playwright/serverless Chromium may be restricted in some deployment environments. It uses an internal server-side PDF renderer that embeds fetched JPEG/PNG evidence and signature images directly into the downloaded PDF.
+- The route sets `maxDuration = 60`; Vercel deployments should allow enough function time and memory for large reports. A 20-photo report should be tested after deployment.
+- HEIC/HEIF and other non-web-safe evidence continue to use the existing clean fallback behavior unless a preview-converted JPEG/PNG is available in the printable HTML.
