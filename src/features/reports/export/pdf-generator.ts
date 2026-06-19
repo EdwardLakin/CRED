@@ -1,5 +1,3 @@
-import { access } from "node:fs/promises";
-
 export type BrowserPdfOptions = {
   url: string;
   title: string;
@@ -56,9 +54,10 @@ type PuppeteerModule = {
   }): Promise<Browser>;
 };
 
-type ChromiumExecutablePathExport =
-  | string
-  | ((input?: string) => Promise<string> | string);
+type SparticuzChromiumDefault = {
+  args: string[];
+  executablePath: string | ((input?: string) => string | Promise<string>);
+};
 
 type ChromiumRuntime = {
   args: string[];
@@ -97,27 +96,6 @@ export class BrowserPdfDependencyError extends BrowserPdfRuntimeError {
     super(stage, message, options);
     this.name = "BrowserPdfDependencyError";
   }
-}
-
-async function getLocalChromeExecutablePath() {
-  const candidates = [
-    process.env.CHROME_EXECUTABLE_PATH,
-    process.env.PUPPETEER_EXECUTABLE_PATH,
-    "/usr/bin/google-chrome-stable",
-    "/usr/bin/google-chrome",
-    "/usr/bin/chromium-browser",
-    "/usr/bin/chromium",
-  ].filter((value): value is string => Boolean(value));
-
-  for (const candidate of candidates) {
-    try {
-      await access(candidate);
-      return candidate;
-    } catch {
-      // Continue looking for a local browser binary.
-    }
-  }
-  return null;
 }
 
 function parseCookies(cookieHeader: string, url: string) {
@@ -181,58 +159,52 @@ function logBrowserPdfFailure(stage: BrowserPdfFailureStage, error: unknown) {
   });
 }
 
-function describeExecutablePath(value: unknown) {
-  if (typeof value === "function") return "function";
-  if (typeof value === "string") return "string";
-  return "missing";
+function describeRuntimeValueType(value: unknown) {
+  if (Array.isArray(value)) return "array";
+  if (value === null) return "null";
+  return typeof value;
 }
 
-let hasLoggedBrowserRuntimeShape = false;
+function isSparticuzChromiumDefault(
+  value: unknown,
+): value is SparticuzChromiumDefault {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.args) &&
+    value.args.every((arg) => typeof arg === "string") &&
+    (typeof value.executablePath === "string" ||
+      typeof value.executablePath === "function")
+  );
+}
 
-function logBrowserRuntimeShape(puppeteer: unknown, chromium: unknown) {
-  if (hasLoggedBrowserRuntimeShape) return;
-  hasLoggedBrowserRuntimeShape = true;
-  const chromiumDefault = isRecord(chromium) ? chromium.default : undefined;
-  const executablePath = isRecord(chromium)
-    ? chromium.executablePath
+function logInvalidChromiumDefaultExportShape(chromiumModule: unknown) {
+  const chromiumDefault = isRecord(chromiumModule)
+    ? chromiumModule.default
     : undefined;
-  const defaultExecutablePath = isRecord(chromiumDefault)
-    ? chromiumDefault.executablePath
-    : undefined;
-  console.info("Browser PDF runtime dependency shape", {
-    puppeteerType: typeof puppeteer,
-    chromiumExportKeys: isRecord(chromium) ? Object.keys(chromium) : [],
-    executablePathType: describeExecutablePath(executablePath),
-    defaultExecutablePathType: describeExecutablePath(defaultExecutablePath),
-    chromiumArgsType: Array.isArray(
-      isRecord(chromium) ? chromium.args : undefined,
-    )
-      ? "array"
+  console.error("Browser PDF invalid @sparticuz/chromium default export shape", {
+    chromiumModuleKeys: isRecord(chromiumModule)
+      ? Object.keys(chromiumModule)
+      : [],
+    defaultType: typeof chromiumDefault,
+    defaultKeys: isRecord(chromiumDefault) ? Object.keys(chromiumDefault) : [],
+    argsType: isRecord(chromiumDefault)
+      ? describeRuntimeValueType(chromiumDefault.args)
       : "missing",
-    defaultChromiumArgsType: Array.isArray(
-      isRecord(chromiumDefault) ? chromiumDefault.args : undefined,
-    )
-      ? "array"
+    executablePathType: isRecord(chromiumDefault)
+      ? typeof chromiumDefault.executablePath
       : "missing",
     nodeEnvironment: process.env.NODE_ENV,
     vercelEnvironment: process.env.VERCEL_ENV,
   });
 }
 
-function getChromiumExportKeys(chromium: unknown) {
-  return isRecord(chromium) ? Object.keys(chromium) : [];
-}
-
-function isChromiumExecutablePathExport(
-  value: unknown,
-): value is ChromiumExecutablePathExport {
-  return typeof value === "function" || typeof value === "string";
-}
-
 async function resolveChromiumExecutablePath(
-  value: ChromiumExecutablePathExport,
+  executablePathExport: SparticuzChromiumDefault["executablePath"],
 ) {
-  const executablePath = typeof value === "function" ? await value() : value;
+  const executablePath =
+    typeof executablePathExport === "function"
+      ? await executablePathExport()
+      : executablePathExport;
 
   if (typeof executablePath !== "string" || !executablePath) {
     throw new Error("No Chrome executable path was resolved.");
@@ -241,39 +213,8 @@ async function resolveChromiumExecutablePath(
   return executablePath;
 }
 
-async function resolveChromiumRuntime(
-  chromium: unknown,
-): Promise<ChromiumRuntime | null> {
-  const candidate = isRecord(chromium)
-    ? (chromium.default ?? chromium)
-    : chromium;
-
-  if (!isRecord(candidate)) return null;
-  if (
-    !Array.isArray(candidate.args) ||
-    !candidate.args.every((arg) => typeof arg === "string") ||
-    !isChromiumExecutablePathExport(candidate.executablePath)
-  ) {
-    return null;
-  }
-
-  const localExecutablePath = await getLocalChromeExecutablePath();
-  const executablePath =
-    localExecutablePath ??
-    (await resolveChromiumExecutablePath(candidate.executablePath));
-
-  return {
-    args: candidate.args,
-    executablePath,
-  };
-}
-
-function logResolvedChromiumRuntime(
-  chromium: unknown,
-  runtime: ChromiumRuntime,
-) {
+function logResolvedChromiumRuntime(runtime: ChromiumRuntime) {
   console.info("Browser PDF resolved Chromium runtime", {
-    chromiumExportKeys: getChromiumExportKeys(chromium),
     executablePathLength: runtime.executablePath.length,
     argsCount: runtime.args.length,
     nodeEnvironment: process.env.NODE_ENV,
@@ -299,10 +240,22 @@ async function loadBrowserDependencies(): Promise<{
     );
   }
 
-  let chromium: unknown;
+  let chromiumModule: unknown;
+  let chromium: SparticuzChromiumDefault;
   try {
-    const chromiumModule = await import("@sparticuz/chromium");
-    chromium = chromiumModule;
+    chromiumModule = await import("@sparticuz/chromium");
+    const chromiumDefault = isRecord(chromiumModule)
+      ? chromiumModule.default
+      : undefined;
+
+    if (!isSparticuzChromiumDefault(chromiumDefault)) {
+      logInvalidChromiumDefaultExportShape(chromiumModule);
+      throw new Error(
+        "@sparticuz/chromium default export did not expose args and executablePath.",
+      );
+    }
+
+    chromium = chromiumDefault;
   } catch (error) {
     logBrowserPdfFailure("@sparticuz/chromium import", error);
     throw new BrowserPdfDependencyError(
@@ -312,8 +265,6 @@ async function loadBrowserDependencies(): Promise<{
       { cause: error },
     );
   }
-
-  logBrowserRuntimeShape(puppeteer, chromium);
 
   if (!puppeteer) {
     const error = new Error("puppeteer-core did not expose a launch function.");
@@ -326,9 +277,11 @@ async function loadBrowserDependencies(): Promise<{
     );
   }
 
-  let sparticuzChromium: ChromiumRuntime | null;
+  let executablePath: string;
   try {
-    sparticuzChromium = await resolveChromiumRuntime(chromium);
+    executablePath = await resolveChromiumExecutablePath(
+      chromium.executablePath,
+    );
   } catch (error) {
     logBrowserPdfFailure("executablePath resolution", error);
     throw new BrowserPdfRuntimeError(
@@ -338,20 +291,12 @@ async function loadBrowserDependencies(): Promise<{
     );
   }
 
-  if (!sparticuzChromium) {
-    const error = new Error(
-      "@sparticuz/chromium did not expose args and executablePath on its runtime export.",
-    );
-    logBrowserPdfFailure("@sparticuz/chromium import", error);
-    throw new BrowserPdfDependencyError(
-      error.message,
-      "@sparticuz/chromium",
-      "@sparticuz/chromium import",
-      { cause: error },
-    );
-  }
+  const sparticuzChromium = {
+    args: chromium.args,
+    executablePath,
+  };
 
-  logResolvedChromiumRuntime(chromium, sparticuzChromium);
+  logResolvedChromiumRuntime(sparticuzChromium);
 
   return { puppeteer, sparticuzChromium };
 }
