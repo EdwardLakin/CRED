@@ -386,6 +386,7 @@ export default async function SessionReportPreviewPage({
     : { data: [] };
 
   const reportPath = `/api/dashboard/sessions/${session.id}/report-pdf`;
+  const pdfDownloadPath = `${reportPath}/download`;
   const headersList = await headers();
   const origin = getReportOrigin(headersList);
   const evidence = getRequiredEvidenceCompletion(
@@ -583,6 +584,7 @@ export default async function SessionReportPreviewPage({
           isReadyForExport={isReadyForExport}
           origin={origin}
           reportPath={reportPath}
+          pdfDownloadPath={pdfDownloadPath}
           saveAction={saveAction}
           sessionId={session.id}
           shareAction={shareAction}
@@ -1352,6 +1354,7 @@ function ExportPanel({
   isReadyForExport,
   origin,
   reportPath,
+  pdfDownloadPath,
   saveAction,
   sessionId,
   shareAction,
@@ -1362,6 +1365,7 @@ function ExportPanel({
   isReadyForExport: boolean;
   origin: string;
   reportPath: string;
+  pdfDownloadPath: string;
   saveAction: ServerAction;
   sessionId: string;
   shareAction: ServerAction;
@@ -1376,13 +1380,13 @@ function ExportPanel({
       id="export-report"
       className="card detail-card report-sidebar-card report-delivery-tabs export-panel form-stack compact-export-panel"
     >
-      <summary className="export-summary-row">Export Report{isReadyForExport ? " · Print / Save Report" : ""}</summary>
+      <summary className="export-summary-row">Export Report{isReadyForExport ? " · Preview / Download PDF" : ""}</summary>
       <div>
         <p className="eyebrow">Export</p>
         <h2>Export Report</h2>
         <p className="muted delivery-helper">
           {isReadyForExport
-            ? "Send, share, print, or save the approved report with your latest edits."
+            ? "Send, share, preview, or download the approved customer-ready report with your latest edits."
             : "Approve this report before exporting."}
         </p>
       </div>
@@ -1453,8 +1457,8 @@ function ExportPanel({
 
         <div className="export-action-card export-button-grid">
           <div>
-            <h3>Print</h3>
-            <p className="muted">Open the printable report in a new tab.</p>
+            <h3>Preview Printable Report</h3>
+            <p className="muted">Open the browser-friendly HTML report preview in a new tab.</p>
           </div>
           {isReadyForExport ? (
             <Link
@@ -1462,47 +1466,46 @@ function ExportPanel({
               className="button button-secondary touch-target"
               target="_blank"
             >
-              Open Printable Report
+              Preview Printable Report
             </Link>
           ) : (
             <span
               className="button button-secondary touch-target disabled-action"
               aria-disabled="true"
             >
-              Print
+              Preview Printable Report
             </span>
           )}
         </div>
 
         <div className="export-action-card export-button-grid">
           <div>
-            <h3>Save</h3>
+            <h3>Download PDF Report</h3>
             <p className="muted">
-              Print or save the printable report from your browser, or keep this report in CRED.
+              Generate a locked customer-ready PDF with embedded evidence images and signature.
             </p>
           </div>
           {isReadyForExport ? (
             <Link
-              href={reportPath}
-              className="button button-secondary touch-target"
-              target="_blank"
+              href={pdfDownloadPath}
+              className="button button-primary touch-target"
             >
-              Print / Save Report
+              Download PDF Report
             </Link>
           ) : (
             <span
-              className="button button-secondary touch-target disabled-action"
+              className="button button-primary touch-target disabled-action"
               aria-disabled="true"
             >
-              Save Report
+              Download PDF Report
             </span>
           )}
           <form action={saveAction}>
             <button
-              className="button button-primary touch-target"
+              className="button button-secondary touch-target"
               disabled={!isReadyForExport}
             >
-              Save Report
+              Save Report in CRED
             </button>
           </form>
         </div>
