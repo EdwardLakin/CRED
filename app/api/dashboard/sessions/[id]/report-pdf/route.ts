@@ -88,6 +88,18 @@ function escapeHtml(value: unknown) {
     .replace(/'/g, "&#39;");
 }
 
+function escapeHtmlAttributeRaw(value: unknown) {
+  // Regression guard: technical attributes must preserve UUID route segments,
+  // e.g. /api/dashboard/sessions/11111111-1111-4111-8111-111111111111/evidence/22222222-2222-4222-8222-222222222222/media.
+  // Do not call customerText(), stripConfidenceText(), or UUID redaction here.
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -103,15 +115,6 @@ function cleanReportTitle(
     session,
     { genericFallback },
   );
-}
-
-function escapeRawHtml(value: unknown) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function isHiddenFromReport(metadata: Json) {
@@ -199,7 +202,7 @@ function buildApprovalHtml(params: { profile: { full_name?: string | null; inspe
     { label: "Role / Title", value: params.profile?.inspector_role_or_title || signature?.signature_type?.replace(/_/g, " ") || "" },
     { label: "Approved date / time", value: approvedAt ? formatDateTimeInTimeZone(approvedAt, params.timeZone) : "" },
   ];
-  const sig = signatureUrl ? `<div class="signature-block approval-signature"><img class="signature-image" src="${escapeHtml(signatureUrl)}" alt="Approval signature" /></div>` : '<div class="signature-block signature-empty"><p class="muted">No signature captured</p></div>';
+  const sig = signatureUrl ? `<div class="signature-block approval-signature"><img class="signature-image" src="${escapeHtmlAttributeRaw(signatureUrl)}" alt="Approval signature" /></div>` : '<div class="signature-block signature-empty"><p class="muted">No signature captured</p></div>';
   return `<section class="item service-section approval-section"><h2>Signature / Approval</h2>${renderDefinitionRows(rows)}${sig}</section>`;
 }
 
@@ -210,7 +213,7 @@ function buildFinalNotesHtml(
     ? (session.final_notes ?? "")
     : "";
   if (!notes) return "";
-  return `<section class="item service-section"><h2>Final Summary / Report Notes</h2><p>${escapeRawHtml(notes).replace(/\n/g, "<br />")}</p></section>`;
+  return `<section class="item service-section"><h2>Final Summary / Report Notes</h2><p>${escapeHtml(notes).replace(/\n/g, "<br />")}</p></section>`;
 }
 
 function getCaptureFilename(capture: ReportCapture) {
@@ -275,10 +278,10 @@ function classifyExportImage(capture: ReportCapture): ExportImageAsset["classifi
 }
 
 function renderExportImage(asset: ExportImageAsset | undefined, alt: string, fallbackText: string) {
-  const originalLink = asset?.originalMediaUrl ? `<p class="original-link"><a href="${escapeHtml(asset.originalMediaUrl)}" target="_blank" rel="noreferrer">Open original evidence</a></p>` : "";
+  const originalLink = asset?.originalMediaUrl ? `<p class="original-link"><a href="${escapeHtmlAttributeRaw(asset.originalMediaUrl)}" target="_blank" rel="noreferrer">Open original evidence</a></p>` : "";
   const fallback = `<div class="media-fallback export-image-fallback">${escapeHtml(fallbackText)}${originalLink}</div>`;
   if (asset?.classification === "webSafeImage" && asset.mediaUrl) {
-    return `<img src="${escapeHtml(asset.mediaUrl)}" alt="${escapeHtml(alt)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />${fallback.replace('<div class="media-fallback export-image-fallback">', '<div class="media-fallback export-image-fallback" style="display:none">')}`;
+    return `<img src="${escapeHtmlAttributeRaw(asset.mediaUrl)}" alt="${escapeHtml(alt)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />${fallback.replace('<div class="media-fallback export-image-fallback">', '<div class="media-fallback export-image-fallback" style="display:none">')}`;
   }
   return fallback;
 }
@@ -726,9 +729,9 @@ function buildEvidenceItemsHtml(
           : mediaKind === "image"
             ? renderExportImage(imageAsset, getPrimaryEvidenceLabel(capture), "Preview unavailable in printable export. Original evidence retained.")
             : imageAsset?.originalMediaUrl && mediaKind === "video"
-              ? `<div class="video-still">Video reference</div><p class="video-link"><a href="${escapeHtml(imageAsset.originalMediaUrl)}">Open video evidence</a></p>`
+              ? `<div class="video-still">Video reference</div><p class="video-link"><a href="${escapeHtmlAttributeRaw(imageAsset.originalMediaUrl)}">Open video evidence</a></p>`
               : imageAsset?.originalMediaUrl
-                ? `<p><a href="${escapeHtml(imageAsset.originalMediaUrl)}">Open saved file</a></p>`
+                ? `<p><a href="${escapeHtmlAttributeRaw(imageAsset.originalMediaUrl)}">Open saved file</a></p>`
                 : mediaKind === "audio"
                   ? '<div class="video-still">Voice Note</div>'
                   : mediaKind === "image"
@@ -803,7 +806,7 @@ function buildEvidenceAppendixHtml(
         options.renderImages !== false && mediaKind === "image"
           ? renderExportImage(imageAsset, itemLabel, "Preview unavailable in printable export. Original evidence retained.")
           : imageAsset?.originalMediaUrl
-            ? `<p><a href="${escapeHtml(imageAsset.originalMediaUrl)}">Open original evidence</a></p>`
+            ? `<p><a href="${escapeHtmlAttributeRaw(imageAsset.originalMediaUrl)}">Open original evidence</a></p>`
             : mediaKind === "image"
               ? '<div class="media-fallback">Image unavailable in printable export.</div>'
               : `<div class="media-fallback">${escapeHtml(getEvidenceTitle(capture))}</div>`;
@@ -848,7 +851,7 @@ function buildEvidenceAppendixHtml(
             value: String(capture.media_kind ?? mediaKind),
           },
         );
-      return `<article class="evidence-card"${options.showDebugDetails ? ` data-capture-id="${escapeHtml(capture.id)}"` : ""}><div class="media evidence-media">${mediaHtml}</div><div class="evidence-copy"><h3>${escapeHtml(`${evidenceMeta?.evidenceId ?? "Evidence"} · ${itemLabel}`)}</h3>${pillsHtml}<p>${escapeHtml(primaryNote)}</p>${renderDefinitionRows(detailRows)}</div></article>`;
+      return `<article class="evidence-card"${options.showDebugDetails ? ` data-capture-id="${escapeHtmlAttributeRaw(capture.id)}"` : ""}><div class="media evidence-media">${mediaHtml}</div><div class="evidence-copy"><h3>${escapeHtml(`${evidenceMeta?.evidenceId ?? "Evidence"} · ${itemLabel}`)}</h3>${pillsHtml}<p>${escapeHtml(primaryNote)}</p>${renderDefinitionRows(detailRows)}</div></article>`;
     })
     .join("")}</div></section>`;
 }
