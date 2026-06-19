@@ -4,18 +4,21 @@ import { getPlanLimits } from '@/features/billing/limits'
 import type { OrganizationPlan } from '@/lib/stripe'
 import type { Database, Json } from '@/lib/supabase/database.types'
 
-export type UsageEventType =
-  | 'ai_classification'
-  | 'ai_extraction'
-  | 'ai_report_draft_generation'
-  | 'capture_uploaded'
-  | 'storage_bytes_added'
-  | 'email_report_sent'
-  | 'share_link_created'
-  | 'printable_report_opened'
-  | 'pdf_report_downloaded'
-  | 'template_imported'
-  | 'signature_captured'
+export const USAGE_EVENT_TYPES = [
+  'ai_classification',
+  'ai_extraction',
+  'ai_report_draft_generation',
+  'capture_uploaded',
+  'storage_bytes_added',
+  'email_report_sent',
+  'share_link_created',
+  'printable_report_opened',
+  'pdf_report_downloaded',
+  'template_imported',
+  'signature_captured',
+] as const
+
+export type UsageEventType = (typeof USAGE_EVENT_TYPES)[number]
 
 export type UsagePeriod = {
   startsAt: string

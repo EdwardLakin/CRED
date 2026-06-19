@@ -46,11 +46,13 @@ The usage ledger stores events in `organization_usage_events` for:
 
 - `ai_classification`
 - `ai_extraction`
+- `ai_report_draft_generation`
 - `capture_uploaded`
 - `storage_bytes_added`
 - `email_report_sent`
 - `share_link_created`
 - `printable_report_opened`
+- `pdf_report_downloaded`
 - `template_imported`
 - `signature_captured`
 
