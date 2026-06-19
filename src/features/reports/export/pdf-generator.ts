@@ -139,8 +139,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function isPuppeteerModule(value: unknown): value is PuppeteerModule {
-  return isRecord(value) && typeof value.launch === "function";
+function normalizePuppeteerModule(module: unknown): PuppeteerModule | null {
+  const candidate = isRecord(module) ? (module.default ?? module) : module;
+  if (isRecord(candidate) && typeof candidate.launch === "function") {
+    return candidate as PuppeteerModule;
+  }
+  return null;
 }
 
 function getErrorDetails(error: unknown) {
@@ -240,29 +244,28 @@ async function resolveChromiumExecutablePath(
 async function resolveChromiumRuntime(
   chromium: unknown,
 ): Promise<ChromiumRuntime | null> {
-  const candidates = [
-    chromium,
-    isRecord(chromium) ? chromium.default : undefined,
-  ];
-  for (const candidate of candidates) {
-    if (!isRecord(candidate)) continue;
-    if (
-      Array.isArray(candidate.args) &&
-      candidate.args.every((arg) => typeof arg === "string") &&
-      isChromiumExecutablePathExport(candidate.executablePath)
-    ) {
-      const localExecutablePath = await getLocalChromeExecutablePath();
-      const executablePath =
-        localExecutablePath ??
-        (await resolveChromiumExecutablePath(candidate.executablePath));
+  const candidate = isRecord(chromium)
+    ? (chromium.default ?? chromium)
+    : chromium;
 
-      return {
-        args: candidate.args,
-        executablePath,
-      };
-    }
+  if (!isRecord(candidate)) return null;
+  if (
+    !Array.isArray(candidate.args) ||
+    !candidate.args.every((arg) => typeof arg === "string") ||
+    !isChromiumExecutablePathExport(candidate.executablePath)
+  ) {
+    return null;
   }
-  return null;
+
+  const localExecutablePath = await getLocalChromeExecutablePath();
+  const executablePath =
+    localExecutablePath ??
+    (await resolveChromiumExecutablePath(candidate.executablePath));
+
+  return {
+    args: candidate.args,
+    executablePath,
+  };
 }
 
 function logResolvedChromiumRuntime(
@@ -278,14 +281,11 @@ function logResolvedChromiumRuntime(
   });
 }
 
-async function importBrowserPackage(packageName: string): Promise<unknown> {
-  return import(packageName);
-}
-
 async function loadBrowserDependencies() {
   let puppeteer: unknown;
   try {
-    puppeteer = await importBrowserPackage("puppeteer-core");
+    const puppeteerModule = await import("puppeteer-core");
+    puppeteer = normalizePuppeteerModule(puppeteerModule);
   } catch (error) {
     logBrowserPdfFailure("puppeteer-core import", error);
     throw new BrowserPdfDependencyError(
@@ -298,7 +298,8 @@ async function loadBrowserDependencies() {
 
   let chromium: unknown;
   try {
-    chromium = await importBrowserPackage("@sparticuz/chromium");
+    const chromiumModule = await import("@sparticuz/chromium");
+    chromium = chromiumModule;
   } catch (error) {
     logBrowserPdfFailure("@sparticuz/chromium import", error);
     throw new BrowserPdfDependencyError(
@@ -311,7 +312,7 @@ async function loadBrowserDependencies() {
 
   logBrowserRuntimeShape(puppeteer, chromium);
 
-  if (!isPuppeteerModule(puppeteer)) {
+  if (!puppeteer) {
     const error = new Error("puppeteer-core did not expose a launch function.");
     logBrowserPdfFailure("puppeteer-core import", error);
     throw new BrowserPdfDependencyError(
