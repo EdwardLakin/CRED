@@ -59,6 +59,10 @@ type SparticuzChromiumDefault = {
   executablePath: string | ((input?: string) => string | Promise<string>);
 };
 
+type ChromiumFactory = new () => unknown;
+
+type ChromiumFunction = () => unknown | Promise<unknown>;
+
 type ChromiumRuntime = {
   args: string[];
   executablePath: string;
@@ -165,6 +169,10 @@ function describeRuntimeValueType(value: unknown) {
   return typeof value;
 }
 
+function describeRuntimeValueKeys(value: unknown) {
+  return isRecord(value) ? Object.keys(value) : [];
+}
+
 function isSparticuzChromiumDefault(
   value: unknown,
 ): value is SparticuzChromiumDefault {
@@ -177,22 +185,81 @@ function isSparticuzChromiumDefault(
   );
 }
 
-function logInvalidChromiumDefaultExportShape(chromiumModule: unknown) {
+function describeChromiumCandidateShape(value: unknown) {
+  return {
+    keys: describeRuntimeValueKeys(value),
+    argsType: isRecord(value) ? describeRuntimeValueType(value.args) : "missing",
+    executablePathType: isRecord(value)
+      ? typeof value.executablePath
+      : "missing",
+  };
+}
+
+function logInvalidChromiumDefaultExportShape(
+  chromiumModule: unknown,
+  functionDiagnostics?: {
+    constructorSucceeded: boolean;
+    constructorResult: unknown;
+    directCallSucceeded: boolean;
+    directCallResult: unknown;
+  },
+) {
   const chromiumDefault = isRecord(chromiumModule)
     ? chromiumModule.default
     : undefined;
+  const defaultShape = describeChromiumCandidateShape(chromiumDefault);
+  const constructedShape = describeChromiumCandidateShape(
+    functionDiagnostics?.constructorResult,
+  );
+  const calledShape = describeChromiumCandidateShape(
+    functionDiagnostics?.directCallResult,
+  );
   console.error("Browser PDF invalid @sparticuz/chromium default export shape", {
     chromiumModuleKeys: isRecord(chromiumModule)
       ? Object.keys(chromiumModule)
       : [],
     defaultType: typeof chromiumDefault,
-    defaultKeys: isRecord(chromiumDefault) ? Object.keys(chromiumDefault) : [],
-    argsType: isRecord(chromiumDefault)
-      ? describeRuntimeValueType(chromiumDefault.args)
-      : "missing",
-    executablePathType: isRecord(chromiumDefault)
-      ? typeof chromiumDefault.executablePath
-      : "missing",
+    defaultKeys: defaultShape.keys,
+    constructorCallSucceeded: functionDiagnostics?.constructorSucceeded,
+    constructorResultKeys: constructedShape.keys,
+    constructorResultArgsType: constructedShape.argsType,
+    constructorResultExecutablePathType: constructedShape.executablePathType,
+    directFunctionCallSucceeded: functionDiagnostics?.directCallSucceeded,
+    directFunctionCallResultKeys: calledShape.keys,
+    directFunctionCallResultArgsType: calledShape.argsType,
+    directFunctionCallResultExecutablePathType: calledShape.executablePathType,
+    argsType: defaultShape.argsType,
+    executablePathType: defaultShape.executablePathType,
+    nodeEnvironment: process.env.NODE_ENV,
+    vercelEnvironment: process.env.VERCEL_ENV,
+  });
+}
+
+function logChromiumFunctionExportResolution(diagnostics: {
+  constructorSucceeded: boolean;
+  constructorResult: unknown;
+  directCallSucceeded: boolean;
+  directCallResult: unknown;
+  resolvedResult: unknown;
+}) {
+  const constructedShape = describeChromiumCandidateShape(
+    diagnostics.constructorResult,
+  );
+  const calledShape = describeChromiumCandidateShape(diagnostics.directCallResult);
+  const resolvedShape = describeChromiumCandidateShape(diagnostics.resolvedResult);
+  console.info("Browser PDF resolved @sparticuz/chromium function export", {
+    defaultType: "function",
+    constructorCallSucceeded: diagnostics.constructorSucceeded,
+    constructorResultKeys: constructedShape.keys,
+    constructorResultArgsType: constructedShape.argsType,
+    constructorResultExecutablePathType: constructedShape.executablePathType,
+    directFunctionCallSucceeded: diagnostics.directCallSucceeded,
+    directFunctionCallResultKeys: calledShape.keys,
+    directFunctionCallResultArgsType: calledShape.argsType,
+    directFunctionCallResultExecutablePathType: calledShape.executablePathType,
+    resolvedResultKeys: resolvedShape.keys,
+    argsType: resolvedShape.argsType,
+    executablePathType: resolvedShape.executablePathType,
     nodeEnvironment: process.env.NODE_ENV,
     vercelEnvironment: process.env.VERCEL_ENV,
   });
@@ -211,6 +278,80 @@ async function resolveChromiumExecutablePath(
   }
 
   return executablePath;
+}
+
+async function resolveSparticuzChromiumExport(
+  chromiumModule: unknown,
+): Promise<SparticuzChromiumDefault> {
+  const chromiumDefault = isRecord(chromiumModule)
+    ? chromiumModule.default
+    : undefined;
+
+  if (isSparticuzChromiumDefault(chromiumDefault)) {
+    return chromiumDefault;
+  }
+
+  if (typeof chromiumDefault === "function") {
+    const chromiumFactory = chromiumDefault as ChromiumFactory;
+    const chromiumFunction = chromiumDefault as ChromiumFunction;
+    let constructorSucceeded = false;
+    let constructorResult: unknown = undefined;
+    let directCallSucceeded = false;
+    let directCallResult: unknown = undefined;
+
+    try {
+      constructorResult = new chromiumFactory();
+      constructorSucceeded = true;
+      if (isSparticuzChromiumDefault(constructorResult)) {
+        logChromiumFunctionExportResolution({
+          constructorSucceeded,
+          constructorResult,
+          directCallSucceeded,
+          directCallResult,
+          resolvedResult: constructorResult,
+        });
+        return constructorResult;
+      }
+    } catch (error) {
+      constructorResult = error;
+    }
+
+    try {
+      directCallResult = await chromiumFunction();
+      directCallSucceeded = true;
+      if (isSparticuzChromiumDefault(directCallResult)) {
+        logChromiumFunctionExportResolution({
+          constructorSucceeded,
+          constructorResult,
+          directCallSucceeded,
+          directCallResult,
+          resolvedResult: directCallResult,
+        });
+        return directCallResult;
+      }
+    } catch (error) {
+      directCallResult = error;
+    }
+
+    logInvalidChromiumDefaultExportShape(chromiumModule, {
+      constructorSucceeded,
+      constructorResult,
+      directCallSucceeded,
+      directCallResult,
+    });
+    throw new Error(
+      "@sparticuz/chromium function export did not resolve args and executablePath.",
+    );
+  }
+
+  if (isSparticuzChromiumDefault(chromiumModule)) {
+    return chromiumModule;
+  }
+
+  logInvalidChromiumDefaultExportShape(chromiumModule);
+  throw new Error(
+    "@sparticuz/chromium export did not expose args and executablePath.",
+  );
 }
 
 function logResolvedChromiumRuntime(runtime: ChromiumRuntime) {
@@ -244,18 +385,7 @@ async function loadBrowserDependencies(): Promise<{
   let chromium: SparticuzChromiumDefault;
   try {
     chromiumModule = await import("@sparticuz/chromium");
-    const chromiumDefault = isRecord(chromiumModule)
-      ? chromiumModule.default
-      : undefined;
-
-    if (!isSparticuzChromiumDefault(chromiumDefault)) {
-      logInvalidChromiumDefaultExportShape(chromiumModule);
-      throw new Error(
-        "@sparticuz/chromium default export did not expose args and executablePath.",
-      );
-    }
-
-    chromium = chromiumDefault;
+    chromium = await resolveSparticuzChromiumExport(chromiumModule);
   } catch (error) {
     logBrowserPdfFailure("@sparticuz/chromium import", error);
     throw new BrowserPdfDependencyError(
