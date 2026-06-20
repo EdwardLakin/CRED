@@ -183,7 +183,10 @@ function getOrganizationDisplayName(
 function getCoverImageHtml(
   captures: ReportCapture[],
   imageAssets: Record<string, ExportImageAsset>,
+  allowCoverImage: boolean,
 ) {
+  // TODO: Support an explicit user-selected cover image when report settings expose one.
+  if (!allowCoverImage) return "";
   const eligibleImages = captures.filter(
     (capture) =>
       isImageEvidence(capture) &&
@@ -210,6 +213,7 @@ function buildReportCoverHtml(params: {
   captures: ReportCapture[];
   imageAssets: Record<string, ExportImageAsset>;
   timeZone: string | null;
+  allowCoverImage: boolean;
 }) {
   const approvedAt = getApprovalDate(params.draft, params.session);
   const rows = [
@@ -225,7 +229,6 @@ function buildReportCoverHtml(params: {
       label: "Subject",
       value:
         getReportInfoValue(params.draft, params.session, "subject_name") ||
-        params.session.title ||
         "",
     },
     {
@@ -261,7 +264,11 @@ function buildReportCoverHtml(params: {
       ),
     },
   ];
-  const coverImageHtml = getCoverImageHtml(params.captures, params.imageAssets);
+  const coverImageHtml = getCoverImageHtml(
+    params.captures,
+    params.imageAssets,
+    params.allowCoverImage,
+  );
   return `<section class="report-cover item${coverImageHtml ? "" : " report-cover-no-image"}"><div class="cover-copy"><p class="eyebrow">Professional Evidence Report</p><h1>${escapeHtml(params.reportTitle)}</h1><p class="cover-trust">CRED assembles user-provided evidence and approved report text. Users remain the source of truth.</p>${renderDefinitionRows(rows)}</div>${coverImageHtml}</section>`;
 }
 
@@ -308,7 +315,7 @@ function buildReportOverviewHtml(params: {
   const chips = params.captions?.length
     ? `<div class="summary-chip-row">${params.captions.map((caption) => `<span>${escapeHtml(caption)}</span>`).join("")}</div>`
     : "";
-  return `<section class="item service-section overview-section"><h2>Report Summary</h2><p class="summary-lead">${escapeHtml(summaryText)}</p>${chips}${renderDefinitionRows(
+  return `<section class="item service-section overview-section"><h2>Report Overview</h2><p class="summary-lead">${escapeHtml(summaryText)}</p>${chips}${renderDefinitionRows(
     [
       { label: "Included evidence items", value: String(params.includedCount) },
       {
@@ -446,16 +453,55 @@ function isImageEvidence(capture: ReportCapture) {
 }
 
 function getUserEvidenceText(capture: ReportCapture) {
-  return capture.technician_note?.trim() || capture.transcript?.trim() || "";
+  const userText = capture.technician_note?.trim() || capture.transcript?.trim();
+  return userText && !looksLikeRawUploadFilename(userText) ? userText : "";
 }
 
 function getPrimaryEvidenceDescription(capture: ReportCapture) {
-  return getUserEvidenceText(capture) || getEvidenceTitle(capture);
+  return getPrimaryEvidenceLabel(capture);
 }
 
 function getPrimaryEvidenceLabel(capture: ReportCapture) {
-  const caption = getUserEvidenceText(capture);
-  return caption || getEvidenceTitle(capture);
+  return getUserEvidenceText(capture) || getTrustedEvidenceTitle(capture);
+}
+
+function looksLikeRawUploadFilename(value: string) {
+  return (
+    /\b\d{4}-\d{2}-\d{2}T\d{2}[-:]\d{2}[-:]\d{2}(?:[-.]\d{3})?Z?[-_]/i.test(
+      value,
+    ) ||
+    /\b(?:IMG|VID|DSC|PXL|Screenshot)[-_ ]?\d{3,}\b/i.test(value) ||
+    /(?:^|[/\\])[a-z0-9-]{16,}[-_][^/\\]+\.(?:jpe?g|png|webp|gif|heic|pdf|docx?|xlsx?)$/i.test(
+      value,
+    )
+  );
+}
+
+function isSafeCustomerEvidenceTitle(value: unknown) {
+  const text = String(value ?? "").trim();
+  return Boolean(text) && !looksLikeRawUploadFilename(text);
+}
+
+function getTrustedManualEvidenceTitle(capture: ReportCapture) {
+  const data = isRecord(capture.extracted_data) ? capture.extracted_data : {};
+  const candidates = [
+    data.manual_title,
+    data.title,
+    data.classification_title,
+    data.document_title,
+    data.evidence_title,
+    data.label,
+  ];
+  const trusted = candidates.find(
+    (value) => typeof value === "string" && isSafeCustomerEvidenceTitle(value),
+  );
+  return typeof trusted === "string" ? trusted.trim() : "";
+}
+
+function getTrustedEvidenceTitle(capture: ReportCapture) {
+  const manualTitle = getTrustedManualEvidenceTitle(capture);
+  if (manualTitle) return manualTitle;
+  return getEvidenceTitle(capture);
 }
 
 function getUploadMimeType(capture: ReportCapture) {
@@ -696,7 +742,7 @@ function getProfessionalRows(rows: Array<{ label: string; value: string }>) {
 }
 
 function renderReportInformationHtml(
-  draft: ReportDraft | null | undefined,
+  _draft: ReportDraft | null | undefined,
   session: ReportSession,
   timeZone?: string | null,
 ) {
@@ -709,21 +755,13 @@ function renderReportInformationHtml(
       ),
     },
     {
-      label: "Report Approved Date",
-      value: draft?.approved_at
-        ? formatDateTimeInTimeZone(draft.approved_at, timeZone)
-        : session.reviewed_at
-          ? formatDateTimeInTimeZone(session.reviewed_at, timeZone)
-          : "",
-    },
-    {
       label: "Reference Number",
-      value: getReportInfoValue(draft, session, "reference_number"),
+      value: getReportInfoValue(_draft, session, "reference_number"),
     },
   ];
   const html = renderDefinitionRows(rows);
   return html
-    ? `<section class="item service-section"><h2>Report Information</h2>${html}</section>`
+    ? `<section class="item service-section"><h2>Report Details</h2>${html}</section>`
     : "";
 }
 
@@ -760,7 +798,13 @@ function buildStructuredFormDataHtml(reportStructure: Json | null) {
 }
 
 function renderDefinitionRows(rows: Array<{ label: string; value: string }>) {
-  const visibleRows = getProfessionalRows(rows);
+  const visibleRows = getProfessionalRows(
+    rows.filter(
+      (row) =>
+        !/file(?:name)?|storage|path|upload/i.test(row.label) &&
+        !looksLikeRawUploadFilename(row.value),
+    ),
+  );
   if (visibleRows.length === 0) return "";
   return `<dl>${visibleRows.map((row) => `<div><dt>${escapeHtml(row.label)}</dt><dd>${escapeHtml(row.value)}</dd></div>`).join("")}</dl>`;
 }
@@ -924,19 +968,34 @@ function buildRecommendedActionsHtml(
 
 function isTrueReferenceDocument(capture: ReportCapture) {
   const data = isRecord(capture.extracted_data) ? capture.extracted_data : {};
+  const metadata = isRecord(data.metadata) ? data.metadata : {};
+  const upload = isRecord(data.upload) ? data.upload : {};
   const sourceType =
     typeof data.source_type === "string" ? data.source_type : "";
   const captureRole =
     typeof data.capture_role === "string" ? data.capture_role : "";
+  const uploadType =
+    typeof upload.type === "string"
+      ? upload.type
+      : typeof upload.upload_type === "string"
+        ? upload.upload_type
+        : typeof upload.document_type === "string"
+          ? upload.document_type
+          : "";
   return (
     capture.media_kind === "document" ||
     data.source_document === true ||
     data.reference_document === true ||
+    metadata.source_document === true ||
+    metadata.reference_document === true ||
     /^(source_document|reference_document|document_reference)$/.test(
       sourceType,
     ) ||
     /^(source_document|reference_document|document_reference)$/.test(
       captureRole,
+    ) ||
+    /^(document|source_document|reference_document|document_reference)$/.test(
+      uploadType,
     )
   );
 }
@@ -961,7 +1020,7 @@ function buildReferenceDocumentsHtml(
         options.includeOriginal === false
           ? ""
           : `<details><summary>View Original Reference</summary>${buildEvidenceItemsHtml([entry], imageAssets)}</details>`;
-      return `<article class="reference-card"><h3>${escapeHtml(getEvidenceTitle(entry.capture))}</h3>${details.length ? renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value }))) : '<p class="muted">Reference captured for report support.</p>'}${originalHtml}</article>`;
+      return `<article class="reference-card"><h3>${escapeHtml(getPrimaryEvidenceLabel(entry.capture))}</h3>${details.length ? renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value }))) : '<p class="muted">Uploaded reference document included for report support.</p>'}${originalHtml}</article>`;
     })
     .join("")}</section>`;
 }
@@ -987,7 +1046,7 @@ function buildEvidenceItemsHtml(
             : capture.type === "video"
               ? "video"
               : "image");
-      const evidenceTitle = getEvidenceTitle(capture);
+      const evidenceTitle = getPrimaryEvidenceLabel(capture);
       const title = evidenceTitle;
       const mediaHtml =
         mediaKind === "note"
@@ -1090,7 +1149,7 @@ function buildEvidenceAppendixHtml(
           ? `<td class="appendix-thumb">${renderExportImage(imageAsset, getPrimaryEvidenceLabel(capture), "Image unavailable")}</td>`
           : options.renderImages === false
             ? ""
-            : `<td class="appendix-thumb appendix-kind">${escapeHtml(getEvidenceTitle(capture))}</td>`;
+            : `<td class="appendix-thumb appendix-kind">${escapeHtml(getPrimaryEvidenceLabel(capture))}</td>`;
       return `<tr${options.showDebugDetails ? ` data-capture-id="${escapeHtmlAttributeRaw(capture.id)}"` : ""}>${thumbnailHtml}<td>${escapeHtml(evidenceMeta?.evidenceId ?? "Evidence")}</td><td>${escapeHtml(getPrimaryEvidenceLabel(capture))}</td><td>${escapeHtml(evidenceMeta?.capturedAtLabel ?? formatDateTimeInTimeZone(capture.captured_at, timeZone))}</td><td>${escapeHtml(evidenceMeta?.evidenceType ?? mediaKind)}</td>${options.showDebugDetails ? `<td>${escapeHtml(capture.id)}</td>` : ""}</tr>`;
     })
     .join("")}</tbody></table></section>`;
@@ -1219,7 +1278,7 @@ function buildDiagnosticProcedureReportHtml(params: {
                   )
                   .map(
                     (capture) =>
-                      `<li>${escapeHtml(getEvidenceTitle(capture))}${capture.technician_note ? ` — ${escapeHtml(capture.technician_note)}` : ""}</li>`,
+                      `<li>${escapeHtml(getPrimaryEvidenceLabel(capture))}${getUserEvidenceText(capture) ? ` — ${escapeHtml(getUserEvidenceText(capture))}` : ""}</li>`,
                   )
                   .join("")}</ul></div>`,
             )
@@ -1446,11 +1505,11 @@ function buildFieldServiceReportHtml({
     : "";
 
   return `<!doctype html><html><head><meta charset="utf-8" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable field service report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, captures: captureItems, imageAssets: signedUrls, timeZone })}${summaryHtml}<section class="item service-section"><h2>Report Information</h2>${renderDefinitionRows(headerRows)}</section>${renderFieldServiceSection(details, "equipment")}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work performed</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Evidence</h2><p class="muted">Evidence items reference captured photos, videos, documents, and technician notes.</p></section>${buildFinalNotesHtml(session)}${evidenceHtml}${fieldUseGalleryMode ? buildEvidenceGalleryHtml(captureItems, signedUrls, timeZone) : ""}${appendixHtml}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges / documentation only</h2>${renderDefinitionRows(chargeRows)}</section>${buildInspectorFacilityHtml(null, null)}${buildApprovalHtml({ profile: null, signatures, signatureUrls, draft: reportDraft, session, timeZone })}</main></body></html>`;
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, captures: captureItems, imageAssets: signedUrls, timeZone, allowCoverImage: fieldUseGalleryMode })}${summaryHtml}<section class="item service-section"><h2>Report Details</h2>${renderDefinitionRows(headerRows)}</section>${renderFieldServiceSection(details, "equipment")}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work performed</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Evidence</h2><p class="muted">Evidence items reference captured photos, videos, documents, and technician notes.</p></section>${buildFinalNotesHtml(session)}${evidenceHtml}${fieldUseGalleryMode ? buildEvidenceGalleryHtml(captureItems, signedUrls, timeZone) : ""}${appendixHtml}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges / documentation only</h2>${renderDefinitionRows(chargeRows)}</section>${buildInspectorFacilityHtml(null, null)}${buildApprovalHtml({ profile: null, signatures, signatureUrls, draft: reportDraft, session, timeZone })}</main></body></html>`;
 }
 
 const REPORT_STYLES = `
-    :root{color-scheme:light}*{box-sizing:border-box}html{background:#eef2f7}body{font-family:Inter,Arial,Helvetica,sans-serif;background:#eef2f7;color:#18243a;margin:0;padding:36px;line-height:1.45}.report{max-width:1040px;margin:0 auto}.toolbar{align-items:center;background:#13213a;border-radius:16px;color:white;display:flex;justify-content:space-between;margin:0 0 18px;padding:14px 16px}.toolbar button{background:white;border:0;border-radius:999px;color:#13213a;cursor:pointer;font-weight:800;padding:10px 16px}.print-help{color:#dbe7ff;font-size:13px;margin:0}.header,.item{background:white;border:1px solid #d9e2ee;border-radius:20px;box-shadow:0 16px 45px rgba(24,36,58,.08);margin-bottom:20px;padding:28px}.report-cover{display:grid;gap:20px;grid-template-columns:minmax(0,1.25fr) minmax(260px,.65fr);overflow:hidden;padding:0}.report-cover-no-image{display:block}.cover-copy{padding:34px}.cover-copy h1{font-size:40px;letter-spacing:-.035em;line-height:1.05;margin:10px 0 12px}.cover-trust{border-left:4px solid #155dfc;color:#4c5d75;margin:18px 0;padding-left:14px}.cover-image{background:#f7f9fc;min-height:100%;overflow:hidden}.cover-image img{display:block;height:100%;max-height:380px;object-fit:cover;width:100%}.eyebrow{color:#155dfc;font-size:11px;font-weight:900;letter-spacing:.16em;text-transform:uppercase}.meta,.muted{color:#62728a}.service-section h2{border-bottom:1px solid #e3eaf3;font-size:22px;letter-spacing:-.02em;margin-top:0;padding-bottom:10px}dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:14px 0 0}dl div{background:#f8fafc;border:1px solid #e2e9f2;border-radius:13px;padding:10px 12px}dt{color:#5a6a81;font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}dd{font-weight:750;margin:4px 0 0;overflow-wrap:anywhere}a,a:visited{color:#18243a;text-decoration:none}.original-link{font-size:12px;margin-top:8px;opacity:.55}.original-link a{text-decoration:underline;text-underline-offset:2px}.media{position:relative;border-radius:14px;overflow:hidden;background:#f8fafc;border:1px solid #d8e2ef}.media img{display:block;width:100%;max-height:520px;object-fit:contain;background:white}.media-fallback{align-items:center;aspect-ratio:4/3;background:#f8fafc;border:1px dashed #cbd6e5;color:#697890;display:flex;font-size:14px;font-weight:800;justify-content:center;padding:18px;text-align:center}.video-still{align-items:center;aspect-ratio:16/9;background:#eef4ff;color:#13213a;display:flex;font-size:18px;font-weight:800;justify-content:center;padding:16px;text-align:center}.finding{margin-top:14px}.finding-card,.reference-card{border:1px solid #d8e2ef;border-radius:16px;margin:12px 0;padding:16px;break-inside:avoid;page-break-inside:avoid}.finding-image{align-self:start;background:#f8fafc;border:1px solid #d8e2ef;border-radius:12px;overflow:hidden}.finding-image img{display:block;width:100%;max-height:330px;object-fit:contain}.gallery-grid{display:grid;gap:14px;grid-template-columns:repeat(2,minmax(0,1fr))}.gallery-card{background:#fff;border:1px solid #d8e2ef;border-radius:16px;break-inside:avoid;overflow:hidden}.gallery-thumb{background:#f8fafc}.gallery-thumb img{display:block;height:260px;object-fit:cover;width:100%}.gallery-caption{padding:12px 14px}.gallery-caption h3{font-size:17px;margin:2px 0 0}.gallery-caption p{color:#62728a;font-size:13px;margin:4px 0 0}.gallery-evidence-id{color:#155dfc!important;font-size:11px!important;font-weight:900;letter-spacing:.12em;margin:0!important;text-transform:uppercase}.summary-lead{color:#334155;font-size:16px;margin:0 0 12px}.summary-trust{color:#62728a;font-size:13px;margin:12px 0 0}.summary-chip-row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 14px}.summary-chip-row span{background:#eef4ff;border:1px solid #cfe0ff;border-radius:999px;color:#14315f;font-size:12px;font-weight:800;padding:6px 10px}.evidence-grid{display:grid;gap:10px;grid-template-columns:1fr}.evidence-card{align-items:start;border:1px solid #d8e2ef;border-radius:16px;display:grid;gap:14px;grid-template-columns:220px minmax(0,1fr);padding:14px;break-inside:avoid;page-break-inside:avoid}.evidence-card h3{font-size:17px;margin:0 0 8px}.evidence-card p{margin:0 0 10px}.evidence-media img{height:170px;max-height:170px;object-fit:contain}.evidence-copy dl{grid-template-columns:repeat(3,minmax(0,1fr))}.evidence-copy dl div{padding:8px}.severity,.evidence-pill{background:#f8fafc;border:1px solid #d8e2ef;border-radius:999px;display:inline-block;font-size:11px;font-weight:900;padding:6px 9px}.evidence-pill-row{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}.signature-block{background:#f8fafc;border:1px solid #d8e2ef;border-radius:12px;margin-top:10px;padding:10px}.signoff-section{box-shadow:0 8px 24px rgba(24,36,58,.05);padding:20px}.signoff-section dl{grid-template-columns:repeat(3,minmax(0,1fr))}.signoff-section dl div{padding:8px 10px}.signature-image{background:white;border:1px solid #d8e2ef;border-radius:10px;display:block;max-height:92px;max-width:280px;object-fit:contain;padding:6px}.approval-signature{display:inline-block;min-width:280px}.signature-empty{color:#62728a;font-weight:800}table{border-collapse:collapse;width:100%}td,th{border:1px solid #d8e2ef;padding:8px 10px;text-align:left;vertical-align:top;overflow-wrap:anywhere}th{background:#f1f5fb}.evidence-appendix{font-size:12px}.appendix-thumb{width:86px}.appendix-thumb img{display:block;height:54px;max-width:74px;object-fit:cover;border-radius:6px}.appendix-thumb .media-fallback{aspect-ratio:auto;min-height:54px;padding:6px;font-size:10px}.appendix-kind{color:#62728a;font-size:11px;font-weight:800}@media (max-width:800px){body{padding:14px}.report-cover,.evidence-card{grid-template-columns:1fr}.cover-copy{padding:22px}.cover-copy h1{font-size:30px}dl,.gallery-grid,.evidence-copy dl{grid-template-columns:1fr}.header,.item{border-radius:16px;padding:18px}.toolbar{align-items:flex-start;flex-direction:column;gap:8px}.gallery-thumb img{height:230px}}@media print{@page{margin:12mm}html,body{background:white}body{padding:0}.report{max-width:none}.toolbar,.original-link{display:none!important}.header,.item,.finding-card,.reference-card,.evidence-card,.gallery-card{box-shadow:none}.finding-card,.reference-card,.evidence-card,.gallery-card,.signoff-section{break-inside:avoid;page-break-inside:avoid}.report-cover{break-before:auto}.gallery-section,.org-section,.approval-section,.evidence-appendix-section{break-before:auto;page-break-before:auto}.approval-section{break-inside:avoid;page-break-inside:avoid}.media img,.evidence-media img,.signature-image,.finding-image img,.gallery-thumb img{break-inside:avoid;visibility:visible}.note{position:static;background:#14213d}a,a:visited{color:#18243a!important;text-decoration:none!important}.report{color:#18243a;-webkit-text-size-adjust:100%;print-color-adjust:exact;-webkit-print-color-adjust:exact}}
+    :root{color-scheme:light}*{box-sizing:border-box}html{background:#eef2f7}body{font-family:Inter,Arial,Helvetica,sans-serif;background:#eef2f7;color:#18243a;margin:0;padding:36px;line-height:1.45}.report{max-width:1040px;margin:0 auto}.toolbar{align-items:center;background:#13213a;border-radius:16px;color:white;display:flex;justify-content:space-between;margin:0 0 18px;padding:14px 16px}.toolbar button{background:white;border:0;border-radius:999px;color:#13213a;cursor:pointer;font-weight:800;padding:10px 16px}.print-help{color:#dbe7ff;font-size:13px;margin:0}.header,.item{background:white;border:1px solid #d9e2ee;border-radius:18px;box-shadow:0 10px 28px rgba(24,36,58,.06);margin-bottom:14px;padding:20px}.report-cover{display:grid;gap:20px;grid-template-columns:minmax(0,1.25fr) minmax(260px,.65fr);overflow:hidden;padding:0}.report-cover-no-image{display:block}.cover-copy{padding:28px}.cover-copy h1{font-size:34px;letter-spacing:-.035em;line-height:1.05;margin:10px 0 12px}.cover-trust{border-left:4px solid #155dfc;color:#4c5d75;margin:18px 0;padding-left:14px}.cover-image{background:#f7f9fc;overflow:hidden}.cover-image img{display:block;height:100%;max-height:300px;object-fit:cover;width:100%}.eyebrow{color:#155dfc;font-size:11px;font-weight:900;letter-spacing:.16em;text-transform:uppercase}.meta,.muted{color:#62728a}.service-section h2{border-bottom:1px solid #e3eaf3;font-size:22px;letter-spacing:-.02em;margin-top:0;padding-bottom:10px}dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0 0}dl div{background:#f8fafc;border:1px solid #e2e9f2;border-radius:10px;padding:8px 10px}dt{color:#5a6a81;font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}dd{font-weight:750;margin:4px 0 0;overflow-wrap:anywhere}a,a:visited{color:#18243a;text-decoration:none}.original-link{font-size:12px;margin-top:8px;opacity:.55}.original-link a{text-decoration:underline;text-underline-offset:2px}.media{position:relative;border-radius:14px;overflow:hidden;background:#f8fafc;border:1px solid #d8e2ef}.media img{display:block;width:100%;max-height:520px;object-fit:contain;background:white}.media-fallback{align-items:center;aspect-ratio:4/3;background:#f8fafc;border:1px dashed #cbd6e5;color:#697890;display:flex;font-size:14px;font-weight:800;justify-content:center;padding:18px;text-align:center}.video-still{align-items:center;aspect-ratio:16/9;background:#eef4ff;color:#13213a;display:flex;font-size:18px;font-weight:800;justify-content:center;padding:16px;text-align:center}.finding{margin-top:14px}.finding-card,.reference-card{border:1px solid #d8e2ef;border-radius:14px;margin:10px 0;padding:12px}.finding-image{align-self:start;background:#f8fafc;border:1px solid #d8e2ef;border-radius:12px;overflow:hidden}.finding-image img{display:block;width:100%;max-height:330px;object-fit:contain}.gallery-grid{display:grid;gap:10px;grid-template-columns:repeat(2,minmax(0,1fr))}.gallery-card{background:#fff;border:1px solid #d8e2ef;border-radius:16px;break-inside:avoid;overflow:hidden}.gallery-thumb{background:#f8fafc}.gallery-thumb img{display:block;height:210px;object-fit:cover;width:100%}.gallery-caption{padding:12px 14px}.gallery-caption h3{font-size:17px;margin:2px 0 0}.gallery-caption p{color:#62728a;font-size:13px;margin:4px 0 0}.gallery-evidence-id{color:#155dfc!important;font-size:11px!important;font-weight:900;letter-spacing:.12em;margin:0!important;text-transform:uppercase}.summary-lead{color:#334155;font-size:16px;margin:0 0 12px}.summary-trust{color:#62728a;font-size:13px;margin:12px 0 0}.summary-chip-row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 14px}.summary-chip-row span{background:#eef4ff;border:1px solid #cfe0ff;border-radius:999px;color:#14315f;font-size:12px;font-weight:800;padding:6px 10px}.evidence-grid{display:grid;gap:10px;grid-template-columns:1fr}.evidence-card{align-items:start;border:1px solid #d8e2ef;border-radius:16px;display:grid;gap:14px;grid-template-columns:220px minmax(0,1fr);padding:14px;break-inside:avoid;page-break-inside:avoid}.evidence-card h3{font-size:17px;margin:0 0 8px}.evidence-card p{margin:0 0 10px}.evidence-media img{height:170px;max-height:170px;object-fit:contain}.evidence-copy dl{grid-template-columns:repeat(3,minmax(0,1fr))}.evidence-copy dl div{padding:8px}.severity,.evidence-pill{background:#f8fafc;border:1px solid #d8e2ef;border-radius:999px;display:inline-block;font-size:11px;font-weight:900;padding:6px 9px}.evidence-pill-row{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}.signature-block{background:#f8fafc;border:1px solid #d8e2ef;border-radius:10px;margin-top:8px;padding:8px}.signoff-section{box-shadow:0 6px 18px rgba(24,36,58,.04);padding:16px}.signoff-section dl{grid-template-columns:repeat(2,minmax(0,1fr))}.signoff-section dl div{padding:8px 10px}.signature-image{background:white;border:1px solid #d8e2ef;border-radius:8px;display:block;max-height:72px;max-width:240px;object-fit:contain;padding:5px}.approval-signature{display:inline-block;min-width:240px}.signature-empty{color:#62728a;font-weight:800}table{border-collapse:collapse;width:100%}td,th{border:1px solid #d8e2ef;padding:6px 8px;text-align:left;vertical-align:top;overflow-wrap:anywhere}th{background:#f1f5fb}.evidence-appendix,.evidence-index{font-size:11px}.appendix-thumb{width:70px}.appendix-thumb img{display:block;height:44px;max-width:60px;object-fit:cover;border-radius:5px}.appendix-thumb .media-fallback{aspect-ratio:auto;min-height:44px;padding:4px;font-size:9px}.appendix-kind{color:#62728a;font-size:11px;font-weight:800}@media (max-width:800px){body{padding:14px}.report-cover,.evidence-card{grid-template-columns:1fr}.cover-copy{padding:22px}.cover-copy h1{font-size:30px}dl,.gallery-grid,.evidence-copy dl{grid-template-columns:1fr}.header,.item{border-radius:16px;padding:18px}.toolbar{align-items:flex-start;flex-direction:column;gap:8px}.gallery-thumb img{height:230px}}@media print{@page{margin:12mm}html,body{background:white}body{padding:0}.report{max-width:none}.toolbar,.original-link{display:none!important}.header,.item,.finding-card,.reference-card,.evidence-card,.gallery-card{box-shadow:none}.finding-card,.reference-card,.evidence-card,.gallery-card{break-inside:auto;page-break-inside:auto}.signoff-section{break-inside:avoid;page-break-inside:avoid}.report-cover{break-before:auto}.gallery-section,.org-section,.approval-section,.evidence-appendix-section{break-before:auto;page-break-before:auto}.approval-section{break-inside:avoid;page-break-inside:avoid}.media img,.evidence-media img,.signature-image,.finding-image img,.gallery-thumb img{break-inside:avoid;visibility:visible}.note{position:static;background:#14213d}a,a:visited{color:#18243a!important;text-decoration:none!important}.report{color:#18243a;-webkit-text-size-adjust:100%;print-color-adjust:exact;-webkit-print-color-adjust:exact}}
   `;
 
 export async function GET(_request: Request, { params }: RouteContext) {
@@ -1822,7 +1881,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     ? ""
     : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>';
   const html = `<!doctype html><html><head><meta charset="utf-8" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, companyProfile: reportCompanyProfile, captures: appendixCaptureItems, imageAssets: imageAssets, timeZone })}${summaryHtml}${useGalleryMode ? "" : reportInfoHtml}${!useGalleryMode && customerAssetHtml ? `<section class="item service-section"><h2>Subject Details</h2>${customerAssetHtml}</section>` : ""}${useGalleryMode ? "" : structuredFormDataHtml}${useGalleryMode ? "" : buildFinalNotesHtml(session)}${useGalleryMode ? "" : findingsHtml}${unattachedHtml}${supportingHtml}${useGalleryMode ? buildEvidenceGalleryHtml(appendixCaptureItems, imageAssets, timeZone) : ""}${useGalleryMode ? "" : referenceHtml}${appendixHtml}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile)}${buildApprovalHtml({ profile: reportProfile, signatures: reportSignatures, signatureUrls, draft: reportDraft, session, timeZone })}</main></body></html>`;
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, companyProfile: reportCompanyProfile, captures: appendixCaptureItems, imageAssets: imageAssets, timeZone, allowCoverImage: useGalleryMode })}${summaryHtml}${useGalleryMode ? "" : reportInfoHtml}${!useGalleryMode && customerAssetHtml ? `<section class="item service-section"><h2>Subject Details</h2>${customerAssetHtml}</section>` : ""}${useGalleryMode ? "" : structuredFormDataHtml}${useGalleryMode ? "" : buildFinalNotesHtml(session)}${useGalleryMode ? "" : findingsHtml}${unattachedHtml}${supportingHtml}${useGalleryMode ? buildEvidenceGalleryHtml(appendixCaptureItems, imageAssets, timeZone) : ""}${useGalleryMode ? "" : referenceHtml}${appendixHtml}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile)}${buildApprovalHtml({ profile: reportProfile, signatures: reportSignatures, signatureUrls, draft: reportDraft, session, timeZone })}</main></body></html>`;
 
   return new Response(html, {
     headers: { "Content-Type": "text/html; charset=utf-8" },
