@@ -268,7 +268,7 @@ function buildReportCoverHtml(params: {
     params.imageAssets,
     params.allowCoverImage,
   );
-  return `<section class="report-cover item${coverImageHtml ? "" : " report-cover-no-image"}"><div class="cover-copy"><p class="eyebrow">Professional Evidence Report</p><h1>${escapeHtml(params.reportTitle)}</h1><p class="cover-trust">Prepared from approved notes, forms, photos, and supporting evidence.</p>${renderDefinitionRows(rows)}</div>${coverImageHtml}</section>`;
+  return `<section class="report-cover item${coverImageHtml ? "" : " report-cover-no-image"}"><div class="cover-copy"><p class="eyebrow">Professional Report</p><h1>${escapeHtml(params.reportTitle)}</h1><p class="cover-trust">Prepared from reviewed field documentation, source records, and supporting evidence.</p>${renderDefinitionRows(rows)}</div>${coverImageHtml}</section>`;
 }
 
 function getCaptionChips(captures: ReportCapture[]) {
@@ -305,20 +305,20 @@ function buildReportOverviewHtml(params: {
       ? ""
       : `, including ${params.includedImageCount} photo${params.includedImageCount === 1 ? "" : "s"}`;
   const notesText = params.finalNotesIncluded
-    ? " Final notes are included."
-    : " Final notes are not included.";
+    ? " Final summary notes are included."
+    : "";
   const preparedText = params.preparedBy
     ? ` Prepared by ${params.preparedBy}.`
     : "";
-  const summaryText = `This ${params.reportTitle ? `${params.reportTitle} ` : ""}report contains ${params.includedCount} included evidence item${params.includedCount === 1 ? "" : "s"}${photoText} and is ${approvedText}.${notesText}${preparedText}`;
+  const summaryText = `This ${params.reportTitle ? `${params.reportTitle} ` : ""}report has been prepared from ${params.includedCount} reviewed source item${params.includedCount === 1 ? "" : "s"}${photoText} and is ${approvedText}.${notesText}${preparedText}`;
   const chips = params.captions?.length
-    ? `<div class="summary-chip-row">${params.captions.map((caption) => `<span>${escapeHtml(caption)}</span>`).join("")}</div>`
+    ? `<div class="summary-chip-row" aria-label="Selected source notes">${params.captions.map((caption) => `<span>${escapeHtml(caption)}</span>`).join("")}</div>`
     : "";
-  return `<section class="item service-section overview-section"><h2>Report Overview</h2><p class="summary-lead">${escapeHtml(summaryText)}</p>${chips}${renderDefinitionRows(
+  return `<section class="item service-section overview-section"><h2>Executive Summary</h2><p class="summary-lead">${escapeHtml(summaryText)}</p>${chips}${renderDefinitionRows(
     [
-      { label: "Included evidence items", value: String(params.includedCount) },
+      { label: "Reviewed source records", value: String(params.includedCount) },
       {
-        label: "Included photos",
+        label: "Supporting photos",
         value:
           params.includedImageCount === undefined
             ? ""
@@ -336,7 +336,7 @@ function buildReportOverviewHtml(params: {
       { label: "Prepared by", value: params.preparedBy },
       { label: "Organization", value: params.organization },
     ],
-  )}<p class="summary-trust">Prepared from approved user-provided evidence and notes.</p></section>`;
+  )}<p class="summary-trust">Prepared for customer review from approved documentation and supporting records.</p></section>`;
 }
 
 function buildEvidenceGalleryHtml(
@@ -350,7 +350,7 @@ function buildEvidenceGalleryHtml(
   const evidenceByCaptureId = new Map(
     reportDocument.evidenceItems.map((item) => [item.sourceCaptureId, item]),
   );
-  return `<section class="item service-section gallery-section"><h2>Photo Evidence Gallery</h2><p class="muted">Included photos are shown once for a clean visual review.</p><div class="gallery-grid">${images
+  return `<section class="item service-section gallery-section"><h2>Supporting Photo Record</h2><p class="muted">Photographs are included to support the report conclusions and are not a substitute for the written findings.</p><div class="gallery-grid">${images
     .map((capture) => {
       const meta = evidenceByCaptureId.get(capture.id);
       const evidenceId = meta?.evidenceId ?? "Evidence";
@@ -793,7 +793,7 @@ function buildStructuredFormDataHtml(reportStructure: Json | null) {
     ).length;
     return [{ label: title, value: `${count} fields` }];
   });
-  return `<section class="item service-section"><h2>Form Details</h2><p class="muted">Captured forms provide the report structure when available. Supporting evidence is organized around the form sections and user-provided notes.</p>${renderDefinitionRows([...sectionRows, { label: "Supporting evidence links", value: String(mappings.length) }])}</section>`;
+  return `<section class="item service-section"><h2>Source Form Summary</h2><p class="muted">Information from captured forms is summarized into report sections for readability while preserving the documented source fields.</p>${renderDefinitionRows([...sectionRows, { label: "Linked source records", value: String(mappings.length) }])}</section>`;
 }
 
 function renderDefinitionRows(rows: Array<{ label: string; value: string }>) {
@@ -929,7 +929,7 @@ function buildFindingCardsHtml(
 ) {
   const findings = getNormalizedFindingModels(items);
   if (findings.length === 0) return "";
-  return `<section class="item service-section"><h2>Technician-Authored Findings</h2>${findings
+  return `<section class="item service-section findings-section"><h2>Findings</h2>${findings
     .map((finding, index) => {
       const capture = finding.entry.capture;
       const imageAsset = imageAssets[capture.id];
@@ -952,7 +952,7 @@ function buildFindingCardsHtml(
             observation.includes(detail.value),
           ),
       );
-      return `<article class="finding-card">${imageHtml}<div class="finding-content"><p class="eyebrow">Finding ${index + 1}</p><h3>${escapeHtml(finding.title)}</h3><h4>Technician / Verified Condition</h4>${finding.observations.length ? finding.observations.map((item) => `<p>${escapeHtml(item)}</p>`).join("") : '<p class="muted">Condition documented in supporting evidence.</p>'}${details.length ? `<h4>Key Details</h4>${renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value })))}` : ""}<h4>User-entered Recommendation</h4>${finding.recommendations.length ? `<ul>${finding.recommendations.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : '<p class="muted">No user-entered recommendation captured.</p>'}</div></article>`;
+      return `<article class="finding-card">${imageHtml}<div class="finding-content"><p class="eyebrow">Finding ${index + 1}</p><h3>${escapeHtml(finding.title)}</h3><h4>Observation / Condition</h4>${finding.observations.length ? finding.observations.map((item) => `<p>${escapeHtml(item)}</p>`).join("") : '<p class="muted">Condition documented in the supporting record.</p>'}${details.length ? `<h4>Supporting Details</h4>${renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value })))}` : ""}<h4>Recommended Action</h4>${finding.recommendations.length ? `<ul>${finding.recommendations.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : '<p class="muted">No specific recommended action was documented.</p>'}</div></article>`;
     })
     .join("")}</section>`;
 }
@@ -962,7 +962,7 @@ function buildRecommendedActionsHtml(
 ) {
   const actions = getNormalizedRecommendedActions(findings);
   if (!actions.length) return "";
-  return `<section class="item service-section"><h2>Recommendations (User-entered)</h2><table><thead><tr><th>Priority</th><th>Action</th></tr></thead><tbody>${actions.map((item) => `<tr><td>${escapeHtml(item.priority)}</td><td>${escapeHtml(item.action)}</td></tr>`).join("")}</tbody></table></section>`;
+  return `<section class="item service-section"><h2>Recommended Actions</h2><table><thead><tr><th>Priority</th><th>Action</th></tr></thead><tbody>${actions.map((item) => `<tr><td>${escapeHtml(item.priority)}</td><td>${escapeHtml(item.action)}</td></tr>`).join("")}</tbody></table></section>`;
 }
 
 function isTrueReferenceDocument(capture: ReportCapture) {
@@ -1010,7 +1010,7 @@ function buildReferenceDocumentsHtml(
     isTrueReferenceDocument(entry.capture),
   );
   if (!referenceItems.length) return "";
-  return `<section class="item service-section"><h2>Reference Documents</h2>${referenceItems
+  return `<section class="item service-section"><h2>Source Documentation</h2>${referenceItems
     .map((entry) => {
       const details = dedupeEvidenceDetails(entry.group.details).filter(
         (detail) => isMeaningfulCustomerReportText(detail.value),
@@ -1019,7 +1019,7 @@ function buildReferenceDocumentsHtml(
         options.includeOriginal === false
           ? ""
           : `<details><summary>View Original Reference</summary>${buildEvidenceItemsHtml([entry], imageAssets)}</details>`;
-      return `<article class="reference-card"><h3>${escapeHtml(getPrimaryEvidenceLabel(entry.capture))}</h3>${details.length ? renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value }))) : '<p class="muted">Uploaded reference document included for report support.</p>'}${originalHtml}</article>`;
+      return `<article class="reference-card"><h3>${escapeHtml(getPrimaryEvidenceLabel(entry.capture))}</h3>${details.length ? renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value }))) : '<p class="muted">Source document included to support the report record.</p>'}${originalHtml}</article>`;
     })
     .join("")}</section>`;
 }
@@ -1118,7 +1118,7 @@ function buildEvidenceIndexHtml(
   const evidenceByCaptureId = new Map(
     reportDocument.evidenceItems.map((item) => [item.sourceCaptureId, item]),
   );
-  return `<section class="item service-section evidence-index-section"><h2>Evidence Index</h2><p class="muted">Compact index of included evidence. Large images are intentionally not repeated.</p><table class="evidence-index"><thead><tr><th>Evidence ID</th><th>Caption / Title</th><th>Captured</th><th>Type</th></tr></thead><tbody>${captures
+  return `<section class="item service-section evidence-index-section"><h2>Evidence Index</h2><p class="muted">Index of supporting records referenced by this report. Images are not repeated where they already appear with findings.</p><table class="evidence-index"><thead><tr><th>Evidence ID</th><th>Caption / Title</th><th>Captured</th><th>Type</th></tr></thead><tbody>${captures
     .map((capture) => {
       const evidenceMeta = evidenceByCaptureId.get(capture.id);
       return `<tr><td>${escapeHtml(evidenceMeta?.evidenceId ?? "Evidence")}</td><td>${escapeHtml(getPrimaryEvidenceLabel(capture))}</td><td>${escapeHtml(evidenceMeta?.capturedAtLabel ?? formatDateTimeInTimeZone(capture.captured_at, timeZone))}</td><td>${escapeHtml(evidenceMeta?.evidenceType ?? getEvidenceKind(capture))}</td></tr>`;
@@ -1138,7 +1138,7 @@ function buildEvidenceAppendixHtml(
   const evidenceByCaptureId = new Map(
     reportDocument.evidenceItems.map((item) => [item.sourceCaptureId, item]),
   );
-  return `<section class="item service-section evidence-appendix-section"><h2>Evidence Appendix</h2><p class="muted">Compact index of included captures from the reviewed report state.</p><table class="evidence-appendix"><thead><tr>${options.renderImages === false ? "" : "<th>Preview</th>"}<th>Evidence ID</th><th>Caption / Title</th><th>Captured</th><th>Type</th>${options.showDebugDetails ? "<th>Debug ID</th>" : ""}</tr></thead><tbody>${captures
+  return `<section class="item service-section evidence-appendix-section"><h2>Evidence Appendix</h2><p class="muted">Supporting records retained with the reviewed report package.</p><table class="evidence-appendix"><thead><tr>${options.renderImages === false ? "" : "<th>Preview</th>"}<th>Evidence ID</th><th>Caption / Title</th><th>Captured</th><th>Type</th>${options.showDebugDetails ? "<th>Debug ID</th>" : ""}</tr></thead><tbody>${captures
     .map((capture) => {
       const imageAsset = imageAssets[capture.id];
       const mediaKind = getEvidenceKind(capture);
@@ -1504,7 +1504,7 @@ function buildFieldServiceReportHtml({
     : "";
 
   return `<!doctype html><html><head><meta charset="utf-8" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable field service report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, captures: captureItems, imageAssets: signedUrls, timeZone, allowCoverImage: fieldUseGalleryMode })}${summaryHtml}<section class="item service-section"><h2>Report Details</h2>${renderDefinitionRows(headerRows)}</section>${renderFieldServiceSection(details, "equipment")}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work performed</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Evidence</h2><p class="muted">Evidence items reference captured photos, videos, documents, and technician notes.</p></section>${buildFinalNotesHtml(session)}${evidenceHtml}${fieldUseGalleryMode ? buildEvidenceGalleryHtml(captureItems, signedUrls, timeZone) : ""}${appendixHtml}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges / documentation only</h2>${renderDefinitionRows(chargeRows)}</section>${buildInspectorFacilityHtml(null, null)}${buildApprovalHtml({ profile: null, signatures, signatureUrls, draft: reportDraft, session, timeZone })}</main></body></html>`;
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, captures: captureItems, imageAssets: signedUrls, timeZone, allowCoverImage: fieldUseGalleryMode })}${summaryHtml}<section class="item service-section"><h2>Report Details</h2>${renderDefinitionRows(headerRows)}</section>${renderFieldServiceSection(details, "equipment")}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work Performed / Resolution</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Supporting Record</h2><p class="muted">Photos, documents, and technician notes support the work summary and findings above.</p></section>${buildFinalNotesHtml(session)}${evidenceHtml}${fieldUseGalleryMode ? buildEvidenceGalleryHtml(captureItems, signedUrls, timeZone) : ""}${appendixHtml}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges Summary</h2>${renderDefinitionRows(chargeRows)}</section>${buildInspectorFacilityHtml(null, null)}${buildApprovalHtml({ profile: null, signatures, signatureUrls, draft: reportDraft, session, timeZone })}</main></body></html>`;
 }
 
 const REPORT_STYLES = `
@@ -1874,7 +1874,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     imageAssets,
     { renderImages: false },
   );
-  const supportingHtml = "";
+  const supportingHtml = useGalleryMode ? "" : buildEvidenceSectionHtml("Supporting Record", reviewDocument.supportingEvidence, imageAssets);
 
   const toolbarHtml = previewOnly
     ? ""
