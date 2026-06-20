@@ -73,7 +73,7 @@ export function PdfDownloadButton({
         aria-busy={isPreparing}
         onClick={handleDownload}
       >
-        {isPreparing ? "Preparing PDF…" : "Download PDF Report"}
+        {isPreparing ? "Preparing PDF…" : "Download PDF"}
       </button>
       {message ? (
         <p className="muted" role="status" aria-live="polite">
@@ -88,7 +88,7 @@ export function PdfDownloadButton({
           rel="noopener noreferrer"
           download
         >
-          Download PDF Report
+          Download PDF
         </a>
       </noscript>
     </div>

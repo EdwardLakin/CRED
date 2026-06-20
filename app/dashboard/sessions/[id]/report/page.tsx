@@ -36,7 +36,7 @@ import {
 } from "@/features/reports/actions";
 import { updateSessionMetadata } from "@/features/sessions/actions";
 import { formatDateTime } from "@/features/sessions";
-import { REPORT_TYPES, SESSION_METADATA_FIELDS, normalizeSessionMetadata, normalizeReportType } from "@/features/sessions/report-types";
+import { SESSION_METADATA_FIELDS, normalizeSessionMetadata } from "@/features/sessions/report-types";
 import { requireSessionWorkspace } from "@/features/sessions/data";
 import { SignatureCaptureForm } from "@/features/signatures";
 import { useSavedSignature } from "@/features/signatures/actions";
@@ -750,12 +750,6 @@ function GeneratedReportReview({
         ].map(([label, value]) => <div key={label} className="report-field-card"><span>{label}</span><strong className={value ? undefined : "not-provided"}>{value ? stripConfidenceText(String(value)) : "Not provided"}</strong></div>)}</div>
         {reviewDocument.referenceDocuments.length > 0 ? <ReferenceDocumentList items={reviewDocument.referenceDocuments} supportingEvidence={supportingEvidence} /> : null}
         {isEditingReport ? <form action={updateSessionMetadata.bind(null, session.id)} className="form-stack report-edit-form">
-          <label className="field-stack">
-            <span className="label">Report Type</span>
-            <select className="input" name="session_type" defaultValue={normalizeReportType(session.session_type)}>
-              {REPORT_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
-            </select>
-          </label>
           <div className="report-field-grid">
             {SESSION_METADATA_FIELDS.map((field) => {
               const metadata = normalizeSessionMetadata(session.session_metadata, session)
@@ -782,12 +776,6 @@ Optional raw section and field editing. Use only when you need to change the ass
                 </p>
               </div>
             </summary>
-            <label className="field-stack">
-              <span className="label">Report type</span>
-              <select className="input" name="session_type" defaultValue={normalizeReportType(session.session_type)}>
-                {REPORT_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
-              </select>
-            </label>
             <label className="field-stack">
               <span className="label">Report title</span>
               <input
@@ -1390,14 +1378,14 @@ function ExportPanel({
       id="export-report"
       className="card detail-card report-sidebar-card report-delivery-tabs export-panel form-stack compact-export-panel"
     >
-      <summary className="export-summary-row">Export Report{isReadyForExport ? " · Preview / Download PDF" : ""}</summary>
+      <summary className="export-summary-row">Export Documentation{isReadyForExport ? " · Download PDF / Share" : ""}</summary>
       <div>
         <p className="eyebrow">Export</p>
-        <h2>Export Report</h2>
+        <h2>Export Documentation</h2>
         <p className="muted delivery-helper">
           {isReadyForExport
-            ? "Send, share, preview, or download the approved customer-ready report with your latest edits."
-            : "Approve this report before exporting."}
+            ? "Download, email, or share the approved customer-ready documentation with your latest edits."
+            : "Approve this documentation before exporting."}
         </p>
       </div>
 
@@ -1405,7 +1393,7 @@ function ExportPanel({
         <form action={emailAction} className="form-stack export-action-card">
           <div>
             <h3>Email</h3>
-            <p className="muted">Send a secure report link to recipients.</p>
+            <p className="muted">Send a secure documentation link to recipients.</p>
           </div>
           <div className="field-stack">
             <label htmlFor="recipients" className="label">
@@ -1428,7 +1416,7 @@ function ExportPanel({
               id="message"
               name="message"
               className="input text-area"
-              placeholder="Please review the printable report."
+              placeholder="Please review the documentation."
               disabled={!isReadyForExport}
             />
           </div>
@@ -1436,14 +1424,14 @@ function ExportPanel({
             className="button button-primary touch-target"
             disabled={!isReadyForExport}
           >
-            Email Report
+            Email
           </button>
         </form>
 
         <form action={shareAction} className="form-stack export-action-card">
           <div>
             <h3>Share Link</h3>
-            <p className="muted">Create a secure link for this report.</p>
+            <p className="muted">Create a secure link for this documentation.</p>
           </div>
           <div className="field-stack">
             <label htmlFor="expires_at" className="label">
@@ -1467,8 +1455,8 @@ function ExportPanel({
 
         <div className="export-action-card export-button-grid">
           <div>
-            <h3>Preview Printable Report</h3>
-            <p className="muted">Open the browser-friendly HTML report preview in a new tab.</p>
+            <h3>Preview</h3>
+            <p className="muted">Open the browser-friendly preview in a new tab.</p>
           </div>
           {isReadyForExport ? (
             <Link
@@ -1476,23 +1464,23 @@ function ExportPanel({
               className="button button-secondary touch-target"
               target="_blank"
             >
-              Preview Printable Report
+              Preview
             </Link>
           ) : (
             <span
               className="button button-secondary touch-target disabled-action"
               aria-disabled="true"
             >
-              Preview Printable Report
+              Preview
             </span>
           )}
         </div>
 
         <div className="export-action-card export-button-grid">
           <div>
-            <h3>Download PDF Report</h3>
+            <h3>Download PDF</h3>
             <p className="muted">
-              Generate a locked customer-ready PDF with embedded evidence images and signature.
+              Download a customer-ready PDF with embedded evidence images and signature.
             </p>
           </div>
           {isReadyForExport ? (
@@ -1502,7 +1490,7 @@ function ExportPanel({
               className="button button-primary touch-target disabled-action"
               aria-disabled="true"
             >
-              Download PDF Report
+              Download PDF
             </span>
           )}
           <form action={saveAction}>
@@ -1510,7 +1498,7 @@ function ExportPanel({
               className="button button-secondary touch-target"
               disabled={!isReadyForExport}
             >
-              Save Report in CRED
+              Save in CRED
             </button>
           </form>
         </div>
