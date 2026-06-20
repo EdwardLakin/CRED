@@ -376,6 +376,10 @@ export default async function SessionReportPreviewPage({
     (aiDrafts ?? []).find((draft) => draft.status !== "superseded") ??
     aiDrafts?.[0] ??
     null;
+
+  if (status.prepare && !currentReport) {
+    await generateAiReportDraft(session.id);
+  }
   const { data: reportSections } = currentReport
     ? await supabase
         .from("ai_report_draft_sections")
@@ -471,7 +475,7 @@ export default async function SessionReportPreviewPage({
   const sourceFieldEntries = getDisplayEntries(currentReport?.header_fields);
   const isGenericEvidenceReport = formStructureSummary.source === "generic_fallback";
   const displayReportTitle = getDisplayReportTitle(currentReport, session, { genericFallback: isGenericEvidenceReport });
-  const isEditingReport = Boolean(currentReport);
+  const isEditingReport = Boolean(currentReport && status.edit);
   if (currentReport && getDiagnosticProcedureInfo(currentReport)) {
     return (
       <DiagnosticProcedureReport
@@ -492,16 +496,20 @@ export default async function SessionReportPreviewPage({
       <div className="section-header page-header report-preview-header report-review-header">
         <div>
           <p className="eyebrow guided-eyebrow">Review</p>
-          <h1>{displayReportTitle}</h1>
+          <h1>Here is your report.</h1>
           <p className="muted">
-            Review the report CRED prepared from your saved evidence.
-            Approve it, then export.
+            Review {displayReportTitle}, approve it, then export.
           </p>
         </div>
         <div className="page-actions report-preview-actions compact-report-actions">
           <span className={isReadyForExport ? "status-pill success" : "status-pill neutral"}>
             {isReadyForExport ? "Ready" : "Review Required"}
           </span>
+          {currentReport ? (
+            <Link href={isEditingReport ? `/dashboard/sessions/${session.id}/report` : `/dashboard/sessions/${session.id}/report?edit=1`} className="button button-secondary touch-target">
+              {isEditingReport ? "View Report" : "Edit Report"}
+            </Link>
+          ) : null}
         </div>
       </div>
 
@@ -720,11 +728,11 @@ function GeneratedReportReview({
         </form>
       ) : null}
 
-      <details className="report-subsection report-document-section" open>
+      <details className="report-subsection report-document-section">
         <summary className="report-section-title-row">
           <div>
             <h3>Report Information</h3>
-            <p className="muted">Report metadata is optional for generic evidence reports and is used in export when present.</p>
+            <p className="muted">Optional report details used in export when present.</p>
           </div>
         </summary>
         <div className="report-field-grid">{[
@@ -740,7 +748,7 @@ function GeneratedReportReview({
           ["Reference Number", getReportInfoValue(currentReport, session, "reference_number")],
         ].map(([label, value]) => <div key={label} className="report-field-card"><span>{label}</span><strong className={value ? undefined : "not-provided"}>{value ? stripConfidenceText(String(value)) : "Not provided"}</strong></div>)}</div>
         {reviewDocument.referenceDocuments.length > 0 ? <ReferenceDocumentList items={reviewDocument.referenceDocuments} supportingEvidence={supportingEvidence} /> : null}
-        <form action={updateSessionMetadata.bind(null, session.id)} className="form-stack report-edit-form">
+        {isEditingReport ? <form action={updateSessionMetadata.bind(null, session.id)} className="form-stack report-edit-form">
           <label className="field-stack">
             <span className="label">Report Type</span>
             <select className="input" name="session_type" defaultValue={normalizeReportType(session.session_type)}>
@@ -754,7 +762,7 @@ function GeneratedReportReview({
             })}
           </div>
           <div className="form-actions"><button className="button button-secondary touch-target">Save report information</button></div>
-        </form>
+        </form> : null}
       </details>
 
       <EvidenceAppendix supportingEvidence={supportingEvidence} reportDocument={reportDocument} isGenericEvidenceReport={isGenericEvidenceReport} />
@@ -1033,7 +1041,7 @@ function FindingCardList({
 }) {
   const evidenceById = new Map(supportingEvidence.map((item) => [item.capture.id, item]));
   const findings = getNormalizedFindingModels(items);
-  if (findings.length === 0) return <p className="muted">No technician-authored findings attached yet.</p>;
+  if (findings.length === 0) return <p className="muted">No findings attached yet.</p>;
   return <div className="finding-card-list">{findings.map((finding, index) => {
     const evidence = evidenceById.get(finding.id);
     return <article key={finding.id} className="professional-finding-card">
@@ -1155,7 +1163,7 @@ function EvidenceAppendix({ supportingEvidence, reportDocument, timeZone, isGene
               <div className="evidence-first-body">
                 <h4>{metadata?.evidenceId ?? "Evidence"} · {item.title}</h4>
                 {item.note ? <p><strong>Technician note / caption:</strong> {stripConfidenceText(item.note)}</p> : <p className="muted">No technician note provided.</p>}
-                <p className="muted">Captured {metadata?.capturedAtLabel ?? "Not captured"} · {metadata?.evidenceType ?? item.kind}</p><details><summary>Evidence details</summary><p className="muted">Source capture ID: {item.capture.id}</p></details>
+                <p className="muted">Captured {metadata?.capturedAtLabel ?? "Not captured"} · {metadata?.evidenceType ?? item.kind}</p><details><summary>Evidence details</summary><p className="muted">Saved evidence reference available for support.</p></details>
               </div>
             </article>
           })}

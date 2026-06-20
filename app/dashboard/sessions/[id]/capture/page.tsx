@@ -73,7 +73,7 @@ export default async function GuidedCapturePage({
           helperText="Capture photos or choose media from your gallery."
           commonCaptureText=""
           showSuggestedCaptureText={false}
-          stickyDoneHref={`/dashboard/sessions/${session.id}/report`}
+          stickyDoneHref={`/dashboard/sessions/${session.id}/report?prepare=1`}
           maxCaptureFileSizeBytes={planLimits.maxCaptureFileSizeBytes}
           maxVideoFileSizeBytes={planLimits.maxVideoFileSizeBytes}
         />
