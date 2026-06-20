@@ -4456,3 +4456,23 @@ a:focus-visible {
     width: 100%;
   }
 }
+
+.dashboard-nav-secondary-section {
+  opacity: 0.84;
+}
+
+.session-card-manage {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 10px;
+}
+
+.session-card-manage summary {
+  cursor: pointer;
+  list-style-position: inside;
+  width: fit-content;
+}
+
+.settings-secondary-grid {
+  opacity: 0.92;
+}

@@ -6,6 +6,7 @@ import { Button, Card } from '@/components/ui'
 import { BrowserTimeZoneInput, SignaturePad } from '@/components/ui/SignaturePad'
 import { clearDefaultSignature, inviteTeamMember, removeTeamMember, resendTeamInvite, saveDefaultSignature, saveInspectorFacilitySettings } from '@/features/settings/actions'
 import { getAllowedSeatCount, getCurrentSeatCount, getRemainingSeatCount, TEAM_ROLE_LABELS, TEAM_STATUS_LABELS, type TeamRole } from '@/features/team'
+import { canUseWorkspaceAdmin } from '@/features/navigation-dashboard'
 import { hasInternalAdminAccess, requireSessionWorkspace } from '@/features/sessions/data'
 
 export default async function SettingsPage() {
@@ -13,8 +14,9 @@ export default async function SettingsPage() {
   const organization = profile.organization
   const industry = organization.industry || 'Not set'
   const canManageInternalTools = hasInternalAdminAccess(profile)
+  const canManageWorkspace = canUseWorkspaceAdmin(profile)
   const settingsSaved = false
-  const showTeamMembers = organization.plan === 'team' || organization.plan === 'shop'
+  const showTeamMembers = canManageWorkspace && (organization.plan === 'team' || organization.plan === 'shop')
   const allowedSeats = getAllowedSeatCount(organization.plan)
   const currentSeats = showTeamMembers ? await getCurrentSeatCount(supabase, profile.organization_id) : 1
   const remainingSeats = getRemainingSeatCount(currentSeats, organization.plan)
@@ -43,7 +45,7 @@ export default async function SettingsPage() {
 
   return (
     <main className="page-shell dashboard-shell">
-      <div className="section-header page-header"><div><p className="eyebrow">Settings</p><h1>Workspace settings</h1><p className="muted">Manage account details, organization context, display preferences, and workspace controls.</p></div></div>
+      <div className="section-header page-header"><div><p className="eyebrow">Account</p><h1>Account and workspace</h1><p className="muted">Keep report details ready without adding setup to capture work.</p></div></div>
       {settingsSaved ? <p className="success">Settings saved.</p> : null}
       <Card className="dashboard-card workspace-card"><div className="dashboard-grid settings-summary-grid"><div><strong>User</strong><p className="muted">{profile.full_name}</p></div><div><strong>Organization</strong><p className="muted">{organization.name}</p></div><div><strong>Industry</strong><p className="muted">{industry}</p></div><div className="workspace-actions"><ThemeToggle /><form action={signOut} className="sign-out-form"><Button type="submit" variant="secondary">Sign out</Button></form></div></div></Card>
 
@@ -108,10 +110,10 @@ export default async function SettingsPage() {
           </div>
         </Card>
       ) : null}
-      <section className="settings-link-grid" aria-label="Settings areas">
-        {canManageInternalTools ? <Link href="/dashboard/templates" className="card settings-link-card touch-target"><span className="eyebrow">Internal / Admin</span><h2>Report context library</h2><p className="muted">Admin-only compatibility tools for reusable report context. Normal evidence capture does not require setup.</p></Link> : null}
-        <Link href="/dashboard/settings/archived-sessions" className="card settings-link-card touch-target"><span className="eyebrow">Sessions</span><h2>Archived sessions</h2><p className="muted">Search, restore, or safely delete archived workspace sessions.</p></Link>
-        <Link href="/dashboard/billing" className="card settings-link-card touch-target"><span className="eyebrow">Billing</span><h2>Plan and subscription</h2><p className="muted">Review current billing status, usage, storage, report sends, and checkout access.</p></Link>
+      <section className="settings-link-grid settings-secondary-grid" aria-label="Workspace tools">
+        {canManageInternalTools ? <Link href="/dashboard/templates" className="card settings-link-card touch-target"><span className="eyebrow">Workspace</span><h2>Report context library</h2><p className="muted">Reusable report context for workspace leads. Normal capture work does not require setup.</p></Link> : null}
+        {canManageWorkspace ? <Link href="/dashboard/settings/archived-sessions" className="card settings-link-card touch-target"><span className="eyebrow">Workspace</span><h2>Archived sessions</h2><p className="muted">Search, restore, or safely delete archived workspace sessions.</p></Link> : null}
+        {canManageWorkspace ? <Link href="/dashboard/billing" className="card settings-link-card touch-target"><span className="eyebrow">Workspace</span><h2>Plan and usage</h2><p className="muted">Review billing status, usage, storage, report sends, and checkout access.</p></Link> : null}
       </section>
     </main>
   )

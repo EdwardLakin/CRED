@@ -91,7 +91,6 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
         {[
           ['active', 'Active'],
           ['completed', 'Completed'],
-          ['archived', 'Archived'],
         ].map(([value, label]) => (
           <Link key={value} href={`/dashboard/sessions?filter=${value}${searchTerm ? `&q=${encodeURIComponent(searchTerm)}` : ''}`} className={sessionFilter === value ? 'button button-primary touch-target' : 'button button-secondary touch-target'}>{label}</Link>
         ))}
@@ -116,7 +115,6 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
               session={session}
               evidenceCount={captureCountBySession.get(session.id)}
               showOperationalAction
-              showArchiveAction
               timeZone={profile.timezone}
             />
           ))}

@@ -65,20 +65,25 @@ export default async function SessionDetailPage({
         </div>
         <div className="form-actions">
           <Link href={`/dashboard/sessions/${session.id}/capture`} className="button button-primary touch-target">
-            Capture Evidence
+            Capture
           </Link>
           <Link href={`/dashboard/sessions/${session.id}/report`} className="button button-primary touch-target">
-            Review Report
+            Review
           </Link>
-          <Link href={`/dashboard/sessions/${session.id}/diagnostic-procedure`} className="button button-secondary touch-target">
-            Diagnostic Procedure Workspace
-          </Link>
-          <form action={isArchived ? restoreAction : archiveAction}>
-            <button className="button button-secondary touch-target">
-              {isArchived ? 'Restore Session' : 'Archive Session'}
-            </button>
-          </form>
         </div>
+        <details className="session-card-manage">
+          <summary className="secondary-link touch-target">More session tools</summary>
+          <div className="form-actions">
+            <Link href={`/dashboard/sessions/${session.id}/diagnostic-procedure`} className="button button-secondary touch-target">
+              Procedure notes
+            </Link>
+            <form action={isArchived ? restoreAction : archiveAction}>
+              <button className="button button-secondary touch-target">
+                {isArchived ? 'Restore Session' : 'Archive Session'}
+              </button>
+            </form>
+          </div>
+        </details>
       </section>
     </main>
   )
