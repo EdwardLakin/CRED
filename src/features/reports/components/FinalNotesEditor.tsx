@@ -20,11 +20,11 @@ export function FinalNotesEditor({ defaultValue, editedByUser, includeInExport, 
     setMessage('Copied report notes.')
   }
 
-  function confirmRegenerate(event: React.FormEvent<HTMLFormElement>) {
+  function confirmPrepareAgain(event: React.FormEvent<HTMLFormElement>) {
     const submitter = (event.nativeEvent as SubmitEvent).submitter
     if (!(submitter instanceof HTMLButtonElement) || submitter.value !== 'regenerate') return
     const value = textareaRef.current?.value.trim() ?? ''
-    if ((editedByUser || value) && !window.confirm('Regenerate final notes? Existing final notes will be replaced.')) {
+    if ((editedByUser || value) && !window.confirm('Prepare final notes again? Existing final notes will be replaced.')) {
       event.preventDefault()
     }
   }
@@ -57,9 +57,9 @@ export function FinalNotesEditor({ defaultValue, editedByUser, includeInExport, 
           <button type="button" className="button button-secondary touch-target" onClick={clearNotes}>Clear</button>
         </div>
       </form>
-      <form action={generateAction} onSubmit={confirmRegenerate} className="form-actions report-inline-actions">
-        <button className="button button-secondary touch-target" name="final_notes_action" value="generate">Generate Final Notes</button>
-        <button className="button button-secondary touch-target" name="final_notes_action" value="regenerate">Regenerate</button>
+      <form action={generateAction} onSubmit={confirmPrepareAgain} className="form-actions report-inline-actions">
+        <button className="button button-secondary touch-target" name="final_notes_action" value="generate">Prepare Final Notes</button>
+        <button className="button button-secondary touch-target" name="final_notes_action" value="regenerate">Prepare Again</button>
       </form>
       {message ? <p className="success compact-success">{message}</p> : null}
     </details>

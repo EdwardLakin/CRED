@@ -229,9 +229,9 @@ export function getCaptureProcessingStatus(capture: CaptureItem): CaptureProcess
 export function getCaptureProcessingLabel(status: CaptureProcessingStatus, imageAiAssistEnabled = true) {
   if (!imageAiAssistEnabled) {
     if (status === 'saved') return 'Saved'
-    if (status === 'report_ready' || status === 'extracted' || status === 'analyzed' || status === 'grouped') return 'Report ready'
+    if (status === 'report_ready' || status === 'extracted' || status === 'analyzed' || status === 'grouped') return 'Ready'
     if (status === 'queued' || status === 'processing' || status === 'analyzing' || status === 'pending') return 'Saved'
-    return 'Ready for review'
+    return 'Review needed'
   }
   switch (status) {
     case 'saved':
@@ -242,28 +242,28 @@ export function getCaptureProcessingLabel(status: CaptureProcessingStatus, image
     case 'processing':
       return 'Preparing'
     case 'analyzed':
-      return 'Report details ready'
+      return 'Ready'
     case 'grouped':
-      return 'Evidence grouped'
+      return 'Ready'
     case 'report_ready':
-      return 'Report details ready'
+      return 'Ready'
     case 'analysis_failed':
     case 'grouping_failed':
-      return 'Needs attention — manual review available'
+      return 'Needs attention'
     case 'ignored':
       return 'Ignored'
     case 'extracted':
-      return 'Ready for review'
+      return 'Ready'
     case 'needs_review':
-      return 'Needs review'
+      return 'Review needed'
     case 'failed':
-      return 'Retry needed'
+      return 'Needs attention'
     case 'blocked_by_limit':
       return 'Saved'
     case 'ready_for_review':
-      return 'Ready for review'
+      return 'Ready'
     case 'pending':
     default:
-      return 'Uploaded'
+      return 'Saved'
   }
 }

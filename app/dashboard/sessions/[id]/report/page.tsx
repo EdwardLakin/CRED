@@ -291,8 +291,7 @@ function DiagnosticProcedureReport({
           <h1>{info?.title ?? session.title}</h1>
           <p className="notice info">
             <strong>Documentation support only.</strong> Follow OEM procedure.
-            Technician owns all conclusions and recommendations. AI does not
-            diagnose, determine root cause, or recommend repair.
+            Technician owns all conclusions and recommendations.
           </p>
           <p className="muted">
             {[info?.manufacturer, info?.documentType, info?.sourceFile]
@@ -865,13 +864,13 @@ export default async function SessionReportPreviewPage({
         ) : null}
         {status.notes ? <p className="success">Final notes saved.</p> : null}
         {status.notes_generated ? (
-          <p className="success">Final notes generated.</p>
+          <p className="success">Final notes prepared.</p>
         ) : null}
       </div>
 
       <div className="report-review-layout report-document-layout">
         <div className="report-workspace-column">
-          <GeneratedReportReview
+          <ReportReview
             reportSections={reportSections ?? []}
             currentReport={currentReport}
             isEditingReport={isEditingReport}
@@ -947,7 +946,7 @@ export default async function SessionReportPreviewPage({
   );
 }
 
-function GeneratedReportReview({
+function ReportReview({
   reportSections,
   currentReport,
   generateReportAction,
@@ -1102,7 +1101,7 @@ function GeneratedReportReview({
                 ? formatDateTime(session.reviewed_at, timeZone)
                 : null,
             ],
-            ["Exported Date", "Tracked per export in the exports table"],
+            ["Exported Date", "Shown after export"],
             ["Report Title", displayReportTitle],
             [
               "Subject Name",

@@ -159,7 +159,7 @@ function StepCard({
           <p className="eyebrow">OEM procedure step</p>
           <h2>{title}</h2>
           <p className="muted">Documentation support only. Follow OEM procedure. Technician owns all conclusions.</p>
-          {formatSourcePage(metadata) ? <p className="muted">{formatSourcePage(metadata)}{typeof metadata.extraction_confidence === 'number' ? ` · Extraction confidence ${Math.round(metadata.extraction_confidence * 100)}%` : ''}</p> : null}
+          {formatSourcePage(metadata) ? <p className="muted">{formatSourcePage(metadata)}</p> : null}
         </div>
         <div className="page-actions">
           {completeness.badges.map((badge) => <span key={badge} className={badge === 'Complete' ? 'status-pill success' : badge === 'Blocked' || badge === 'Review warning' ? 'status-pill attention' : 'status-pill neutral'}>{badge}</span>)}
@@ -268,12 +268,12 @@ function StepCard({
 
         <label className="field-stack">
           <span className="label">Technician notes</span>
-          <textarea className="input note-textarea" name="technician_notes" rows={4} defaultValue={metadata.technician_notes ?? ''} placeholder="Document observations, readings context, or why this step is blocked. Do not rely on AI for diagnosis." />
+          <textarea className="input note-textarea" name="technician_notes" rows={4} defaultValue={metadata.technician_notes ?? ''} placeholder="Document observations, readings context, or why this step is blocked." />
         </label>
 
         <label className="field-stack">
           <span className="label">Technician conclusion for this step</span>
-          <textarea className="input note-textarea" name="technician_conclusion" rows={3} defaultValue={metadata.technician_conclusion ?? ''} placeholder="Optional technician-owned conclusion. AI does not determine root cause or repair." />
+          <textarea className="input note-textarea" name="technician_conclusion" rows={3} defaultValue={metadata.technician_conclusion ?? ''} placeholder="Optional technician-owned conclusion." />
         </label>
 
         <button className="button button-primary touch-target">Save step documentation</button>
@@ -377,13 +377,13 @@ export default async function DiagnosticProcedurePage({
           <Link href={`/dashboard/sessions/${session.id}`} className="secondary-link touch-target">← Session</Link>
           <h1>Diagnostic Procedure Workspace</h1>
           <p className="muted">{session.title}</p>
-          <p className="notice info"><strong>Documentation support only.</strong> Follow OEM procedure. Technician owns all findings, conclusions, and recommendations. AI does not diagnose or determine repair.</p>
+          <p className="notice info"><strong>Documentation support only.</strong> Follow OEM procedure. Technician owns all findings, conclusions, and recommendations.</p>
         </div>
         <Link href={`/dashboard/sessions/${session.id}/report`} className="button button-secondary touch-target">Review documentation report</Link>
       </div>
 
       {error ? <p className="error">{error}</p> : null}
-      {extracted ? <p className="success">Diagnostic procedure structure extracted for technician review.</p> : null}
+      {extracted ? <p className="success">Procedure workspace ready for technician review.</p> : null}
       {captureSaved ? <p className="success">Step evidence saved.</p> : null}
 
       {!diagnosticDraft ? (
@@ -391,21 +391,21 @@ export default async function DiagnosticProcedurePage({
           <div>
             <p className="eyebrow">Upload OEM procedure</p>
             <h2>Create procedure workspace</h2>
-            <p className="muted">Upload a Ford pinpoint test, OEM service procedure, TSB, wiring test, warranty diagnostic checklist, or scan-tool test procedure. AI extracts structure only; it does not diagnose.</p>
+            <p className="muted">Upload a Ford pinpoint test, OEM service procedure, TSB, wiring test, warranty diagnostic checklist, or scan-tool test procedure. CRED will organize it for documentation review.</p>
           </div>
           <form action={uploadAction} className="form-stack">
             <label className="field-stack">
               <span className="label">Diagnostic procedure PDF or image</span>
               <input className="input file-input" type="file" name="procedure_file" accept="application/pdf,image/*" required />
             </label>
-            <button className="button button-primary touch-target">Upload and extract procedure</button>
+            <button className="button button-primary touch-target">Upload procedure</button>
           </form>
         </section>
       ) : (
         <>
           <section className="card detail-card form-stack">
             <div>
-              <p className="eyebrow">Extracted procedure</p>
+              <p className="eyebrow">Procedure details</p>
               <h2>{procedureInfo?.title ?? diagnosticDraft.title ?? 'Diagnostic Procedure'}</h2>
               <p className="muted">{[procedureInfo?.manufacturer, procedureInfo?.documentType, procedureInfo?.sourceFile].filter(Boolean).join(' · ')}</p>
               <p className="muted">Status: {(procedureInfo?.status ?? 'technician_review_required').replace(/_/g, ' ')}</p>
@@ -439,7 +439,7 @@ export default async function DiagnosticProcedurePage({
                 {!procedureProgress.reportReady ? <label className="field-stack notice warning"><span><input type="checkbox" name="incomplete_acknowledged" /> I acknowledge incomplete, blocked, warning, or missing required documentation remains and sign off with that limitation recorded.</span></label> : null}
                 <label className="field-stack"><span className="label">Technician name</span><input className="input" name="sign_off_name" defaultValue={profile.full_name} required /></label>
                 <input type="hidden" name="report_ready" value={procedureProgress.reportReady ? 'true' : 'false'} />
-                <label className="field-stack notice info"><span><input type="checkbox" name="sign_off_acknowledged" required /> I followed the OEM procedure and documented technician-selected results. AI did not diagnose, select branches, determine root cause, or recommend repair.</span></label>
+                <label className="field-stack notice info"><span><input type="checkbox" name="sign_off_acknowledged" required /> I followed the OEM procedure and documented technician-selected results. The technician owns branch selection, root cause, and repair recommendations.</span></label>
                 <button className="button button-primary touch-target">Save technician sign-off</button>
               </form>
             )}

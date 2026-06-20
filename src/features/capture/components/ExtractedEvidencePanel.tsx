@@ -332,18 +332,15 @@ export function ExtractedEvidencePanel({
   return (
     <section className="card detail-card extracted-evidence-card form-stack">
       <div>
-        <h2>Extracted Details</h2>
+        <h2>Document Details</h2>
         <p className="muted">
-          Source Documents and evidence produce Report Details for review. Apply
-          trusted values directly to Session Details.
+          Captured documents and evidence are ready to review. Apply trusted values directly to Report Details.
         </p>
       </div>
 
       {evidenceCaptures.length === 0 ? (
         <div className="empty-state extracted-evidence-empty-state">
-          No extracted details yet. Capture Source Documents whenever it fits
-          the job, then prepare report details to review values from VIN plates,
-          registrations, work orders, and data plates.
+          No document details yet. Capture documents whenever it fits the job, then prepare the report to review values from VIN plates, registrations, work orders, and data plates.
         </div>
       ) : (
         <div className="extracted-evidence-list">
@@ -358,11 +355,7 @@ export function ExtractedEvidencePanel({
                     Captured {formatDateTime(capture.capturedAt)}
                   </p>
                 </div>
-                {capture.confidence ? (
-                  <span className="evidence-confidence">
-                    {capture.confidence}
-                  </span>
-                ) : null}
+
               </div>
 
               {capture.summary ? (
