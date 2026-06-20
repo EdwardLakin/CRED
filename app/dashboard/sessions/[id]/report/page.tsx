@@ -191,7 +191,7 @@ function getDiagnosticProcedureInfo(draft: AiReportDraft | null) {
     title:
       typeof procedure.title === "string"
         ? procedure.title
-        : (draft.title ?? "Diagnostic Procedure Workspace"),
+        : (draft.title ?? "Procedure documentation"),
     manufacturer:
       typeof procedure.manufacturer === "string"
         ? procedure.manufacturer
@@ -285,9 +285,7 @@ function DiagnosticProcedureReport({
     <main className="page-shell dashboard-shell report-preview-shell report-review-shell">
       <div className="section-header page-header report-preview-header report-review-header">
         <div>
-          <p className="eyebrow guided-eyebrow">
-            Diagnostic Procedure Workspace
-          </p>
+          <p className="eyebrow guided-eyebrow">Procedure Report</p>
           <h1>{info?.title ?? session.title}</h1>
           <p className="notice info">
             <strong>Documentation support only.</strong> Follow OEM procedure.
@@ -309,7 +307,7 @@ function DiagnosticProcedureReport({
           ) : (
             <p className="notice warning">
               <strong>Technician sign-off pending.</strong> Complete sign-off in
-              the Diagnostic Procedure Workspace before final delivery.
+              the procedure documentation before final delivery.
             </p>
           )}
         </div>
@@ -318,7 +316,7 @@ function DiagnosticProcedureReport({
             href={`/dashboard/sessions/${session.id}/diagnostic-procedure`}
             className="button button-secondary touch-target"
           >
-            Edit procedure documentation
+            Edit Procedure Details
           </Link>
           <a
             className="button button-primary touch-target"
@@ -326,15 +324,15 @@ function DiagnosticProcedureReport({
             target="_blank"
             rel="noreferrer"
           >
-            Printable documentation
+            Printable Report
           </a>
         </div>
       </div>
       <section className="card detail-card report-command-card form-stack">
         <div className="report-section-heading generated-report-heading">
           <div>
-            <p className="eyebrow">Step documentation</p>
-            <h2>OEM procedure steps</h2>
+            <p className="eyebrow">Procedure documentation</p>
+            <h2>Procedure Results</h2>
             <p className="muted">
               Statuses, readings, notes, and attachments are technician-entered
               documentation. OEM flow text is reference text only.
@@ -353,69 +351,48 @@ function DiagnosticProcedureReport({
           </span>
         </div>
 
-        <section className="inspection-summary-card">
-          <div className="report-section-title-row">
+        <details className="report-subsection report-supporting-section">
+          <summary className="report-section-title-row">
             <div>
-              <p className="eyebrow">Documentation completeness summary</p>
-              <h3>{progress.percentComplete}% complete</h3>
+              <p className="eyebrow">Procedure details</p>
+              <h3>Advanced documentation details</h3>
+              <p className="muted">
+                Document-readiness details for technician review.
+              </p>
             </div>
-          </div>
-          <div className="inspection-metric-grid">
-            <div>
-              <span>Visible steps</span>
-              <strong>{progress.totalVisibleSteps}</strong>
+          </summary>
+          <section className="inspection-summary-card">
+            <div className="inspection-metric-grid">
+              <div>
+                <span>Steps documented</span>
+                <strong>
+                  {progress.totalVisibleSteps - progress.incompleteSteps} of{" "}
+                  {progress.totalVisibleSteps}
+                </strong>
+              </div>
+              <div>
+                <span>Needs attention</span>
+                <strong>
+                  {progress.incompleteSteps + progress.blockedSteps}
+                </strong>
+              </div>
+              <div>
+                <span>Required items remaining</span>
+                <strong>{progress.missingRequiredDocumentationCount}</strong>
+              </div>
+              <div>
+                <span>Evidence linked to sections</span>
+                <strong>{referencedCaptureCount}</strong>
+              </div>
             </div>
-            <div>
-              <span>Incomplete steps</span>
-              <strong>{progress.incompleteSteps}</strong>
-            </div>
-            <div>
-              <span>Blocked steps</span>
-              <strong>{progress.blockedSteps}</strong>
-            </div>
-            <div>
-              <span>Missing readings/evidence/branches</span>
-              <strong>{progress.missingRequiredDocumentationCount}</strong>
-            </div>
-          </div>
-        </section>
-        <section className="inspection-summary-card">
-          <div className="report-section-title-row">
-            <div>
-              <p className="eyebrow">Evidence diagnostics</p>
-              <h3>Capture coverage</h3>
-            </div>
-          </div>
-          <div className="inspection-metric-grid">
-            <div>
-              <span>Captures saved</span>
-              <strong>{captures.length}</strong>
-            </div>
-            <div>
-              <span>Included in report</span>
-              <strong>{captures.length}</strong>
-            </div>
-            <div>
-              <span>Referenced by draft</span>
-              <strong>{referencedCaptureCount}</strong>
-            </div>
-            <div>
-              <span>Hidden from report</span>
-              <strong>0</strong>
-            </div>
-          </div>
-          {hasUnlinkedIncludedEvidence ? (
-            <p className="notice warning">
-              Some evidence is not linked to generated sections. It will still
-              appear in the Evidence Appendix.
-            </p>
-          ) : null}
-        </section>
-        <EvidenceAppendix
-          supportingEvidence={supportingEvidence}
-          timeZone={timeZone}
-          isGenericEvidenceReport={false}
-        />
+            {hasUnlinkedIncludedEvidence ? (
+              <p className="notice warning">
+                Some included evidence is not linked to a procedure step and is
+                retained in the compact evidence index.
+              </p>
+            ) : null}
+          </section>
+        </details>
         <div className="report-document-flow">
           {steps.length === 0 ? (
             <p className="notice warning">
@@ -448,7 +425,7 @@ function DiagnosticProcedureReport({
                     : "not tested"}
                 </p>
                 <p>
-                  <strong>Completeness:</strong>{" "}
+                  <strong>Documentation notes:</strong>{" "}
                   {completeness.badges.length
                     ? completeness.badges.join(", ")
                     : "Incomplete"}
@@ -876,6 +853,7 @@ export default async function SessionReportPreviewPage({
             isEditingReport={isEditingReport}
             generateReportAction={generateReportAction}
             hasPendingEvidence={hasPendingEvidence}
+            hasPrepareError={Boolean(status.error)}
             noteEvidence={noteEvidence}
             otherEvidence={otherEvidence}
             photoEvidence={photoEvidence}
@@ -951,6 +929,7 @@ function ReportReview({
   currentReport,
   generateReportAction,
   hasPendingEvidence,
+  hasPrepareError,
   isEditingReport,
   noteEvidence,
   otherEvidence,
@@ -972,6 +951,7 @@ function ReportReview({
   currentReport: AiReportDraft | null;
   generateReportAction: ServerAction;
   hasPendingEvidence: boolean;
+  hasPrepareError: boolean;
   isEditingReport: boolean;
   noteEvidence: SupportingEvidenceItem[];
   otherEvidence: SupportingEvidenceItem[];
@@ -1060,87 +1040,32 @@ function ReportReview({
             >
               Continue Capturing
             </Link>
-            <Link
-              href={`/dashboard/sessions/${session.id}/report`}
-              className="button button-secondary touch-target"
-            >
-              Refresh
-            </Link>
-            <button className="button button-secondary touch-target">
-              Prepare Report
-            </button>
+            {hasPrepareError ? (
+              <button className="button button-secondary touch-target">
+                Try Again
+              </button>
+            ) : null}
           </div>
         </form>
       ) : null}
 
-      <details className="report-subsection report-document-section">
-        <summary className="report-section-title-row">
-          <div>
-            <h3>Report Information</h3>
-            <p className="muted">
-              Optional report details used in export when present.
-            </p>
-          </div>
-        </summary>
-        <div className="report-field-grid">
-          {[
-            [
-              "Capture Session Date",
-              formatDateTime(session.created_at, timeZone),
-            ],
-            [
-              "Last Updated",
-              formatDateTime(
-                session.updated_at ?? session.created_at,
-                timeZone,
-              ),
-            ],
-            [
-              "Report Approved Date",
-              session.reviewed_at
-                ? formatDateTime(session.reviewed_at, timeZone)
-                : null,
-            ],
-            ["Exported Date", "Shown after export"],
-            ["Report Title", displayReportTitle],
-            [
-              "Subject Name",
-              getReportInfoValue(currentReport, session, "subject_name"),
-            ],
-            [
-              "Customer / Client",
-              getReportInfoValue(currentReport, session, "customer_client") ||
-                session.customer_name,
-            ],
-            [
-              "Asset / Equipment",
-              getReportInfoValue(currentReport, session, "asset_equipment") ||
-                session.asset_label,
-            ],
-            [
-              "Location",
-              getReportInfoValue(currentReport, session, "location"),
-            ],
-            [
-              "Reference Number",
-              getReportInfoValue(currentReport, session, "reference_number"),
-            ],
-          ].map(([label, value]) => (
-            <div key={label} className="report-field-card">
-              <span>{label}</span>
-              <strong className={value ? undefined : "not-provided"}>
-                {value ? stripConfidenceText(String(value)) : "Not provided"}
-              </strong>
+      {!isEditingReport ? (
+        <ReportDetailsSummary
+          currentReport={currentReport}
+          session={session}
+          displayReportTitle={displayReportTitle}
+          timeZone={timeZone}
+        />
+      ) : (
+        <details className="report-subsection report-document-section" open>
+          <summary className="report-section-title-row">
+            <div>
+              <h3>Edit Report Information</h3>
+              <p className="muted">
+                Report metadata used in export when present.
+              </p>
             </div>
-          ))}
-        </div>
-        {reviewDocument.referenceDocuments.length > 0 ? (
-          <ReferenceDocumentList
-            items={reviewDocument.referenceDocuments}
-            supportingEvidence={supportingEvidence}
-          />
-        ) : null}
-        {isEditingReport ? (
+          </summary>
           <form
             action={updateSessionMetadata.bind(null, session.id)}
             className="form-stack report-edit-form"
@@ -1170,8 +1095,15 @@ function ReportReview({
               </button>
             </div>
           </form>
-        ) : null}
-      </details>
+        </details>
+      )}
+
+      {reviewDocument.referenceDocuments.length > 0 ? (
+        <ReferenceDocumentList
+          items={reviewDocument.referenceDocuments}
+          supportingEvidence={supportingEvidence}
+        />
+      ) : null}
 
       {currentReport && isEditingReport && saveReportEditsAction ? (
         <form
@@ -1445,11 +1377,8 @@ function ReportReview({
       {!isEditingReport ? (
         <>
           {documentSections.length > 0 || reviewDocument.findings.length > 0 ? (
-            <details
-              className="report-subsection report-supporting-section"
-              open
-            >
-              <summary className="report-section-title-row">
+            <section className="report-subsection report-supporting-section">
+              <div className="report-section-title-row">
                 <div>
                   <h3>Findings & Recommendations</h3>
                   <p className="muted">
@@ -1460,7 +1389,7 @@ function ReportReview({
                 <span className="status-pill neutral compact">
                   {includedEvidenceCount} included
                 </span>
-              </summary>
+              </div>
               <FindingCardList
                 items={reviewDocument.findings}
                 supportingEvidence={supportingEvidence}
@@ -1518,12 +1447,13 @@ function ReportReview({
                   </div>
                 </div>
               ) : null}
-            </details>
+            </section>
           ) : null}
           <EvidenceAppendix
             supportingEvidence={supportingEvidence}
             reportDocument={reportDocument}
             isGenericEvidenceReport={isGenericEvidenceReport}
+            preferCompact={!isGenericEvidenceReport}
           />
         </>
       ) : null}
@@ -1582,14 +1512,45 @@ function InspectorFacilityPanel({
     ["Permit Number", facility?.permit_number],
     ["Certification Number", facility?.certification_number],
   ].filter(([, value]) => typeof value === "string" && value.trim());
+  if (!isEditingReport) {
+    return (
+      <section className="card detail-card report-command-card form-stack signature-review-panel">
+        <div className="report-section-heading generated-report-heading">
+          <div>
+            <p className="eyebrow">Signoff</p>
+            <h2>Report Signature</h2>
+            <p className="muted">
+              Signature retained with the finished report.
+            </p>
+          </div>
+        </div>
+        {displayedSignatureUrl ? (
+          <div className="saved-signature-card">
+            <strong>
+              {latestSignature?.signer_name ?? profile.full_name ?? "Signed"}
+            </strong>
+            {/* eslint-disable-next-line @next/next/no-img-element -- signed signature URLs are short-lived Supabase links and should render exactly as captured. */}
+            <img
+              className="saved-signature-image"
+              src={displayedSignatureUrl}
+              alt="Saved report signature"
+            />
+          </div>
+        ) : (
+          <p className="muted">No report-specific signature captured.</p>
+        )}
+      </section>
+    );
+  }
+
   return (
     <details
       className="card detail-card report-command-card form-stack signature-review-panel"
-      open={!isEditingReport}
+      open
     >
       <summary className="report-section-heading generated-report-heading">
         <div>
-          <p className="eyebrow">Signatures</p>
+          <p className="eyebrow">Signature Settings</p>
           <h2>Report Signature</h2>
           <p className="muted">
             Signature and organization details included with the finished
@@ -1609,18 +1570,16 @@ function InspectorFacilityPanel({
       ) : (
         <p className="muted">No inspector or facility details saved yet.</p>
       )}
-      {isEditingReport ? (
-        <p className="muted">
-          Saved default signature:{" "}
-          {profile.default_signature_path
-            ? profile.use_default_signature
-              ? "Available and enabled"
-              : "Available but disabled"
-            : "Not saved"}
-          .
-        </p>
-      ) : null}
-      {isEditingReport && canUseSavedSignature ? (
+      <p className="muted">
+        Saved default signature:{" "}
+        {profile.default_signature_path
+          ? profile.use_default_signature
+            ? "Available and enabled"
+            : "Available but disabled"
+          : "Not saved"}
+        .
+      </p>
+      {canUseSavedSignature ? (
         <form action={useSavedSignatureAction}>
           <button className="button button-secondary touch-target">
             Use saved signature
@@ -1644,7 +1603,7 @@ function InspectorFacilityPanel({
       ) : (
         <p className="muted">No report-specific signature captured.</p>
       )}
-      {isEditingReport ? <SignatureCaptureForm sessionId={sessionId} /> : null}
+      <SignatureCaptureForm sessionId={sessionId} />
     </details>
   );
 }
@@ -1701,11 +1660,11 @@ function FindingCardList({
                 )}
               </div>
             </div>
-            <details className="finding-evidence-details">
-              <summary>
+            <div className="finding-evidence-details">
+              <strong>
                 Supporting Evidence · {finding.evidenceCount} item
                 {finding.evidenceCount === 1 ? "" : "s"}
-              </summary>
+              </strong>
               {evidence ? (
                 <EvidenceGroupList
                   items={items.filter(
@@ -1716,11 +1675,76 @@ function FindingCardList({
               ) : (
                 <p className="muted">Evidence item captured.</p>
               )}
-            </details>
+            </div>
           </article>
         );
       })}
     </div>
+  );
+}
+
+function ReportDetailsSummary({
+  currentReport,
+  session,
+  displayReportTitle,
+  timeZone,
+}: {
+  currentReport: AiReportDraft | null;
+  session: Pick<
+    DocumentationSession,
+    | "created_at"
+    | "reviewed_at"
+    | "asset_label"
+    | "customer_name"
+    | "suggested_details"
+    | "session_metadata"
+  >;
+  displayReportTitle: string;
+  timeZone: string | null;
+}) {
+  const details = [
+    ["Report Title", displayReportTitle],
+    ["Capture Session Date", formatDateTime(session.created_at, timeZone)],
+    [
+      "Report Approved Date",
+      session.reviewed_at
+        ? formatDateTime(session.reviewed_at, timeZone)
+        : null,
+    ],
+    [
+      "Customer / Client",
+      getReportInfoValue(currentReport, session, "customer_client") ||
+        session.customer_name,
+    ],
+    [
+      "Asset / Equipment",
+      getReportInfoValue(currentReport, session, "asset_equipment") ||
+        session.asset_label,
+    ],
+    ["Location", getReportInfoValue(currentReport, session, "location")],
+    [
+      "Reference Number",
+      getReportInfoValue(currentReport, session, "reference_number"),
+    ],
+  ].filter(([, value]) => value);
+  if (details.length === 0) return null;
+  return (
+    <section className="report-subsection report-document-section">
+      <div className="report-section-title-row">
+        <div>
+          <h3>Report Details</h3>
+          <p className="muted">Key details included with this report.</p>
+        </div>
+      </div>
+      <div className="report-field-grid">
+        {details.map(([label, value]) => (
+          <div key={label} className="report-field-card">
+            <span>{label}</span>
+            <strong>{stripConfidenceText(String(value))}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -1731,9 +1755,13 @@ function ReferenceDocumentList({
   items: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>["findings"];
   supportingEvidence: SupportingEvidenceItem[];
 }) {
+  const documentItems = items.filter(
+    (entry) => entry.capture.media_kind === "document",
+  );
+  if (documentItems.length === 0) return null;
   return (
     <div className="reference-document-list">
-      {items.map((entry) => {
+      {documentItems.map((entry) => {
         const details = entry.group.details.filter((detail) =>
           isMeaningfulCustomerReportText(detail.value),
         );
@@ -1757,11 +1785,11 @@ function ReferenceDocumentList({
               </div>
             ) : (
               <p className="muted">
-                Reference captured for inspection support.
+                Source document retained with this report.
               </p>
             )}
             <details>
-              <summary>View Original Reference</summary>
+              <summary>View Source Document</summary>
               <EvidenceGroupList
                 items={[entry]}
                 supportingEvidence={supportingEvidence}
@@ -1895,11 +1923,13 @@ function EvidenceAppendix({
   reportDocument,
   timeZone,
   isGenericEvidenceReport,
+  preferCompact = false,
 }: {
   supportingEvidence: SupportingEvidenceItem[];
   reportDocument?: ReturnType<typeof buildUniversalReportDocument<CaptureItem>>;
   timeZone?: string | null;
   isGenericEvidenceReport: boolean;
+  preferCompact?: boolean;
 }) {
   const documentModel =
     reportDocument ??
@@ -1910,8 +1940,18 @@ function EvidenceAppendix({
   const evidenceMetadata = new Map(
     documentModel.evidenceItems.map((item) => [item.sourceCaptureId, item]),
   );
+  const photoCount = supportingEvidence.filter(
+    (item) => item.kind === "photo",
+  ).length;
+  const photoHeavy = photoCount >= Math.max(4, supportingEvidence.length / 2);
+  const compactByDefault =
+    preferCompact ||
+    (!isGenericEvidenceReport && supportingEvidence.length > 3);
   return (
-    <details className="report-subsection report-supporting-section" open>
+    <details
+      className="report-subsection report-supporting-section"
+      open={!compactByDefault}
+    >
       <summary className="report-section-title-row">
         <div>
           <p className="eyebrow">
@@ -1925,7 +1965,9 @@ function EvidenceAppendix({
           <p className="muted">
             {isGenericEvidenceReport
               ? "Included captures with technician-authored notes and capture details."
-              : "All included captures appear here whether or not generated draft sections reference them."}
+              : photoHeavy
+                ? "Photo gallery and compact evidence index retained with this report."
+                : "Additional included captures are retained here as a compact evidence index."}
           </p>
         </div>
         <span className="status-pill neutral compact">
@@ -1933,7 +1975,9 @@ function EvidenceAppendix({
         </span>
       </summary>
       {supportingEvidence.length > 0 ? (
-        <div className="evidence-first-list">
+        <div
+          className={photoHeavy ? "review-photo-grid" : "evidence-first-list"}
+        >
           {supportingEvidence.map((item) => {
             const metadata = evidenceMetadata.get(item.capture.id);
             return (
