@@ -422,7 +422,7 @@ function EvidenceCard({
           <div className="ai-analysis-review-card">
             <div className="capture-classification-row">
               <span className="classification-pill pending">
-                AI classification:{' '}
+                Report details:{' '}
                 {typeof analysis.classification === 'string'
                   ? formatDetectedType(analysis.classification)
                   : 'Pending'}
@@ -430,21 +430,21 @@ function EvidenceCard({
               <span
                 className={`classification-pill ${getConfidenceVariant(percent)}`}
               >
-                Confidence: {percent === null ? 'Pending' : `${percent}%`}
+                Needs attention: {percent === null ? 'Pending' : percent < 80 ? 'Yes' : 'No'}
               </span>
               {disabled ? (
                 <span className="classification-pill danger">
-                  AI suggestion disabled
+                  Suggestion disabled
                 </span>
               ) : null}
               {percent !== null && percent < 80 ? (
                 <span className="classification-pill danger">
-                  Low confidence, verify reading
+                  Needs attention, verify reading
                 </span>
               ) : null}
               {capture.processing_status === 'analysis_failed' ? (
                 <span className="classification-pill danger">
-                  AI failed, manual review available
+                  Needs attention, manual review available
                 </span>
               ) : null}
               {isRecord(analysis.duplicate_of) || analysis.possible_duplicate === true ? (
@@ -460,12 +460,12 @@ function EvidenceCard({
             ) : null}
             {generatedNote ? (
               <p className="capture-summary">
-                <strong>AI note:</strong> {generatedNote}
+                <strong>Suggested note:</strong> {generatedNote}
               </p>
             ) : null}
             {extractedText ? (
               <details>
-                <summary>Raw OCR text</summary>
+                <summary>Original captured text</summary>
                 <p className="muted">{extractedText}</p>
               </details>
             ) : null}

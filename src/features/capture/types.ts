@@ -237,19 +237,19 @@ export function getCaptureProcessingLabel(status: CaptureProcessingStatus, image
     case 'saved':
       return 'Saved'
     case 'queued':
-      return 'Queued for AI'
+      return 'Preparing'
     case 'analyzing':
     case 'processing':
-      return 'Analyzing'
+      return 'Preparing'
     case 'analyzed':
-      return 'AI complete'
+      return 'Report details ready'
     case 'grouped':
       return 'Evidence grouped'
     case 'report_ready':
-      return 'AI complete'
+      return 'Report details ready'
     case 'analysis_failed':
     case 'grouping_failed':
-      return 'AI unavailable — manual review available'
+      return 'Needs attention — manual review available'
     case 'ignored':
       return 'Ignored'
     case 'extracted':
