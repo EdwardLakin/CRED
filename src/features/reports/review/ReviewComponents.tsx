@@ -6,7 +6,6 @@ import {
   getDiagnosticStepCompleteness,
 } from "@/features/diagnostic-procedures/progress";
 import { DeleteEvidenceButton } from "@/features/capture/components/DeleteEvidenceButton";
-import { FinalNotesEditor } from "@/features/reports/components/FinalNotesEditor";
 import { PdfDownloadButton } from "@/features/reports/components/PdfDownloadButton";
 import {
   buildNormalizedReportModel,
@@ -108,6 +107,28 @@ function getDiagnosticStepMetadata(section: AiReportDraftSection) {
   return isRecord(section.metadata)
     ? (section.metadata as Record<string, unknown>)
     : {};
+}
+
+function getDiagnosticEvidenceRole(capture: CaptureItem) {
+  if (
+    !isRecord(capture.extracted_data) ||
+    !isRecord(capture.extracted_data.diagnostic_step)
+  )
+    return "other";
+  const role = capture.extracted_data.diagnostic_step.evidence_role;
+  return typeof role === "string" ? role : "other";
+}
+
+function formatDiagnosticEvidenceRole(role: string) {
+  return role.replace(/_/g, " ");
+}
+
+function captureMatchesDiagnosticStep(capture: CaptureItem, stepId: string) {
+  return (
+    isRecord(capture.extracted_data) &&
+    isRecord(capture.extracted_data.diagnostic_step) &&
+    capture.extracted_data.diagnostic_step.step_id === stepId
+  );
 }
 
 export function getDiagnosticProcedureInfo(draft: AiReportDraft | null) {
