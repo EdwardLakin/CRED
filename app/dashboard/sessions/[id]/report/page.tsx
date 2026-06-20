@@ -290,6 +290,7 @@ export default async function SessionReportPreviewPage({
     shared?: string;
     notes?: string;
     notes_generated?: string;
+    prepare?: string;
   }>;
 }) {
   const { id } = await params;
