@@ -210,8 +210,8 @@ function getCaptureMetadata(
       extractedData: getAutoImageExtractedData(),
       timelineTitle: getCaptureEventTitle('photo', 'auto_image'),
       timelineDescription: sourceDocument
-        ? `${sourceDocument.label} source document captured for report detail extraction.`
-        : 'Evidence captured for AI classification.',
+        ? `${sourceDocument.label} document captured for report details.`
+        : 'Evidence captured.',
     }
   }
 
@@ -226,7 +226,7 @@ function getCaptureMetadata(
       ? `${sourceDocument.label} captured`
       : getCaptureEventTitle(manualCaptureType, 'manual'),
     timelineDescription: sourceDocument
-      ? `${sourceDocument.label} source document captured for report detail extraction.`
+      ? `${sourceDocument.label} document captured for report details.`
       : 'Capture uploaded manually.',
   }
 }
@@ -1283,7 +1283,7 @@ export async function classifyPendingCaptures(
       if (isMissingOpenAiKeyError(error)) {
         return {
           ok: false,
-          message: 'AI classification is not configured yet.',
+          message: 'Report preparation is not configured yet.',
         }
       }
 
@@ -1297,7 +1297,7 @@ export async function classifyPendingCaptures(
         await markCaptureNeedsReview(
           capture,
           supabase,
-          'AI classification failed and needs review.',
+          'Needs attention. Manual review is available.',
         )
       } catch (updateError) {
         logCaptureFailure({
@@ -1911,7 +1911,7 @@ export async function extractCaptureDetails(
       }
     } catch (error) {
       if (isMissingOpenAiKeyError(error)) {
-        return { ok: false, message: 'AI extraction is not configured yet.' }
+        return { ok: false, message: 'Report preparation is not configured yet.' }
       }
 
       logCaptureFailure({
@@ -1922,7 +1922,7 @@ export async function extractCaptureDetails(
       await markCaptureExtractionFailed(
         capture,
         supabase,
-        'AI extraction failed and needs review.',
+        'Needs attention. Manual review is available.',
       )
     }
   }
@@ -1948,7 +1948,7 @@ export async function extractCaptureDetails(
     return {
       ok: false,
       message:
-        'Extracted capture details, but could not save session suggestions.',
+        'Document details are ready, but could not save report suggestions.',
     }
   }
 
@@ -2300,7 +2300,7 @@ export async function processPendingCapturesForSession(
           supabase,
           'failed',
           'configuration',
-          'AI processing is not configured yet.',
+          'Report preparation is not configured yet.',
         )
       } else {
         logCaptureFailure({
@@ -2313,7 +2313,7 @@ export async function processPendingCapturesForSession(
           supabase,
           'failed',
           'processing',
-          'AI processing failed. Retry from the session or report page.',
+          'Needs attention. Retry from the session or report page.',
         )
       }
       summary.failed += 1
@@ -2348,8 +2348,8 @@ export async function processPendingCapturesForSession(
   summary.ok = summary.failed === 0
   summary.message =
     summary.blockedByLimit > 0
-      ? 'AI usage limit reached. Evidence is saved and can be retried after allowance resets.'
-      : `Processed ${summary.processed} capture${summary.processed === 1 ? '' : 's'} in the background.`
+      ? 'Evidence is saved. Report preparation can be retried after your monthly allowance resets.'
+      : `Saved ${summary.processed} capture${summary.processed === 1 ? '' : 's'} for the report.`
 
   revalidatePath(`/dashboard/sessions/${session.id}`)
   revalidatePath(`/dashboard/sessions/${session.id}/capture`)
@@ -2442,7 +2442,7 @@ export async function updateCaptureReview(
         ? (parsed as Json)
         : parsedExtractedValues
     } catch {
-      return { ok: false, message: 'Extracted values must be valid JSON.' }
+      return { ok: false, message: 'Reading details must be valid JSON.' }
     }
   }
 

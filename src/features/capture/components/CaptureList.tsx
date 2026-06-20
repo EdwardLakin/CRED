@@ -144,7 +144,7 @@ function formatJsonForEdit(value: Json | undefined) {
 function getClassificationSummary(extractedData: Json | null) {
   if (!extractedData || !isRecord(extractedData))
     return {
-      label: 'Processing evidence',
+      label: 'Preparing report',
       detectedType: null,
       status: 'pending',
       confidence: null,
@@ -161,12 +161,11 @@ function getClassificationSummary(extractedData: Json | null) {
       ? classification.status
       : 'pending'
   if (detectedType) {
-    const confidence = formatConfidence(classification?.confidence)
     return {
-      label: `Evidence: ${formatDetectedType(detectedType)}${confidence ? ` · ${confidence}` : ''}`,
+      label: `Evidence: ${formatDetectedType(detectedType)}`,
       detectedType,
       status,
-      confidence,
+      confidence: null,
     }
   }
   if (status === 'manual_document')
@@ -191,7 +190,7 @@ function getClassificationSummary(extractedData: Json | null) {
       confidence: null,
     }
   return {
-    label: 'Processing evidence',
+    label: 'Preparing report',
     detectedType: null,
     status,
     confidence: null,
@@ -209,7 +208,7 @@ function getCaptureStatusVariant(status: string) {
 function formatExtractedDataSummary(type: string, extractedData: Json | null) {
   const classification = getClassificationSummary(extractedData)
   if (!extractedData || !isRecord(extractedData))
-    return `${classification.label} · Report details not started`
+    return `${classification.label} · Saved`
   const extraction = isRecord(extractedData.extraction)
     ? extractedData.extraction
     : null
@@ -220,25 +219,23 @@ function formatExtractedDataSummary(type: string, extractedData: Json | null) {
   const extractedFieldsSummary = extractionFields
     ? formatExtractedFields(extractionFields)
     : ''
-  const extractionConfidence = formatConfidence(extraction?.confidence)
-
   if (
     (extractionStatusRaw === 'extracted' ||
       extractionStatusRaw === 'needs_review') &&
     extractedFieldsSummary
   ) {
-    return `${extractionStatusRaw === 'extracted' ? 'Extracted' : 'Needs review'}: ${extractedFieldsSummary}${extractionConfidence ? ` · ${extractionConfidence}` : ''}`
+    return `${extractionStatusRaw === 'extracted' ? 'Ready' : 'Review needed'}: ${extractedFieldsSummary}`
   }
 
   if (extractionStatusRaw === 'failed' || extractedData?.processing_status === 'analysis_failed')
-    return `AI analysis unavailable — manual review still available${typeof extraction?.summary === 'string' ? `: ${extraction.summary}` : ''}`
+    return 'Needs attention — manual review available'
   if (type === 'text_note')
     return 'Text note evidence · No media upload required'
   if (type === 'video')
     return `${classification.label} · Video still/thumbnail used for report output`
   if (extractionStatusRaw === 'not_started' || extractionStatusRaw === 'pending' || !extractionStatusRaw)
-    return 'AI analysis in progress'
-  return `${classification.label} · Report details ${extractionStatusRaw.replace(/_/g, ' ')}`
+    return 'Preparing report'
+  return `${classification.label} · Preparing report`
 }
 
 function SaveButton() {
@@ -377,7 +374,7 @@ function EvidenceCard({
       <div className="capture-classification-row">
         {sourceDocument ? (
           <span className="classification-pill pending">
-            Source Document: {sourceDocument.label}
+            Document: {sourceDocument.label}
           </span>
         ) : null}
         <span
@@ -422,7 +419,7 @@ function EvidenceCard({
           <div className="ai-analysis-review-card">
             <div className="capture-classification-row">
               <span className="classification-pill pending">
-                Report details:{' '}
+                Document details:{' '}
                 {typeof analysis.classification === 'string'
                   ? formatDetectedType(analysis.classification)
                   : 'Pending'}
@@ -538,7 +535,7 @@ function EvidenceCard({
                   className="label"
                   htmlFor={`ai-generated-note-${capture.id}`}
                 >
-                  AI generated note (editable, optional)
+                  Suggested note (editable, optional)
                 </label>
                 <textarea
                   id={`ai-generated-note-${capture.id}`}
@@ -551,7 +548,7 @@ function EvidenceCard({
                   className="label"
                   htmlFor={`ai-extracted-values-${capture.id}`}
                 >
-                  Extracted readings JSON (editable)
+                  Reading details (editable)
                 </label>
                 <textarea
                   id={`ai-extracted-values-${capture.id}`}
@@ -572,7 +569,7 @@ function EvidenceCard({
                     value="on"
                     defaultChecked={analysis.suggestion_disabled !== true}
                   />{' '}
-                  Use AI suggestion for this capture
+                  Use suggested note for this capture
                 </label>
               </div>
             ) : null

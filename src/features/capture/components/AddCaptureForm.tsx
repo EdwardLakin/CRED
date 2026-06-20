@@ -261,10 +261,10 @@ function formatFileSize(bytes: number) {
 
 function getUploadStatusLabel(status: UploadStatus, error?: string) {
   if (status === 'uploading') return 'Uploading'
-  if (status === 'needs_queue_retry') return 'Saved — AI retry needed'
+  if (status === 'needs_queue_retry') return 'Needs attention'
   if (status === 'saved') return 'Saved'
   if (status === 'failed') return error ?? 'Upload failed. Please retry.'
-  return 'Queued'
+  return 'Saved'
 }
 
 function getNoteSaveStatusLabel(status: SelectedEvidenceFile['noteSaveStatus']) {
@@ -1289,7 +1289,7 @@ export function AddCaptureForm({
         {selectedFiles.length > 0 ? (
           <div
             className="draft-evidence-preview-list"
-            aria-label="Draft evidence previews"
+            aria-label="Evidence previews"
           >
             {selectedFiles.map((file) => (
               <article
@@ -1300,7 +1300,7 @@ export function AddCaptureForm({
                 <div className="capture-list-main">
                   <div>
                     <h3>{file.name}</h3>
-                    <p className="muted">Draft evidence preview</p>
+                    <p className="muted">Evidence preview</p>
                   </div>
                   <span className="ai-status-pill draft-status-pill">
                     {getUploadStatusLabel(file.status, file.error)}
@@ -1319,7 +1319,7 @@ export function AddCaptureForm({
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={file.previewUrl}
-                      alt={`Draft preview for ${file.name}`}
+                      alt={`Preview for ${file.name}`}
                       className="evidence-media"
                     />
                   ) : (

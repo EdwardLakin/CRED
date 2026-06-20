@@ -16,7 +16,7 @@ export type GuidedEvidenceStep = {
   acceptedTypes: string[]
 }
 
-export type StepStatus = 'Missing' | 'Captured' | 'Needs review' | 'Extracted'
+export type StepStatus = 'Missing' | 'Captured' | 'Needs review' | 'Ready'
 
 const CVIP_STEPS: GuidedEvidenceStep[] = [
   {
@@ -274,7 +274,7 @@ export function getStepStatus(stepCaptures: CaptureItem[]): StepStatus {
   }
 
   if (stepCaptures.some((capture) => getExtractionStatus(capture.extracted_data) === 'extracted')) {
-    return 'Extracted'
+    return 'Ready'
   }
 
   return 'Captured'
