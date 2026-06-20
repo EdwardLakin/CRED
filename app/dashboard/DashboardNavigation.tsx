@@ -3,21 +3,8 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
-type DashboardNavigationItem = {
-  href: string
-  label: string
-  description: string
-}
-
-const primaryItems: DashboardNavigationItem[] = [
-  { href: '/dashboard', label: 'Dashboard', description: 'Start or resume' },
-  { href: '/dashboard/sessions', label: 'Recent', description: 'Session history' },
-]
-
-const managementItems: DashboardNavigationItem[] = [
-  { href: '/dashboard/settings', label: 'Settings', description: 'Workspace' },
-  { href: '/dashboard/billing', label: 'Billing', description: 'Plan and subscription' },
-]
+import type { DashboardNavigationDestination } from '@/features/navigation-dashboard'
+import { getDestinationsBySurface } from '@/features/navigation-dashboard'
 
 function isActive(pathname: string, href: string) {
   if (href === '/dashboard') {
@@ -27,7 +14,7 @@ function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`)
 }
 
-function NavigationLink({ item }: { item: DashboardNavigationItem }) {
+function NavigationLink({ item }: { item: DashboardNavigationDestination }) {
   const pathname = usePathname()
   const active = isActive(pathname, item.href)
 
@@ -39,22 +26,27 @@ function NavigationLink({ item }: { item: DashboardNavigationItem }) {
   )
 }
 
-export function DashboardNavigation() {
+export function DashboardNavigation({ destinations }: { destinations: DashboardNavigationDestination[] }) {
+  const technicianItems = getDestinationsBySurface(destinations, 'technician')
+  const accountItems = destinations.filter((item) => item.surface === 'account' || item.surface === 'admin')
+
   return (
     <nav className="dashboard-navigation" aria-label="Dashboard navigation">
-      <div className="dashboard-nav-group" aria-label="Workspace navigation">
-        {primaryItems.map((item) => (
+      <div className="dashboard-nav-group" aria-label="Capture navigation">
+        {technicianItems.map((item) => (
           <NavigationLink key={item.href} item={item} />
         ))}
       </div>
-      <div className="dashboard-nav-section">
-        <p className="dashboard-nav-section-label">Management</p>
-        <div className="dashboard-nav-group dashboard-nav-management" aria-label="Management navigation">
-          {managementItems.map((item) => (
-            <NavigationLink key={item.href} item={item} />
-          ))}
+      {accountItems.length > 0 ? (
+        <div className="dashboard-nav-section dashboard-nav-secondary-section">
+          <p className="dashboard-nav-section-label">Account</p>
+          <div className="dashboard-nav-group dashboard-nav-management" aria-label="Account and workspace navigation">
+            {accountItems.map((item) => (
+              <NavigationLink key={item.href} item={item} />
+            ))}
+          </div>
         </div>
-      </div>
+      ) : null}
     </nav>
   )
 }

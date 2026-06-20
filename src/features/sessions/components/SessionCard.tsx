@@ -17,12 +17,14 @@ export function SessionCard({
   evidenceCount,
   showOperationalAction = false,
   showArchiveAction = false,
+  showManagementActions = false,
   timeZone,
 }: {
   session: DocumentationSession
   evidenceCount?: number
   showOperationalAction?: boolean
   showArchiveAction?: boolean
+  showManagementActions?: boolean
   timeZone?: string | null
 }) {
   const action = showOperationalAction ? getSessionOperationalAction(session) : null
@@ -69,18 +71,23 @@ export function SessionCard({
           ) : null}
         </dl>
       </Link>
-      <div className="session-card-actions">
-        {renderArchiveAction ? (
-          <form action={isArchived ? restoreAction : archiveAction} className="session-card-inline-action">
-            <button className="button button-secondary touch-target">{isArchived ? 'Restore' : 'Archive'}</button>
-          </form>
-        ) : null}
-        <form action={deleteAction} className="session-card-inline-action">
-          <ConfirmSubmitButton className="button button-secondary touch-target danger-action" message={`Delete ${primaryTitle}? This safely removes the session from normal and archived lists without deleting capture files.`}>
-            Delete
-          </ConfirmSubmitButton>
-        </form>
-      </div>
+      {showManagementActions ? (
+        <details className="session-card-manage">
+          <summary className="secondary-link touch-target">Manage</summary>
+          <div className="session-card-actions">
+            {renderArchiveAction ? (
+              <form action={isArchived ? restoreAction : archiveAction} className="session-card-inline-action">
+                <button className="button button-secondary touch-target">{isArchived ? 'Restore' : 'Archive'}</button>
+              </form>
+            ) : null}
+            <form action={deleteAction} className="session-card-inline-action">
+              <ConfirmSubmitButton className="button button-secondary touch-target danger-action" message={`Delete ${primaryTitle}? This safely removes the session from normal and archived lists without deleting capture files.`}>
+                Delete
+              </ConfirmSubmitButton>
+            </form>
+          </div>
+        </details>
+      ) : null}
     </article>
   )
 }

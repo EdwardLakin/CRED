@@ -80,6 +80,7 @@ export default async function ArchivedSessionsPage({ searchParams }: { searchPar
               evidenceCount={captureCountBySession.get(session.id)}
               showOperationalAction
               showArchiveAction
+              showManagementActions
               timeZone={profile.timezone}
             />
           ))}
