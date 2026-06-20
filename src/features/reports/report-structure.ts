@@ -570,9 +570,9 @@ function getSourceDocumentLabel(capture: CaptureLike) {
 }
 
 function getStructureSourceFromText(text: string): ReportStructureSource | null {
+  if (/\b(form|checklist|inspection sheet|inspection form|pm sheet|warranty form|audit form|worksheet|compliance document)\b/.test(text)) return 'uploaded_form'
   if (/\btemplate\b/.test(text)) return 'uploaded_template'
   if (/\breport\b/.test(text)) return 'uploaded_report'
-  if (/\b(form|checklist|inspection sheet|inspection form)\b/.test(text)) return 'uploaded_form'
   return null
 }
 
@@ -693,20 +693,35 @@ export function deriveFormSectionsFromCaptures(captures: CaptureLike[]): Normali
   const formCaptures = selectPrimaryFormCaptures(captures)
   if (formCaptures.length === 0) return []
   const buckets = new Map<string, NormalizedFormField[]>()
+  const sectionSources = new Map<string, string[]>()
   for (const capture of formCaptures) {
+    const { sourceDocument, sections } = getSourceDocumentFields(capture)
+    for (const [index, rawSection] of sections.entries()) {
+      const title = clean(isRecord(rawSection) ? rawSection.title : rawSection, 120) || `Captured form section ${index + 1}`
+      buckets.set(title, buckets.get(title) ?? [])
+      sectionSources.set(title, Array.from(new Set([...(sectionSources.get(title) ?? []), capture.id])))
+    }
+
     const rows = fieldRowsFromCapture(capture)
     const fallbackRows = rows.length > 0 ? [] : labelRowsFromText(capture)
     for (const field of [...rows, ...fallbackRows]) {
       const title = inferSectionTitle(`${field.key} ${field.label}`)
       buckets.set(title, [...(buckets.get(title) ?? []), field])
+      sectionSources.set(title, Array.from(new Set([...(sectionSources.get(title) ?? []), capture.id])))
+    }
+
+    if (buckets.size === 0 && sourceDocument) {
+      const title = getSourceDocumentLabel(capture) ?? 'Captured form'
+      buckets.set(title, [])
+      sectionSources.set(title, [capture.id])
     }
   }
   return Array.from(buckets.entries()).map(([title, fields], index) => ({
     key: slug(title, `form_section_${index + 1}`),
     title,
-    body: null,
+    body: fields.length > 0 ? null : 'Captured form structure. Add photos, notes, and supporting documents to complete this section.',
     fields,
-    source_capture_ids: Array.from(new Set(fields.flatMap((field) => field.source_capture_id ? [field.source_capture_id] : []))),
+    source_capture_ids: Array.from(new Set([...(sectionSources.get(title) ?? []), ...fields.flatMap((field) => field.source_capture_id ? [field.source_capture_id] : [])])),
     related_capture_ids: [],
     source_field_group: title,
   })).slice(0, 10)

@@ -179,14 +179,22 @@ export async function updateDocumentationSession(sessionId: string, formData: Fo
 
 
 export async function updateSessionMetadata(sessionId: string, formData: FormData) {
-  const requestedSessionType = getTrimmedValue(formData, 'session_type')
-  const sessionType = normalizeReportType(requestedSessionType)
-
   const { supabase, profile } = await requireSessionWorkspace()
   const billingAccess = requireActiveBillingAccess(profile)
 
   if (!billingAccess.ok) {
     redirect(`/dashboard/sessions/${sessionId}/report?error=${encodeURIComponent(billingAccess.message)}`)
+  }
+
+  const { data: existingSession, error: existingSessionError } = await supabase
+    .from('documentation_sessions')
+    .select('title, session_type')
+    .eq('id', sessionId)
+    .eq('organization_id', profile.organization_id)
+    .single()
+
+  if (existingSessionError || !existingSession) {
+    redirect(`/dashboard/sessions/${sessionId}/report?error=${encodeURIComponent('Documentation session not found.')}`)
   }
 
   const metadata = normalizeSessionMetadata(Object.fromEntries(
@@ -196,8 +204,8 @@ export async function updateSessionMetadata(sessionId: string, formData: FormDat
   const { error } = await supabase
     .from('documentation_sessions')
     .update({
-      title: sessionType,
-      session_type: sessionType,
+      title: existingSession.title,
+      session_type: normalizeReportType(existingSession.session_type),
       session_metadata: sessionMetadataToJson(metadata),
       customer_name: metadata.customer_client || null,
       asset_label: metadata.asset_equipment || null,

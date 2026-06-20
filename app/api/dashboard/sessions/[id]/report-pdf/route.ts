@@ -217,7 +217,6 @@ function buildReportCoverHtml(params: {
 }) {
   const approvedAt = getApprovalDate(params.draft, params.session);
   const rows = [
-    { label: "Report type", value: params.reportType },
     {
       label: "Customer / Client",
       value:
@@ -269,7 +268,7 @@ function buildReportCoverHtml(params: {
     params.imageAssets,
     params.allowCoverImage,
   );
-  return `<section class="report-cover item${coverImageHtml ? "" : " report-cover-no-image"}"><div class="cover-copy"><p class="eyebrow">Professional Evidence Report</p><h1>${escapeHtml(params.reportTitle)}</h1><p class="cover-trust">CRED assembles user-provided evidence and approved report text. Users remain the source of truth.</p>${renderDefinitionRows(rows)}</div>${coverImageHtml}</section>`;
+  return `<section class="report-cover item${coverImageHtml ? "" : " report-cover-no-image"}"><div class="cover-copy"><p class="eyebrow">Professional Evidence Report</p><h1>${escapeHtml(params.reportTitle)}</h1><p class="cover-trust">Prepared from approved notes, forms, photos, and supporting evidence.</p>${renderDefinitionRows(rows)}</div>${coverImageHtml}</section>`;
 }
 
 function getCaptionChips(captures: ReportCapture[]) {
@@ -337,7 +336,7 @@ function buildReportOverviewHtml(params: {
       { label: "Prepared by", value: params.preparedBy },
       { label: "Organization", value: params.organization },
     ],
-  )}<p class="summary-trust">CRED organizes approved user-provided evidence. Users remain the source of truth.</p></section>`;
+  )}<p class="summary-trust">Prepared from approved user-provided evidence and notes.</p></section>`;
 }
 
 function buildEvidenceGalleryHtml(
@@ -794,7 +793,7 @@ function buildStructuredFormDataHtml(reportStructure: Json | null) {
     ).length;
     return [{ label: title, value: `${count} fields` }];
   });
-  return `<section class="item service-section"><h2>Structured Form Data</h2><p class="muted">Optional uploaded form/report blueprint is used only as a layout reference when confidence is sufficient; otherwise the universal professional evidence report is used (${escapeHtml(classification)}). Evidence mappings reference user-provided captures and notes only.</p>${renderDefinitionRows([...sectionRows, { label: "Evidence-field mappings", value: String(mappings.length) }])}</section>`;
+  return `<section class="item service-section"><h2>Form Details</h2><p class="muted">Captured forms provide the report structure when available. Supporting evidence is organized around the form sections and user-provided notes.</p>${renderDefinitionRows([...sectionRows, { label: "Supporting evidence links", value: String(mappings.length) }])}</section>`;
 }
 
 function renderDefinitionRows(rows: Array<{ label: string; value: string }>) {

@@ -1003,15 +1003,13 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
 
   Object.entries(reportInfoFields).forEach(([key, value]) => { if (value) editedHeaderFields[key] = value })
 
-  const requestedSessionType = sanitizeReportText(formData.get('session_type'), 120) ?? ''
-  const sessionType = normalizeReportType(requestedSessionType || session.session_type || DEFAULT_REPORT_TYPE)
-  const reportTitle = sessionType
+  const reportTitle = sanitizeReportText(formData.get('report_title'), 180) || draft.title || session.asset_label || session.customer_name || 'Professional Evidence Report'
   const now = new Date().toISOString()
   const { error: updateSessionError } = await supabase
     .from('documentation_sessions')
     .update({
       title: reportTitle,
-      session_type: sessionType,
+      session_type: normalizeReportType(session.session_type || DEFAULT_REPORT_TYPE),
       session_metadata: sessionMetadataToJson(reportInfoFields),
       customer_name: reportInfoFields.customer_client || session.customer_name,
       asset_label: reportInfoFields.asset_equipment || reportInfoFields.subject_name || session.asset_label,
