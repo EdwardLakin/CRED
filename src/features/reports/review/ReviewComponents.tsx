@@ -14,8 +14,6 @@ import { DeleteEvidenceButton } from "@/features/capture/components/DeleteEviden
 import {
   buildNormalizedReportModel,
   classifyReferenceDocumentTitle,
-  getNormalizedFindingModels,
-  isMeaningfulCustomerReportText,
   normalizeDraftSections,
   shouldRenderDetail,
   splitRecommendationText,
@@ -496,7 +494,6 @@ export function ReportReview({
   facilityName,
   facilityLocation,
   displayReportTitle,
-  isGenericEvidenceReport,
   reportDocument,
   timeZone,
 }: {
@@ -540,6 +537,18 @@ export function ReportReview({
     ...noteEvidence,
     ...otherEvidence,
   ].filter((item) => item.capture.include_in_report).length;
+  const coverDetails = [
+    ["Report Title", displayReportTitle],
+    ["Organization", facilityName],
+    ["Customer / Client", getReportInfoValue(currentReport, session, "customer_client") || session.customer_name],
+    ["Subject", getReportInfoValue(currentReport, session, "subject_name")],
+    ["Asset / Equipment", getReportInfoValue(currentReport, session, "asset_equipment") || session.asset_label],
+    ["Location", getReportInfoValue(currentReport, session, "location") || facilityLocation],
+    ["Reference Number", getReportInfoValue(currentReport, session, "reference_number")],
+    ["Report Date", formatDateTime(currentReport?.updated_at ?? session.updated_at ?? session.created_at, timeZone)],
+  ]
+    .map(([label, value]) => [label, stripConfidenceText(String(value ?? "")).trim()])
+    .filter(([, value]) => value);
   return (
     <section className="card detail-card report-command-card form-stack generated-report-card">
       <div className="report-section-heading generated-report-heading">
@@ -577,12 +586,16 @@ export function ReportReview({
           {facilityName.slice(0, 1).toUpperCase()}
         </div>
         <div>
-          <p className="eyebrow">Professional Evidence Report</p>
+          <p className="eyebrow">Cover</p>
           <h3>{displayReportTitle}</h3>
-          <p className="muted">
-            {facilityName}
-            {facilityLocation ? ` · ${facilityLocation}` : ""}
-          </p>
+          <div className="report-field-grid">
+            {coverDetails.map(([label, value]) => (
+              <div key={label} className="report-field-card">
+                <span>{label}</span>
+                <strong>{value}</strong>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -617,14 +630,7 @@ export function ReportReview({
         </form>
       ) : null}
 
-      {!isEditingReport ? (
-        <ReportDetailsSummary
-          currentReport={currentReport}
-          session={session}
-          displayReportTitle={displayReportTitle}
-          timeZone={timeZone}
-        />
-      ) : (
+      {!isEditingReport ? null : (
         <details className="report-subsection report-document-section" open>
           <summary className="report-section-title-row">
             <div>
@@ -669,13 +675,6 @@ export function ReportReview({
           </form>
         </details>
       )}
-
-      {reviewDocument.referenceDocuments.length > 0 ? (
-        <ReferenceDocumentList
-          items={reviewDocument.referenceDocuments}
-          supportingEvidence={supportingEvidence}
-        />
-      ) : null}
 
       {currentReport && isEditingReport && saveReportEditsAction ? (
         <form
@@ -957,100 +956,11 @@ export function ReportReview({
       ) : null}
 
       {!isEditingReport ? (
-        <>
-          <section className="report-subsection report-supporting-section">
-              <div className="report-section-title-row">
-                <div>
-                  <h3>Findings</h3>
-                  <p className="muted">
-                    Technician-authored findings and categorized observations.
-                  </p>
-                </div>
-                <span className="status-pill neutral compact">
-                  {includedEvidenceCount} included
-                </span>
-              </div>
-              <FindingCardList
-                items={reviewDocument.findings}
-                supportingEvidence={supportingEvidence}
-              />
-              {reviewDocument.concerns.length > 0 ? (
-                <>
-                  <h3>Concerns</h3>
-                  <EvidenceGroupList items={reviewDocument.concerns} supportingEvidence={supportingEvidence} />
-                </>
-              ) : null}
-              {reviewDocument.recommendedActionEvidence.length > 0 || reviewDocument.categorizedRecommendedActions.length > 0 ? (
-                <>
-                  <h3>Recommended Actions</h3>
-                  {reviewDocument.categorizedRecommendedActions.length > 0 ? (
-                    <ul>{reviewDocument.categorizedRecommendedActions.map((item) => <li key={item.action}>{stripConfidenceText(item.action)}</li>)}</ul>
-                  ) : (
-                    <EvidenceGroupList items={reviewDocument.recommendedActionEvidence} supportingEvidence={supportingEvidence} emptyMessage="No recommended actions added yet." />
-                  )}
-                </>
-              ) : null}
-              {reviewDocument.additionalNotes.some((entry) =>
-                isMeaningfulCustomerReportText(
-                  [
-                    entry.capture.technician_note,
-                    entry.capture.transcript,
-                    ...entry.group.findings,
-                    ...entry.group.recommendations,
-                  ]
-                    .filter(Boolean)
-                    .join(" "),
-                ),
-              ) ? (
-                <>
-                  <h3>Additional Notes</h3>
-                  <EvidenceGroupList
-                    items={reviewDocument.additionalNotes.filter((entry) =>
-                      isMeaningfulCustomerReportText(
-                        [
-                          entry.capture.technician_note,
-                          entry.capture.transcript,
-                          ...entry.group.findings,
-                          ...entry.group.recommendations,
-                        ]
-                          .filter(Boolean)
-                          .join(" "),
-                      ),
-                    )}
-                    supportingEvidence={supportingEvidence}
-                  />
-                </>
-              ) : null}
-              {reviewDocument.supportingEvidence.length > 0 ? (
-                <>
-                  <h3>Supporting Evidence</h3>
-                  <EvidenceGroupList
-                    items={reviewDocument.supportingEvidence}
-                    supportingEvidence={supportingEvidence}
-                  />
-                </>
-              ) : null}
-              {reviewDocument.unattachedDetails.length > 0 ? (
-                <div className="evidence-first-card">
-                  <div className="evidence-first-body">
-                    <h4>Supporting Evidence</h4>
-                    {reviewDocument.unattachedDetails.map((detail, index) => (
-                      <p key={`${detail.label}-${index}`}>
-                        <strong>{detail.label}:</strong>{" "}
-                        {stripConfidenceText(detail.value)}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </section>
-          <EvidenceAppendix
-            supportingEvidence={supportingEvidence}
-            reportDocument={reportDocument}
-            isGenericEvidenceReport={isGenericEvidenceReport}
-            preferCompact={!isGenericEvidenceReport}
-          />
-        </>
+        <DocumentedObservations
+          reviewDocument={reviewDocument}
+          supportingEvidence={supportingEvidence}
+          includedEvidenceCount={includedEvidenceCount}
+        />
       ) : null}
     </section>
   );
@@ -1211,435 +1121,172 @@ export function InspectorFacilityPanel({
   );
 }
 
-function FindingCardList({
-  items,
+function getObservationCategoryLabel(
+  entry: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>["findings"][number],
+) {
+  const category = normalizeEvidenceCategory(entry.capture.evidence_category);
+  if (category === "observation") return "Observation";
+  if (category === "concern") return "Concern";
+  if (category === "recommended_action") return "Recommended Action";
+  if (entry.purpose === "concern") return "Concern";
+  if (entry.purpose === "recommended_action") return "Recommended Action";
+  if (entry.purpose === "supporting_evidence" || entry.purpose === "reference_document") return "Supporting Evidence";
+  return "Observation";
+}
+
+function DocumentedObservations({
+  reviewDocument,
   supportingEvidence,
+  includedEvidenceCount,
 }: {
-  items: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>["findings"];
+  reviewDocument: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>;
   supportingEvidence: SupportingEvidenceItem[];
+  includedEvidenceCount: number;
 }) {
   const evidenceById = new Map(
     supportingEvidence.map((item) => [item.capture.id, item]),
   );
-  const findings = getNormalizedFindingModels(items);
-  if (findings.length === 0)
-    return <p className="muted">No findings added yet.</p>;
-  return (
-    <div className="finding-card-list">
-      {findings.map((finding, index) => {
-        const evidence = evidenceById.get(finding.id);
-        return (
-          <article key={finding.id} className="professional-finding-card">
-            <div className="finding-card-header">
-              <div>
-                <p className="eyebrow">Finding {index + 1}</p>
-                <h4>
-                  Finding {index + 1} — {finding.title}
-                </h4>
-              </div>
-              <span className="severity-badge">{finding.severity.label}</span>
-            </div>
-            <div className="finding-card-grid">
-              <div>
-                <strong>Observed Condition</strong>
-                {finding.observations.length > 0 ? (
-                  finding.observations.map((item) => <p key={item}>{item}</p>)
-                ) : (
-                  <p className="muted">
-                    Condition documented in supporting evidence.
-                  </p>
-                )}
-              </div>
-              <div>
-                <strong>Recommendation</strong>
-                {finding.recommendations.length > 0 ? (
-                  <ul>
-                    {finding.recommendations.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="muted">No recommendation captured.</p>
-                )}
-              </div>
-            </div>
-            <div className="finding-evidence-details">
-              <strong>
-                Supporting Evidence · {finding.evidenceCount} item
-                {finding.evidenceCount === 1 ? "" : "s"}
-              </strong>
-              {evidence ? (
-                <EvidenceGroupList
-                  items={items.filter(
-                    (entry) => entry.group.capture_id === finding.id,
-                  )}
-                  supportingEvidence={supportingEvidence}
-                />
-              ) : (
-                <p className="muted">Evidence item captured.</p>
-              )}
-            </div>
-          </article>
-        );
-      })}
-    </div>
+  const renderedIds = new Set<string>();
+  const entries = [
+    ...reviewDocument.findings,
+    ...reviewDocument.concerns,
+    ...reviewDocument.recommendedActionEvidence,
+    ...reviewDocument.referenceDocuments,
+    ...reviewDocument.additionalNotes,
+    ...reviewDocument.supportingEvidence,
+  ].filter((entry) => {
+    if (renderedIds.has(entry.group.capture_id)) return false;
+    renderedIds.add(entry.group.capture_id);
+    return true;
+  });
+  const unattachedActions = reviewDocument.categorizedRecommendedActions.filter(
+    (action) => action.action.trim(),
   );
-}
 
-
-function isEvidenceDerivedReportDetail(value: string) {
-  return /\b(photo|caption|image|filename|upload|ocr|extracted|evidence note|technician note|voice note|transcript|jpg|jpeg|png|webp|heic|pdf)\b/i.test(value);
-}
-
-function cleanReportMetadataValue(value: unknown) {
-  const cleaned = stripConfidenceText(String(value ?? "")).trim();
-  return cleaned && !isEvidenceDerivedReportDetail(cleaned) ? cleaned : null;
-}
-
-function ReportDetailsSummary({
-  currentReport,
-  session,
-  displayReportTitle,
-  timeZone,
-}: {
-  currentReport: AiReportDraft | null;
-  session: Pick<
-    DocumentationSession,
-    | "created_at"
-    | "reviewed_at"
-    | "asset_label"
-    | "customer_name"
-    | "suggested_details"
-    | "session_metadata"
-  >;
-  displayReportTitle: string;
-  timeZone: string | null;
-}) {
-  const details = [
-    ["Report Title", cleanReportMetadataValue(displayReportTitle)],
-    ["Capture Session Date", formatDateTime(session.created_at, timeZone)],
-    [
-      "Report Approved Date",
-      session.reviewed_at
-        ? formatDateTime(session.reviewed_at, timeZone)
-        : null,
-    ],
-    ["Subject", cleanReportMetadataValue(getReportInfoValue(currentReport, session, "subject_name"))],
-    [
-      "Customer / Client",
-      cleanReportMetadataValue(getReportInfoValue(currentReport, session, "customer_client")) ||
-        cleanReportMetadataValue(session.customer_name),
-    ],
-    [
-      "Asset / Equipment",
-      cleanReportMetadataValue(getReportInfoValue(currentReport, session, "asset_equipment")) ||
-        cleanReportMetadataValue(session.asset_label),
-    ],
-    ["Location", cleanReportMetadataValue(getReportInfoValue(currentReport, session, "location"))],
-    [
-      "Reference / File Note",
-      cleanReportMetadataValue(getReportInfoValue(currentReport, session, "reference_number")),
-    ],
-  ].filter(([, value]) => value);
-  if (details.length === 0) return null;
   return (
-    <section className="report-subsection report-document-section">
+    <section className="report-subsection report-supporting-section">
       <div className="report-section-title-row">
         <div>
-          <h3>Report Details</h3>
-          <p className="muted">Key details included with this report.</p>
-        </div>
-      </div>
-      <div className="report-field-grid">
-        {details.map(([label, value]) => (
-          <div key={label} className="report-field-card">
-            <span>{label}</span>
-            <strong>{stripConfidenceText(String(value))}</strong>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function ReferenceDocumentList({
-  items,
-  supportingEvidence,
-}: {
-  items: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>["findings"];
-  supportingEvidence: SupportingEvidenceItem[];
-}) {
-  const documentItems = items.filter(
-    (entry) => entry.capture.media_kind === "document",
-  );
-  if (documentItems.length === 0) return null;
-  return (
-    <div className="reference-document-list">
-      {documentItems.map((entry) => {
-        const details = entry.group.details.filter((detail) =>
-          isMeaningfulCustomerReportText(detail.value),
-        );
-        return (
-          <article
-            key={entry.group.capture_id}
-            className="reference-document-card"
-          >
-            <h4>{getEvidenceTitle(entry.capture)}</h4>
-            {details.length > 0 ? (
-              <div className="report-field-grid">
-                {details.map((detail, index) => (
-                  <div
-                    key={`${detail.label}-${index}`}
-                    className="report-field-card"
-                  >
-                    <span>{detail.label}</span>
-                    <strong>{stripConfidenceText(detail.value)}</strong>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="muted">
-                Source document retained with this report.
-              </p>
-            )}
-            <details>
-              <summary>View Source Document</summary>
-              <EvidenceGroupList
-                items={[entry]}
-                supportingEvidence={supportingEvidence}
-              />
-            </details>
-          </article>
-        );
-      })}
-    </div>
-  );
-}
-
-function EvidenceGroupList({
-  items,
-  supportingEvidence,
-  emptyMessage = "No supporting evidence attached yet.",
-}: {
-  items: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>["findings"];
-  supportingEvidence: SupportingEvidenceItem[];
-  emptyMessage?: string;
-}) {
-  const evidenceById = new Map(
-    supportingEvidence.map((item) => [item.capture.id, item]),
-  );
-  const groups = items.map((entry) => entry.group);
-
-  if (groups.length === 0) return <p className="muted">{emptyMessage}</p>;
-
-  return (
-    <div className="evidence-first-list">
-      {groups.map((group) => {
-        const item = evidenceById.get(group.capture_id);
-        if (!item) return null;
-        return (
-          <article key={group.capture_id} className="evidence-first-card">
-            <div className="evidence-first-media">
-              {item.kind === "note" || item.kind === "audio" ? (
-                <div className="review-note-card">
-                  <strong>
-                    {item.kind === "audio" ? "Voice Note" : "Technician Note"}
-                  </strong>
-                  <p>
-                    {stripConfidenceText(
-                      item.note ?? "Note saved for this report.",
-                    )}
-                  </p>
-                </div>
-              ) : item.kind === "photo" && item.signedUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured.
-                <img className="pdf-safe-image" src={item.signedUrl} alt={item.title} loading="eager" decoding="sync" />
-              ) : (
-                <div className="review-evidence-placeholder">{item.title}</div>
-              )}
-            </div>
-            <div className="evidence-first-body">
-              <h4>{item.title}</h4>
-              {(() => {
-                const renderedText: string[] = [];
-                const details = group.details.filter((detail) => {
-                  const visible = shouldRenderDetail(
-                    detail.label,
-                    detail.value,
-                    renderedText,
-                  );
-                  if (visible) renderedText.push(detail.value);
-                  return visible;
-                });
-                const findings = group.findings.filter((finding) => {
-                  const visible = shouldRenderDetail(
-                    "Observed condition",
-                    finding,
-                    renderedText,
-                  );
-                  if (visible) renderedText.push(finding);
-                  return visible;
-                });
-                const recommendations = group.recommendations
-                  .flatMap(splitRecommendationText)
-                  .filter((recommendation) => {
-                    const visible = shouldRenderDetail(
-                      "Recommendation",
-                      recommendation,
-                      renderedText,
-                    );
-                    if (visible) renderedText.push(recommendation);
-                    return visible;
-                  });
-                return (
-                  <>
-                    {details.map((detail, index) => (
-                      <p key={`${detail.label}-${index}`}>
-                        <strong>{detail.label}:</strong>{" "}
-                        {stripConfidenceText(detail.value)}
-                      </p>
-                    ))}
-                    {findings.length > 0 ? (
-                      <div>
-                        <strong>Observed condition</strong>
-                        {findings.map((finding, index) => (
-                          <p key={`finding-${index}`} className="muted">
-                            {stripConfidenceText(finding)}
-                          </p>
-                        ))}
-                      </div>
-                    ) : null}
-                    {recommendations.length > 0 ? (
-                      <div>
-                        <strong>Recommendation</strong>
-                        <ul>
-                          {recommendations.map((recommendation, index) => (
-                            <li key={`recommendation-${index}`}>
-                              {stripConfidenceText(recommendation)}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                  </>
-                );
-              })()}
-            </div>
-          </article>
-        );
-      })}
-    </div>
-  );
-}
-
-function EvidenceAppendix({
-  supportingEvidence,
-  reportDocument,
-  timeZone,
-  isGenericEvidenceReport,
-  preferCompact = false,
-}: {
-  supportingEvidence: SupportingEvidenceItem[];
-  reportDocument?: ReturnType<typeof buildUniversalReportDocument<CaptureItem>>;
-  timeZone?: string | null;
-  isGenericEvidenceReport: boolean;
-  preferCompact?: boolean;
-}) {
-  const documentModel =
-    reportDocument ??
-    buildUniversalReportDocument({
-      captures: supportingEvidence.map((item) => item.capture),
-      timeZone: timeZone ?? null,
-    });
-  const evidenceMetadata = new Map(
-    documentModel.evidenceItems.map((item) => [item.sourceCaptureId, item]),
-  );
-  const photoCount = supportingEvidence.filter(
-    (item) => item.kind === "photo",
-  ).length;
-  const photoHeavy = photoCount >= Math.max(4, supportingEvidence.length / 2);
-  const compactByDefault =
-    preferCompact ||
-    (!isGenericEvidenceReport && supportingEvidence.length > 3);
-  const renderCompactIndex = photoHeavy || compactByDefault;
-  return (
-    <details
-      className="report-subsection report-supporting-section"
-      open={!compactByDefault}
-    >
-      <summary className="report-section-title-row">
-        <div>
-          <p className="eyebrow">
-            {isGenericEvidenceReport ? "Evidence" : "Evidence Appendix"}
-          </p>
-          <h3>
-            {isGenericEvidenceReport
-              ? "Captured Evidence"
-              : "Evidence Captured"}
-          </h3>
+          <h3>Documented Observations</h3>
           <p className="muted">
-            {isGenericEvidenceReport
-              ? "Included captures with technician-authored notes and capture details."
-              : photoHeavy
-                ? "Photo gallery and compact evidence index retained with this report."
-                : "Additional included captures are retained here as a compact evidence index."}
+            Technician notes are the source of truth. Photos and documents are shown once as supporting proof for the observation they support.
           </p>
         </div>
         <span className="status-pill neutral compact">
-          {supportingEvidence.length} included
+          {includedEvidenceCount} included
         </span>
-      </summary>
-      {supportingEvidence.length > 0 ? (
-        <div
-          className={renderCompactIndex ? "evidence-index-list" : "evidence-first-list"}
-        >
-          {supportingEvidence.map((item) => {
-            const metadata = evidenceMetadata.get(item.capture.id);
-            return (
-              <article key={item.capture.id} className="evidence-first-card">
-                {renderCompactIndex ? null : (
-                  <div className="evidence-first-media">
-                    {item.kind === "photo" && item.signedUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured.
-                      <img className="pdf-safe-image" src={item.signedUrl} alt={item.title} loading="eager" decoding="sync" />
-                    ) : item.signedUrl ? (
-                      <div className="review-evidence-placeholder">
-                        <a href={item.signedUrl}>Open {item.kind} evidence</a>
-                      </div>
-                    ) : (
-                      <div className="review-evidence-placeholder">
-                        {item.title}
-                      </div>
-                    )}
+      </div>
+      <div className="evidence-first-list">
+        {entries.map((entry, index) => {
+          const item = evidenceById.get(entry.group.capture_id);
+          const renderedText: string[] = [];
+          const technicianNote = stripConfidenceText(
+            entry.capture.technician_note?.trim() ||
+              entry.capture.transcript?.trim() ||
+              item?.note ||
+              "Technician note retained with supporting proof.",
+          );
+          renderedText.push(technicianNote);
+          const recommendations = entry.group.recommendations
+            .flatMap(splitRecommendationText)
+            .filter((recommendation) => {
+              const visible = shouldRenderDetail(
+                "Recommendation",
+                recommendation,
+                renderedText,
+              );
+              if (visible) renderedText.push(recommendation);
+              return visible;
+            });
+          const supportingDetails = entry.group.details.filter((detail) => {
+            if (/^technician note$/i.test(detail.label)) return false;
+            const visible = shouldRenderDetail(
+              detail.label,
+              detail.value,
+              renderedText,
+            );
+            if (visible) renderedText.push(detail.value);
+            return visible;
+          });
+          const isPhoto = item?.kind === "photo";
+          const isDocument = item?.kind === "document" || item?.kind === "file";
+          return (
+            <article key={entry.group.capture_id} className="evidence-first-card">
+              <div className="evidence-first-media">
+                {isPhoto && item?.signedUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured.
+                  <img className="pdf-safe-image" src={item.signedUrl} alt={item.title} loading="eager" decoding="sync" />
+                ) : item?.signedUrl && isDocument ? (
+                  <div className="review-evidence-placeholder">
+                    <a href={item.signedUrl}>Open Supporting Document</a>
+                  </div>
+                ) : (
+                  <div className="review-evidence-placeholder">
+                    {item?.title ?? "Supporting proof"}
                   </div>
                 )}
-                <div className="evidence-first-body">
-                  <h4>{item.title}</h4>
-                  {renderCompactIndex ? (
-                    <p className="muted">
-                      {metadata?.evidenceId ?? item.capture.id.slice(0, 8)} · Captured {metadata?.capturedAtLabel ?? "Not captured"} · {metadata?.evidenceType ?? item.kind}
-                    </p>
-                  ) : item.note ? (
-                    <p>
-                      <strong>Technician note / caption:</strong>{" "}
-                      {stripConfidenceText(item.note)}
-                    </p>
-                  ) : (
-                    <p className="muted">No technician note provided.</p>
-                  )}
-                  <p className="muted">
-                    Captured {metadata?.capturedAtLabel ?? "Not captured"} ·{" "}
-                    {metadata?.evidenceType ?? item.kind}
-                  </p>
+              </div>
+              <div className="evidence-first-body">
+                <div className="finding-card-header">
+                  <div>
+                    <p className="eyebrow">Observation {index + 1}</p>
+                    <h4>{item?.title ?? getEvidenceTitle(entry.capture)}</h4>
+                  </div>
+                  <span className="severity-badge">{getObservationCategoryLabel(entry)}</span>
                 </div>
-              </article>
-            );
-          })}
-        </div>
-      ) : (
-        <p className="muted">No included evidence selected for this report.</p>
-      )}
-    </details>
+                <div>
+                  <strong>Technician Note</strong>
+                  <p>{technicianNote}</p>
+                </div>
+                {isPhoto ? (
+                  <p className="muted"><strong>Supporting Photos:</strong> {item?.title ?? "Photo evidence attached."}</p>
+                ) : null}
+                {isDocument ? (
+                  <p className="muted"><strong>Supporting Documents:</strong> {item?.title ?? "Document attached."}</p>
+                ) : null}
+                {supportingDetails.length > 0 ? (
+                  <div>
+                    {supportingDetails.map((detail, detailIndex) => (
+                      <p key={`${detail.label}-${detailIndex}`} className="muted">
+                        <strong>{detail.label}:</strong> {stripConfidenceText(detail.value)}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+                {recommendations.length > 0 ? (
+                  <div>
+                    <strong>Recommended Action</strong>
+                    <ul>
+                      {recommendations.map((recommendation, recommendationIndex) => (
+                        <li key={`recommendation-${recommendationIndex}`}>{stripConfidenceText(recommendation)}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            </article>
+          );
+        })}
+        {unattachedActions.map((action, index) => (
+          <article key={action.action} className="evidence-first-card">
+            <div className="evidence-first-body">
+              <div className="finding-card-header">
+                <div>
+                  <p className="eyebrow">Observation {entries.length + index + 1}</p>
+                  <h4>Recommended Action</h4>
+                </div>
+                <span className="severity-badge">Recommended Action</span>
+              </div>
+              <strong>Technician Note</strong>
+              <p>{stripConfidenceText(action.action)}</p>
+            </div>
+          </article>
+        ))}
+      </div>
+      {entries.length === 0 && unattachedActions.length === 0 ? (
+        <p className="muted">No documented observations added yet.</p>
+      ) : null}
+    </section>
   );
 }
 
