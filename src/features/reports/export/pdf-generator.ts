@@ -15,7 +15,29 @@ type BrowserCookie = {
   path: string;
 };
 
+type BrowserResponse = {
+  url(): string;
+  status(): number;
+  headers(): Record<string, string>;
+  request(): { resourceType(): string };
+};
+
+type BrowserRequest = {
+  url(): string;
+  resourceType(): string;
+  failure(): { errorText: string } | null;
+};
+
+type BrowserConsoleMessage = {
+  type(): string;
+  text(): string;
+};
+
 type BrowserPage = {
+  on(event: "response", handler: (response: BrowserResponse) => void): void;
+  on(event: "requestfailed", handler: (request: BrowserRequest) => void): void;
+  on(event: "pageerror", handler: (error: Error) => void): void;
+  on(event: "console", handler: (message: BrowserConsoleMessage) => void): void;
   setDefaultNavigationTimeout(timeoutMs: number): void;
   setDefaultTimeout(timeoutMs: number): void;
   setCookie(...cookies: BrowserCookie[]): Promise<void>;
@@ -25,10 +47,11 @@ type BrowserPage = {
     url: string,
     options: { waitUntil: "networkidle0"; timeout: number },
   ): Promise<unknown>;
-  evaluate<Arg>(
-    pageFunction: (arg: Arg) => Promise<void>,
-    arg: Arg,
-  ): Promise<void>;
+  evaluate<Arg, Result>(
+    pageFunction: (arg: Arg) => Result | Promise<Result>,
+    arg?: Arg,
+  ): Promise<Result>;
+  metrics(): Promise<Record<string, number>>;
   pdf(options: {
     format: "Letter";
     printBackground: boolean;
@@ -525,6 +548,215 @@ async function loadBrowserDependencies(): Promise<{
   return { puppeteer, sparticuzChromium };
 }
 
+type PdfImageDiagnostic = {
+  index: number;
+  src: string;
+  currentSrc: string;
+  complete: boolean;
+  failed: boolean;
+  naturalWidth: number;
+  naturalHeight: number;
+  renderedWidth: number;
+  renderedHeight: number;
+  loading: string;
+  decoding: string;
+  signedUrl: boolean;
+};
+
+type PdfPageDiagnostics = {
+  url: string;
+  title: string;
+  renderedImageCount: number;
+  failedImageCount: number;
+  htmlSizeBytes: number;
+  htmlSizeCharacters: number;
+  imageDimensions: PdfImageDiagnostic[];
+  browserPerformanceMemory?: {
+    jsHeapSizeLimit?: number;
+    totalJSHeapSize?: number;
+    usedJSHeapSize?: number;
+  };
+};
+
+type PdfResponseDiagnostic = {
+  url: string;
+  status: number;
+  resourceType: string;
+  contentLength?: string;
+  contentType?: string;
+  signedUrl: boolean;
+};
+
+type PdfRequestFailureDiagnostic = {
+  url: string;
+  resourceType: string;
+  errorText?: string;
+  signedUrl: boolean;
+};
+
+type PdfRenderDiagnostics = {
+  responses: PdfResponseDiagnostic[];
+  requestFailures: PdfRequestFailureDiagnostic[];
+  pageErrors: Array<{ name: string; message: string; stack?: string }>;
+  consoleErrors: Array<{ type: string; text: string }>;
+};
+
+function isLikelySignedUrl(url: string) {
+  try {
+    const parsedUrl = new URL(url);
+    const signedUrlParams = [
+      "X-Amz-Signature",
+      "X-Amz-Credential",
+      "Signature",
+      "Expires",
+      "token",
+    ];
+    return signedUrlParams.some((param) => parsedUrl.searchParams.has(param));
+  } catch {
+    return false;
+  }
+}
+
+async function collectPageDiagnostics(
+  page: BrowserPage,
+): Promise<PdfPageDiagnostics> {
+  return page.evaluate(() => {
+    const html = document.documentElement.outerHTML;
+    const images = Array.from(document.images).map((image, index) => {
+      const rect = image.getBoundingClientRect();
+      const url = image.currentSrc || image.src;
+      let signedUrl = false;
+      try {
+        const parsedUrl = new URL(url, window.location.href);
+        signedUrl = [
+          "X-Amz-Signature",
+          "X-Amz-Credential",
+          "Signature",
+          "Expires",
+          "token",
+        ].some((param) => parsedUrl.searchParams.has(param));
+      } catch {
+        signedUrl = false;
+      }
+      return {
+        index,
+        src: image.src,
+        currentSrc: image.currentSrc,
+        complete: image.complete,
+        failed: image.naturalWidth === 0,
+        naturalWidth: image.naturalWidth,
+        naturalHeight: image.naturalHeight,
+        renderedWidth: Math.round(rect.width),
+        renderedHeight: Math.round(rect.height),
+        loading: image.loading,
+        decoding: image.decoding,
+        signedUrl,
+      };
+    });
+    const memory =
+      "memory" in performance
+        ? (performance as Performance & {
+            memory?: {
+              jsHeapSizeLimit?: number;
+              totalJSHeapSize?: number;
+              usedJSHeapSize?: number;
+            };
+          }).memory
+        : undefined;
+    return {
+      url: window.location.href,
+      title: document.title,
+      renderedImageCount: images.filter((image) => image.naturalWidth > 0)
+        .length,
+      failedImageCount: images.filter((image) => image.failed).length,
+      htmlSizeBytes: new TextEncoder().encode(html).byteLength,
+      htmlSizeCharacters: html.length,
+      imageDimensions: images,
+      browserPerformanceMemory: memory
+        ? {
+            jsHeapSizeLimit: memory.jsHeapSizeLimit,
+            totalJSHeapSize: memory.totalJSHeapSize,
+            usedJSHeapSize: memory.usedJSHeapSize,
+          }
+        : undefined,
+    };
+  });
+}
+
+function logPrePdfDiagnostics(params: {
+  pageDiagnostics: PdfPageDiagnostics;
+  renderDiagnostics: PdfRenderDiagnostics;
+  browserMetrics: Record<string, number>;
+}) {
+  const imageResponses = params.renderDiagnostics.responses.filter(
+    (response) => response.resourceType === "image" || response.signedUrl,
+  );
+  const failedImageResponses = imageResponses.filter(
+    (response) => response.status >= 400,
+  );
+  const signedUrlResponses = params.renderDiagnostics.responses.filter(
+    (response) => response.signedUrl,
+  );
+  const failedSignedUrlResponses = signedUrlResponses.filter(
+    (response) => response.status >= 400,
+  );
+  const failedImageRequests = params.renderDiagnostics.requestFailures.filter(
+    (request) => request.resourceType === "image" || request.signedUrl,
+  );
+
+  console.info("Browser PDF pre-print diagnostics", {
+    page: params.pageDiagnostics,
+    signedUrlStatus: {
+      total: signedUrlResponses.length,
+      failed: failedSignedUrlResponses.length,
+      statuses: signedUrlResponses.map((response) => ({
+        url: response.url,
+        status: response.status,
+        resourceType: response.resourceType,
+        contentLength: response.contentLength,
+        contentType: response.contentType,
+      })),
+    },
+    imageStatus: {
+      totalResponses: imageResponses.length,
+      failedResponses: failedImageResponses.length,
+      failedRequests: failedImageRequests,
+      statuses: imageResponses.map((response) => ({
+        url: response.url,
+        status: response.status,
+        contentLength: response.contentLength,
+        contentType: response.contentType,
+        signedUrl: response.signedUrl,
+      })),
+    },
+    routeRenderingErrors: {
+      pageErrors: params.renderDiagnostics.pageErrors,
+      consoleErrors: params.renderDiagnostics.consoleErrors,
+      requestFailures: params.renderDiagnostics.requestFailures,
+    },
+    browserMetrics: params.browserMetrics,
+    likelyFailureSignals: {
+      imagePayloadSize: imageResponses.map((response) => ({
+        url: response.url,
+        contentLength: response.contentLength,
+        status: response.status,
+      })),
+      invalidSignedUrls:
+        failedSignedUrlResponses.length > 0 ||
+        failedImageRequests.some((request) => request.signedUrl),
+      pageMemoryUsage: {
+        jsHeap: params.pageDiagnostics.browserPerformanceMemory,
+        metrics: params.browserMetrics,
+      },
+      printableRouteRenderingErrors:
+        params.renderDiagnostics.pageErrors.length > 0 ||
+        params.renderDiagnostics.consoleErrors.length > 0,
+    },
+    nodeEnvironment: process.env.NODE_ENV,
+    vercelEnvironment: process.env.VERCEL_ENV,
+  });
+}
+
 async function waitForImages(page: BrowserPage, timeoutMs: number) {
   await page.evaluate(async (imageTimeoutMs: number) => {
     const images = Array.from(document.images);
@@ -579,6 +811,49 @@ export async function renderPrintableReportPdf(options: BrowserPdfOptions) {
 
   try {
     const page = await browser.newPage();
+    const renderDiagnostics: PdfRenderDiagnostics = {
+      responses: [],
+      requestFailures: [],
+      pageErrors: [],
+      consoleErrors: [],
+    };
+    page.on("response", (response) => {
+      const headers = response.headers();
+      const url = response.url();
+      renderDiagnostics.responses.push({
+        url,
+        status: response.status(),
+        resourceType: response.request().resourceType(),
+        contentLength: headers["content-length"],
+        contentType: headers["content-type"],
+        signedUrl: isLikelySignedUrl(url),
+      });
+    });
+    page.on("requestfailed", (request) => {
+      const url = request.url();
+      renderDiagnostics.requestFailures.push({
+        url,
+        resourceType: request.resourceType(),
+        errorText: request.failure()?.errorText,
+        signedUrl: isLikelySignedUrl(url),
+      });
+    });
+    page.on("pageerror", (error) => {
+      renderDiagnostics.pageErrors.push({
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+      });
+    });
+    page.on("console", (message) => {
+      const messageType = message.type();
+      if (["error", "warn", "warning"].includes(messageType)) {
+        renderDiagnostics.consoleErrors.push({
+          type: messageType,
+          text: message.text(),
+        });
+      }
+    });
     page.setDefaultNavigationTimeout(timeoutMs);
     page.setDefaultTimeout(timeoutMs);
     if (options.cookieHeader) {
@@ -600,6 +875,13 @@ export async function renderPrintableReportPdf(options: BrowserPdfOptions) {
         { cause: error },
       );
     }
+    const pageDiagnostics = await collectPageDiagnostics(page);
+    const browserMetrics = await page.metrics();
+    logPrePdfDiagnostics({
+      pageDiagnostics,
+      renderDiagnostics,
+      browserMetrics,
+    });
     try {
       return Buffer.from(
         await page.pdf({
