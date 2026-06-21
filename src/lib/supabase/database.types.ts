@@ -525,6 +525,7 @@ export interface Database {
           media_kind: string
           report_order: number | null
           include_in_report: boolean
+          evidence_category: string
           deleted_at: string | null
           ai_status: string | null
           processing_status: string
@@ -552,6 +553,7 @@ export interface Database {
           media_kind?: string
           report_order?: number | null
           include_in_report?: boolean
+          evidence_category?: string
           deleted_at?: string | null
           ai_status?: string | null
           processing_status?: string
@@ -579,6 +581,7 @@ export interface Database {
           media_kind?: string
           report_order?: number | null
           include_in_report?: boolean
+          evidence_category?: string
           deleted_at?: string | null
           ai_status?: string | null
           processing_status?: string

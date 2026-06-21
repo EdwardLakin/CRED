@@ -1874,13 +1874,17 @@ export async function GET(_request: Request, { params }: RouteContext) {
     imageAssets,
     { renderImages: false },
   );
-  const supportingHtml = useGalleryMode ? "" : buildEvidenceSectionHtml("Supporting Record", reviewDocument.supportingEvidence, imageAssets);
+  const concernsHtml = useGalleryMode ? "" : buildEvidenceSectionHtml("Concerns", reviewDocument.concerns, imageAssets);
+  const categoryActionsHtml = reviewDocument.categorizedRecommendedActions.length
+    ? `<section class="item service-section"><h2>Recommended Actions</h2><ul>${reviewDocument.categorizedRecommendedActions.map((item) => `<li>${escapeHtml(item.action)}</li>`).join("")}</ul></section>`
+    : (useGalleryMode ? "" : buildEvidenceSectionHtml("Recommended Actions", reviewDocument.recommendedActionEvidence, imageAssets));
+  const supportingHtml = useGalleryMode ? "" : buildEvidenceSectionHtml("Supporting Evidence", reviewDocument.supportingEvidence, imageAssets);
 
   const toolbarHtml = previewOnly
     ? ""
     : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>';
   const html = `<!doctype html><html><head><meta charset="utf-8" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, companyProfile: reportCompanyProfile, captures: appendixCaptureItems, imageAssets: imageAssets, timeZone, allowCoverImage: useGalleryMode })}${summaryHtml}${useGalleryMode ? "" : reportInfoHtml}${!useGalleryMode && customerAssetHtml ? `<section class="item service-section"><h2>Subject Details</h2>${customerAssetHtml}</section>` : ""}${useGalleryMode ? "" : structuredFormDataHtml}${useGalleryMode ? "" : buildFinalNotesHtml(session)}${useGalleryMode ? "" : findingsHtml}${unattachedHtml}${supportingHtml}${useGalleryMode ? buildEvidenceGalleryHtml(appendixCaptureItems, imageAssets, timeZone) : ""}${useGalleryMode ? "" : referenceHtml}${appendixHtml}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile)}${buildApprovalHtml({ profile: reportProfile, signatures: reportSignatures, signatureUrls, draft: reportDraft, session, timeZone })}</main></body></html>`;
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, companyProfile: reportCompanyProfile, captures: appendixCaptureItems, imageAssets: imageAssets, timeZone, allowCoverImage: useGalleryMode })}${summaryHtml}${useGalleryMode ? "" : reportInfoHtml}${!useGalleryMode && customerAssetHtml ? `<section class="item service-section"><h2>Subject Details</h2>${customerAssetHtml}</section>` : ""}${useGalleryMode ? "" : structuredFormDataHtml}${useGalleryMode ? "" : buildFinalNotesHtml(session)}${useGalleryMode ? "" : findingsHtml}${useGalleryMode ? "" : concernsHtml}${useGalleryMode ? "" : categoryActionsHtml}${unattachedHtml}${supportingHtml}${useGalleryMode ? buildEvidenceGalleryHtml(appendixCaptureItems, imageAssets, timeZone) : ""}${useGalleryMode ? "" : referenceHtml}${appendixHtml}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile)}${buildApprovalHtml({ profile: reportProfile, signatures: reportSignatures, signatureUrls, draft: reportDraft, session, timeZone })}</main></body></html>`;
 
   return new Response(html, {
     headers: { "Content-Type": "text/html; charset=utf-8" },

@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 
 import { requireActiveBillingAccess } from '@/features/billing'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import { normalizeEvidenceCategory } from '@/features/capture/evidence-category'
 import { DEFAULT_REPORT_TYPE, SESSION_METADATA_FIELDS, normalizeReportType, normalizeSessionMetadata, sessionMetadataToJson } from '@/features/sessions/report-types'
 import { appendDiagnosticReportApprovedAuditEvent } from '@/features/diagnostic-procedures/actions'
 import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
@@ -182,7 +183,7 @@ export async function generateFinalNotesForSession(sessionId: string) {
 
   const { data: captures, error: capturesError } = await supabase
     .from('capture_items')
-    .select('id, type, media_kind, captured_at, technician_note, transcript, extracted_data')
+    .select('id, type, media_kind, captured_at, technician_note, transcript, extracted_data, evidence_category')
     .eq('documentation_session_id', session.id)
     .eq('organization_id', profile.organization_id)
     .is('deleted_at', null)
@@ -714,7 +715,7 @@ export async function generateAiReportDraft(sessionId: string) {
 
   const { data: captures, error: capturesError } = await supabase
     .from('capture_items')
-    .select('id, type, media_kind, captured_at, ai_status, ai_summary, ocr_text, technician_note, transcript, extracted_data')
+    .select('id, type, media_kind, captured_at, ai_status, ai_summary, ocr_text, technician_note, transcript, extracted_data, evidence_category')
     .eq('documentation_session_id', session.id)
     .eq('organization_id', profile.organization_id)
     .is('deleted_at', null)
@@ -770,6 +771,7 @@ export async function generateAiReportDraft(sessionId: string) {
         technician_note: capture.technician_note,
         transcript: capture.transcript,
         extracted_data: capture.extracted_data,
+        evidence_category: capture.evidence_category,
       })), true),
       signatures: signatures ?? [],
     })
@@ -786,6 +788,7 @@ export async function generateAiReportDraft(sessionId: string) {
     technician_note: capture.technician_note,
     transcript: capture.transcript,
     extracted_data: capture.extracted_data,
+    evidence_category: capture.evidence_category,
   })), true)
   draftOutput = mergeDocumentContextIntoDraft({
     draftOutput,
@@ -1093,9 +1096,10 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
   for (const capture of captures ?? []) {
     const includeInReport = formData.get(`capture_include_${capture.id}`) === 'on'
     const note = sanitizeReportText(formData.get(`capture_note_${capture.id}`), 2000)
+    const evidenceCategory = normalizeEvidenceCategory(getString(formData, `capture_category_${capture.id}`))
     const { error: captureUpdateError } = await supabase
       .from('capture_items')
-      .update({ include_in_report: includeInReport, technician_note: note, updated_at: now })
+      .update({ include_in_report: includeInReport, technician_note: note, evidence_category: evidenceCategory, updated_at: now })
       .eq('id', capture.id)
       .eq('documentation_session_id', session.id)
       .eq('organization_id', profile.organization_id)

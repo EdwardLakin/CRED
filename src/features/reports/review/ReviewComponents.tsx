@@ -5,6 +5,11 @@ import {
   getDiagnosticProcedureProgress,
   getDiagnosticStepCompleteness,
 } from "@/features/diagnostic-procedures/progress";
+import {
+  EVIDENCE_CATEGORIES,
+  EVIDENCE_CATEGORY_LABELS,
+  normalizeEvidenceCategory,
+} from "@/features/capture/evidence-category";
 import { DeleteEvidenceButton } from "@/features/capture/components/DeleteEvidenceButton";
 import { PdfDownloadButton } from "@/features/reports/components/PdfDownloadButton";
 import {
@@ -482,7 +487,6 @@ export function ReportReview({
   noteEvidence,
   otherEvidence,
   photoEvidence,
-  documentSections,
   reviewDocument,
   supportingEvidence,
   session,
@@ -504,7 +508,6 @@ export function ReportReview({
   noteEvidence: SupportingEvidenceItem[];
   otherEvidence: SupportingEvidenceItem[];
   photoEvidence: SupportingEvidenceItem[];
-  documentSections: ReturnType<typeof normalizeDraftSections>;
   reviewDocument: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>;
   supportingEvidence: SupportingEvidenceItem[];
   session: Pick<
@@ -542,6 +545,14 @@ export function ReportReview({
           <p className="eyebrow">Review Report</p>
           <h2>{displayReportTitle}</h2>
           <p className="muted">{reportDocument.trustStatement}</p>
+          <div className="form-actions report-inline-actions">
+            <Link
+              href={`/dashboard/sessions/${session.id}/capture`}
+              className="button button-primary touch-target"
+            >
+              Add More Evidence
+            </Link>
+          </div>
         </div>
         {currentReport?.status === "approved" ? (
           <p className="status-pill success">Ready</p>
@@ -924,14 +935,12 @@ export function ReportReview({
 
       {!isEditingReport ? (
         <>
-          {documentSections.length > 0 || reviewDocument.findings.length > 0 ? (
-            <section className="report-subsection report-supporting-section">
+          <section className="report-subsection report-supporting-section">
               <div className="report-section-title-row">
                 <div>
-                  <h3>Findings & Recommendations</h3>
+                  <h3>Findings</h3>
                   <p className="muted">
-                    Customer-ready findings, recommendations, notes, and
-                    supporting evidence.
+                    Technician-authored findings and categorized observations.
                   </p>
                 </div>
                 <span className="status-pill neutral compact">
@@ -942,6 +951,22 @@ export function ReportReview({
                 items={reviewDocument.findings}
                 supportingEvidence={supportingEvidence}
               />
+              {reviewDocument.concerns.length > 0 ? (
+                <>
+                  <h3>Concerns</h3>
+                  <EvidenceGroupList items={reviewDocument.concerns} supportingEvidence={supportingEvidence} />
+                </>
+              ) : null}
+              {reviewDocument.recommendedActionEvidence.length > 0 || reviewDocument.categorizedRecommendedActions.length > 0 ? (
+                <>
+                  <h3>Recommended Actions</h3>
+                  {reviewDocument.categorizedRecommendedActions.length > 0 ? (
+                    <ul>{reviewDocument.categorizedRecommendedActions.map((item) => <li key={item.action}>{stripConfidenceText(item.action)}</li>)}</ul>
+                  ) : (
+                    <EvidenceGroupList items={reviewDocument.recommendedActionEvidence} supportingEvidence={supportingEvidence} emptyMessage="No recommended actions added yet." />
+                  )}
+                </>
+              ) : null}
               {reviewDocument.additionalNotes.some((entry) =>
                 isMeaningfulCustomerReportText(
                   [
@@ -996,7 +1021,6 @@ export function ReportReview({
                 </div>
               ) : null}
             </section>
-          ) : null}
           <EvidenceAppendix
             supportingEvidence={supportingEvidence}
             reportDocument={reportDocument}
@@ -1085,7 +1109,15 @@ export function InspectorFacilityPanel({
             />
           </div>
         ) : (
-          <p className="muted">No report-specific signature captured.</p>
+          <div className="form-stack">
+            <p className="muted">No report-specific signature captured.</p>
+            <details className="report-subsection report-edit-panel">
+              <summary>
+                <h3>Sign Report</h3>
+              </summary>
+              <SignatureCaptureForm sessionId={sessionId} />
+            </details>
+          </div>
         )}
       </section>
     );
@@ -1168,7 +1200,7 @@ function FindingCardList({
   );
   const findings = getNormalizedFindingModels(items);
   if (findings.length === 0)
-    return <p className="muted">No findings attached yet.</p>;
+    return <p className="muted">No findings added yet.</p>;
   return (
     <div className="finding-card-list">
       {findings.map((finding, index) => {
@@ -1231,6 +1263,16 @@ function FindingCardList({
   );
 }
 
+
+function isEvidenceDerivedReportDetail(value: string) {
+  return /\b(photo|caption|image|filename|upload|ocr|extracted|evidence note|technician note|voice note|transcript|jpg|jpeg|png|webp|heic|pdf)\b/i.test(value);
+}
+
+function cleanReportMetadataValue(value: unknown) {
+  const cleaned = stripConfidenceText(String(value ?? "")).trim();
+  return cleaned && !isEvidenceDerivedReportDetail(cleaned) ? cleaned : null;
+}
+
 function ReportDetailsSummary({
   currentReport,
   session,
@@ -1251,7 +1293,7 @@ function ReportDetailsSummary({
   timeZone: string | null;
 }) {
   const details = [
-    ["Report Title", displayReportTitle],
+    ["Report Title", cleanReportMetadataValue(displayReportTitle)],
     ["Capture Session Date", formatDateTime(session.created_at, timeZone)],
     [
       "Report Approved Date",
@@ -1259,20 +1301,21 @@ function ReportDetailsSummary({
         ? formatDateTime(session.reviewed_at, timeZone)
         : null,
     ],
+    ["Subject", cleanReportMetadataValue(getReportInfoValue(currentReport, session, "subject_name"))],
     [
       "Customer / Client",
-      getReportInfoValue(currentReport, session, "customer_client") ||
-        session.customer_name,
+      cleanReportMetadataValue(getReportInfoValue(currentReport, session, "customer_client")) ||
+        cleanReportMetadataValue(session.customer_name),
     ],
     [
       "Asset / Equipment",
-      getReportInfoValue(currentReport, session, "asset_equipment") ||
-        session.asset_label,
+      cleanReportMetadataValue(getReportInfoValue(currentReport, session, "asset_equipment")) ||
+        cleanReportMetadataValue(session.asset_label),
     ],
-    ["Location", getReportInfoValue(currentReport, session, "location")],
+    ["Location", cleanReportMetadataValue(getReportInfoValue(currentReport, session, "location"))],
     [
       "Reference Number",
-      getReportInfoValue(currentReport, session, "reference_number"),
+      cleanReportMetadataValue(getReportInfoValue(currentReport, session, "reference_number")),
     ],
   ].filter(([, value]) => value);
   if (details.length === 0) return null;
@@ -1622,6 +1665,14 @@ function EvidenceGallery({
                   <img src={item.signedUrl} alt={item.title} />
                 ) : null}
                 <strong>{item.title}</strong>
+              </div>
+              <div className="evidence-category-pills" role="radiogroup" aria-label="Evidence category">
+                {EVIDENCE_CATEGORIES.map((category) => (
+                  <label key={category} className={`status-pill compact evidence-category-pill ${category === normalizeEvidenceCategory(item.capture.evidence_category) ? "success" : "neutral"}`}>
+                    <input type="radio" name={`capture_category_${item.capture.id}`} value={category} defaultChecked={category === normalizeEvidenceCategory(item.capture.evidence_category)} />
+                    {EVIDENCE_CATEGORY_LABELS[category]}
+                  </label>
+                ))}
               </div>
               <label className="field-stack">
                 <span className="label">
