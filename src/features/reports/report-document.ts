@@ -55,16 +55,12 @@ export function buildUniversalReportDocument<TCapture extends EvidenceDocumentCa
       sourceCaptureId: capture.id,
     })),
     sectionOrder: [
-      'Cover page',
-      'Report Information',
-      'Summary',
-      'Observations / Findings',
-      'Recommendations (user-entered only)',
-      'Evidence Appendix',
-      'Inspector / Organization Details',
-      'Signature / Approval',
+      'Cover',
+      'Executive Summary',
+      'Documented Observations',
+      'Approval',
     ],
     trustStatement:
-      'CRED assembles user-provided captures, notes, and approved report text. Users remain the source of truth; CRED does not diagnose, classify photos, determine findings, or recommend repairs.',
+      'CRED assembles technician-provided notes, approved report text, and supporting proof. Technician notes remain the source of truth; photos and documents support the documented observations.',
   }
 }

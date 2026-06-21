@@ -10,6 +10,7 @@ import {
   isFieldServiceSessionType,
   normalizeFieldServiceDetails,
 } from "@/features/field-service";
+import { normalizeEvidenceCategory } from "@/features/capture/evidence-category";
 import { buildUniversalReportDocument } from "@/features/reports/report-document";
 import {
   buildCustomerAssetRows,
@@ -215,7 +216,6 @@ function buildReportCoverHtml(params: {
   timeZone: string | null;
   allowCoverImage: boolean;
 }) {
-  const approvedAt = getApprovalDate(params.draft, params.session);
   const rows = [
     {
       label: "Customer / Client",
@@ -243,17 +243,15 @@ function buildReportCoverHtml(params: {
       value: getReportInfoValue(params.draft, params.session, "location"),
     },
     {
-      label: "Capture session date",
-      value: formatDateTimeInTimeZone(
-        params.session.created_at,
-        params.timeZone,
-      ),
+      label: "Reference Number",
+      value: getReportInfoValue(params.draft, params.session, "reference_number"),
     },
     {
-      label: "Approved date",
-      value: approvedAt
-        ? formatDateTimeInTimeZone(approvedAt, params.timeZone)
-        : "",
+      label: "Report Date",
+      value: formatDateTimeInTimeZone(
+        params.draft?.updated_at ?? params.session.updated_at ?? params.session.created_at,
+        params.timeZone,
+      ),
     },
     {
       label: "Organization",
@@ -268,7 +266,7 @@ function buildReportCoverHtml(params: {
     params.imageAssets,
     params.allowCoverImage,
   );
-  return `<section class="report-cover item${coverImageHtml ? "" : " report-cover-no-image"}"><div class="cover-copy"><p class="eyebrow">Professional Report</p><h1>${escapeHtml(params.reportTitle)}</h1><p class="cover-trust">Prepared from reviewed field documentation, source records, and supporting evidence.</p>${renderDefinitionRows(rows)}</div>${coverImageHtml}</section>`;
+  return `<section class="report-cover item${coverImageHtml ? "" : " report-cover-no-image"}"><div class="cover-copy"><p class="eyebrow">Cover</p><h1>${escapeHtml(params.reportTitle)}</h1><p class="cover-trust">Report identity and approved customer-facing documentation.</p>${renderDefinitionRows(rows)}</div>${coverImageHtml}</section>`;
 }
 
 function getCaptionChips(captures: ReportCapture[]) {
@@ -285,58 +283,17 @@ function getCaptionChips(captures: ReportCapture[]) {
 }
 
 function buildReportOverviewHtml(params: {
-  capturedCount: number;
-  includedCount: number;
-  finalNotesIncluded: boolean;
-  approved: boolean;
-  approvedAt?: string;
-  preparedBy: string;
-  organization: string;
+  summary?: string | null;
   reportTitle?: string;
-  includedImageCount?: number;
-  captions?: string[];
-  mode?: ReportPresentationMode;
 }) {
-  const approvedText = params.approved
-    ? `approved for delivery${params.approvedAt ? ` on ${params.approvedAt}` : ""}`
-    : "pending approval";
-  const photoText =
-    params.includedImageCount === undefined
-      ? ""
-      : `, including ${params.includedImageCount} photo${params.includedImageCount === 1 ? "" : "s"}`;
-  const notesText = params.finalNotesIncluded
-    ? " Final summary notes are included."
-    : "";
-  const preparedText = params.preparedBy
-    ? ` Prepared by ${params.preparedBy}.`
-    : "";
-  const summaryText = `This ${params.reportTitle ? `${params.reportTitle} ` : ""}report has been prepared from ${params.includedCount} reviewed source item${params.includedCount === 1 ? "" : "s"}${photoText} and is ${approvedText}.${notesText}${preparedText}`;
-  const chips = params.captions?.length
-    ? `<div class="summary-chip-row" aria-label="Selected source notes">${params.captions.map((caption) => `<span>${escapeHtml(caption)}</span>`).join("")}</div>`
-    : "";
-  return `<section class="item service-section overview-section"><h2>Executive Summary</h2><p class="summary-lead">${escapeHtml(summaryText)}</p>${chips}${renderDefinitionRows(
-    [
-      { label: "Reviewed source records", value: String(params.includedCount) },
-      {
-        label: "Supporting photos",
-        value:
-          params.includedImageCount === undefined
-            ? ""
-            : String(params.includedImageCount),
-      },
-      {
-        label: "Approval status",
-        value: params.approved ? "Approved" : "Pending",
-      },
-      { label: "Approved date", value: params.approvedAt ?? "" },
-      {
-        label: "Final notes included",
-        value: params.finalNotesIncluded ? "Yes" : "",
-      },
-      { label: "Prepared by", value: params.preparedBy },
-      { label: "Organization", value: params.organization },
-    ],
-  )}<p class="summary-trust">Prepared for customer review from approved documentation and supporting records.</p></section>`;
+  const summary = stripConfidenceText(params.summary ?? "").trim();
+  const summaryText = summary || `This ${params.reportTitle ? `${params.reportTitle} ` : ""}report documents technician observations, key concerns, supporting proof, and recommended next actions.`;
+  const paragraphs = summaryText
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  return `<section class="item service-section overview-section"><h2>Executive Summary</h2>${paragraphs.map((paragraph) => `<p class="summary-lead">${escapeHtml(paragraph)}</p>`).join("")}<p class="summary-trust">Technician-approved summary. Supporting proof is organized under Documented Observations.</p></section>`;
 }
 
 function buildEvidenceGalleryHtml(
@@ -1097,6 +1054,67 @@ function buildEvidenceItemsHtml(
     .join("");
 }
 
+function getObservationCategoryLabel(entry: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>["findings"][number]) {
+  const category = normalizeEvidenceCategory(entry.capture.evidence_category);
+  if (category === "observation") return "Observation";
+  if (category === "concern") return "Concern";
+  if (category === "recommended_action") return "Recommended Action";
+  if (entry.purpose === "concern") return "Concern";
+  if (entry.purpose === "recommended_action") return "Recommended Action";
+  if (entry.purpose === "supporting_evidence" || entry.purpose === "reference_document") return "Supporting Evidence";
+  return "Observation";
+}
+
+function buildDocumentedObservationsHtml(
+  reviewDocument: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>,
+  imageAssets: Record<string, ExportImageAsset>,
+) {
+  const renderedIds = new Set<string>();
+  const entries = [
+    ...reviewDocument.findings,
+    ...reviewDocument.concerns,
+    ...reviewDocument.recommendedActionEvidence,
+    ...reviewDocument.referenceDocuments,
+    ...reviewDocument.additionalNotes,
+    ...reviewDocument.supportingEvidence,
+  ].filter((entry) => {
+    if (renderedIds.has(entry.group.capture_id)) return false;
+    renderedIds.add(entry.group.capture_id);
+    return true;
+  });
+  const actionCards = reviewDocument.categorizedRecommendedActions.filter((item) => item.action.trim());
+  if (entries.length === 0 && actionCards.length === 0) return '<section class="item service-section"><h2>Documented Observations</h2><p class="muted">No documented observations added yet.</p></section>';
+  const entryHtml = entries.map((entry, index) => {
+    const capture = entry.capture;
+    const imageAsset = imageAssets[capture.id];
+    const kind = getEvidenceKind(capture);
+    const isImage = kind === "image";
+    const isDocument = kind === "document" || capture.media_kind === "document";
+    const mediaHtml = isImage
+      ? `<div class="media">${renderExportImage(imageAsset, getPrimaryEvidenceLabel(capture), "Preview unavailable in printable export. Original evidence retained.")}</div>`
+      : imageAsset?.originalMediaUrl
+        ? `<p class="original-link"><a href="${escapeHtmlAttributeRaw(imageAsset.originalMediaUrl)}">Open supporting ${isDocument ? "document" : "file"}</a></p>`
+        : "";
+    const renderedText: string[] = [];
+    const technicianNote = stripConfidenceText(capture.technician_note || capture.transcript || "Technician note retained with supporting proof.");
+    renderedText.push(technicianNote);
+    const details = dedupeEvidenceDetails(entry.group.details).filter((detail) => {
+      if (/^technician note$/i.test(detail.label)) return false;
+      const visible = shouldRenderDetail(detail.label, detail.value, renderedText);
+      if (visible) renderedText.push(detail.value);
+      return visible;
+    });
+    const recommendations = entry.group.recommendations.flatMap(splitRecommendationText).filter((value) => {
+      const visible = shouldRenderDetail("Recommendation", value, renderedText);
+      if (visible) renderedText.push(value);
+      return visible;
+    });
+    return `<article class="finding-card">${mediaHtml}<div class="finding-content"><p class="eyebrow">Observation ${index + 1} · ${escapeHtml(getObservationCategoryLabel(entry))}</p><h3>${escapeHtml(getPrimaryEvidenceLabel(capture))}</h3><h4>Technician Note</h4><p>${escapeHtml(technicianNote)}</p>${isImage ? `<p class="muted"><strong>Supporting Photos:</strong> ${escapeHtml(getPrimaryEvidenceLabel(capture))}</p>` : ""}${isDocument ? `<p class="muted"><strong>Supporting Documents:</strong> ${escapeHtml(getPrimaryEvidenceLabel(capture))}</p>` : ""}${details.length ? `<h4>Supporting Proof</h4>${renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value })))}` : ""}${recommendations.length ? `<h4>Recommended Action</h4><ul>${recommendations.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul>` : ""}</div></article>`;
+  }).join("");
+  const actionsHtml = actionCards.map((action, index) => `<article class="finding-card"><div class="finding-content"><p class="eyebrow">Observation ${entries.length + index + 1} · Recommended Action</p><h3>Recommended Action</h3><h4>Technician Note</h4><p>${escapeHtml(stripConfidenceText(action.action))}</p></div></article>`).join("");
+  return `<section class="item service-section findings-section"><h2>Documented Observations</h2><p class="muted">Technician notes are the source of truth. Each supporting photo or document appears once with the observation it supports.</p>${entryHtml}${actionsHtml}</section>`;
+}
+
 function buildEvidenceSectionHtml(
   title: string,
   items: ReturnType<
@@ -1448,20 +1466,8 @@ function buildFieldServiceReportHtml({
     reportDraft,
   );
   const summaryHtml = buildReportOverviewHtml({
-    capturedCount: captureItems.length,
-    includedCount: captureItems.length,
-    finalNotesIncluded: Boolean(
-      session.include_final_notes_in_export && session.final_notes,
-    ),
-    approved: Boolean(getApprovalDate(reportDraft, session)),
-    approvedAt: getApprovalDate(reportDraft, session)
-      ? formatDateTimeInTimeZone(
-          getApprovalDate(reportDraft, session),
-          timeZone,
-        )
-      : "",
-    preparedBy: "",
-    organization: organizationName,
+    summary: reportDraft?.summary,
+    reportTitle,
   });
   const fieldAppendixCaptures = getAppendixCaptures(captureItems).captures;
   const fieldUseGalleryMode =
@@ -1516,7 +1522,6 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const requestUrl = new URL(_request.url);
   const shareTokenValue = requestUrl.searchParams.get("share_token");
   const previewOnly = requestUrl.searchParams.get("preview") === "1";
-  const showDebugDetails = requestUrl.searchParams.get("debug") === "1";
   const sharedAccess = Boolean(shareTokenValue);
 
   let supabase: SupabaseClient<Database>;
@@ -1772,14 +1777,8 @@ export async function GET(_request: Request, { params }: RouteContext) {
         "Reference Number",
       ].includes(row.label),
   );
-  const customerAssetHtml = renderDefinitionRows(subjectDetailRows);
   const structuredFormDataHtml = buildStructuredFormDataHtml(
     reportDraft?.report_structure ?? null,
-  );
-  const reportInfoHtml = renderReportInformationHtml(
-    reportDraft,
-    session,
-    timeZone,
   );
   const reviewDocument = buildNormalizedReportModel({
     captures: captureItems,
@@ -1816,32 +1815,10 @@ export async function GET(_request: Request, { params }: RouteContext) {
   });
   const useGalleryMode = presentationMode === "gallery";
   const summaryHtml = buildReportOverviewHtml({
-    capturedCount: captureItems.length,
-    includedCount: appendixCaptureItems.length,
-    includedImageCount: imageCount,
-    finalNotesIncluded,
-    approved: Boolean(getApprovalDate(reportDraft, session)),
-    approvedAt: getApprovalDate(reportDraft, session)
-      ? formatDateTimeInTimeZone(
-          getApprovalDate(reportDraft, session),
-          timeZone,
-        )
-      : "",
-    preparedBy: reportProfile?.full_name ?? "",
-    organization: getOrganizationDisplayName(
-      organizationName,
-      reportCompanyProfile,
-    ),
+    summary: reportDraft?.summary,
     reportTitle,
-    captions: getCaptionChips(appendixCaptureItems),
-    mode: presentationMode,
   });
-  const appendixHtml = useGalleryMode
-    ? buildEvidenceIndexHtml(appendixCaptureItems, timeZone)
-    : buildEvidenceAppendixHtml(appendixCaptureItems, imageAssets, timeZone, {
-        showDebugDetails,
-        renderImages: true,
-      });
+  const appendixHtml = "";
   const draftReferencedCaptureCount = new Set(
     visibleReportSections
       .flatMap((section) => section.source_capture_ids ?? [])
@@ -1862,29 +1839,14 @@ export async function GET(_request: Request, { params }: RouteContext) {
       "[report-evidence-check] Included captures have no draft references; Evidence Appendix will render all included captures.",
       { session_id: session.id, included_capture_count: captureItems.length },
     );
-  const referenceHtml = reviewDocument.referenceDocuments.length
-    ? buildReferenceDocumentsHtml(
-        reviewDocument.referenceDocuments,
-        imageAssets,
-        { includeOriginal: false },
-      )
-    : "";
-  const findingsHtml = buildFindingCardsHtml(
-    reviewDocument.findings,
-    imageAssets,
-    { renderImages: false },
-  );
-  const concernsHtml = useGalleryMode ? "" : buildEvidenceSectionHtml("Concerns", reviewDocument.concerns, imageAssets);
-  const categoryActionsHtml = reviewDocument.categorizedRecommendedActions.length
-    ? `<section class="item service-section"><h2>Recommended Actions</h2><ul>${reviewDocument.categorizedRecommendedActions.map((item) => `<li>${escapeHtml(item.action)}</li>`).join("")}</ul></section>`
-    : (useGalleryMode ? "" : buildEvidenceSectionHtml("Recommended Actions", reviewDocument.recommendedActionEvidence, imageAssets));
-  const supportingHtml = useGalleryMode ? "" : buildEvidenceSectionHtml("Supporting Evidence", reviewDocument.supportingEvidence, imageAssets);
+  const observationsHtml = buildDocumentedObservationsHtml(reviewDocument, imageAssets);
+  const approvalHtml = buildApprovalHtml({ profile: reportProfile, signatures: reportSignatures, signatureUrls, draft: reportDraft, session, timeZone });
 
   const toolbarHtml = previewOnly
     ? ""
     : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>';
   const html = `<!doctype html><html><head><meta charset="utf-8" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, companyProfile: reportCompanyProfile, captures: appendixCaptureItems, imageAssets: imageAssets, timeZone, allowCoverImage: useGalleryMode })}${summaryHtml}${useGalleryMode ? "" : reportInfoHtml}${!useGalleryMode && customerAssetHtml ? `<section class="item service-section"><h2>Subject Details</h2>${customerAssetHtml}</section>` : ""}${useGalleryMode ? "" : structuredFormDataHtml}${useGalleryMode ? "" : buildFinalNotesHtml(session)}${useGalleryMode ? "" : findingsHtml}${useGalleryMode ? "" : concernsHtml}${useGalleryMode ? "" : categoryActionsHtml}${unattachedHtml}${supportingHtml}${useGalleryMode ? buildEvidenceGalleryHtml(appendixCaptureItems, imageAssets, timeZone) : ""}${useGalleryMode ? "" : referenceHtml}${appendixHtml}${buildInspectorFacilityHtml(reportProfile, reportCompanyProfile)}${buildApprovalHtml({ profile: reportProfile, signatures: reportSignatures, signatureUrls, draft: reportDraft, session, timeZone })}</main></body></html>`;
+  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, companyProfile: reportCompanyProfile, captures: appendixCaptureItems, imageAssets: imageAssets, timeZone, allowCoverImage: useGalleryMode })}${summaryHtml}${observationsHtml}${unattachedHtml}${appendixHtml}${approvalHtml}</main></body></html>`;
 
   return new Response(html, {
     headers: { "Content-Type": "text/html; charset=utf-8" },
