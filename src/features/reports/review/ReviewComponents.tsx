@@ -481,6 +481,7 @@ export function ReportReview({
   reportSections,
   currentReport,
   generateReportAction,
+  generateSummaryAction,
   hasPendingEvidence,
   hasPrepareError,
   isEditingReport,
@@ -502,6 +503,7 @@ export function ReportReview({
   reportSections: AiReportDraftSection[];
   currentReport: AiReportDraft | null;
   generateReportAction: ServerAction;
+  generateSummaryAction: ServerAction;
   hasPendingEvidence: boolean;
   hasPrepareError: boolean;
   isEditingReport: boolean;
@@ -552,6 +554,13 @@ export function ReportReview({
             >
               Add More Evidence
             </Link>
+            {currentReport ? (
+              <form action={generateReportAction}>
+                <button className="button button-secondary touch-target">
+                  Regenerate Report
+                </button>
+              </form>
+            ) : null}
           </div>
         </div>
         {currentReport?.status === "approved" ? (
@@ -619,9 +628,9 @@ export function ReportReview({
         <details className="report-subsection report-document-section" open>
           <summary className="report-section-title-row">
             <div>
-              <h3>Edit Report Information</h3>
+              <h3>Report Details</h3>
               <p className="muted">
-                Report metadata used in export when present.
+                Edit the report title, customer, subject, asset, location, and reference number used across review, export, sharing, and delivery.
               </p>
             </div>
           </summary>
@@ -629,6 +638,10 @@ export function ReportReview({
             action={updateSessionMetadata.bind(null, session.id)}
             className="form-stack report-edit-form"
           >
+            <label className="field-stack">
+              <span className="label">Report Title</span>
+              <input className="input" name="report_title" maxLength={180} defaultValue={displayReportTitle} />
+            </label>
             <div className="report-field-grid">
               {SESSION_METADATA_FIELDS.map((field) => {
                 const metadata = normalizeSessionMetadata(
@@ -672,10 +685,9 @@ export function ReportReview({
           <details className="report-subsection report-edit-panel">
             <summary className="report-section-title-row">
               <div>
-                <h3>Advanced report editing</h3>
+                <h3>Report Details</h3>
                 <p className="muted">
-                  Optional raw section and field editing. Use only when you need
-                  to change the assembled report structure.
+                  Edit customer-facing report details and the executive summary.
                 </p>
               </div>
             </summary>
@@ -757,8 +769,13 @@ export function ReportReview({
                 />
               </label>
             </div>
+            <div className="form-actions report-inline-actions">
+              <button formAction={generateSummaryAction} className="button button-secondary touch-target">
+                Generate Summary
+              </button>
+            </div>
             <label className="field-stack">
-              <span className="label">Summary</span>
+              <span className="label">Executive Summary</span>
               <textarea
                 className="input text-area"
                 name="report_summary"
@@ -768,6 +785,11 @@ export function ReportReview({
             </label>
           </details>
 
+          <details className="report-subsection report-edit-panel">
+            <summary>
+              <h3>Report Sections</h3>
+              <p className="muted">Edit Findings, Concerns, Recommended Actions, and Supporting Evidence sections.</p>
+            </summary>
           <div className="report-content-grid">
             {editableSections.map((section) => {
               const included = !isHiddenFromReport(section.metadata);
@@ -855,12 +877,13 @@ export function ReportReview({
               );
             })}
           </div>
+          </details>
 
-          <details className="report-subsection report-edit-panel">
+          <details className="report-subsection report-edit-panel" open>
             <summary>
-              <h3>Report evidence</h3>
+              <h3>Supporting Evidence</h3>
               <p className="muted">
-                Edit notes and choose what appears in the final report.
+                Edit notes, categories, and original evidence files.
               </p>
             </summary>
             <EvidenceGallery
@@ -1663,6 +1686,9 @@ function EvidenceGallery({
                 {item.kind === "photo" && item.signedUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured.
                   <img src={item.signedUrl} alt={item.title} />
+                ) : null}
+                {item.signedUrl ? (
+                  <a className="secondary-link" href={item.signedUrl} download target="_blank" rel="noreferrer">Download Original</a>
                 ) : null}
                 <strong>{item.title}</strong>
               </div>

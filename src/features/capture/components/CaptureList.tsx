@@ -7,6 +7,7 @@ import {
   updateCaptureReview,
 } from '@/features/capture/actions'
 import { DeleteEvidenceButton } from '@/features/capture/components/DeleteEvidenceButton'
+import { EVIDENCE_CATEGORIES, EVIDENCE_CATEGORY_LABELS, normalizeEvidenceCategory } from '@/features/capture/evidence-category'
 import { formatDateTimeInTimeZone } from '@/lib/date-format'
 import type { Json } from '@/lib/supabase/database.types'
 
@@ -393,6 +394,7 @@ function EvidenceCard({
             ? 'Included in report'
             : 'Excluded from report'}
         </span>
+        <span className="classification-pill success">{EVIDENCE_CATEGORY_LABELS[normalizeEvidenceCategory(capture.evidence_category)]}</span>
         <span className="classification-pill pending">{reportOrder}</span>
       </div>
       <p className="capture-summary">
@@ -496,6 +498,17 @@ function EvidenceCard({
             Open file
           </a>
         ) : null}
+        {signedUrl ? (
+          <a
+            href={signedUrl}
+            download
+            target="_blank"
+            rel="noreferrer"
+            className="secondary-link capture-file-link touch-target"
+          >
+            Download Original
+          </a>
+        ) : null}
       </div>
 
       {isEditing ? (
@@ -583,6 +596,14 @@ function EvidenceCard({
               />{' '}
               Include in report
             </label>
+            <div className="evidence-category-pills" role="radiogroup" aria-label="Evidence category">
+              {EVIDENCE_CATEGORIES.map((category) => (
+                <label key={category} className={`status-pill compact evidence-category-pill ${category === normalizeEvidenceCategory(capture.evidence_category) ? 'success' : 'neutral'}`}>
+                  <input type="radio" name="evidence_category" value={category} defaultChecked={category === normalizeEvidenceCategory(capture.evidence_category)} />
+                  {EVIDENCE_CATEGORY_LABELS[category]}
+                </label>
+              ))}
+            </div>
             <label className="report-order-field">
               Order{' '}
               <input

@@ -398,7 +398,7 @@ export default async function SessionReportPreviewPage({
           <p className="eyebrow guided-eyebrow">Review</p>
           <h1>Your Report</h1>
           <p className="muted">
-            Review the finished report built from your captured evidence.
+            Review and organize captured evidence before approving the finished report.
           </p>
         </div>
         <div className="page-actions report-preview-actions compact-report-actions">
@@ -448,7 +448,7 @@ export default async function SessionReportPreviewPage({
         ) : null}
         {status.notes ? <p className="success">Final notes saved.</p> : null}
         {status.notes_generated ? (
-          <p className="success">Final notes prepared.</p>
+          <p className="success">Executive summary prepared.</p>
         ) : null}
       </div>
 
@@ -459,6 +459,7 @@ export default async function SessionReportPreviewPage({
             currentReport={currentReport}
             isEditingReport={isEditingReport}
             generateReportAction={generateReportAction}
+            generateSummaryAction={generateFinalNotesAction}
             hasPendingEvidence={hasPendingEvidence}
             hasPrepareError={Boolean(status.error)}
             noteEvidence={noteEvidence}

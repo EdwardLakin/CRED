@@ -111,6 +111,15 @@ export async function createDocumentationSession(formData: FormData) {
     redirect(`/dashboard?error=${encodeURIComponent(error?.message ?? 'Unable to create session.')}`)
   }
 
+  if (requestedReportTitle) {
+    await supabase
+      .from('ai_report_drafts')
+      .update({ title: reportTitle, updated_at: new Date().toISOString() })
+      .eq('documentation_session_id', sessionId)
+      .eq('organization_id', profile.organization_id)
+      .not('status', 'eq', 'superseded')
+  }
+
   revalidatePath('/dashboard')
   revalidatePath('/dashboard/sessions')
   redirect(`/dashboard/sessions/${session.id}/capture`)
@@ -200,11 +209,13 @@ export async function updateSessionMetadata(sessionId: string, formData: FormDat
   const metadata = normalizeSessionMetadata(Object.fromEntries(
     SESSION_METADATA_FIELDS.map((field) => [field.name, getTrimmedValue(formData, field.name)]),
   ))
+  const requestedReportTitle = getTrimmedValue(formData, 'report_title').slice(0, 180)
+  const reportTitle = requestedReportTitle || existingSession.title
 
   const { error } = await supabase
     .from('documentation_sessions')
     .update({
-      title: existingSession.title,
+      title: reportTitle,
       session_type: normalizeReportType(existingSession.session_type),
       session_metadata: sessionMetadataToJson(metadata),
       customer_name: metadata.customer_client || null,
@@ -216,6 +227,15 @@ export async function updateSessionMetadata(sessionId: string, formData: FormDat
 
   if (error) {
     redirect(`/dashboard/sessions/${sessionId}/report?error=${encodeURIComponent(error.message)}`)
+  }
+
+  if (requestedReportTitle) {
+    await supabase
+      .from('ai_report_drafts')
+      .update({ title: reportTitle, updated_at: new Date().toISOString() })
+      .eq('documentation_session_id', sessionId)
+      .eq('organization_id', profile.organization_id)
+      .not('status', 'eq', 'superseded')
   }
 
   revalidatePath('/dashboard')
