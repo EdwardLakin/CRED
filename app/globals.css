@@ -3258,29 +3258,168 @@ a:focus-visible {
 }
 
 .export-panel {
-  border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: var(--shadow);
+  overflow: hidden;
 }
 
-.export-action-stack {
+.export-panel-summary {
+  align-items: center;
+  cursor: pointer;
   display: grid;
-  gap: 14px;
+  gap: 16px;
+  grid-template-columns: auto 1fr auto;
+  list-style: none;
 }
 
-.export-action-card {
+.export-panel-summary::-webkit-details-marker,
+.export-action-tile summary::-webkit-details-marker {
+  display: none;
+}
+
+.export-panel-icon {
+  align-items: center;
   background: var(--surface-muted);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 12px;
+  color: var(--foreground);
+  display: inline-flex;
+  font-size: 1.35rem;
+  font-weight: 900;
+  height: 42px;
+  justify-content: center;
+  width: 42px;
+}
+
+.export-panel-title {
+  color: var(--foreground);
+  display: block;
+  font-size: 1.1rem;
+  font-weight: 900;
+  margin-top: 3px;
+}
+
+.export-panel-chevron {
+  color: var(--foreground);
+  font-size: 1.5rem;
+  font-weight: 900;
+  transition: transform 0.18s ease;
+}
+
+.export-panel[open] .export-panel-chevron {
+  transform: rotate(180deg);
+}
+
+.export-panel-body {
   display: grid;
-  gap: 12px;
-  padding: 14px;
+  gap: 16px;
+  padding-top: 18px;
 }
 
-.export-action-card h3 {
-  margin: 0 0 4px;
+.export-locked-message {
+  margin: 0;
 }
 
-.export-button-grid form {
-  width: 100%;
+.export-action-tiles {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(4, minmax(145px, 1fr));
+}
+
+.export-action-tile {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.04);
+  color: var(--foreground);
+  min-height: 104px;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.export-action-tile[open] {
+  grid-column: span 2;
+}
+
+.export-action-tile:not([aria-disabled="true"]):hover,
+.export-action-link:not(.disabled-action):hover {
+  border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+.export-action-tile[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.export-action-tile summary,
+.export-action-link {
+  align-items: center;
+  cursor: pointer;
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  list-style: none;
+  min-height: 104px;
+  padding: 18px;
+  text-align: center;
+  text-decoration: none;
+}
+
+.export-action-tile[aria-disabled="true"] summary {
+  cursor: not-allowed;
+}
+
+.export-tile-icon {
+  align-items: center;
+  display: inline-flex;
+  font-size: 2rem;
+  height: 34px;
+  justify-content: center;
+  line-height: 1;
+}
+
+.export-tile-icon-email {
+  color: var(--success);
+}
+
+.export-tile-icon-share {
+  color: var(--primary);
+}
+
+.export-tile-icon-print {
+  color: #9333ea;
+}
+
+.export-tile-icon-save {
+  color: #f97316;
+}
+
+.export-action-details {
+  border-top: 1px solid var(--border);
+  padding: 0 16px 16px;
+}
+
+.export-action-details .button {
+  justify-self: start;
+}
+
+.export-print-note {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin: 0;
+  text-align: center;
+}
+
+.export-print-note::before {
+  content: "⌂";
+  font-weight: 900;
 }
 
 .export-share-list {
@@ -4460,6 +4599,37 @@ a:focus-visible {
   .confirmation-modal-actions .button,
   .report-edit-evidence-actions .button {
     width: 100%;
+  }
+}
+
+@media (max-width: 900px) {
+  .export-action-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .export-panel-summary {
+    gap: 12px;
+    grid-template-columns: auto 1fr;
+  }
+
+  .export-panel-chevron {
+    grid-column: 1 / -1;
+    justify-self: center;
+  }
+
+  .export-action-tiles {
+    grid-template-columns: 1fr;
+  }
+
+  .export-action-tile[open] {
+    grid-column: span 1;
+  }
+
+  .export-action-tile summary,
+  .export-action-link {
+    min-height: 92px;
   }
 }
 
