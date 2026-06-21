@@ -271,7 +271,6 @@ export default async function SessionReportPreviewPage({
     : { data: [] };
 
   const reportPath = `/api/dashboard/sessions/${session.id}/report-pdf`;
-  const pdfDownloadPath = `${reportPath}/download`;
   const headersList = await headers();
   const origin = getReportOrigin(headersList);
   const evidence = getRequiredEvidenceCompletion(
@@ -529,7 +528,6 @@ export default async function SessionReportPreviewPage({
           isReadyForExport={isReadyForExport}
           origin={origin}
           reportPath={reportPath}
-          pdfDownloadPath={pdfDownloadPath}
           saveAction={saveAction}
           sessionId={session.id}
           shareAction={shareAction}

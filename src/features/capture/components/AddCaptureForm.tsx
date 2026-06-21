@@ -60,6 +60,8 @@ type SpeechRecognitionResultLike = {
   0?: { transcript?: string }
 }
 
+type SpeechRecognitionConstructor = new () => SpeechRecognitionInstance
+
 type SpeechRecognitionInstance = {
   continuous: boolean
   interimResults: boolean
@@ -922,11 +924,84 @@ export function AddCaptureForm({
   }
 
   function cancelStandaloneTextNote() {
+    cleanupRecognition()
     setNote('')
     setNoteSource('manual')
+    setTranscriptStatus('not_started')
+    setVoiceNoteStatus('idle')
     setShowTextNoteEditor(false)
     setClientError(null)
     setActionError(null)
+  }
+
+  function startStandaloneVoiceNote() {
+    setClientError(null)
+    setActionError(null)
+    setSaveMessage(null)
+
+    const speechWindow = window as typeof window & {
+      SpeechRecognition?: SpeechRecognitionConstructor
+      webkitSpeechRecognition?: SpeechRecognitionConstructor
+    }
+    const Recognition = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition
+
+    if (!Recognition) {
+      setVoiceNoteStatus('unsupported')
+      setTranscriptStatus('unavailable')
+      setShowTextNoteEditor(true)
+      setClientError('Voice notes are not supported in this browser. Type a note instead.')
+      return
+    }
+
+    cleanupRecognition()
+
+    const recognition = new Recognition()
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.lang = navigator.language || 'en-US'
+    recognitionRef.current = recognition
+
+    recognition.onresult = (event) => {
+      let transcript = ''
+      for (let index = 0; index < event.results.length; index += 1) {
+        transcript += event.results[index]?.[0]?.transcript ?? ''
+      }
+      setNote(transcript.trim())
+      setNoteSource('voice')
+    }
+    recognition.onerror = (event) => {
+      recognitionRef.current = null
+      setTranscriptStatus('unavailable')
+      setVoiceNoteStatus(event.error === 'not-allowed' ? 'denied' : 'error')
+      setClientError(
+        event.error === 'not-allowed'
+          ? 'Microphone access was denied. Type a note instead.'
+          : 'Voice note stopped unexpectedly. Review or type your note, then save.',
+      )
+    }
+    recognition.onend = () => {
+      if (recognitionRef.current === recognition) {
+        recognitionRef.current = null
+        setTranscriptStatus((current) => current === 'pending' ? 'completed' : current)
+        setVoiceNoteStatus('stopped')
+      }
+    }
+
+    try {
+      recognition.start()
+      setShowTextNoteEditor(true)
+      setTranscriptStatus('pending')
+      setVoiceNoteStatus('listening')
+      setNoteSource('voice')
+      voiceNoteTimeoutRef.current = window.setTimeout(() => {
+        stopVoiceNote('Voice note stopped after the time limit. Review your note, then save evidence.')
+      }, 120_000)
+    } catch (error) {
+      recognitionRef.current = null
+      setTranscriptStatus('unavailable')
+      setVoiceNoteStatus('error')
+      setClientError('Could not start a voice note. Type a note instead.')
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -1232,6 +1307,16 @@ export function AddCaptureForm({
               >
                 {isSaving ? 'Saving…' : 'Save Note'}
               </button>
+              {voiceNoteStatus === 'listening' ? (
+                <button
+                  type="button"
+                  className="button button-secondary touch-target"
+                  onClick={() => stopVoiceNote('Voice note stopped. Review your note, then save evidence.')}
+                  disabled={isSaving}
+                >
+                  Stop Voice Note
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="button button-secondary touch-target"
@@ -1243,18 +1328,28 @@ export function AddCaptureForm({
             </div>
           </div>
         ) : (
-          <button
-            type="button"
-            className="secondary-link standalone-text-note-toggle touch-target"
-            onClick={() => {
-              setClientError(null)
-              setActionError(null)
-              setShowTextNoteEditor(true)
-            }}
-            disabled={isSaving}
-          >
-            + Add Text Note
-          </button>
+          <div className="standalone-note-actions" aria-label="Add notes">
+            <button
+              type="button"
+              className="secondary-link standalone-text-note-toggle touch-target"
+              onClick={() => {
+                setClientError(null)
+                setActionError(null)
+                setShowTextNoteEditor(true)
+              }}
+              disabled={isSaving}
+            >
+              + Add Text Note
+            </button>
+            <button
+              type="button"
+              className="secondary-link standalone-text-note-toggle touch-target"
+              onClick={startStandaloneVoiceNote}
+              disabled={isSaving}
+            >
+              + Add Voice Note
+            </button>
+          </div>
         )}
       </div>
 

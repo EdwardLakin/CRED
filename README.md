@@ -89,13 +89,3 @@ npm run dev
 ```
 
 Logged-out pricing buttons route to `/sign-up?plan=individual`, `/sign-up?plan=team`, or `/sign-up?plan=shop`. After signup and onboarding, CRED preserves the selected plan on the organization and redirects to the dashboard for the 7-day app-controlled trial. Users can click Subscribe Now, or visit `/dashboard?checkout=individual`, `/dashboard?checkout=team`, or `/dashboard?checkout=shop`, to start hosted Stripe Checkout for the preserved plan.
-
-## PDF report downloads
-
-CRED exposes printable HTML report previews at `/api/dashboard/sessions/[id]/report-pdf` and true PDF downloads at `/api/dashboard/sessions/[id]/report-pdf/download`. The PDF download route runs in the Node.js runtime and renders the same approved printable report URL (`?preview=1`) in headless Chromium with print media enabled, so the downloaded PDF preserves the report HTML, CSS, gallery layout, evidence images, and signatures instead of rebuilding a text-only document.
-
-Deployment notes:
-- PDF rendering uses `puppeteer-core` with `@sparticuz/chromium`, which is the intended Vercel-compatible Chromium runtime. Local development can alternatively set `CHROME_EXECUTABLE_PATH` or `PUPPETEER_EXECUTABLE_PATH` to an installed Chrome/Chromium binary.
-- The browser renderer forwards the authenticated request cookies into Chromium before loading the printable report. Existing CRED media and signature routes therefore load the same images that appear in the browser preview, and Chromium embeds those assets into the offline PDF bytes.
-- The route sets `maxDuration = 60`; Vercel deployments should allow enough function time and memory for large reports. Start with at least 1 GB memory for image-heavy reports, and manually verify a 20-photo report after deployment.
-- HEIC/HEIF and other non-web-safe evidence continue to use the existing clean fallback behavior unless a preview-converted JPEG/PNG is available in the printable HTML.
