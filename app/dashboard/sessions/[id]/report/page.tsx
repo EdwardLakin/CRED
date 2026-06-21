@@ -464,7 +464,6 @@ export default async function SessionReportPreviewPage({
             noteEvidence={noteEvidence}
             otherEvidence={otherEvidence}
             photoEvidence={photoEvidence}
-            documentSections={documentSections}
             reviewDocument={reviewDocument}
             supportingEvidence={supportingEvidence}
             session={session}

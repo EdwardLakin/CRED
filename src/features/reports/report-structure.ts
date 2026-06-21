@@ -1,3 +1,4 @@
+import { normalizeEvidenceCategory } from '@/features/capture/evidence-category'
 import type { Json } from '@/lib/supabase/database.types'
 
 type CaptureLike = {
@@ -9,6 +10,7 @@ type CaptureLike = {
   technician_note?: string | null
   transcript?: string | null
   extracted_data: Json | null
+  evidence_category?: string | null
 }
 
 function isImageDerivedCapture(capture: CaptureLike) {
@@ -887,7 +889,7 @@ export function getCaptureGuidance(sections: NormalizedReportSection[]) {
 
 
 export type CaptureClassification = 'inspection_finding' | 'reference_document' | 'additional_note' | 'supporting_evidence' | 'ignored_internal'
-export type EvidencePurpose = 'finding' | 'reference_document' | 'additional_note' | 'supporting_evidence'
+export type EvidencePurpose = 'finding' | 'concern' | 'recommended_action' | 'reference_document' | 'additional_note' | 'supporting_evidence'
 
 
 function hardReferenceText(capture: CaptureLike) {
@@ -917,7 +919,9 @@ function hasBatteryFindingEvidence(text: string) {
 }
 
 function hasTrueDefectEvidence(capture: CaptureLike, group?: EvidenceGroup) {
-  const technicianTruth = `${capture.technician_note ?? ''} ${capture.transcript ?? ''} ${(group?.findings ?? []).join(' ')} ${(group?.recommendations ?? []).join(' ')}`
+  void group
+  const technicianTruth = `${capture.technician_note ?? ''} ${capture.transcript ?? ''}`
+  if (!clean(technicianTruth, 1200)) return false
   const text = `${capture.type ?? ''} ${capture.media_kind ?? ''} ${technicianTruth}`.toLowerCase()
   const hasBrakePadDefect = /\bbrakes?\b[\s\S]{0,120}\bpads?\b[\s\S]{0,120}\b(?:wear\s*limit|2\s*mm|replace)|\bpads?\b[\s\S]{0,120}\b(?:wear\s*limit|2\s*mm|replace)[\s\S]{0,120}\bbrakes?\b/i.test(text)
   const hasBatteryDefect = hasBatteryFindingEvidence(text)
@@ -958,6 +962,8 @@ export type ReviewEvidenceItem<TCapture = CaptureLike> = {
 export type ReviewDocument<TCapture = CaptureLike> = {
   sections: NormalizedReportSection[]
   findings: ReviewEvidenceItem<TCapture>[]
+  concerns: ReviewEvidenceItem<TCapture>[]
+  recommendedActionEvidence: ReviewEvidenceItem<TCapture>[]
   referenceDocuments: ReviewEvidenceItem<TCapture>[]
   additionalNotes: ReviewEvidenceItem<TCapture>[]
   supportingEvidence: ReviewEvidenceItem<TCapture>[]
@@ -981,7 +987,7 @@ export function buildNonDuplicatedReviewDocument<TCapture extends CaptureLike>({
   const groups = buildEvidenceGroups(captures, draftSections, measurements, findings)
   const groupsById = new Map(groups.map((group) => [group.capture_id, group]))
   const rendered = new Set<string>()
-  const result: ReviewDocument<TCapture> = { sections, findings: [], referenceDocuments: [], additionalNotes: [], supportingEvidence: [], renderedCaptureIds: [], unattachedDetails: buildUnattachedStructuredDetails(captures, measurements, findings) }
+  const result: ReviewDocument<TCapture> = { sections, findings: [], concerns: [], recommendedActionEvidence: [], referenceDocuments: [], additionalNotes: [], supportingEvidence: [], renderedCaptureIds: [], unattachedDetails: buildUnattachedStructuredDetails(captures, measurements, findings) }
   for (const section of draftSections) {
     if (!section.body) continue
     const sourceIds = section.source_capture_ids ?? []
@@ -1000,8 +1006,12 @@ export function buildNonDuplicatedReviewDocument<TCapture extends CaptureLike>({
     if (rendered.has(capture.id)) continue
     const baseGroup = groupsById.get(capture.id) ?? { capture_id: capture.id, details: [], findings: [], recommendations: [] }
     const group = applyDeterministicFindingGroup(capture, baseGroup)
+    const category = normalizeEvidenceCategory(capture.evidence_category)
     const item = { capture, group, purpose: classifyEvidencePurpose(capture, group) }
-    if (item.purpose === 'finding') result.findings.push(item)
+    if (category === 'observation') result.findings.push({ ...item, purpose: 'finding' })
+    else if (category === 'concern') result.concerns.push({ ...item, purpose: 'concern' })
+    else if (category === 'recommended_action') result.recommendedActionEvidence.push({ ...item, purpose: 'recommended_action' })
+    else if (item.purpose === 'finding') result.findings.push(item)
     else if (item.purpose === 'reference_document') result.referenceDocuments.push(item)
     else if (item.purpose === 'additional_note') result.additionalNotes.push(item)
     else result.supportingEvidence.push(item)
@@ -1081,6 +1091,7 @@ export type NormalizedRecommendedAction = { priority: string; priorityScore: num
 export type NormalizedReportModel<TCapture = CaptureLike> = ReviewDocument<TCapture> & {
   findingModels: NormalizedFindingModel<TCapture>[]
   recommendedActions: NormalizedRecommendedAction[]
+  categorizedRecommendedActions: NormalizedRecommendedAction[]
   summary: { totalFindings: number; criticalFindings: number; referenceDocumentCount: number; evidenceItemCount: number; inspectionStatus: string; severityBreakdown: Array<{ key: string; count: number; label: string }> }
 }
 
@@ -1370,13 +1381,19 @@ export function buildNormalizedReportModel<TCapture extends CaptureLike>(params:
   const fallbackFindings: ReviewDocument<TCapture>['findings'] = []
   const allFindings = [...document.findings, ...fallbackFindings]
   const findingModels = getNormalizedFindingModels(allFindings)
-  const recommendedActions = getNormalizedRecommendedActions(findingModels)
+  const categoryRecommendedActions = document.recommendedActionEvidence.flatMap((entry) => {
+    const sourceText = clean(entry.capture.technician_note || entry.capture.transcript || entry.group.recommendations.join(' '), 800)
+    const values = sourceText ? splitRecommendationText(sourceText) : entry.group.recommendations.flatMap(splitRecommendationText)
+    return values.map((action) => ({ priority: 'User selected', priorityScore: 50, action }))
+  })
+  const recommendedActions = [...getNormalizedRecommendedActions(findingModels), ...categoryRecommendedActions]
   const severityBreakdown = ['critical', 'advisory', 'informational'].map((key) => ({ key, count: findingModels.filter((finding) => finding.severity.key === key).length, label: findingModels.find((finding) => finding.severity.key === key)?.severity.label ?? ({ critical: '🔴 Critical', advisory: '🟡 Advisory', informational: '🟢 Informational' } as Record<string, string>)[key] })).filter((item) => item.count > 0)
   return {
     ...document,
     findings: allFindings,
     findingModels,
     recommendedActions,
+    categorizedRecommendedActions: categoryRecommendedActions,
     summary: {
       totalFindings: findingModels.length,
       criticalFindings: findingModels.filter((finding) => finding.severity.key === 'critical').length,
