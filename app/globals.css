@@ -820,6 +820,12 @@ a {
   justify-content: flex-start;
 }
 
+.standalone-note-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
 .standalone-text-note-toggle {
   align-self: flex-start;
   background: transparent;

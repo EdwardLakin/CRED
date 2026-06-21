@@ -50,7 +50,7 @@ const workflowScreenshots: ProductScreenshotCardProps[] = [
     title: 'Export documentation',
     eyebrow: 'Export',
     description:
-      'Download PDF, email, share, print, or save the approved report.',
+      'Email, share, preview/print, or save the approved report.',
     src: '/marketing/cred/export-report.png',
     alt: 'CRED export report screen with delivery options after approval',
   },
@@ -143,7 +143,7 @@ const steps = [
   ['Capture anything', 'Start a session and capture forms, photos, documents, voice notes, text notes, and field observations.'],
   ['CRED prepares the report', 'CRED organizes the captured material into professional documentation for review.'],
   ['Review and approve', 'Correct details, confirm what should be included, add signatures, and approve the report.'],
-  ['Export documentation', 'Download PDF, email, share a secure link, print, or save the approved report.'],
+  ['Export documentation', 'Email, share a secure link, preview/print, or save the approved report.'],
 ] as const
 
 const liveMetrics = [
@@ -189,7 +189,7 @@ const reportOutputs = [
   'Supporting photos',
   'Source documents',
   'Signatures',
-  'PDF, email, share link, save',
+  'Email, share link, preview/print, save',
 ] as const
 
 const useCases = [
@@ -218,7 +218,7 @@ const plans: Array<{
       '1 user',
       'Capture-first sessions',
       'Paper form and document capture',
-      'Professional PDF reports',
+      'Professional reports',
       'Human approval before export',
       'Email and share links',
     ],
@@ -259,7 +259,7 @@ const faqs = [
   ['What can I capture?', 'Capture forms, photos, documents, voice notes, text notes, measurements, and field observations in one session.'],
   ['Can I capture paper forms or reference documents?', 'Yes. Capture paper forms, labels, manuals, prior reports, reference documents, and job site context so CRED can keep them connected to the professional report.'],
   ['Can I review and edit before export?', 'Yes. CRED prepares a report from user-provided material, then you review details, correct sections, add signatures, and approve the documentation before export.'],
-  ['Can I export PDF, email, share, or save?', 'Yes. Approved documentation can be downloaded as a PDF, emailed, shared by link, printed, or saved for records.'],
+  ['Can I email, share, preview, print, or save?', 'Yes. Approved documentation can be emailed, shared by link, opened in a browser-friendly report for printing or saving as PDF, or saved for records.'],
 ] as const
 
 export default async function HomePage() {
