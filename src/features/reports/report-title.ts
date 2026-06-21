@@ -52,8 +52,11 @@ export function getReportInfoValue(draft: ReportTitleDraft, session: Pick<Report
 
 export function getDisplayReportTitle(draft: ReportTitleDraft, session: ReportTitleSession, options: { genericFallback?: boolean } = {}) {
   void options
-  const selectedReportType = normalizeReportType(session.session_type)
-  if (selectedReportType) return selectedReportType
+  const draftTitle = stripConfidenceText(draft?.title ?? '').trim()
+  if (draftTitle && !isPlaceholderReportTitle(draftTitle)) return draftTitle
+
+  const sessionTitle = stripConfidenceText(session.title ?? '').trim()
+  if (sessionTitle && !isPlaceholderReportTitle(sessionTitle)) return sessionTitle
 
   const subject = getReportInfoValue(draft, session, 'subject_name')
     || getReportInfoValue(draft, session, 'customer_client')
@@ -67,13 +70,10 @@ export function getDisplayReportTitle(draft: ReportTitleDraft, session: ReportTi
   const subjectTitle = buildSubjectReportTitle(subject)
   if (subjectTitle) return subjectTitle
 
-  const draftTitle = stripConfidenceText(draft?.title ?? '').trim()
-  if (draftTitle && !isPlaceholderReportTitle(draftTitle)) return draftTitle
+  const selectedReportType = normalizeReportType(session.session_type)
+  if (selectedReportType && selectedReportType !== 'General Evidence Report') return selectedReportType
 
-  const sessionTitle = stripConfidenceText(session.title ?? '').trim()
-  if (sessionTitle && !isPlaceholderReportTitle(sessionTitle)) return sessionTitle
-
-  return 'General Evidence Report'
+  return 'Professional Evidence Report'
 }
 
 export function buildSafeReportTitle(args: {

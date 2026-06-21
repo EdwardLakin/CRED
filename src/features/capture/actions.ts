@@ -8,6 +8,7 @@ import {
   requireActiveBillingAccess,
 } from '@/features/billing'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import { normalizeEvidenceCategory } from '@/features/capture/evidence-category'
 import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import {
   buildClassifiedImageData,
@@ -2404,6 +2405,7 @@ export async function updateCaptureReview(
     0,
     4000,
   )
+  const evidenceCategory = normalizeEvidenceCategory(getString(formData, 'evidence_category'))
   const reportOrderValue = Number(getString(formData, 'report_order'))
   const reportOrder =
     Number.isFinite(reportOrderValue) && reportOrderValue > 0
@@ -2463,6 +2465,7 @@ export async function updateCaptureReview(
       note_source: 'edited',
       include_in_report: includeInReport,
       report_order: reportOrder,
+      evidence_category: evidenceCategory,
       capture_ai_analysis: updatedAnalysis,
       updated_at: new Date().toISOString(),
     })
@@ -2482,6 +2485,7 @@ export async function updateCaptureReview(
   revalidatePath(
     `/dashboard/sessions/${capture.documentation_session_id}/capture`,
   )
+  revalidatePath(`/dashboard/sessions/${capture.documentation_session_id}/report`)
 
   return { ok: true, message: 'Saved.' }
 }

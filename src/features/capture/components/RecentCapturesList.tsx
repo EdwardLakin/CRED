@@ -2,6 +2,7 @@ import type { CaptureItem } from '../types'
 import { CAPTURE_TYPE_LABELS, getCaptureProcessingLabel, getCaptureProcessingStatus, getSourceDocumentMetadata, type CaptureType } from '../types'
 import { formatDateTime } from '@/features/sessions'
 import { DeleteEvidenceButton } from '@/features/capture/components/DeleteEvidenceButton'
+import { EVIDENCE_CATEGORY_LABELS, normalizeEvidenceCategory } from '@/features/capture/evidence-category'
 
 function getCaptureLabel(capture: CaptureItem) {
   const sourceDocument = getSourceDocumentMetadata(capture.extracted_data)
@@ -41,6 +42,7 @@ export function RecentCapturesList({ captures, signedUrls, limit = 6, timeZone =
           <div>
             <h3>{getCaptureLabel(capture)}</h3>
             <p className="muted">{getCaptureMeta(capture)} · {formatDateTime(capture.captured_at ?? capture.created_at, timeZone)}</p>
+            <span className="classification-pill success">{EVIDENCE_CATEGORY_LABELS[normalizeEvidenceCategory(capture.evidence_category)]}</span>
           </div>
           <div className="capture-card-actions">
             <span className={`ai-status-pill ${getCaptureStatusVariant(getCaptureProcessingStatus(capture))}`}>
@@ -49,6 +51,11 @@ export function RecentCapturesList({ captures, signedUrls, limit = 6, timeZone =
             {signedUrls[capture.id] ? (
               <a href={signedUrls[capture.id]} target="_blank" rel="noreferrer" className="secondary-link touch-target">
                 Open
+              </a>
+            ) : null}
+            {signedUrls[capture.id] ? (
+              <a href={signedUrls[capture.id]} download target="_blank" rel="noreferrer" className="secondary-link touch-target">
+                Download Original
               </a>
             ) : null}
             <DeleteEvidenceButton captureId={capture.id} />
