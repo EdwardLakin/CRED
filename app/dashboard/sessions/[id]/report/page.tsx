@@ -284,21 +284,31 @@ export default async function SessionReportPreviewPage({
     (capture) => capture.include_in_report,
   );
   const signedEvidenceUrls: Record<string, string> = {};
+  const originalEvidenceUrls: Record<string, string> = {};
   await Promise.all(
     visibleCaptures.map(async (capture) => {
-      const path = isPhotoCapture(capture)
-        ? (capture.storage_path ?? capture.thumbnail_path)
+      const previewPath = isPhotoCapture(capture)
+        ? (capture.thumbnail_path ?? capture.storage_path)
         : (capture.thumbnail_path ?? capture.storage_path);
-      if (!path) return;
-      const { data } = await supabase.storage
-        .from("documentation-captures")
-        .createSignedUrl(path, 60 * 10);
-      if (data?.signedUrl) signedEvidenceUrls[capture.id] = data.signedUrl;
+      const originalPath = capture.storage_path ?? previewPath;
+      if (previewPath) {
+        const { data } = await supabase.storage
+          .from("documentation-captures")
+          .createSignedUrl(previewPath, 60 * 10);
+        if (data?.signedUrl) signedEvidenceUrls[capture.id] = data.signedUrl;
+      }
+      if (originalPath) {
+        const { data } = await supabase.storage
+          .from("documentation-captures")
+          .createSignedUrl(originalPath, 60 * 10);
+        if (data?.signedUrl) originalEvidenceUrls[capture.id] = data.signedUrl;
+      }
     }),
   );
   const supportingEvidence = visibleCaptures.map((capture) => ({
     capture,
     signedUrl: signedEvidenceUrls[capture.id] ?? null,
+    originalUrl: originalEvidenceUrls[capture.id] ?? signedEvidenceUrls[capture.id] ?? null,
     title: getEvidenceTitle(capture),
     note: getEvidenceNote(capture),
     kind: getEvidenceKind(capture),

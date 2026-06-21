@@ -111,11 +111,11 @@ export async function createDocumentationSession(formData: FormData) {
     redirect(`/dashboard?error=${encodeURIComponent(error?.message ?? 'Unable to create session.')}`)
   }
 
-  if (requestedReportTitle) {
+  if (requestedTitle) {
     await supabase
       .from('ai_report_drafts')
-      .update({ title: reportTitle, updated_at: new Date().toISOString() })
-      .eq('documentation_session_id', sessionId)
+      .update({ title, updated_at: new Date().toISOString() })
+      .eq('documentation_session_id', session.id)
       .eq('organization_id', profile.organization_id)
       .not('status', 'eq', 'superseded')
   }

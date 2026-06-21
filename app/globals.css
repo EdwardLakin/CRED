@@ -4476,3 +4476,60 @@ a:focus-visible {
 .settings-secondary-grid {
   opacity: 0.92;
 }
+
+.subtle-download-link {
+  font-size: 0.82rem;
+  font-weight: 700;
+  opacity: 0.78;
+}
+
+.pdf-safe-image {
+  height: auto;
+  max-height: 360px;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.evidence-index-list {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.evidence-index-list .evidence-first-card {
+  break-inside: avoid;
+  grid-template-columns: 1fr;
+  padding: 0.75rem 0.9rem;
+}
+
+.evidence-index-list .evidence-first-body {
+  gap: 0.25rem;
+}
+
+@media print {
+  .review-photo-grid {
+    gap: 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .review-photo-card,
+  .evidence-first-card,
+  .report-field-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .review-photo-card img,
+  .evidence-first-media img,
+  .report-edit-evidence-preview img,
+  .pdf-safe-image {
+    height: auto !important;
+    max-height: 260px !important;
+    max-width: 100% !important;
+    object-fit: contain !important;
+  }
+
+  .report-supporting-section .evidence-first-list,
+  .evidence-index-list {
+    grid-template-columns: 1fr;
+  }
+}

@@ -47,6 +47,7 @@ type ServerAction = (formData: FormData) => void | Promise<void>;
 export type SupportingEvidenceItem = {
   capture: CaptureItem;
   signedUrl: string | null;
+  originalUrl?: string | null;
   title: string;
   note: string | null;
   kind: "photo" | "video" | "audio" | "note" | "document" | "file";
@@ -630,7 +631,7 @@ export function ReportReview({
             <div>
               <h3>Report Details</h3>
               <p className="muted">
-                Edit the report title, customer, subject, asset, location, and reference number used across review, export, sharing, and delivery.
+                Edit the report title, customer, subject, asset, location, and reference or file note used across review, export, sharing, and delivery.
               </p>
             </div>
           </summary>
@@ -757,7 +758,7 @@ export function ReportReview({
                 />
               </label>
               <label className="field-stack">
-                <span className="label">Reference Number</span>
+                <span className="label">Reference / File Note</span>
                 <input
                   className="input"
                   name="reference_number"
@@ -1337,7 +1338,7 @@ function ReportDetailsSummary({
     ],
     ["Location", cleanReportMetadataValue(getReportInfoValue(currentReport, session, "location"))],
     [
-      "Reference Number",
+      "Reference / File Note",
       cleanReportMetadataValue(getReportInfoValue(currentReport, session, "reference_number")),
     ],
   ].filter(([, value]) => value);
@@ -1453,7 +1454,7 @@ function EvidenceGroupList({
                 </div>
               ) : item.kind === "photo" && item.signedUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured.
-                <img src={item.signedUrl} alt={item.title} />
+                <img className="pdf-safe-image" src={item.signedUrl} alt={item.title} loading="eager" decoding="sync" />
               ) : (
                 <div className="review-evidence-placeholder">{item.title}</div>
               )}
@@ -1561,6 +1562,7 @@ function EvidenceAppendix({
   const compactByDefault =
     preferCompact ||
     (!isGenericEvidenceReport && supportingEvidence.length > 3);
+  const renderCompactIndex = photoHeavy || compactByDefault;
   return (
     <details
       className="report-subsection report-supporting-section"
@@ -1590,29 +1592,35 @@ function EvidenceAppendix({
       </summary>
       {supportingEvidence.length > 0 ? (
         <div
-          className={photoHeavy ? "review-photo-grid" : "evidence-first-list"}
+          className={renderCompactIndex ? "evidence-index-list" : "evidence-first-list"}
         >
           {supportingEvidence.map((item) => {
             const metadata = evidenceMetadata.get(item.capture.id);
             return (
               <article key={item.capture.id} className="evidence-first-card">
-                <div className="evidence-first-media">
-                  {item.kind === "photo" && item.signedUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured.
-                    <img src={item.signedUrl} alt={item.title} />
-                  ) : item.signedUrl ? (
-                    <div className="review-evidence-placeholder">
-                      <a href={item.signedUrl}>Open {item.kind} evidence</a>
-                    </div>
-                  ) : (
-                    <div className="review-evidence-placeholder">
-                      {item.title}
-                    </div>
-                  )}
-                </div>
+                {renderCompactIndex ? null : (
+                  <div className="evidence-first-media">
+                    {item.kind === "photo" && item.signedUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured.
+                      <img className="pdf-safe-image" src={item.signedUrl} alt={item.title} loading="eager" decoding="sync" />
+                    ) : item.signedUrl ? (
+                      <div className="review-evidence-placeholder">
+                        <a href={item.signedUrl}>Open {item.kind} evidence</a>
+                      </div>
+                    ) : (
+                      <div className="review-evidence-placeholder">
+                        {item.title}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="evidence-first-body">
                   <h4>{item.title}</h4>
-                  {item.note ? (
+                  {renderCompactIndex ? (
+                    <p className="muted">
+                      {metadata?.evidenceId ?? item.capture.id.slice(0, 8)} · Captured {metadata?.capturedAtLabel ?? "Not captured"} · {metadata?.evidenceType ?? item.kind}
+                    </p>
+                  ) : item.note ? (
                     <p>
                       <strong>Technician note / caption:</strong>{" "}
                       {stripConfidenceText(item.note)}
@@ -1685,10 +1693,10 @@ function EvidenceGallery({
               <div className="report-edit-evidence-preview">
                 {item.kind === "photo" && item.signedUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured.
-                  <img src={item.signedUrl} alt={item.title} />
+                  <img className="pdf-safe-image" src={item.signedUrl} alt={item.title} loading="eager" decoding="sync" />
                 ) : null}
-                {item.signedUrl ? (
-                  <a className="secondary-link" href={item.signedUrl} download target="_blank" rel="noreferrer">Download Original</a>
+                {item.originalUrl ? (
+                  <a className="secondary-link subtle-download-link" href={item.originalUrl} download target="_blank" rel="noreferrer">Download Original</a>
                 ) : null}
                 <strong>{item.title}</strong>
               </div>
@@ -1730,7 +1738,7 @@ function EvidenceGallery({
               <article key={item.capture.id} className="review-photo-card">
                 {item.signedUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured.
-                  <img src={item.signedUrl} alt={item.title} />
+                  <img className="pdf-safe-image" src={item.signedUrl} alt={item.title} loading="eager" decoding="sync" />
                 ) : (
                   <div className="review-evidence-placeholder">Photo saved</div>
                 )}
