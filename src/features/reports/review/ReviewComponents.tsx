@@ -1521,166 +1521,205 @@ export function ExportPanel({
   const activeShareTokens = shareTokens.filter((token) => !token.disabled_at);
 
   return (
-    <section
+    <details
       id="export-report"
-      className="card detail-card report-sidebar-card report-delivery-tabs export-panel form-stack compact-export-panel"
+      className="card detail-card report-sidebar-card export-panel compact-export-panel"
+      open={isReadyForExport}
     >
-      <div>
-        <p className="eyebrow">Deliver</p>
-        <h2>Export Report</h2>
-        <p className="muted delivery-helper">
-          {isReadyForExport
-            ? "Choose how to deliver, preview, or save this approved documentation."
-            : "Approve this report before emailing, sharing, previewing, or saving."}
-        </p>
-      </div>
+      <summary className="export-panel-summary">
+        <span className="export-panel-icon" aria-hidden="true">
+          ⇧
+        </span>
+        <span>
+          <span className="eyebrow">Export Report</span>
+          <span className="export-panel-title">Export Report</span>
+          <span className="muted delivery-helper">
+            Deliver, preview, or save your approved documentation.
+          </span>
+        </span>
+        <span className="export-panel-chevron" aria-hidden="true">
+          ⌄
+        </span>
+      </summary>
 
-      <div className="export-action-stack" aria-label="Report delivery options">
-        <form action={emailAction} className="form-stack export-action-card">
-          <div>
-            <h3>Email</h3>
-            <p className="muted">
-              Send a secure documentation link to recipients.
-            </p>
-          </div>
-          <div className="field-stack">
-            <label htmlFor="recipients" className="label">
-              Customer email / recipients
-            </label>
-            <input
-              id="recipients"
-              name="recipients"
-              className="input"
-              placeholder="customer@example.com, manager@example.com"
-              required
-              disabled={!isReadyForExport}
-            />
-          </div>
-          <div className="field-stack">
-            <label htmlFor="message" className="label">
-              Custom message
-            </label>
-            <textarea
-              id="message"
-              name="message"
-              className="input text-area"
-              placeholder="Please review the documentation."
-              disabled={!isReadyForExport}
-            />
-          </div>
-          <button
-            className="button button-secondary touch-target"
-            disabled={!isReadyForExport}
+      <div className="export-panel-body">
+        {!isReadyForExport ? (
+          <p className="notice warning export-locked-message">
+            Approve the report before delivery options are available.
+          </p>
+        ) : null}
+
+        <div className="export-action-tiles" aria-label="Report delivery options">
+          <details
+            className="export-action-tile"
+            aria-disabled={!isReadyForExport}
           >
-            Email
-          </button>
-        </form>
+            <summary>
+              <span className="export-tile-icon export-tile-icon-email" aria-hidden="true">
+                ✉
+              </span>
+              <strong>Email Report</strong>
+            </summary>
+            <form action={emailAction} className="form-stack export-action-details">
+              <p className="muted">
+                Send a secure documentation link to recipients.
+              </p>
+              <div className="field-stack">
+                <label htmlFor="recipients" className="label">
+                  Customer email / recipients
+                </label>
+                <input
+                  id="recipients"
+                  name="recipients"
+                  className="input"
+                  placeholder="customer@example.com, manager@example.com"
+                  required
+                  disabled={!isReadyForExport}
+                />
+              </div>
+              <div className="field-stack">
+                <label htmlFor="message" className="label">
+                  Custom message
+                </label>
+                <textarea
+                  id="message"
+                  name="message"
+                  className="input text-area"
+                  placeholder="Please review the documentation."
+                  disabled={!isReadyForExport}
+                />
+              </div>
+              <button
+                className="button button-secondary touch-target"
+                disabled={!isReadyForExport}
+              >
+                Send Email
+              </button>
+            </form>
+          </details>
 
-        <form action={shareAction} className="form-stack export-action-card">
-          <div>
-            <h3>Share Link</h3>
-            <p className="muted">
-              Create a secure link for this documentation.
-            </p>
-          </div>
-          <div className="field-stack">
-            <label htmlFor="expires_at" className="label">
-              Expiration date
-            </label>
-            <input
-              id="expires_at"
-              name="expires_at"
-              className="input"
-              type="datetime-local"
-              disabled={!isReadyForExport}
-            />
-          </div>
-          <button
-            className="button button-secondary touch-target"
-            disabled={!isReadyForExport}
+          <details
+            className="export-action-tile"
+            aria-disabled={!isReadyForExport}
           >
-            Copy Share Link
-          </button>
-        </form>
+            <summary>
+              <span className="export-tile-icon export-tile-icon-share" aria-hidden="true">
+                🔗
+              </span>
+              <strong>Share Link</strong>
+            </summary>
+            <form action={shareAction} className="form-stack export-action-details">
+              <p className="muted">Create a secure link for this documentation.</p>
+              <div className="field-stack">
+                <label htmlFor="expires_at" className="label">
+                  Expiration date
+                </label>
+                <input
+                  id="expires_at"
+                  name="expires_at"
+                  className="input"
+                  type="datetime-local"
+                  disabled={!isReadyForExport}
+                />
+              </div>
+              <button
+                className="button button-secondary touch-target"
+                disabled={!isReadyForExport}
+              >
+                Copy Share Link
+              </button>
+            </form>
+            {activeShareTokens.length > 0 ? (
+              <div
+                className="compact-token-list export-share-list"
+                aria-label="Current share links"
+              >
+                {activeShareTokens.map((token) => {
+                  const shareUrl = origin
+                    ? `${origin}/reports/share/${token.token}`
+                    : `/reports/share/${token.token}`;
+                  return (
+                    <article key={token.id} className="compact-token-item">
+                      <div>
+                        <strong>{shareUrl}</strong>
+                        <p className="muted">
+                          {token.expires_at
+                            ? `Expires ${formatDateTime(
+                                token.expires_at,
+                                timeZone,
+                              )}`
+                            : "No expiration"}
+                        </p>
+                      </div>
+                      <form
+                        action={disableReportShareLink.bind(
+                          null,
+                          sessionId,
+                          token.id,
+                        )}
+                      >
+                        <button className="button button-secondary touch-target">
+                          Remove Link
+                        </button>
+                      </form>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : null}
+          </details>
 
-        <div className="export-action-card export-button-grid">
-          <div>
-            <h3>Preview / Print Report</h3>
-            <p className="muted">
-              Open the browser-friendly report in a new tab. Use your browser’s
-              Print or Share menu to save as PDF.
-            </p>
-          </div>
           {isReadyForExport ? (
             <Link
               href={reportPath}
-              className="button button-secondary touch-target"
+              className="export-action-tile export-action-link"
               target="_blank"
             >
+              <span className="export-tile-icon export-tile-icon-print" aria-hidden="true">
+                ⎙
+              </span>
               Preview / Print
             </Link>
           ) : (
             <span
-              className="button button-secondary touch-target disabled-action"
+              className="export-action-tile export-action-link disabled-action"
               aria-disabled="true"
             >
+              <span className="export-tile-icon export-tile-icon-print" aria-hidden="true">
+                ⎙
+              </span>
               Preview / Print
             </span>
           )}
-        </div>
 
-        <form
-          action={saveAction}
-          className="export-action-card export-button-grid"
-        >
-          <div>
-            <h3>Save in CRED</h3>
-            <p className="muted">Keep a saved copy of this report.</p>
-          </div>
-          <button
-            className="button button-secondary touch-target"
-            disabled={!isReadyForExport}
+          <details
+            className="export-action-tile"
+            aria-disabled={!isReadyForExport}
           >
-            Save in CRED
-          </button>
-        </form>
-      </div>
-
-      {activeShareTokens.length > 0 ? (
-        <div
-          className="compact-token-list export-share-list"
-          aria-label="Current share links"
-        >
-          {activeShareTokens.map((token) => {
-            const shareUrl = origin
-              ? `${origin}/reports/share/${token.token}`
-              : `/reports/share/${token.token}`;
-            return (
-              <article key={token.id} className="compact-token-item">
-                <div>
-                  <strong>{shareUrl}</strong>
-                  <p className="muted">
-                    {token.expires_at
-                      ? `Expires ${formatDateTime(token.expires_at, timeZone)}`
-                      : "No expiration"}
-                  </p>
-                </div>
-                <form
-                  action={disableReportShareLink.bind(
-                    null,
-                    sessionId,
-                    token.id,
-                  )}
-                >
-                  <button className="button button-secondary touch-target">
-                    Remove Link
-                  </button>
-                </form>
-              </article>
-            );
-          })}
+            <summary>
+              <span className="export-tile-icon export-tile-icon-save" aria-hidden="true">
+                ▤
+              </span>
+              <strong>Save in CRED</strong>
+            </summary>
+            <form action={saveAction} className="form-stack export-action-details">
+              <p className="muted">Keep a saved copy of this report.</p>
+              <button
+                className="button button-secondary touch-target"
+                disabled={!isReadyForExport}
+              >
+                Save in CRED
+              </button>
+            </form>
+          </details>
         </div>
-      ) : null}
-    </section>
+
+        <p className="muted export-print-note">
+          Open the browser-friendly report. Use your browser’s Print or Share
+          menu to save as PDF.
+        </p>
+
+      </div>
+    </details>
   );
 }
