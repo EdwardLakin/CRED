@@ -1,0 +1,3 @@
+import { SuggestionCard } from './SuggestionCard'
+import type { ObservationSuggestion } from '@/features/evidence/suggestions/data'
+export function ObservationSuggestionCard({ sessionId, suggestion }: { sessionId: string; suggestion: ObservationSuggestion }) { return <SuggestionCard sessionId={sessionId} suggestionId={suggestion.id} category="observation" title={suggestion.statement} confidence={suggestion.confidence} createdAt={suggestion.created_at} reviewStatus={suggestion.review_status} provenance={suggestion.provenance}><label>Statement<textarea className="input" name="statement" defaultValue={suggestion.statement} /></label><input type="hidden" name="assertion_type" value={suggestion.assertion_type} /></SuggestionCard> }

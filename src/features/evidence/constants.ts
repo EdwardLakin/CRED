@@ -20,6 +20,7 @@ export const EVIDENCE_SOURCE_KINDS = [
   'voice_note',
   'email_import',
   'system',
+  'ai',
 ] as const
 
 export const IMPORT_BATCH_SOURCE_KINDS = [
@@ -100,6 +101,7 @@ export const EVIDENCE_WORKSPACE_LABELS = {
   entities: 'Entities',
   assertions: 'Factual Observations',
   relationships: 'Relationship Explorer',
+  suggestions: 'Suggestions',
   deliverables: 'Deliverables',
   report: 'Existing Report',
   includeInOutputs: 'Include in outputs',

@@ -8,6 +8,7 @@ export type EvidenceWorkspaceCounts = {
   entities: number
   factualObservations: number
   relationships: number
+  suggestions?: number
 }
 
 const cards = [
@@ -16,6 +17,7 @@ const cards = [
   { label: EVIDENCE_WORKSPACE_LABELS.entities, key: 'entities', href: 'entities', description: 'Review people, places, assets, and organizations.' },
   { label: EVIDENCE_WORKSPACE_LABELS.assertions, key: 'factualObservations', href: 'assertions', description: 'Review factual observations and supporting links.' },
   { label: EVIDENCE_WORKSPACE_LABELS.relationships, key: 'relationships', href: 'relationships', description: 'Explore how evidence, events, entities, and observations connect.' },
+  { label: EVIDENCE_WORKSPACE_LABELS.suggestions, key: null, href: 'suggestions', description: 'Review AI-proposed events, entities, observations, and relationships before accepting anything.' },
   { label: EVIDENCE_WORKSPACE_LABELS.deliverables, key: null, href: 'deliverables', description: 'Generate preview-only chronology, evidence index, and observation summary outputs.' },
   { label: EVIDENCE_WORKSPACE_LABELS.report, key: null, href: 'report', description: 'Open the existing report review workspace.' },
 ] as const
@@ -26,7 +28,7 @@ export function EvidenceWorkspaceNav({ sessionId, counts }: { sessionId: string;
       <div>
         <p className="eyebrow">Evidence Workspace</p>
         <h2 id="evidence-workspace-heading">Evidence Workspace overview</h2>
-        <p className="muted">Use one place to move between Evidence Library, Timeline, Entities, Factual Observations, Relationship Explorer, Deliverables, and the Existing Report.</p>
+        <p className="muted">Use one place to move between Evidence Library, Timeline, Entities, Factual Observations, Relationship Explorer, Suggestions, Deliverables, and the Existing Report.</p>
       </div>
       <div className="metadata-list">
         <div><dt>Evidence items</dt><dd>{counts.evidenceItems}</dd></div>
@@ -42,6 +44,6 @@ export function EvidenceWorkspaceNav({ sessionId, counts }: { sessionId: string;
   )
 }
 
-export function EvidenceWorkspaceBacklinks({ sessionId, current }: { sessionId: string; current: 'library' | 'timeline' | 'entities' | 'assertions' | 'relationships' | 'deliverables' | 'report' }) {
+export function EvidenceWorkspaceBacklinks({ sessionId, current }: { sessionId: string; current: 'library' | 'timeline' | 'entities' | 'assertions' | 'relationships' | 'suggestions' | 'deliverables' | 'report' }) {
   return <nav className="form-actions" aria-label="Evidence Workspace navigation">{cards.filter((card) => card.href !== (current === 'library' ? 'evidence' : current)).map((card) => <Link key={card.label} href={`/dashboard/sessions/${sessionId}/${card.href}`} className="secondary-link touch-target">{card.label}</Link>)}</nav>
 }
