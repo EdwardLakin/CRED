@@ -170,9 +170,7 @@ test("label-only checklist rows survive without captured values or checkbox mark
   assert.ok(blueprint);
   assert.ok(blueprint.sections.length >= 10);
   assert.ok(blueprint.fields.length > 2);
-  assert.ok(blueprint.extraction_diagnostics.ocr_line_count >= 20);
-  assert.ok(blueprint.extraction_diagnostics.detected_section_count >= 10);
-  assert.ok(blueprint.extraction_diagnostics.first_25_extracted_labels.length > 2);
+  assert.equal(Object.prototype.hasOwnProperty.call(blueprint, "extraction_diagnostics"), false);
   const sections = normalizeFormBlueprintSections({ mode: "form_structured", report_structure_source: "uploaded_form", form_blueprint: blueprint }, [hansenQuarterlyCapture]);
   assert.ok(sections.flatMap((section) => section.fields).length > 2);
 });
@@ -249,4 +247,32 @@ test("non-automotive form recovers generic sections and rows", async () => {
   assert.ok(blueprint.sections.some((section) => section.title === "Building Exterior"));
   assert.ok(blueprint.fields.some((field) => field.label === "Roof condition"));
   assert.ok(blueprint.fields.some((field) => field.label === "Battery backup test" && field.value === "Pass"));
+});
+
+
+test("alternate status vocabulary rows preserve explicit marks", async () => {
+  const { extractFormBlueprint, normalizeFormBlueprintSections } = await loadReportStructure();
+  const capture = nestedCapture({
+    id: "facility-status-form",
+    type: "document",
+    media_kind: "document",
+    ai_summary: "Facility audit with generic status vocabulary columns.",
+    ocr_text: `Facility Compliance Inspection Audit
+Area Acceptable Needs Review Not Assessed Monitor Corrective Action
+Fire door latch ☑ Acceptable ☐ Needs Review ☐ Not Assessed ☐ Monitor ☐ Corrective Action
+Exit route signage ☐ Acceptable ☑ Needs Review ☐ Not Assessed ☐ Monitor ☐ Corrective Action
+Water fountain ☐ Acceptable ☐ Needs Review ☑ Not Assessed ☐ Monitor ☐ Corrective Action
+Policy Review Compliant Non-compliant Not Reviewed
+Visitor log ☐ Compliant ☑ Non-compliant ☐ Not Reviewed`,
+    extracted_data: { extraction: { fields: {} } },
+  });
+  const blueprint = extractFormBlueprint([capture]);
+  assert.ok(blueprint);
+  const sections = normalizeFormBlueprintSections({ mode: "form_structured", report_structure_source: "uploaded_form", form_blueprint: blueprint }, [capture]);
+  const fields = sections.flatMap((section) => section.fields);
+  assert.equal(fields.find((field) => field.label === "Fire door latch")?.value, "Acceptable");
+  assert.equal(fields.find((field) => field.label === "Exit route signage")?.value, "Needs Review");
+  assert.equal(fields.find((field) => field.label === "Water fountain")?.value, "Not Assessed");
+  assert.equal(fields.find((field) => field.label === "Visitor log")?.value, "Non-compliant");
+  assert.deepEqual(fields.find((field) => field.label === "Visitor log")?.status_choices, ["Compliant", "Non-compliant", "Not Reviewed"]);
 });
