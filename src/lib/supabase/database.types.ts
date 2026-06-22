@@ -535,6 +535,23 @@ export interface Database {
           ocr_text: string | null
           capture_ai_analysis: Json
           extracted_data: Json
+          import_batch_id: string | null
+          original_filename: string | null
+          file_size_bytes: number | null
+          mime_type: string | null
+          content_hash_sha256: string | null
+          source_kind: string
+          source_uri: string | null
+          source_metadata: Json
+          source_created_at: string | null
+          source_sent_at: string | null
+          source_received_at: string | null
+          event_date: string | null
+          event_date_precision: string | null
+          evidence_review_status: string
+          evidence_excluded_reason: string | null
+          duplicate_of_capture_item_id: string | null
+          duplicate_status: string
           captured_at: string
           created_at: string
           updated_at: string
@@ -565,6 +582,23 @@ export interface Database {
           ocr_text?: string | null
           capture_ai_analysis?: Json
           extracted_data?: Json
+          import_batch_id?: string | null
+          original_filename?: string | null
+          file_size_bytes?: number | null
+          mime_type?: string | null
+          content_hash_sha256?: string | null
+          source_kind?: string
+          source_uri?: string | null
+          source_metadata?: Json
+          source_created_at?: string | null
+          source_sent_at?: string | null
+          source_received_at?: string | null
+          event_date?: string | null
+          event_date_precision?: string | null
+          evidence_review_status?: string
+          evidence_excluded_reason?: string | null
+          duplicate_of_capture_item_id?: string | null
+          duplicate_status?: string
           captured_at?: string
           created_at?: string
           updated_at?: string
@@ -595,6 +629,23 @@ export interface Database {
           ocr_text?: string | null
           capture_ai_analysis?: Json
           extracted_data?: Json
+          import_batch_id?: string | null
+          original_filename?: string | null
+          file_size_bytes?: number | null
+          mime_type?: string | null
+          content_hash_sha256?: string | null
+          source_kind?: string
+          source_uri?: string | null
+          source_metadata?: Json
+          source_created_at?: string | null
+          source_sent_at?: string | null
+          source_received_at?: string | null
+          event_date?: string | null
+          event_date_precision?: string | null
+          evidence_review_status?: string
+          evidence_excluded_reason?: string | null
+          duplicate_of_capture_item_id?: string | null
+          duplicate_status?: string
           captured_at?: string
           created_at?: string
           updated_at?: string
@@ -614,7 +665,284 @@ export interface Database {
             referencedRelation: 'organizations'
             referencedColumns: ['id']
           },
+          {
+            foreignKeyName: 'capture_items_import_batch_id_fkey'
+            columns: ['import_batch_id']
+            isOneToOne: false
+            referencedRelation: 'evidence_import_batches'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'capture_items_duplicate_of_capture_item_id_fkey'
+            columns: ['duplicate_of_capture_item_id']
+            isOneToOne: false
+            referencedRelation: 'capture_items'
+            referencedColumns: ['id']
+          },
         ]
+      }
+
+      evidence_import_batches: {
+        Row: {
+          id: string
+          documentation_session_id: string
+          organization_id: string
+          source_kind: string
+          status: string
+          file_count: number
+          processed_count: number
+          failed_count: number
+          metadata: Json
+          created_by: string | null
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          documentation_session_id: string
+          organization_id: string
+          source_kind?: string
+          status?: string
+          file_count?: number
+          processed_count?: number
+          failed_count?: number
+          metadata?: Json
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          documentation_session_id?: string
+          organization_id?: string
+          source_kind?: string
+          status?: string
+          file_count?: number
+          processed_count?: number
+          failed_count?: number
+          metadata?: Json
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'evidence_import_batches_documentation_session_id_fkey'
+            columns: ['documentation_session_id']
+            isOneToOne: false
+            referencedRelation: 'documentation_sessions'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'evidence_import_batches_organization_id_fkey'
+            columns: ['organization_id']
+            isOneToOne: false
+            referencedRelation: 'organizations'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'evidence_import_batches_created_by_fkey'
+            columns: ['created_by']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      evidence_entities: {
+        Row: {
+          id: string
+          documentation_session_id: string
+          organization_id: string
+          entity_type: string
+          display_name: string
+          normalized_name: string | null
+          description: string | null
+          attributes: Json
+          suggestion_source: string
+          review_status: string
+          confidence: number | null
+          provenance: Json
+          created_by: string | null
+          reviewed_by: string | null
+          reviewed_at: string | null
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          documentation_session_id: string
+          organization_id: string
+          entity_type: string
+          display_name: string
+          normalized_name?: string | null
+          description?: string | null
+          attributes?: Json
+          suggestion_source?: string
+          review_status?: string
+          confidence?: number | null
+          provenance?: Json
+          created_by?: string | null
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          documentation_session_id?: string
+          organization_id?: string
+          entity_type?: string
+          display_name?: string
+          normalized_name?: string | null
+          description?: string | null
+          attributes?: Json
+          suggestion_source?: string
+          review_status?: string
+          confidence?: number | null
+          provenance?: Json
+          created_by?: string | null
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: []
+      }
+      evidence_assertions: {
+        Row: {
+          id: string
+          documentation_session_id: string
+          organization_id: string
+          assertion_type: string
+          statement: string
+          normalized_statement: string | null
+          attributes: Json
+          suggestion_source: string
+          review_status: string
+          confidence: number | null
+          provenance: Json
+          created_by: string | null
+          reviewed_by: string | null
+          reviewed_at: string | null
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          documentation_session_id: string
+          organization_id: string
+          assertion_type?: string
+          statement: string
+          normalized_statement?: string | null
+          attributes?: Json
+          suggestion_source?: string
+          review_status?: string
+          confidence?: number | null
+          provenance?: Json
+          created_by?: string | null
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          documentation_session_id?: string
+          organization_id?: string
+          assertion_type?: string
+          statement?: string
+          normalized_statement?: string | null
+          attributes?: Json
+          suggestion_source?: string
+          review_status?: string
+          confidence?: number | null
+          provenance?: Json
+          created_by?: string | null
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: []
+      }
+      evidence_relationships: {
+        Row: {
+          id: string
+          documentation_session_id: string
+          organization_id: string
+          source_type: string
+          source_id: string
+          target_type: string
+          target_id: string
+          relationship_type: string
+          relationship_label: string | null
+          confidence: number | null
+          suggestion_source: string
+          review_status: string
+          provenance: Json
+          created_by: string | null
+          reviewed_by: string | null
+          reviewed_at: string | null
+          rejected_reason: string | null
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          documentation_session_id: string
+          organization_id: string
+          source_type: string
+          source_id: string
+          target_type: string
+          target_id: string
+          relationship_type: string
+          relationship_label?: string | null
+          confidence?: number | null
+          suggestion_source?: string
+          review_status?: string
+          provenance?: Json
+          created_by?: string | null
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          rejected_reason?: string | null
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          documentation_session_id?: string
+          organization_id?: string
+          source_type?: string
+          source_id?: string
+          target_type?: string
+          target_id?: string
+          relationship_type?: string
+          relationship_label?: string | null
+          confidence?: number | null
+          suggestion_source?: string
+          review_status?: string
+          provenance?: Json
+          created_by?: string | null
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          rejected_reason?: string | null
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: []
       }
 
       template_imports: {
@@ -883,6 +1211,19 @@ export interface Database {
           title: string
           description: string | null
           event_type: string
+          event_start_at: string | null
+          event_end_at: string | null
+          event_date_precision: string
+          timezone: string | null
+          source_kind: string
+          review_status: string
+          confidence: number | null
+          provenance: Json
+          created_by: string | null
+          reviewed_by: string | null
+          reviewed_at: string | null
+          updated_at: string
+          deleted_at: string | null
           created_at: string
         }
         Insert: {
@@ -894,6 +1235,19 @@ export interface Database {
           title: string
           description?: string | null
           event_type: string
+          event_start_at?: string | null
+          event_end_at?: string | null
+          event_date_precision?: string
+          timezone?: string | null
+          source_kind?: string
+          review_status?: string
+          confidence?: number | null
+          provenance?: Json
+          created_by?: string | null
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          updated_at?: string
+          deleted_at?: string | null
           created_at?: string
         }
         Update: {
@@ -905,6 +1259,19 @@ export interface Database {
           title?: string
           description?: string | null
           event_type?: string
+          event_start_at?: string | null
+          event_end_at?: string | null
+          event_date_precision?: string
+          timezone?: string | null
+          source_kind?: string
+          review_status?: string
+          confidence?: number | null
+          provenance?: Json
+          created_by?: string | null
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          updated_at?: string
+          deleted_at?: string | null
           created_at?: string
         }
         Relationships: [
