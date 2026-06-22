@@ -44,6 +44,7 @@ import {
 } from './types'
 
 const CAPTURE_BUCKET = 'documentation-captures'
+const CAPTURE_BUCKET_MAX_BYTES = 100 * 1024 * 1024
 
 const ALLOWED_MIME_TYPES: Record<CaptureType, readonly string[]> = {
   photo: [
@@ -90,18 +91,12 @@ const ALLOWED_MIME_TYPES: Record<CaptureType, readonly string[]> = {
   ],
   text_note: [],
   video: [
-    'video/mp4',
-    'video/webm',
-    'video/quicktime',
-    'video/x-msvideo',
-    'video/mpeg',
+    // Follow-up: re-enable video only after live bucket/report support is
+    // verified. Repository migrations contain video, but Phase 0 must not offer
+    // media the active bucket may reject.
   ],
   evidence_video: [
-    'video/mp4',
-    'video/webm',
-    'video/quicktime',
-    'video/x-msvideo',
-    'video/mpeg',
+    // Follow-up: see video note above.
   ],
 }
 
@@ -109,12 +104,20 @@ type CaptureActionFailure = {
   ok: false
   sessionId?: string
   error: string
+  stage?: 'validation' | 'authorization' | 'storage' | 'metadata' | 'grouping' | 'authentication'
+  code?: string
+  message?: string
+  recoverable?: boolean
+  storagePath?: string
+  storageUploaded?: boolean
 }
 
 type CaptureActionSuccess = {
   ok: true
   sessionId: string
   processingStatus?: 'saved'
+  storagePath?: string
+  recovered?: boolean
 }
 
 type SafeFailureDetails = {
@@ -140,8 +143,12 @@ function getSafeToken(value: string, maxLength = 80) {
     .slice(0, maxLength)
 }
 
-function captureError(error: string, sessionId?: string): CaptureActionFailure {
-  return { ok: false, sessionId, error }
+function captureError(
+  error: string,
+  sessionId?: string,
+  details: Omit<CaptureActionFailure, 'ok' | 'error' | 'sessionId'> = {},
+): CaptureActionFailure {
+  return { ok: false, sessionId, error, message: error, ...details }
 }
 
 function mimeTypeHasAllowedType(mimeType: string, captureType: CaptureType) {
@@ -260,7 +267,17 @@ export async function validateCaptureBillingAccess(
     return captureError('Missing documentation session.')
   }
 
-  const { supabase, profile } = await requireSessionWorkspace()
+  let workspace: Awaited<ReturnType<typeof requireSessionWorkspace>>
+  try {
+    workspace = await requireSessionWorkspace()
+  } catch {
+    return captureError('Your sign-in expired. Sign in again, then retry.', trimmedSessionId, {
+      stage: 'authentication',
+      code: 'authentication_expired',
+      recoverable: true,
+    })
+  }
+  const { supabase, profile } = workspace
 
   const billingAccess = requireActiveBillingAccess(profile)
 
@@ -284,14 +301,28 @@ export async function validateCaptureBillingAccess(
     const mimeType = file.mimeType.trim().toLowerCase()
     const isVideoUpload = mimeTypeIsVideo(mimeType)
     const limits = getPlanLimits(billingAccess.access.plan)
-    const maxAllowedFileSize = isVideoUpload
-      ? limits.maxVideoFileSizeBytes
-      : limits.maxCaptureFileSizeBytes
+    const maxAllowedFileSize = Math.min(
+      isVideoUpload ? limits.maxVideoFileSizeBytes : limits.maxCaptureFileSizeBytes,
+      CAPTURE_BUCKET_MAX_BYTES,
+    )
+
+    const knownAllowedMime = Object.values(ALLOWED_MIME_TYPES).some((types) =>
+      types.includes(mimeType),
+    )
+
+    if (!knownAllowedMime) {
+      return captureError('This file type is not currently supported.', session.id, {
+        stage: 'validation',
+        code: 'unsupported_media_type',
+        recoverable: false,
+      })
+    }
 
     if (!Number.isFinite(size) || size <= 0) {
       return captureError(
         'One selected file is empty. Choose another file.',
         session.id,
+        { stage: 'validation', code: 'file_validation_failed', recoverable: false },
       )
     }
 
@@ -299,6 +330,7 @@ export async function validateCaptureBillingAccess(
       return captureError(
         `This file is larger than your plan allows. Maximum file size is ${formatBytes(maxAllowedFileSize)}.`,
         session.id,
+        { stage: 'validation', code: 'file_too_large', recoverable: false },
       )
     }
   }
@@ -659,26 +691,45 @@ export async function createCaptureRecordFromUploadedFile(
     : null
 
   if (!sessionId) {
-    return captureError('Missing documentation session.')
+    return captureError('Missing documentation session.', undefined, {
+      stage: 'validation',
+      code: 'file_validation_failed',
+      recoverable: true,
+    })
   }
 
   if (!storagePath || !filename || !mimeType) {
-    return captureError('Missing uploaded file metadata.', sessionId)
+    return captureError('Missing uploaded file metadata.', sessionId, {
+      stage: 'validation',
+      code: 'file_validation_failed',
+      recoverable: true,
+      storagePath,
+      storageUploaded: Boolean(storagePath),
+    })
   }
 
   if (!Number.isFinite(size) || size <= 0) {
-    return captureError(
-      'Uploaded file is empty. Choose another file.',
-      sessionId,
-    )
+    return captureError('Uploaded file is empty. Choose another file.', sessionId, {
+      stage: 'validation',
+      code: 'file_validation_failed',
+      recoverable: false,
+    })
   }
 
   if (!isCaptureIntent(rawCaptureIntent)) {
-    return captureError('Choose a valid capture mode.', sessionId)
+    return captureError('Choose a valid capture mode.', sessionId, {
+      stage: 'validation',
+      code: 'file_validation_failed',
+      recoverable: false,
+    })
   }
 
   if (rawSourceDocumentType && !sourceDocumentType) {
-    return captureError('Choose a valid source document type.', sessionId)
+    return captureError('Choose a valid source document type.', sessionId, {
+      stage: 'validation',
+      code: 'file_validation_failed',
+      recoverable: false,
+    })
   }
 
   const sourceDocument =
@@ -697,7 +748,11 @@ export async function createCaptureRecordFromUploadedFile(
   )
 
   if (!captureMetadata) {
-    return captureError('Choose a valid manual capture type.', sessionId)
+    return captureError('Choose a valid manual capture type.', sessionId, {
+      stage: 'validation',
+      code: 'unsupported_media_type',
+      recoverable: false,
+    })
   }
 
   const captureType = captureMetadata.type
@@ -713,27 +768,55 @@ export async function createCaptureRecordFromUploadedFile(
     !mimeTypeIsImage(mimeType) &&
     !mimeTypeIsVideo(mimeType)
   ) {
-    return captureError(
-      'Capture Evidence accepts photo or video files only.',
-      sessionId,
-    )
+    return captureError('This file type is not currently supported.', sessionId, {
+      stage: 'validation',
+      code: 'unsupported_media_type',
+      recoverable: false,
+      storagePath,
+      storageUploaded: true,
+    })
   }
 
   if (
     rawCaptureIntent === 'manual' &&
     !mimeTypeHasAllowedType(mimeType, captureType)
   ) {
-    return captureError(
-      'That file type is not allowed for this capture.',
-      sessionId,
-    )
+    return captureError('This file type is not currently supported.', sessionId, {
+      stage: 'validation',
+      code: 'unsupported_media_type',
+      recoverable: false,
+      storagePath,
+      storageUploaded: true,
+    })
   }
 
-  const { supabase, profile } = await requireSessionWorkspace()
+  let workspace: Awaited<ReturnType<typeof requireSessionWorkspace>>
+  try {
+    workspace = await requireSessionWorkspace()
+  } catch (error) {
+    logCaptureFailure({
+      step: 'capture_authentication',
+      ...getSafeErrorDetails(error),
+    })
+    return captureError('Your sign-in expired. Sign in again, then retry.', sessionId, {
+      stage: 'authentication',
+      code: 'authentication_expired',
+      recoverable: true,
+      storagePath,
+      storageUploaded: true,
+    })
+  }
+  const { supabase, profile } = workspace
   const billingAccess = requireActiveBillingAccess(profile)
 
   if (!billingAccess.ok) {
-    return captureError(billingAccess.message, sessionId)
+    return captureError(billingAccess.message, sessionId, {
+      stage: 'authorization',
+      code: 'billing_validation_failed',
+      recoverable: true,
+      storagePath,
+      storageUploaded: true,
+    })
   }
 
   const { data: session, error: sessionError } = await supabase
@@ -744,13 +827,25 @@ export async function createCaptureRecordFromUploadedFile(
     .single()
 
   if (sessionError || !session) {
-    return captureError('Documentation session not found.', sessionId)
+    return captureError('Documentation session not found.', sessionId, {
+      stage: 'authorization',
+      code: 'session_authorization_failed',
+      recoverable: false,
+      storagePath,
+      storageUploaded: true,
+    })
   }
 
   let observationGroupId: string | null = null
   let groupOrder: number | null = null
   if (requestedObservationGroupId && !safeObservationGroupId) {
-    return captureError('Observation group not found.', session.id)
+    return captureError('Observation group not found.', session.id, {
+      stage: 'grouping',
+      code: 'group_validation_failed',
+      recoverable: true,
+      storagePath,
+      storageUploaded: true,
+    })
   }
 
   if (safeObservationGroupId) {
@@ -765,11 +860,23 @@ export async function createCaptureRecordFromUploadedFile(
       .order('captured_at', { ascending: true })
 
     if (groupError) {
-      return captureError(groupError.message, session.id)
+      return captureError('The image uploaded, but CRED could not finish saving it. Tap Retry.', session.id, {
+        stage: 'grouping',
+        code: 'group_validation_failed',
+        recoverable: true,
+        storagePath,
+        storageUploaded: true,
+      })
     }
 
     if (!groupCaptures || groupCaptures.length === 0) {
-      return captureError('Observation group not found.', session.id)
+      return captureError('Observation group not found.', session.id, {
+        stage: 'grouping',
+        code: 'group_validation_failed',
+        recoverable: true,
+        storagePath,
+        storageUploaded: true,
+      })
     }
 
     observationGroupId = groupCaptures[0]?.observation_group_id || safeObservationGroupId
@@ -781,15 +888,19 @@ export async function createCaptureRecordFromUploadedFile(
     mimeTypeIsVideo(mimeType) ||
     captureType === 'video' ||
     captureType === 'evidence_video'
-  const maxAllowedFileSize = isVideoUpload
-    ? limits.maxVideoFileSizeBytes
-    : limits.maxCaptureFileSizeBytes
+  const maxAllowedFileSize = Math.min(
+    isVideoUpload ? limits.maxVideoFileSizeBytes : limits.maxCaptureFileSizeBytes,
+    CAPTURE_BUCKET_MAX_BYTES,
+  )
 
   if (size > maxAllowedFileSize) {
-    return captureError(
-      `This file is larger than your plan allows. Maximum file size is ${formatBytes(maxAllowedFileSize)}.`,
-      session.id,
-    )
+    return captureError(`This file is larger than your plan allows. Maximum file size is ${formatBytes(maxAllowedFileSize)}.`, session.id, {
+      stage: 'validation',
+      code: 'file_too_large',
+      recoverable: false,
+      storagePath,
+      storageUploaded: true,
+    })
   }
 
   const fileSizeAllowance = await requireUsageAllowance({
@@ -803,7 +914,13 @@ export async function createCaptureRecordFromUploadedFile(
   })
 
   if (!fileSizeAllowance.ok) {
-    return captureError(fileSizeAllowance.message, session.id)
+    return captureError(fileSizeAllowance.message, session.id, {
+      stage: 'authorization',
+      code: 'billing_validation_failed',
+      recoverable: true,
+      storagePath,
+      storageUploaded: true,
+    })
   }
 
   if (
@@ -813,10 +930,13 @@ export async function createCaptureRecordFromUploadedFile(
       session.id,
     )
   ) {
-    return captureError(
-      'Uploaded file path is not valid for this session.',
-      session.id,
-    )
+    return captureError('Uploaded file path is not valid for this session.', session.id, {
+      stage: 'authorization',
+      code: 'session_authorization_failed',
+      recoverable: false,
+      storagePath,
+      storageUploaded: true,
+    })
   }
 
   const capturedAt = new Date().toISOString()
@@ -856,11 +976,17 @@ export async function createCaptureRecordFromUploadedFile(
       step: 'capture_item_duplicate_check',
       ...getSafeErrorDetails(existingCaptureError),
     })
-    return captureError(existingCaptureError.message, session.id)
+    return captureError('The image uploaded, but CRED could not finish saving it. Tap Retry.', session.id, {
+      stage: 'metadata',
+      code: 'metadata_recovery_required',
+      recoverable: true,
+      storagePath,
+      storageUploaded: true,
+    })
   }
 
   if (existingCapture) {
-    return { ok: true, sessionId: session.id, captureItemId: existingCapture.id, processingStatus: 'saved' }
+    return { ok: true, sessionId: session.id, captureItemId: existingCapture.id, processingStatus: 'saved', storagePath, recovered: true }
   }
 
   const { count: existingCaptureCount } = await supabase
@@ -911,11 +1037,13 @@ export async function createCaptureRecordFromUploadedFile(
       step: 'capture_item_insert',
       ...getSafeErrorDetails(captureErrorResult),
     })
-    await removeUploadedObject(supabase, storagePath)
-    return captureError(
-      captureErrorResult?.message ?? 'Unable to save capture metadata.',
-      session.id,
-    )
+    return captureError('The image uploaded, but CRED could not finish saving it. Tap Retry.', session.id, {
+      stage: 'metadata',
+      code: 'metadata_creation_failed',
+      recoverable: true,
+      storagePath,
+      storageUploaded: true,
+    })
   }
 
   const { error: timelineError } = await supabase
@@ -986,7 +1114,7 @@ export async function createCaptureRecordFromUploadedFile(
   revalidatePath(`/dashboard/sessions/${session.id}`)
   revalidatePath(`/dashboard/sessions/${session.id}/capture`)
 
-  return { ok: true, sessionId: session.id, captureItemId: captureItem.id, processingStatus: 'saved' }
+  return { ok: true, sessionId: session.id, captureItemId: captureItem.id, processingStatus: 'saved', storagePath, recovered: false }
 }
 
 export type CaptureClassificationActionState = {
@@ -2544,13 +2672,9 @@ export async function removeCaptureItem(formData: FormData): Promise<{ ok: boole
     return { ok: false, error: billingAccess.message, sessionId: capture.documentation_session_id }
   }
 
-  if (capture.storage_path) {
-    await removeUploadedObject(supabase, capture.storage_path)
-  }
-
   const { error } = await supabase
     .from('capture_items')
-    .delete()
+    .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq('id', capture.id)
     .eq('organization_id', profile.organization_id)
 
@@ -2563,11 +2687,18 @@ export async function removeCaptureItem(formData: FormData): Promise<{ ok: boole
     return { ok: false, error: 'Unable to delete evidence.', sessionId: capture.documentation_session_id }
   }
 
+  // Phase 0 preserves individual capture deletion. List-level "Delete
+  // Observation" for grouped captures needs a dedicated group action rather
+  // than pretending the first capture represents the whole group.
   revalidatePath(`/dashboard/sessions/${capture.documentation_session_id}`)
   revalidatePath(
     `/dashboard/sessions/${capture.documentation_session_id}/capture`,
   )
   revalidatePath(`/dashboard/sessions/${capture.documentation_session_id}/report`)
+
+  if (capture.storage_path) {
+    await removeUploadedObject(supabase, capture.storage_path)
+  }
 
   return { ok: true, sessionId: capture.documentation_session_id }
 }
