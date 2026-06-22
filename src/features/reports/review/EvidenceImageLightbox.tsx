@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState } from 'react'
 
 export type EvidenceLightboxItem = {
   id: string
+  captureId?: string
   src: string
+  downloadUrl?: string | null
   title: string
   note?: string | null
 }
@@ -19,7 +21,8 @@ export function EvidenceImageTrigger({
   imageClassName?: string
 }) {
   const safeItems = useMemo(() => items.filter((item) => item.src), [items])
-  const initialIndex = Math.max(0, safeItems.findIndex((item) => item.id === currentId))
+  const matchingIndex = safeItems.findIndex((item) => item.id === currentId || item.captureId === currentId)
+  const initialIndex = matchingIndex >= 0 ? matchingIndex : 0
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
   const currentItem = safeItems[initialIndex]
   const activeItem = activeIndex === null ? null : safeItems[activeIndex]
