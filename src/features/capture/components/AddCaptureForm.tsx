@@ -308,6 +308,7 @@ export function AddCaptureForm({
   maxVideoFileSizeBytes,
   maxFileSizeLabel,
   imageAiAssistEnabled = true,
+  observationGroupId = null,
 }: {
   sessionId: string
   organizationId: string
@@ -325,6 +326,7 @@ export function AddCaptureForm({
   maxVideoFileSizeBytes: number
   maxFileSizeLabel?: string
   imageAiAssistEnabled?: boolean
+  observationGroupId?: string | null
 }) {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -708,7 +710,7 @@ export function AddCaptureForm({
 
       if (result.savedCount > 0) {
         cleanupRecognition()
-        setSaveMessage(isDiagnosticProcedureAttachment ? `${result.savedCount} attachment${result.savedCount === 1 ? '' : 's'} saved for this procedure step.` : imageAiAssistEnabled ? `${result.savedCount} capture${result.savedCount === 1 ? '' : 's'} saved. Ready for review.` : `${result.savedCount} capture${result.savedCount === 1 ? '' : 's'} saved. Ready for review.`)
+        setSaveMessage(observationGroupId ? `${result.savedCount} supporting image${result.savedCount === 1 ? '' : 's'} added to this item.` : isDiagnosticProcedureAttachment ? `${result.savedCount} attachment${result.savedCount === 1 ? '' : 's'} saved for this procedure step.` : imageAiAssistEnabled ? `${result.savedCount} capture${result.savedCount === 1 ? '' : 's'} saved. Ready for review.` : `${result.savedCount} capture${result.savedCount === 1 ? '' : 's'} saved. Ready for review.`)
         triggerBackgroundProcessing()
         router.refresh()
       }
@@ -830,6 +832,7 @@ export function AddCaptureForm({
           sourceDocumentType: null,
           sourceDocumentLabel: null,
           diagnosticEvidenceRole: isDiagnosticProcedureAttachment ? diagnosticEvidenceRole : null,
+          observationGroupId,
         })
 
         if (!result.ok) {

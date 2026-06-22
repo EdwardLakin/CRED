@@ -517,6 +517,8 @@ export interface Database {
           storage_path: string | null
           thumbnail_path: string | null
           capture_group_id: string | null
+          observation_group_id: string | null
+          group_order: number | null
           evidence_event_id: string | null
           technician_note: string | null
           transcript: string | null
@@ -545,6 +547,8 @@ export interface Database {
           storage_path?: string | null
           thumbnail_path?: string | null
           capture_group_id?: string | null
+          observation_group_id?: string | null
+          group_order?: number | null
           evidence_event_id?: string | null
           technician_note?: string | null
           transcript?: string | null
@@ -573,6 +577,8 @@ export interface Database {
           storage_path?: string | null
           thumbnail_path?: string | null
           capture_group_id?: string | null
+          observation_group_id?: string | null
+          group_order?: number | null
           evidence_event_id?: string | null
           technician_note?: string | null
           transcript?: string | null

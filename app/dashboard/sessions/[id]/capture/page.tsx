@@ -10,10 +10,10 @@ export default async function GuidedCapturePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ captureSaved?: string }>
+  searchParams: Promise<{ captureSaved?: string; addTo?: string }>
 }) {
   const { id } = await params
-  const { captureSaved } = await searchParams
+  const { captureSaved, addTo } = await searchParams
   const { supabase, profile } = await requireSessionWorkspace()
   const { data: session, error: sessionError } = await supabase
     .from('documentation_sessions')
@@ -55,7 +55,7 @@ export default async function GuidedCapturePage({
     <main className="page-shell dashboard-shell focused-capture-shell">
       <div className="section-header page-header focused-capture-header">
         <div>
-          <h1>Capture Evidence</h1>
+          <h1>{addTo ? "Add another image" : "Capture Evidence"}</h1>
           <p className="muted">{displaySessionTitle}</p>
           <p className="muted">If you have a paper form, capture it first.</p>
         </div>
@@ -76,6 +76,7 @@ export default async function GuidedCapturePage({
           stickyDoneHref={`/dashboard/sessions/${session.id}/report?prepare=1`}
           maxCaptureFileSizeBytes={planLimits.maxCaptureFileSizeBytes}
           maxVideoFileSizeBytes={planLimits.maxVideoFileSizeBytes}
+          observationGroupId={addTo ?? null}
         />
       </section>
 
