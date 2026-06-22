@@ -76,6 +76,9 @@ export default async function SessionDetailPage({
           <Link href={`/dashboard/sessions/${session.id}/timeline`} className="button button-secondary touch-target">
             Timeline
           </Link>
+          <Link href={`/dashboard/sessions/${session.id}/entities`} className="button button-secondary touch-target">
+            Entities
+          </Link>
         </div>
         <details className="session-card-manage">
           <summary className="secondary-link touch-target">More session tools</summary>
