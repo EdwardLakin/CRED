@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import { acceptedUserRelationshipDefaults, softDeleteUpdate } from '@/features/evidence/validation'
 import { assertSameWorkspace, parseEvidenceRelationshipType, parseTimelineEventForm } from '@/features/evidence/timeline/validation'
 
 type MutationBuilder = {
@@ -61,7 +62,7 @@ export async function deleteTimelineEvent(sessionId: string, eventId: string) {
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
   const supabase = rawSupabase as unknown as TimelineActionSupabase
   await loadTimelineEvent(supabase, eventId, sessionId, profile.organization_id)
-  const { error } = await supabase.from('timeline_events').update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', eventId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).is('deleted_at', null)
+  const { error } = await supabase.from('timeline_events').update(softDeleteUpdate()).eq('id', eventId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).is('deleted_at', null)
   if (error) throw new Error('Unable to delete timeline event')
   revalidatePath(`/dashboard/sessions/${sessionId}/timeline`)
 }
@@ -77,7 +78,7 @@ export async function linkEvidenceToTimelineEvent(sessionId: string, eventId: st
   const capture = await loadCaptureItem(supabase, captureId, sessionId, profile.organization_id)
   assertSameWorkspace(event, capture)
   const now = new Date().toISOString()
-  const { error } = await supabase.from('evidence_relationships').insert({ documentation_session_id: sessionId, organization_id: profile.organization_id, source_type: 'capture_item', source_id: captureId, target_type: 'timeline_event', target_id: eventId, relationship_type: relationshipType, suggestion_source: 'user', review_status: 'accepted', provenance: { created_from: 'timeline_workspace' }, created_by: profile.id ?? null, reviewed_at: now, updated_at: now })
+  const { error } = await supabase.from('evidence_relationships').insert({ documentation_session_id: sessionId, organization_id: profile.organization_id, source_type: 'capture_item', source_id: captureId, target_type: 'timeline_event', target_id: eventId, relationship_type: relationshipType, ...acceptedUserRelationshipDefaults('timeline_workspace', profile.id, now) })
   if (error) throw new Error('Unable to link evidence')
   revalidatePath(`/dashboard/sessions/${sessionId}/timeline`)
 }
@@ -85,7 +86,7 @@ export async function linkEvidenceToTimelineEvent(sessionId: string, eventId: st
 export async function unlinkEvidenceRelationship(sessionId: string, relationshipId: string) {
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
   const supabase = rawSupabase as unknown as TimelineActionSupabase
-  const { error } = await supabase.from('evidence_relationships').update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', relationshipId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).eq('source_type', 'capture_item').eq('target_type', 'timeline_event').is('deleted_at', null)
+  const { error } = await supabase.from('evidence_relationships').update(softDeleteUpdate()).eq('id', relationshipId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).eq('source_type', 'capture_item').eq('target_type', 'timeline_event').is('deleted_at', null)
   if (error) throw new Error('Unable to unlink evidence')
   revalidatePath(`/dashboard/sessions/${sessionId}/timeline`)
 }

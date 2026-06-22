@@ -5,6 +5,7 @@ import { SessionStatusBadge, formatDateTime } from '@/features/sessions'
 import { archiveDocumentationSession, restoreDocumentationSession } from '@/features/sessions/actions'
 import { getSessionWorkflowStatus } from '@/features/sessions/status'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import { EvidenceWorkspaceNav } from '@/features/evidence/components/EvidenceWorkspaceNav'
 
 export default async function SessionDetailPage({
   params,
@@ -28,12 +29,19 @@ export default async function SessionDetailPage({
     notFound()
   }
 
-  const { count: evidenceCount } = await supabase
-    .from('capture_items')
-    .select('id', { count: 'exact', head: true })
-    .eq('documentation_session_id', session.id)
-    .eq('organization_id', profile.organization_id)
-    .is('deleted_at', null)
+  const [
+    { count: evidenceCount },
+    { count: timelineEventsCount },
+    { count: entitiesCount },
+    { count: factualObservationsCount },
+    { count: relationshipsCount },
+  ] = await Promise.all([
+    supabase.from('capture_items').select('id', { count: 'exact', head: true }).eq('documentation_session_id', session.id).eq('organization_id', profile.organization_id).is('deleted_at', null),
+    supabase.from('timeline_events').select('id', { count: 'exact', head: true }).eq('documentation_session_id', session.id).eq('organization_id', profile.organization_id).is('deleted_at', null),
+    supabase.from('evidence_entities').select('id', { count: 'exact', head: true }).eq('documentation_session_id', session.id).eq('organization_id', profile.organization_id).is('deleted_at', null),
+    supabase.from('evidence_assertions').select('id', { count: 'exact', head: true }).eq('documentation_session_id', session.id).eq('organization_id', profile.organization_id).is('deleted_at', null),
+    supabase.from('evidence_relationships').select('id', { count: 'exact', head: true }).eq('documentation_session_id', session.id).eq('organization_id', profile.organization_id).is('deleted_at', null),
+  ])
 
   const isArchived = Boolean(session.archived_at)
   const archiveAction = archiveDocumentationSession.bind(null, session.id)
@@ -56,6 +64,8 @@ export default async function SessionDetailPage({
 
       {error ? <p className="error">{error}</p> : null}
       {saved ? <p className="success">Saved.</p> : null}
+
+      <EvidenceWorkspaceNav sessionId={session.id} counts={{ evidenceItems: evidenceCount ?? 0, timelineEvents: timelineEventsCount ?? 0, entities: entitiesCount ?? 0, factualObservations: factualObservationsCount ?? 0, relationships: relationshipsCount ?? 0 }} />
 
       <section className="card detail-card form-stack">
         <div>

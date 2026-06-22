@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { EvidenceWorkspaceBacklinks } from '@/features/evidence/components/EvidenceWorkspaceNav'
 
 import { TimelineWorkspace } from '@/features/evidence/components/TimelineWorkspace'
 import { getTimelineData } from '@/features/evidence/timeline/data'
@@ -16,6 +17,7 @@ export default async function TimelinePage({ params }: { params: Promise<{ id: s
           <p className="muted">{data.session.title} · {data.events.length} events</p>
         </div>
       </div>
+      <EvidenceWorkspaceBacklinks sessionId={data.session.id} current="timeline" />
       <TimelineWorkspace {...data} />
     </main>
   )

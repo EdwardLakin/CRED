@@ -44,6 +44,7 @@ import {
 } from "@/features/reports/review/ReviewComponents";
 import { AutoPrepareReport } from "@/features/reports/components/AutoPrepareReport";
 import { FinalNotesEditor } from "@/features/reports/components/FinalNotesEditor";
+import { EvidenceWorkspaceBacklinks } from "@/features/evidence/components/EvidenceWorkspaceNav";
 
 type Tables = Database["public"]["Tables"];
 type CaptureItem = Tables["capture_items"]["Row"];
@@ -451,6 +452,8 @@ export default async function SessionReportPreviewPage({
           ) : null}
         </div>
       </div>
+
+      <EvidenceWorkspaceBacklinks sessionId={session.id} current="report" />
 
       {shouldAutoPrepareReport ? (
         <AutoPrepareReport

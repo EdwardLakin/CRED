@@ -2,7 +2,7 @@ import Link from 'next/link'
 
 import { linkEvidenceToTimelineEvent, createTimelineEvent, deleteTimelineEvent, unlinkEvidenceRelationship, updateTimelineEvent } from '@/features/evidence/timeline/actions'
 import type { TimelineEvent, TimelineEvidenceItem, TimelineRelationship, TimelineSession } from '@/features/evidence/timeline/data'
-import { EVIDENCE_SOURCE_KINDS, EVENT_DATE_PRECISIONS, SUGGESTION_REVIEW_STATUSES } from '@/features/evidence/constants'
+import { EVIDENCE_SOURCE_KINDS, EVENT_DATE_PRECISIONS, SUGGESTION_REVIEW_STATUSES, formatSuggestionReviewStatus } from '@/features/evidence/constants'
 import { formatDateTime } from '@/features/sessions'
 
 function evidenceLabel(item: TimelineEvidenceItem) {
@@ -38,7 +38,7 @@ export function TimelineWorkspace({ session, events, evidenceItems, relationship
           <article key={event.id} className="card detail-card form-stack">
             <div className="section-header">
               <div>
-                <p className="eyebrow">{event.source_kind} · {event.review_status}</p>
+                <p className="eyebrow">{event.source_kind} · {formatSuggestionReviewStatus(event.review_status)}</p>
                 <h2>{event.title}</h2>
                 <p className="muted">{eventDate(event, timeZone)} · precision: {event.event_date_precision}{event.timezone ? ` · ${event.timezone}` : ''}</p>
               </div>
@@ -82,7 +82,7 @@ function TimelineEventForm({ sessionId, event, timeZone }: { sessionId: string; 
       <div className="form-grid two-column">
         <label>Date precision<select className="input" name="event_date_precision" defaultValue={event?.event_date_precision ?? 'exact'}>{EVENT_DATE_PRECISIONS.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
         <label>Source<select className="input" name="source_kind" defaultValue={event?.source_kind ?? 'text_note'}>{EVIDENCE_SOURCE_KINDS.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-        <label>Review status<select className="input" name="review_status" defaultValue={event?.review_status ?? 'accepted'}>{SUGGESTION_REVIEW_STATUSES.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+        <label>Review status<select className="input" name="review_status" defaultValue={event?.review_status ?? 'accepted'}>{SUGGESTION_REVIEW_STATUSES.map((value) => <option key={value} value={value}>{formatSuggestionReviewStatus(value)}</option>)}</select></label>
         <label>Timezone<input className="input" name="timezone" defaultValue={event?.timezone ?? timeZone ?? ''} /></label>
       </div>
       <button className="button button-primary touch-target">{event ? 'Save timeline event' : 'Create timeline event'}</button>
