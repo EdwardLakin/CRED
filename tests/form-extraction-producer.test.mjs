@@ -78,3 +78,54 @@ test("unstructured photo remains general evidence", async () => {
   assert.equal(extractFormBlueprint([photo]), null);
   assert.equal(getReportStructureSourceMetadata([photo]).report_structure_source, "generic_fallback");
 });
+
+const hansenLikeOcrCapture = {
+  id: "hansen-like-form",
+  type: "photo",
+  media_kind: "image",
+  ai_summary: "Captured inspection form with unit information and a multi-section checklist grid.",
+  ocr_text: `Inspection Record
+VIN: 2HSCHAPR45C123456
+Unit Number: 4108
+Section              Pass   Fail   N/A
+Powertrain
+Engine mounts        ☐ Pass ☐ Fail ☐ N/A
+Oil leaks            ☑ Pass ☐ Fail ☐ N/A
+Suspension
+Springs              ☐ Pass ☑ Fail ☐ N/A
+Air Brakes
+Low air warning      ☐ Pass ☐ Fail ☐ N/A
+Steering
+Steering wheel lash  ☐ Pass ☐ Fail ☐ N/A`,
+  technician_note: null,
+  transcript: null,
+  evidence_category: null,
+  extracted_data: { extraction: { fields: { vin: "2HSCHAPR45C123456", unit_number: "4108" } } },
+};
+
+test("OCR grid recovery keeps header fields and checklist rows in source order", async () => {
+  const { extractFormBlueprint, normalizeFormBlueprintSections } = await loadReportStructure();
+  const blueprint = extractFormBlueprint([hansenLikeOcrCapture]);
+  assert.ok(blueprint);
+  const sections = normalizeFormBlueprintSections({ mode: "form_structured", report_structure_source: "uploaded_form", form_blueprint: blueprint }, [hansenLikeOcrCapture]);
+  const titles = sections.map((section) => section.title);
+  assert.ok(titles.indexOf("Unit / equipment information") < titles.indexOf("Powertrain"));
+  assert.ok(titles.indexOf("Powertrain") < titles.indexOf("Suspension"));
+  assert.ok(titles.indexOf("Suspension") < titles.indexOf("Air Brakes"));
+  assert.ok(sections.flatMap((section) => section.fields).some((field) => field.label === "VIN" && field.value === "2HSCHAPR45C123456"));
+  assert.ok(sections.find((section) => section.title === "Powertrain")?.fields.some((field) => field.label === "Engine mounts"));
+});
+
+test("generic status columns preserve explicit marks and leave unchecked rows unresolved", async () => {
+  const { extractFormBlueprint, normalizeFormBlueprintSections } = await loadReportStructure();
+  const blueprint = extractFormBlueprint([hansenLikeOcrCapture]);
+  const sections = normalizeFormBlueprintSections({ mode: "form_structured", report_structure_source: "uploaded_form", form_blueprint: blueprint }, [hansenLikeOcrCapture]);
+  const allFields = sections.flatMap((section) => section.fields);
+  const oilLeaks = allFields.find((field) => field.label === "Oil leaks");
+  const springs = allFields.find((field) => field.label === "Springs");
+  const lowAir = allFields.find((field) => field.label === "Low air warning");
+  assert.deepEqual(oilLeaks?.status_choices, ["Pass", "Fail", "N/A"]);
+  assert.equal(oilLeaks?.value, "Pass");
+  assert.equal(springs?.value, "Fail");
+  assert.equal(lowAir?.value, "Not captured");
+});
