@@ -27,6 +27,8 @@ const MEDIA_NOTE_AUTOSAVE_DELAY_MS = 800;
 type UploadStatus =
   | "queued"
   | "uploading"
+  | "finishing"
+  | "metadata_recovery"
   | "saved"
   | "needs_queue_retry"
   | "failed";
@@ -64,6 +66,7 @@ type SelectedEvidenceFile = {
   note: string;
   captureItemId?: string;
   storagePath?: string;
+  storageUploaded?: boolean;
   noteSaveStatus?: "idle" | "unsaved" | "saving" | "saved" | "failed";
 };
 
@@ -100,15 +103,15 @@ const FILE_INPUT_CONFIG: Record<
   CaptureType | "auto_evidence",
   { accept: string; capture?: "environment" }
 > = {
-  auto_evidence: { accept: "image/*,video/*", capture: "environment" },
+  auto_evidence: { accept: "image/*", capture: "environment" },
   photo: { accept: "image/*", capture: "environment" },
   vin_plate: { accept: "image/*", capture: "environment" },
   info_plate: { accept: "image/*", capture: "environment" },
   document: { accept: "application/pdf,image/*" },
   voice_note: { accept: "audio/*" },
   text_note: { accept: "" },
-  video: { accept: "video/*", capture: "environment" },
-  evidence_video: { accept: "video/*", capture: "environment" },
+  video: { accept: "" },
+  evidence_video: { accept: "" },
 };
 
 const ALLOWED_MIME_TYPES: Record<CaptureType, readonly string[]> = {
@@ -156,18 +159,11 @@ const ALLOWED_MIME_TYPES: Record<CaptureType, readonly string[]> = {
   ],
   text_note: [],
   video: [
-    "video/mp4",
-    "video/webm",
-    "video/quicktime",
-    "video/x-msvideo",
-    "video/mpeg",
+    // Follow-up: re-enable after the live documentation-captures bucket and
+    // report path are verified for video. Do not offer media Storage may reject.
   ],
   evidence_video: [
-    "video/mp4",
-    "video/webm",
-    "video/quicktime",
-    "video/x-msvideo",
-    "video/mpeg",
+    // Follow-up: see video note above.
   ],
 };
 
@@ -177,6 +173,8 @@ const UPLOAD_QUEUE_DB_VERSION = 1;
 const LOCAL_UPLOAD_PENDING_STATUSES: UploadStatus[] = [
   "queued",
   "uploading",
+  "finishing",
+  "metadata_recovery",
   "failed",
 ];
 
@@ -293,10 +291,12 @@ function formatFileSize(bytes: number) {
 
 function getUploadStatusLabel(status: UploadStatus, error?: string) {
   if (status === "uploading") return "Uploading";
+  if (status === "finishing") return "Finishing save";
+  if (status === "metadata_recovery") return "Save incomplete — retry";
   if (status === "needs_queue_retry") return "Needs attention";
   if (status === "saved") return "Saved";
   if (status === "failed") return error ?? "Upload failed. Please retry.";
-  return "Saved";
+  return "Preparing";
 }
 
 function getNoteSaveStatusLabel(
@@ -334,7 +334,19 @@ function getFriendlyUploadError(message: string) {
     return "Upload failed — bad connection";
   }
 
-  return message || "Upload failed. Please retry.";
+  if (normalized.includes("sign-in expired") || normalized.includes("sign in again")) {
+    return "Your sign-in expired. Sign in again, then retry.";
+  }
+
+  if (normalized.includes("file type") || normalized.includes("not currently supported")) {
+    return "This file type is not currently supported.";
+  }
+
+  if (normalized.includes("finish saving") || normalized.includes("metadata")) {
+    return "The image uploaded, but CRED could not finish saving it. Tap Retry.";
+  }
+
+  return message || "Upload failed. Your file is still available to retry.";
 }
 
 export function AddCaptureForm({
@@ -421,7 +433,9 @@ export function AddCaptureForm({
   const captureSizeLabel =
     maxFileSizeLabel ?? formatFileSize(maxCaptureFileSizeBytes);
   const videoSizeLabel = formatFileSize(maxVideoFileSizeBytes);
-  const failedFiles = selectedFiles.filter((file) => file.status === "failed");
+  const failedFiles = selectedFiles.filter(
+    (file) => file.status === "failed" || file.status === "metadata_recovery",
+  );
   const observationFiles = selectedFiles.filter(
     (file) => file.status !== "failed",
   );
@@ -521,6 +535,7 @@ export function AddCaptureForm({
     status: UploadStatus,
     error?: string,
     captureItemId?: string,
+    storageUploaded?: boolean,
   ) {
     setSelectedFiles((currentFiles) => {
       const nextFiles = currentFiles.map((file) =>
@@ -530,6 +545,7 @@ export function AddCaptureForm({
               status,
               error,
               ...(captureItemId ? { captureItemId } : {}),
+              ...(typeof storageUploaded === "boolean" ? { storageUploaded } : {}),
             }
           : file,
       );
@@ -709,6 +725,14 @@ export function AddCaptureForm({
       return;
     }
 
+    if (
+      !window.confirm(
+        "Discard this local capture? It will no longer be available to retry from this device.",
+      )
+    ) {
+      return;
+    }
+
     const remainingFiles = selectedFilesRef.current.filter(
       (file) => file.id !== fileId,
     );
@@ -884,19 +908,38 @@ export function AddCaptureForm({
         persistSelectedFile({ ...selectedFile, storagePath });
       }
 
-      updateSelectedFileStatus(selectedFile.id, "uploading");
+      let storageUploaded = Boolean(selectedFile.storageUploaded);
+
+      updateSelectedFileStatus(
+        selectedFile.id,
+        storageUploaded ? "finishing" : "uploading",
+        undefined,
+        undefined,
+        storageUploaded,
+      );
 
       try {
-        const { error: uploadError } = await supabase.storage
-          .from("documentation-captures")
-          .upload(storagePath, file, {
-            cacheControl: "3600",
-            contentType: file.type,
-            upsert: false,
-          });
+        if (!storageUploaded) {
+          const { error: uploadError } = await supabase.storage
+            .from("documentation-captures")
+            .upload(storagePath, file, {
+              cacheControl: "3600",
+              contentType: file.type,
+              upsert: false,
+            });
 
-        if (uploadError) {
-          throw new Error(uploadError.message);
+          if (uploadError) {
+            throw new Error(uploadError.message);
+          }
+
+          storageUploaded = true;
+          updateSelectedFileStatus(
+            selectedFile.id,
+            "finishing",
+            undefined,
+            undefined,
+            true,
+          );
         }
 
         const result = await createCaptureRecordFromUploadedFile({
@@ -924,10 +967,20 @@ export function AddCaptureForm({
         });
 
         if (!result.ok) {
-          await supabase.storage
-            .from("documentation-captures")
-            .remove([storagePath]);
-          throw new Error(result.error);
+          const message = result.message ?? result.error;
+          if (result.storageUploaded || result.storagePath) {
+            storageUploaded = true;
+            updateSelectedFileStatus(
+              selectedFile.id,
+              result.stage === "metadata" || result.code === "metadata_creation_failed"
+                ? "metadata_recovery"
+                : "failed",
+              getFriendlyUploadError(message),
+              undefined,
+              true,
+            );
+          }
+          throw new Error(message);
         }
 
         savedCount += 1;
@@ -940,6 +993,7 @@ export function AddCaptureForm({
           "saved",
           undefined,
           result.captureItemId,
+          true,
         );
         const latestFile = selectedFilesRef.current.find(
           (current) => current.id === selectedFile.id,
@@ -957,7 +1011,13 @@ export function AddCaptureForm({
             ? error.message
             : "Upload failed. Check your connection and retry.",
         );
-        updateSelectedFileStatus(selectedFile.id, "failed", message);
+        updateSelectedFileStatus(
+          selectedFile.id,
+          storageUploaded ? "metadata_recovery" : "failed",
+          message,
+          undefined,
+          storageUploaded,
+        );
       }
     }
 
@@ -1165,7 +1225,7 @@ export function AddCaptureForm({
       (captureIntent === "auto_image" || captureIntent === "auto_evidence") &&
       filesToUpload.some(({ file }) => !fileIsImage(file) && !fileIsVideo(file))
     ) {
-      setClientError("Capture Evidence accepts photo or video files only.");
+      setClientError("This file type is not currently supported.");
       return;
     }
 
@@ -1677,7 +1737,7 @@ export function AddCaptureForm({
           <section className="failed-uploads-panel" aria-label="Failed uploads">
             <div>
               <p className="eyebrow">Failed Uploads</p>
-              <h2>Upload Failed</h2>
+              <h2>Uploads Needing Attention</h2>
             </div>
             {failedFiles.map((file) => (
               <article key={file.id} className="failed-upload-card">
@@ -1689,7 +1749,7 @@ export function AddCaptureForm({
                     className="button button-primary touch-target"
                     disabled={isSaving}
                   >
-                    Retry Upload
+                    {file.storageUploaded ? "Retry Save" : "Retry Upload"}
                   </button>
                   <button
                     type="button"
