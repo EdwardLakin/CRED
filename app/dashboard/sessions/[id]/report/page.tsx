@@ -10,6 +10,7 @@ import {
   buildNormalizedReportModel,
   classifyReferenceDocumentTitle,
   deriveFormSectionsFromCaptures,
+  getFormSourceCaptureIds,
   getFormStructureSummary,
   sanitizeReportStructureForSession,
   normalizeDraftSections,
@@ -353,14 +354,18 @@ export default async function SessionReportPreviewPage({
     captures: visibleCaptures,
     timeZone: profile.timezone,
   });
-  const photoEvidence = supportingEvidence.filter(
+  const formSourceCaptureIds = getFormSourceCaptureIds(sanitizedReportStructure, documentSections);
+  const renderedSupportingEvidence = supportingEvidence.filter(
+    (item) => !formSourceCaptureIds.has(item.capture.id),
+  );
+  const photoEvidence = renderedSupportingEvidence.filter(
     (item) => item.kind === "photo",
   );
-  const noteEvidence = supportingEvidence.filter(
+  const noteEvidence = renderedSupportingEvidence.filter(
     (item) =>
       Boolean(item.note) || item.kind === "note" || item.kind === "audio",
   );
-  const otherEvidence = supportingEvidence.filter(
+  const otherEvidence = renderedSupportingEvidence.filter(
     (item) => item.kind !== "photo" && !noteEvidence.includes(item),
   );
   const hasPendingEvidence = visibleCaptures.some((capture) => {

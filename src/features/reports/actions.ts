@@ -15,7 +15,7 @@ import { FINAL_NOTES_MODEL, FINAL_NOTES_PROMPT_VERSION, generateFinalNotes } fro
 import { AI_REPORT_DRAFT_MODEL, AI_REPORT_DRAFT_PROMPT_VERSION, generateReportDraft } from '@/lib/openai/report-draft-generator'
 import type { OrganizationPlan } from '@/lib/stripe'
 import { buildEvidenceGroups, buildEvidencePackages,
-  sanitizeReportStructureForSession, buildNormalizedReportFields, deriveFormSectionsFromCaptures, extractFormBlueprint, mapEvidenceToFormBlueprint, scoreFormReferenceCapture, selectPrimaryFormCaptures, stripConfidenceText, GENERIC_REPORT_SECTION_TITLES, getReportStructureSourceMetadata, sanitizeCapturesForImageAiAssist } from '@/features/reports/report-structure'
+  sanitizeReportStructureForSession, buildNormalizedReportFields, deriveFormSectionsFromCaptures, extractFormBlueprint, mapEvidenceToFormBlueprint, scoreFormReferenceCapture, selectPrimaryFormCaptures, stripConfidenceText, GENERIC_REPORT_SECTION_TITLES, getReportStructureSourceMetadata, sanitizeCapturesForImageAiAssist, getFormStructureReliability } from '@/features/reports/report-structure'
 import { buildSafeReportTitle, isPlaceholderReportTitle } from '@/features/reports/report-title'
 import type { Json } from '@/lib/supabase/database.types'
 
@@ -834,6 +834,10 @@ export async function generateAiReportDraft(sessionId: string) {
     normalized_report_fields: buildNormalizedReportFields(normalizedCaptures),
   }) ?? {}
   const reportStructure = sanitizeReportStructureForSession(rawReportStructure, normalizedCaptures.map((capture) => capture.id))
+  const formReliability = getFormStructureReliability(reportStructure)
+  if (process.env.NODE_ENV !== 'production') {
+    console.info('[report-structure-reliability]', { session_id: session.id, ...formReliability, source_capture_ids: formCaptureIds, extraction_warnings: formBlueprint?.fields.length === 0 ? ['no_form_fields_extracted'] : [] })
+  }
 
   const safeReportTitle = buildSafeReportTitle({
     draftTitle: draftOutput.title,
