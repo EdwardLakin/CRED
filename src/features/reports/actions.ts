@@ -715,7 +715,7 @@ export async function generateAiReportDraft(sessionId: string) {
 
   const { data: captures, error: capturesError } = await supabase
     .from('capture_items')
-    .select('id, type, media_kind, captured_at, ai_status, ai_summary, ocr_text, technician_note, transcript, extracted_data, evidence_category')
+    .select('id, type, media_kind, captured_at, ai_status, ai_summary, ocr_text, technician_note, transcript, extracted_data, capture_ai_analysis, evidence_category')
     .eq('documentation_session_id', session.id)
     .eq('organization_id', profile.organization_id)
     .is('deleted_at', null)
@@ -771,6 +771,7 @@ export async function generateAiReportDraft(sessionId: string) {
         technician_note: capture.technician_note,
         transcript: capture.transcript,
         extracted_data: capture.extracted_data,
+        capture_ai_analysis: capture.capture_ai_analysis,
         evidence_category: capture.evidence_category,
       })), true),
       signatures: signatures ?? [],
@@ -788,6 +789,7 @@ export async function generateAiReportDraft(sessionId: string) {
     technician_note: capture.technician_note,
     transcript: capture.transcript,
     extracted_data: capture.extracted_data,
+    capture_ai_analysis: capture.capture_ai_analysis,
     evidence_category: capture.evidence_category,
   })), true)
   draftOutput = mergeDocumentContextIntoDraft({
