@@ -40,11 +40,10 @@ import {
   ReportReview,
   type SupportingEvidenceItem,
 } from "@/features/reports/review/ReviewComponents";
+import { AutoPrepareReport } from "@/features/reports/components/AutoPrepareReport";
 import { FinalNotesEditor } from "@/features/reports/components/FinalNotesEditor";
 
 type Tables = Database["public"]["Tables"];
-type DocumentationSession = Tables["documentation_sessions"]["Row"];
-type AiReportDraft = Tables["ai_report_drafts"]["Row"];
 type CaptureItem = Tables["capture_items"]["Row"];
 
 function getReportOrigin(headersList: Headers) {
@@ -257,9 +256,6 @@ export default async function SessionReportPreviewPage({
     aiDrafts?.[0] ??
     null;
 
-  if (status.prepare && !currentReport) {
-    await generateAiReportDraft(session.id);
-  }
   const { data: reportSections } = currentReport
     ? await supabase
         .from("ai_report_draft_sections")
@@ -379,6 +375,9 @@ export default async function SessionReportPreviewPage({
   const saveReportEditsAction = currentReport
     ? saveReportEdits.bind(null, currentReport.id)
     : null;
+  const shouldAutoPrepareReport = Boolean(
+    status.prepare && !status.error && !currentReport,
+  );
   const sourceFieldEntries = getDisplayEntries(currentReport?.header_fields);
   const isGenericEvidenceReport =
     formStructureSummary.source === "generic_fallback";
@@ -433,6 +432,13 @@ export default async function SessionReportPreviewPage({
           ) : null}
         </div>
       </div>
+
+      {shouldAutoPrepareReport ? (
+        <AutoPrepareReport
+          action={generateReportAction}
+          sessionId={session.id}
+        />
+      ) : null}
 
       <div className="report-alert-stack">
         {status.error ? <p className="error">{status.error}</p> : null}
