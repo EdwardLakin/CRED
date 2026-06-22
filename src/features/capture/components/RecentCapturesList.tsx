@@ -1,3 +1,5 @@
+import Link from 'next/link'
+
 import type { CaptureItem } from '../types'
 import { CAPTURE_TYPE_LABELS, getCaptureProcessingLabel, getCaptureProcessingStatus, getSourceDocumentMetadata, type CaptureType } from '../types'
 import { formatDateTime } from '@/features/sessions'
@@ -63,6 +65,16 @@ export function RecentCapturesList({ captures, signedUrls, limit = 6, timeZone =
             <span className={`ai-status-pill ${getCaptureStatusVariant(getCaptureProcessingStatus(capture))}`}>
               {getCaptureProcessingLabel(getCaptureProcessingStatus(capture), imageAiAssistEnabled)}
             </span>
+            {(capture.media_kind === 'image' || capture.type === 'photo') ? (
+              <Link
+                href={`/dashboard/sessions/${capture.documentation_session_id}/capture?addTo=${encodeURIComponent(capture.observation_group_id ?? capture.id)}#main-capture-card`}
+                className="secondary-link touch-target"
+                aria-label="Add another image to this item"
+                title="Add another image to this item"
+              >
+                Add image
+              </Link>
+            ) : null}
             {signedUrls[capture.id] ? (
               <a href={signedUrls[capture.id]} target="_blank" rel="noreferrer" className="secondary-link touch-target">
                 Open

@@ -646,7 +646,7 @@ export async function completeCaptureAndPrepareReport(sessionId: string, formDat
 
   const { data: activeReport } = await supabase
     .from('ai_report_drafts')
-    .select('id')
+    .select('id, observation_group_id')
     .eq('documentation_session_id', session.id)
     .eq('organization_id', profile.organization_id)
     .not('status', 'in', '(superseded)')
@@ -1084,7 +1084,7 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
 
   const { data: captures, error: capturesError } = await supabase
     .from('capture_items')
-    .select('id')
+    .select('id, observation_group_id')
     .eq('documentation_session_id', session.id)
     .eq('organization_id', profile.organization_id)
     .is('deleted_at', null)
@@ -1097,9 +1097,11 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
     const includeInReport = formData.get(`capture_include_${capture.id}`) === 'on'
     const note = sanitizeReportText(formData.get(`capture_note_${capture.id}`), 2000)
     const evidenceCategory = normalizeEvidenceCategory(getString(formData, `capture_category_${capture.id}`))
+    const groupWith = getString(formData, `capture_group_with_${capture.id}`)
+    const observationGroupId = groupWith && groupWith !== capture.id ? groupWith : capture.observation_group_id
     const { error: captureUpdateError } = await supabase
       .from('capture_items')
-      .update({ include_in_report: includeInReport, technician_note: note, evidence_category: evidenceCategory, updated_at: now })
+      .update({ include_in_report: includeInReport, technician_note: note, evidence_category: evidenceCategory, observation_group_id: observationGroupId || null, updated_at: now })
       .eq('id', capture.id)
       .eq('documentation_session_id', session.id)
       .eq('organization_id', profile.organization_id)

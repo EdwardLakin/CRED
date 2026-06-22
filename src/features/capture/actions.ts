@@ -367,6 +367,7 @@ export type CreateUploadedCaptureRecordInput = {
   source_document_type?: string | null
   source_document_label?: string | null
   diagnosticEvidenceRole?: DiagnosticEvidenceRole | null
+  observationGroupId?: string | null
 }
 
 export type CreateUploadedCaptureRecordResult =
@@ -652,6 +653,10 @@ export async function createCaptureRecordFromUploadedFile(
         SOURCE_DOCUMENT_LABELS[sourceDocumentType]
       ).slice(0, 80)
     : null
+  const requestedObservationGroupId = input.observationGroupId?.trim() || null
+  const safeObservationGroupId = requestedObservationGroupId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedObservationGroupId)
+    ? requestedObservationGroupId
+    : null
 
   if (!sessionId) {
     return captureError('Missing documentation session.')
@@ -740,6 +745,35 @@ export async function createCaptureRecordFromUploadedFile(
 
   if (sessionError || !session) {
     return captureError('Documentation session not found.', sessionId)
+  }
+
+  let observationGroupId: string | null = null
+  let groupOrder: number | null = null
+  if (requestedObservationGroupId && !safeObservationGroupId) {
+    return captureError('Observation group not found.', session.id)
+  }
+
+  if (safeObservationGroupId) {
+    const { data: groupCaptures, error: groupError } = await supabase
+      .from('capture_items')
+      .select('id, observation_group_id, group_order, captured_at')
+      .eq('documentation_session_id', session.id)
+      .eq('organization_id', profile.organization_id)
+      .is('deleted_at', null)
+      .or(`id.eq.${safeObservationGroupId},observation_group_id.eq.${safeObservationGroupId}`)
+      .order('group_order', { ascending: true, nullsFirst: false })
+      .order('captured_at', { ascending: true })
+
+    if (groupError) {
+      return captureError(groupError.message, session.id)
+    }
+
+    if (!groupCaptures || groupCaptures.length === 0) {
+      return captureError('Observation group not found.', session.id)
+    }
+
+    observationGroupId = groupCaptures[0]?.observation_group_id || safeObservationGroupId
+    groupOrder = groupCaptures.reduce((max, capture) => Math.max(max, capture.group_order ?? 1), 1) + 1
   }
 
   const limits = getPlanLimits(billingAccess.access.plan)
@@ -866,6 +900,8 @@ export async function createCaptureRecordFromUploadedFile(
       media_kind: itemMediaKind,
       report_order: reportOrder,
       include_in_report: input.includeInReport ?? true,
+      observation_group_id: observationGroupId,
+      group_order: groupOrder,
     })
     .select('id')
     .single()

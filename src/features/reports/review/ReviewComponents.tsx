@@ -1122,6 +1122,19 @@ function getObservationCategoryLabel(
   return "Observation";
 }
 
+
+function getObservationGroupKey(capture: CaptureItem) {
+  return capture.observation_group_id ?? capture.id;
+}
+
+function getGroupedEvidenceItems(primary: SupportingEvidenceItem | undefined, allItems: SupportingEvidenceItem[]) {
+  if (!primary) return [] as SupportingEvidenceItem[];
+  const groupKey = getObservationGroupKey(primary.capture);
+  return allItems
+    .filter((item) => getObservationGroupKey(item.capture) === groupKey)
+    .sort((a, b) => (a.capture.group_order ?? (a.capture.id === groupKey ? 1 : 999)) - (b.capture.group_order ?? (b.capture.id === groupKey ? 1 : 999)) || a.capture.captured_at.localeCompare(b.capture.captured_at));
+}
+
 function getLightboxItems(items: SupportingEvidenceItem[]): EvidenceLightboxItem[] {
   return items
     .filter((item) => item.kind === "photo" && Boolean(item.signedUrl))
@@ -1175,8 +1188,9 @@ function DocumentedObservations({
     ...reviewDocument.additionalNotes,
     ...reviewDocument.supportingEvidence,
   ].filter((entry) => {
-    if (renderedIds.has(entry.group.capture_id)) return false;
-    renderedIds.add(entry.group.capture_id);
+    const groupKey = getObservationGroupKey(entry.capture);
+    if (renderedIds.has(groupKey)) return false;
+    renderedIds.add(groupKey);
     return true;
   });
   const unattachedActions = reviewDocument.categorizedRecommendedActions.filter(
@@ -1202,6 +1216,8 @@ function DocumentedObservations({
               item?.note ||
               "Technician note retained with supporting proof.",
           );
+          const groupItems = getGroupedEvidenceItems(item, supportingEvidence);
+          const photoGroupItems = groupItems.filter((groupItem) => groupItem.kind === "photo" && groupItem.signedUrl);
           const isPhoto = item?.kind === "photo";
           const isDocument = item?.kind === "document" || item?.kind === "file";
           return (
@@ -1209,7 +1225,7 @@ function DocumentedObservations({
               <div className="evidence-first-media">
                 {isPhoto && item?.signedUrl ? (
                   <div className="downloadable-evidence-preview">
-                    <EvidenceImageTrigger items={getLightboxItems(supportingEvidence)} currentId={item.capture.id} imageClassName="pdf-safe-image" />
+                    <EvidenceImageTrigger items={getLightboxItems(groupItems.length ? groupItems : supportingEvidence)} currentId={item.capture.id} imageClassName="pdf-safe-image" />
                     <DownloadOriginalLink item={item} />
                   </div>
                 ) : item?.signedUrl && isDocument ? (
@@ -1232,6 +1248,18 @@ function DocumentedObservations({
                   <strong>Technician Note</strong>
                   <p>{technicianNote}</p>
                 </div>
+                {photoGroupItems.length > 1 ? (
+                  <div className="supporting-image-strip">
+                    <strong>Supporting images</strong>
+                    <div className="supporting-image-grid">
+                      {photoGroupItems.map((groupItem) => (
+                        <div key={groupItem.capture.id} className="supporting-image-thumb downloadable-evidence-preview">
+                          <EvidenceImageTrigger items={getLightboxItems(photoGroupItems)} currentId={groupItem.capture.id} imageClassName="pdf-safe-image" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </article>
           );
@@ -1314,6 +1342,17 @@ function EvidenceGallery({
                 ) : null}
                 <strong>{item.title}</strong>
               </div>
+              <label className="field-stack compact-field">
+                <span className="label">Group with observation</span>
+                <select className="input" name={`capture_group_with_${item.capture.id}`} defaultValue={item.capture.observation_group_id ?? item.capture.id}>
+                  <option value={item.capture.id}>Standalone observation</option>
+                  {evidenceItems.filter((candidate) => candidate.capture.id !== item.capture.id).map((candidate) => (
+                    <option key={candidate.capture.id} value={candidate.capture.observation_group_id ?? candidate.capture.id}>
+                      {candidate.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <div className="evidence-category-pills" role="radiogroup" aria-label="Evidence category">
                 {EVIDENCE_CATEGORIES.map((category) => (
                   <label key={category} className={`status-pill compact evidence-category-pill ${category === normalizeEvidenceCategory(item.capture.evidence_category) ? "success" : "neutral"}`}>
