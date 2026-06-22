@@ -27,7 +27,7 @@ test('timeline loader scopes session, events, evidence, and relationships to org
 
 test('create and update timeline validation uses constants and defaults human-created events to accepted', () => {
   assert.match(validationSource, /EVENT_DATE_PRECISIONS\.includes/)
-  assert.match(validationSource, /SUGGESTION_REVIEW_STATUSES\.includes/)
+  assert.match(validationSource, /parseSuggestionReviewStatus/)
   assert.match(validationSource, /EVIDENCE_SOURCE_KINDS\.includes/)
   assert.match(actionSource, /parseTimelineEventForm\(formData\)/)
   assert.match(actionSource, /reviewStatus = values\.source_kind === 'system' \? values\.review_status : 'accepted'/)
@@ -36,8 +36,10 @@ test('create and update timeline validation uses constants and defaults human-cr
 
 test('evidence relationship actions validate same session and organization', () => {
   assert.match(validationSource, /assertSameWorkspace/)
-  assert.match(validationSource, /documentation_session_id !== right\.documentation_session_id/)
-  assert.match(validationSource, /organization_id !== right\.organization_id/)
+  assert.match(validationSource, /assertSameEvidenceWorkspace/)
+  const sharedValidationSource = readFileSync('src/features/evidence/validation.ts', 'utf8')
+  assert.match(sharedValidationSource, /documentation_session_id !== right\.documentation_session_id/)
+  assert.match(sharedValidationSource, /organization_id !== right\.organization_id/)
   assert.match(actionSource, /loadTimelineEvent\(supabase, eventId, sessionId, profile\.organization_id\)/)
   assert.match(actionSource, /loadCaptureItem\(supabase, captureId, sessionId, profile\.organization_id\)/)
   assert.match(actionSource, /assertSameWorkspace\(event, capture\)/)
@@ -47,9 +49,8 @@ test('timeline links evidence through accepted user documents or supports relati
   assert.match(validationSource, /\['documents', 'supports'\]\.includes/)
   assert.match(actionSource, /source_type: 'capture_item'/)
   assert.match(actionSource, /target_type: 'timeline_event'/)
-  assert.match(actionSource, /suggestion_source: 'user'/)
-  assert.match(actionSource, /review_status: 'accepted'/)
-  assert.match(actionSource, /deleted_at: new Date\(\)\.toISOString\(\)/)
+  assert.match(actionSource, /acceptedUserRelationshipDefaults/)
+  assert.match(actionSource, /softDeleteUpdate/)
 })
 
 test('timeline UI displays event details and evidence linking controls', () => {

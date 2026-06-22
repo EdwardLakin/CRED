@@ -1,5 +1,5 @@
 import { clearEvidenceDuplicate, markEvidenceDuplicate, updateEvidenceOutputInclusion, updateEvidenceReviewStatus, updateEvidenceSourceDates, updateEvidenceSourceMetadata } from '@/features/evidence/library/actions'
-import { EVIDENCE_REVIEW_STATUSES, EVENT_DATE_PRECISIONS } from '@/features/evidence/constants'
+import { EVIDENCE_REVIEW_STATUSES, EVENT_DATE_PRECISIONS, EVIDENCE_WORKSPACE_LABELS, formatEvidenceReviewStatus } from '@/features/evidence/constants'
 import type { EvidenceLibraryItem } from '@/features/evidence/library/data'
 
 function inputDate(value: string | null) {
@@ -11,7 +11,7 @@ export function EvidenceReviewForm({ item }: { item: EvidenceLibraryItem }) {
     <form action={updateEvidenceReviewStatus.bind(null, item.id)} className="inline-form">
       <label className="label" htmlFor={`review-${item.id}`}>Review status</label>
       <select id={`review-${item.id}`} name="evidence_review_status" className="select" defaultValue={item.evidence_review_status}>
-        {EVIDENCE_REVIEW_STATUSES.map((status) => <option key={status} value={status}>{status.replaceAll('_', ' ')}</option>)}
+        {EVIDENCE_REVIEW_STATUSES.map((status) => <option key={status} value={status}>{formatEvidenceReviewStatus(status)}</option>)}
       </select>
       <button className="button button-secondary">Save</button>
     </form>
@@ -21,7 +21,7 @@ export function EvidenceReviewForm({ item }: { item: EvidenceLibraryItem }) {
 export function EvidenceInclusionForm({ item }: { item: EvidenceLibraryItem }) {
   return (
     <form action={updateEvidenceOutputInclusion.bind(null, item.id)} className="inline-form">
-      <label className="checkbox-row"><input type="checkbox" name="include_in_report" defaultChecked={item.include_in_report} /> Include in outputs</label>
+      <label className="checkbox-row"><input type="checkbox" name="include_in_report" defaultChecked={item.include_in_report} /> {EVIDENCE_WORKSPACE_LABELS.includeInOutputs}</label>
       <button className="button button-secondary">Save</button>
     </form>
   )

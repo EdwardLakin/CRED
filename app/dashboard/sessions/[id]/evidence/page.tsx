@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { EvidenceWorkspaceBacklinks } from '@/features/evidence/components/EvidenceWorkspaceNav'
 
 import { EvidenceImportBatchSummary, EvidenceLibraryList } from '@/features/evidence/components/EvidenceLibraryList'
 import { getEvidenceLibraryData } from '@/features/evidence/library/data'
@@ -16,6 +17,7 @@ export default async function EvidenceLibraryPage({ params }: { params: Promise<
           <p className="muted">{session.title} · {evidenceItems.length} items</p>
         </div>
       </div>
+      <EvidenceWorkspaceBacklinks sessionId={session.id} current="library" />
       <EvidenceLibraryList sessionId={session.id} items={evidenceItems} importBatches={importBatches} signedUrls={signedUrls} timeZone={timeZone} />
       <EvidenceImportBatchSummary importBatches={importBatches} timeZone={timeZone} />
     </main>

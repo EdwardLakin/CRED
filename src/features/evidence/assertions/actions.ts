@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import { acceptedUserRelationshipDefaults, softDeleteUpdate } from '@/features/evidence/validation'
 import { assertSameWorkspace, parseAssertionForm, parseAssertionRelationshipType } from '@/features/evidence/assertions/validation'
 
 type MutationBuilder = { select: (columns: string) => MutationBuilder; eq: (column: string, value: string) => MutationBuilder; is: (column: string, value: null) => MutationBuilder; single: () => Promise<{ data: unknown; error: unknown }>; insert: (values: Record<string, unknown>) => Promise<{ error: unknown }>; update: (values: Record<string, unknown>) => MutationBuilder; then: Promise<{ error: unknown }>['then'] }
@@ -52,7 +53,7 @@ export async function deleteEvidenceAssertion(sessionId: string, assertionId: st
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
   const supabase = rawSupabase as unknown as SupabaseLike
   await loadAssertion(supabase, assertionId, sessionId, profile.organization_id)
-  const { error } = await supabase.from('evidence_assertions').update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', assertionId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).is('deleted_at', null)
+  const { error } = await supabase.from('evidence_assertions').update(softDeleteUpdate()).eq('id', assertionId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).is('deleted_at', null)
   if (error) throw new Error('Unable to delete factual observation')
   revalidatePath(`/dashboard/sessions/${sessionId}/assertions`)
 }
@@ -70,7 +71,7 @@ export async function linkAssertionRelationship(sessionId: string, assertionId: 
   const source = await loadSource(supabase, sourceType, sourceId, sessionId, profile.organization_id)
   assertSameWorkspace(assertion, source)
   const now = new Date().toISOString()
-  const { error } = await supabase.from('evidence_relationships').insert({ documentation_session_id: sessionId, organization_id: profile.organization_id, source_type: sourceType, source_id: sourceId, target_type: 'assertion', target_id: assertionId, relationship_type: relationshipType, suggestion_source: 'user', review_status: 'accepted', provenance: { created_from: 'assertions_workspace' }, created_by: profile.id ?? null, reviewed_at: now, updated_at: now })
+  const { error } = await supabase.from('evidence_relationships').insert({ documentation_session_id: sessionId, organization_id: profile.organization_id, source_type: sourceType, source_id: sourceId, target_type: 'assertion', target_id: assertionId, relationship_type: relationshipType, ...acceptedUserRelationshipDefaults('assertions_workspace', profile.id, now) })
   if (error) throw new Error('Unable to link factual observation')
   revalidatePath(`/dashboard/sessions/${sessionId}/assertions`)
 }
@@ -78,7 +79,7 @@ export async function linkAssertionRelationship(sessionId: string, assertionId: 
 export async function unlinkAssertionRelationship(sessionId: string, relationshipId: string) {
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
   const supabase = rawSupabase as unknown as SupabaseLike
-  const { error } = await supabase.from('evidence_relationships').update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', relationshipId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).eq('target_type', 'assertion').is('deleted_at', null)
+  const { error } = await supabase.from('evidence_relationships').update(softDeleteUpdate()).eq('id', relationshipId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).eq('target_type', 'assertion').is('deleted_at', null)
   if (error) throw new Error('Unable to unlink factual observation')
   revalidatePath(`/dashboard/sessions/${sessionId}/assertions`)
 }

@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import { acceptedUserRelationshipDefaults, softDeleteUpdate } from '@/features/evidence/validation'
 import { assertSameWorkspace, parseEntityForm, parseEntityRelationshipType } from '@/features/evidence/entities/validation'
 
 type MutationBuilder = { select: (columns: string) => MutationBuilder; eq: (column: string, value: string) => MutationBuilder; is: (column: string, value: null) => MutationBuilder; single: () => Promise<{ data: unknown; error: unknown }>; insert: (values: Record<string, unknown>) => Promise<{ error: unknown }>; update: (values: Record<string, unknown>) => MutationBuilder; then: Promise<{ error: unknown }>['then'] }
@@ -52,7 +53,7 @@ export async function deleteEvidenceEntity(sessionId: string, entityId: string) 
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
   const supabase = rawSupabase as unknown as SupabaseLike
   await loadEntity(supabase, entityId, sessionId, profile.organization_id)
-  const { error } = await supabase.from('evidence_entities').update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', entityId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).is('deleted_at', null)
+  const { error } = await supabase.from('evidence_entities').update(softDeleteUpdate()).eq('id', entityId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).is('deleted_at', null)
   if (error) throw new Error('Unable to delete entity')
   revalidatePath(`/dashboard/sessions/${sessionId}/entities`)
 }
@@ -70,7 +71,7 @@ export async function linkEntityRelationship(sessionId: string, entityId: string
   const source = await loadSource(supabase, sourceType, sourceId, sessionId, profile.organization_id)
   assertSameWorkspace(entity, source)
   const now = new Date().toISOString()
-  const { error } = await supabase.from('evidence_relationships').insert({ documentation_session_id: sessionId, organization_id: profile.organization_id, source_type: sourceType, source_id: sourceId, target_type: 'entity', target_id: entityId, relationship_type: relationshipType, suggestion_source: 'user', review_status: 'accepted', provenance: { created_from: 'entities_workspace' }, created_by: profile.id ?? null, reviewed_at: now, updated_at: now })
+  const { error } = await supabase.from('evidence_relationships').insert({ documentation_session_id: sessionId, organization_id: profile.organization_id, source_type: sourceType, source_id: sourceId, target_type: 'entity', target_id: entityId, relationship_type: relationshipType, ...acceptedUserRelationshipDefaults('entities_workspace', profile.id, now) })
   if (error) throw new Error('Unable to link entity')
   revalidatePath(`/dashboard/sessions/${sessionId}/entities`)
 }
@@ -78,7 +79,7 @@ export async function linkEntityRelationship(sessionId: string, entityId: string
 export async function unlinkEntityRelationship(sessionId: string, relationshipId: string) {
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
   const supabase = rawSupabase as unknown as SupabaseLike
-  const { error } = await supabase.from('evidence_relationships').update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', relationshipId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).eq('target_type', 'entity').is('deleted_at', null)
+  const { error } = await supabase.from('evidence_relationships').update(softDeleteUpdate()).eq('id', relationshipId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).eq('target_type', 'entity').is('deleted_at', null)
   if (error) throw new Error('Unable to unlink entity')
   revalidatePath(`/dashboard/sessions/${sessionId}/entities`)
 }

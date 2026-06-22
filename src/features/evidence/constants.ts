@@ -92,3 +92,49 @@ export const EVIDENCE_SUGGESTION_SOURCES = [
   'system',
   'import',
 ] as const
+
+
+export const EVIDENCE_WORKSPACE_LABELS = {
+  library: 'Evidence Library',
+  timeline: 'Timeline',
+  entities: 'Entities',
+  assertions: 'Factual Observations',
+  report: 'Existing Report',
+  includeInOutputs: 'Include in outputs',
+  suggested: 'Suggested',
+  accepted: 'Accepted',
+  edited: 'Edited',
+  rejected: 'Rejected',
+  needsReview: 'Needs review',
+  unreviewed: 'Unreviewed',
+} as const
+
+export function formatSuggestionReviewStatus(status: string | null | undefined) {
+  switch (status) {
+    case 'suggested':
+      return EVIDENCE_WORKSPACE_LABELS.suggested
+    case 'accepted':
+      return EVIDENCE_WORKSPACE_LABELS.accepted
+    case 'edited':
+      return EVIDENCE_WORKSPACE_LABELS.edited
+    case 'rejected':
+      return EVIDENCE_WORKSPACE_LABELS.rejected
+    default:
+      return EVIDENCE_WORKSPACE_LABELS.needsReview
+  }
+}
+
+export function formatEvidenceReviewStatus(status: string | null | undefined) {
+  switch (status) {
+    case 'unreviewed':
+      return EVIDENCE_WORKSPACE_LABELS.unreviewed
+    case 'reviewed':
+      return 'Reviewed'
+    case 'needs_followup':
+      return EVIDENCE_WORKSPACE_LABELS.needsReview
+    case 'excluded':
+      return 'Excluded'
+    default:
+      return EVIDENCE_WORKSPACE_LABELS.needsReview
+  }
+}

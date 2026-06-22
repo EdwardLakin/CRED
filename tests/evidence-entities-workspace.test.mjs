@@ -26,22 +26,26 @@ test('entities loader scopes session, entities, evidence, timeline events, and r
 
 test('entity create and update validation checks types, statuses, and sources', () => {
   assert.match(validationSource, /EVIDENCE_ENTITY_TYPES\.includes/)
-  assert.match(validationSource, /SUGGESTION_REVIEW_STATUSES\.includes/)
-  assert.match(validationSource, /EVIDENCE_SUGGESTION_SOURCES\.includes/)
+  assert.match(validationSource, /parseSuggestionReviewStatus/)
+  assert.match(validationSource, /parseSuggestionSource/)
   assert.match(actionSource, /parseEntityForm\(formData\)/)
   assert.match(actionSource, /reviewed_at: values\.review_status === 'accepted'/)
 })
 
 test('human-created entities default accepted and AI or suggested sources remain suggested', () => {
-  assert.match(validationSource, /suggestionSource === 'user'\) return requestedStatus \?\? 'accepted'/)
-  assert.match(validationSource, /return 'suggested'/)
+  assert.match(validationSource, /defaultSuggestionReviewStatus/)
+  const sharedValidationSource = readFileSync('src/features/evidence/validation.ts', 'utf8')
+  assert.match(sharedValidationSource, /suggestionSource === 'user'\) return requestedStatus \?\? 'accepted'/)
+  assert.match(sharedValidationSource, /return 'suggested'/)
 })
 
 test('entity relationship validation allows only entity links and rejects cross workspace sources', () => {
   assert.match(validationSource, /sourceType === 'timeline_event' \? \['involves'\] : \['mentions', 'depicts'\]/)
   assert.match(validationSource, /EVIDENCE_RELATIONSHIP_TYPES\.includes/)
-  assert.match(validationSource, /documentation_session_id !== right\.documentation_session_id/)
-  assert.match(validationSource, /organization_id !== right\.organization_id/)
+  assert.match(validationSource, /assertSameEvidenceWorkspace/)
+  const sharedValidationSource = readFileSync('src/features/evidence/validation.ts', 'utf8')
+  assert.match(sharedValidationSource, /documentation_session_id !== right\.documentation_session_id/)
+  assert.match(sharedValidationSource, /organization_id !== right\.organization_id/)
   assert.match(actionSource, /loadEntity\(supabase, entityId, sessionId, profile\.organization_id\)/)
   assert.match(actionSource, /loadSource\(supabase, sourceType, sourceId, sessionId, profile\.organization_id\)/)
   assert.match(actionSource, /assertSameWorkspace\(entity, source\)/)
@@ -50,9 +54,8 @@ test('entity relationship validation allows only entity links and rejects cross 
 test('entity relationships are accepted user links to entities and unlink by soft delete', () => {
   assert.match(actionSource, /target_type: 'entity'/)
   assert.match(actionSource, /source_type: sourceType/)
-  assert.match(actionSource, /suggestion_source: 'user'/)
-  assert.match(actionSource, /review_status: 'accepted'/)
-  assert.match(actionSource, /deleted_at: new Date\(\)\.toISOString\(\)/)
+  assert.match(actionSource, /acceptedUserRelationshipDefaults/)
+  assert.match(actionSource, /softDeleteUpdate/)
 })
 
 test('entities UI exposes required fields, counts, and linking controls', () => {

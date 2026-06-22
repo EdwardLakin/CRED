@@ -26,23 +26,27 @@ test('assertions loader scopes session, assertions, evidence, entities, timeline
 
 test('create and update validation checks assertion types, statuses, and sources', () => {
   assert.match(validationSource, /EVIDENCE_ASSERTION_TYPES\.includes/)
-  assert.match(validationSource, /SUGGESTION_REVIEW_STATUSES\.includes/)
-  assert.match(validationSource, /EVIDENCE_SUGGESTION_SOURCES\.includes/)
+  assert.match(validationSource, /parseSuggestionReviewStatus/)
+  assert.match(validationSource, /parseSuggestionSource/)
   assert.match(actionSource, /parseAssertionForm\(formData\)/)
   assert.match(actionSource, /reviewed_at: values\.review_status === 'accepted'/)
 })
 
 test('human-created assertions default accepted and AI or suggested sources remain suggested', () => {
-  assert.match(validationSource, /suggestionSource === 'user'\) return requestedStatus \?\? 'accepted'/)
-  assert.match(validationSource, /return 'suggested'/)
+  assert.match(validationSource, /defaultSuggestionReviewStatus/)
+  const sharedValidationSource = readFileSync('src/features/evidence/validation.ts', 'utf8')
+  assert.match(sharedValidationSource, /suggestionSource === 'user'\) return requestedStatus \?\? 'accepted'/)
+  assert.match(sharedValidationSource, /return 'suggested'/)
 })
 
 test('assertion relationship validation rejects invalid and cross workspace links', () => {
   assert.match(validationSource, /sourceType === 'capture_item' \? \['supports', 'contradicts', 'references'\]/)
   assert.match(validationSource, /sourceType === 'timeline_event' \? \['documents', 'supports', 'references'\]/)
   assert.match(validationSource, /EVIDENCE_RELATIONSHIP_TYPES\.includes/)
-  assert.match(validationSource, /documentation_session_id !== right\.documentation_session_id/)
-  assert.match(validationSource, /organization_id !== right\.organization_id/)
+  assert.match(validationSource, /assertSameEvidenceWorkspace/)
+  const sharedValidationSource = readFileSync('src/features/evidence/validation.ts', 'utf8')
+  assert.match(sharedValidationSource, /documentation_session_id !== right\.documentation_session_id/)
+  assert.match(sharedValidationSource, /organization_id !== right\.organization_id/)
   assert.match(actionSource, /loadAssertion\(supabase, assertionId, sessionId, profile\.organization_id\)/)
   assert.match(actionSource, /loadSource\(supabase, sourceType, sourceId, sessionId, profile\.organization_id\)/)
   assert.match(actionSource, /assertSameWorkspace\(assertion, source\)/)
@@ -51,9 +55,8 @@ test('assertion relationship validation rejects invalid and cross workspace link
 test('assertion links are accepted user relationships and unlink by soft delete', () => {
   assert.match(actionSource, /target_type: 'assertion'/)
   assert.match(actionSource, /source_type: sourceType/)
-  assert.match(actionSource, /suggestion_source: 'user'/)
-  assert.match(actionSource, /review_status: 'accepted'/)
-  assert.match(actionSource, /deleted_at: new Date\(\)\.toISOString\(\)/)
+  assert.match(actionSource, /acceptedUserRelationshipDefaults/)
+  assert.match(actionSource, /softDeleteUpdate/)
 })
 
 test('assertions UI exposes required copy, fields, counts, and linking controls', () => {
