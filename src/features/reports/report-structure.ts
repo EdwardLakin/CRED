@@ -743,14 +743,30 @@ function formatFinding(item: StructuredReportItem) {
   return details ? `${title}: ${details}` : title
 }
 
-function explicitStatusFromText(value: string) {
-  const trimmed = clean(value, 80)
+function explicitStatusFromText(value: string, statusChoices: string[] = []) {
+  const trimmed = clean(value, 160)
   if (!trimmed) return null
-  const marked = trimmed.match(/(?:☑|■|\[[xX✓✔]\])\s*([^|,;]+)|([^|,;]+)\s*(?:☑|■|\[[xX✓✔]\])/ )
-  if (marked) return clean(marked[1] ?? marked[2], 80) || null
+  const markedChoice = trimmed.match(/(?:☑|■|\[[xX✓✔]\]|[✓✔])\s*([^☐□☑■✓✔|,;\[]+)/)
+  if (markedChoice) {
+    const marked = clean(markedChoice[1], 80)
+    if (!marked) return null
+    const exactChoice = statusChoices.find((choice) => normalizeForMatch(choice) === normalizeForMatch(marked))
+    return exactChoice ?? marked
+  }
+  const parts = trimmed.split(/\||\t| {2,}/).map((part) => clean(part, 80)).filter(Boolean)
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index]
+    if (/^(?:x|✓|✔|☑|■|\[[xX✓✔]\])$/i.test(part)) return statusChoices[index] ?? null
+    const inline = part.match(/^(?:x|✓|✔|☑|■|\[[xX✓✔]\])\s+(.+)$/i)
+    if (inline) return clean(inline[1], 80) || statusChoices[index] || null
+  }
   if (/^(?:x|✓|✔)$/i.test(trimmed)) return null
   if (/^(?:☐|□|\[ \])(?:\s+[^☑■✓✔xX]+)+$/i.test(trimmed) && !/☑|■|✓|✔|\[[xX✓✔]\]/.test(trimmed)) return null
   return trimmed
+}
+
+function detectStatusChoices(parts: string[]) {
+  return parts.filter((part) => /^(?:yes|no|pass|fail|ok|n\/?a|na|good|fair|poor|complete|incomplete|satisfactory|unsatisfactory|repaired|replace)$/i.test(part))
 }
 
 function rowsFromStructuredExtraction(capture: CaptureLike): NormalizedFormField[] {
@@ -779,7 +795,6 @@ function rowsFromStructuredExtraction(capture: CaptureLike): NormalizedFormField
 
 function labelRowsFromText(capture: CaptureLike): NormalizedFormField[] {
   const structuredRows = rowsFromStructuredExtraction(capture)
-  if (structuredRows.length > 0) return structuredRows.slice(0, 120)
 
   const lines = (capture.ocr_text ?? '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
   const rows: NormalizedFormField[] = []
@@ -788,7 +803,7 @@ function labelRowsFromText(capture: CaptureLike): NormalizedFormField[] {
 
   for (const line of lines) {
     const parts = line.split(/\||\t| {2,}/).map((part) => clean(part, 120)).filter(Boolean)
-    const detectedChoices = parts.filter((part) => /^(?:yes|no|pass|fail|ok|n\/?a|na|good|fair|poor|complete|incomplete)$/i.test(part))
+    const detectedChoices = detectStatusChoices(parts)
     if (detectedChoices.length >= 2) {
       const heading = parts.find((part) => !detectedChoices.includes(part) && /[A-Za-z]/.test(part))
       if (heading) currentSection = heading
@@ -802,22 +817,22 @@ function labelRowsFromText(capture: CaptureLike): NormalizedFormField[] {
     }
     if (parts.length >= 2) {
       const label = parts[0]
-      const value = explicitStatusFromText(parts.slice(1).join(' '))
+      const value = explicitStatusFromText(parts.slice(1).join(' '), statusChoices)
       if (label.length >= 2 && /[a-z]/i.test(label)) rows.push({ key: slug(`${currentSection}_${label}`, `row_${rows.length + 1}`), label, value: value ?? 'Not captured', source_capture_id: capture.id, field_type: inferBlueprintFieldType(label, value ?? ''), section_title: currentSection, status_choices: statusChoices.length ? statusChoices : undefined })
       continue
     }
     if (line.length <= 70 && /[A-Za-z]/.test(line) && !/[.!?]$/.test(line)) {
-      const looksHeading = rows.length === 0 || /^[A-Z0-9 /&()-]+$/.test(line) || /section|part|area|details|information|notes|signature/i.test(line)
+      const looksHeading = rows.length === 0 || (statusChoices.length > 0 && parts.length === 1 && !/☐|☑|□|■|\[[ xX✓✔]?\]/.test(line)) || /^[A-Z0-9 /&()-]+$/.test(line) || /section|part|area|details|information|notes|signature/i.test(line)
       if (looksHeading) currentSection = line
       else rows.push({ key: slug(`${currentSection}_${line}`, `label_${rows.length + 1}`), label: line, value: 'Not captured', source_capture_id: capture.id, section_title: currentSection, status_choices: statusChoices.length ? statusChoices : undefined })
     }
   }
 
   const extractionRows = fieldRowsFromCapture(capture)
-  const merged = [...extractionRows, ...rows]
+  const merged = [...extractionRows, ...structuredRows, ...rows]
   const seen = new Set<string>()
   return merged.filter((row) => {
-    const key = normalizeForMatch(row.label)
+    const key = normalizeForMatch(`${row.section_title ?? ''}:${row.label}`)
     if (!key || seen.has(key)) return false
     seen.add(key)
     return true
@@ -913,6 +928,7 @@ function canonicalFormBlueprintFromStructure(reportStructure: Json | null): Form
         page_index: typeof rawField.page_index === 'number' ? rawField.page_index : null,
         value: rawField.value === null || rawField.value === undefined ? null : clean(rawField.value ?? rawField.extracted_value ?? rawField.status, 1000) || null,
         source_capture_id: clean(rawField.source_capture_id, 120) || sourceCaptureIds[0] || '',
+        status_choices: Array.isArray(rawField.status_choices) ? rawField.status_choices.map((choice) => clean(choice, 80)).filter(Boolean) : undefined,
       })
       sections[sections.length - 1].field_ids.push(id)
     }
@@ -932,6 +948,7 @@ function canonicalFormBlueprintFromStructure(reportStructure: Json | null): Form
       page_index: typeof rawField.page_index === 'number' ? rawField.page_index : null,
       value: rawField.value === null || rawField.value === undefined ? null : clean(rawField.value ?? rawField.extracted_value ?? rawField.status, 1000) || null,
       source_capture_id: clean(rawField.source_capture_id, 120) || sourceCaptureIds[0] || '',
+      status_choices: Array.isArray(rawField.status_choices) ? rawField.status_choices.map((choice) => clean(choice, 80)).filter(Boolean) : undefined,
     })
     const section = sections.find((item) => item.id === sectionId)
     if (section && !section.field_ids.includes(id)) section.field_ids.push(id)
@@ -1905,6 +1922,7 @@ export type FormBlueprintField = {
   page_index: number | null
   value: string | null
   source_capture_id: string
+  status_choices?: string[]
 }
 
 export type FormBlueprintSection = {
@@ -2000,7 +2018,7 @@ export function extractFormBlueprint(captures: CaptureLike[]): FormBlueprint | n
       if (!sections.has(sectionId)) sections.set(sectionId, { id: sectionId, title: sectionTitle, page_index: captureIndex + 1, field_ids: [] })
       const fieldType = inferBlueprintFieldType(row.label, row.value)
       const fieldId = `${sectionId}_${slug(row.key || row.label, `field_${index + 1}`)}`
-      fields.push({ id: fieldId, label: row.label, field_type: fieldType, section_id: sectionId, page_index: captureIndex + 1, value: row.value === 'Not captured' ? null : row.value, source_capture_id: capture.id })
+      fields.push({ id: fieldId, label: row.label, field_type: fieldType, section_id: sectionId, page_index: captureIndex + 1, value: row.value === 'Not captured' ? null : row.value, source_capture_id: capture.id, status_choices: row.status_choices })
       sections.get(sectionId)?.field_ids.push(fieldId)
     }
   }
