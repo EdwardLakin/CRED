@@ -66,7 +66,7 @@ export default async function ArchivedSessionsPage({ searchParams }: { searchPar
       <form action="/dashboard/settings/archived-sessions" className="search-card">
         <label className="label" htmlFor="q">Search archived sessions</label>
         <div className="search-row">
-          <input id="q" name="q" type="search" defaultValue={searchTerm} placeholder="Search by title, ID, customer, asset, VIN, or unit" className="input" />
+          <input id="q" name="q" type="search" defaultValue={searchTerm} placeholder="Search by Report ID, title, customer, asset, VIN, or unit" className="input" />
           <button className="button button-primary touch-target">Search</button>
         </div>
       </form>

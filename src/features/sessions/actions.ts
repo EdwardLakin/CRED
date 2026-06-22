@@ -38,14 +38,6 @@ function getDefaultSessionTitle(createdAt = new Date()) {
   return `New Session ${formatDateTimeInTimeZone(createdAt, null)}`
 }
 
-function createSessionDisplayId(date = new Date()) {
-  // Short random suffix avoids sequence race conditions while remaining organization-scoped by a unique index.
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  const bytes = crypto.getRandomValues(new Uint8Array(4))
-  const suffix = Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join('')
-  return `EV-${date.getUTCFullYear()}-${suffix}`
-}
-
 function buildSessionMetadata(formData: FormData): Json {
   const metadataInput: Record<string, string> = {}
   for (const field of SESSION_METADATA_FIELDS) {
@@ -101,7 +93,6 @@ export async function createDocumentationSession(formData: FormData) {
       created_by: profile.id,
       organization_id: profile.organization_id,
       workflow_template_id: workflowTemplateId,
-      display_id: createSessionDisplayId(createdAt),
       created_at: createdAt.toISOString(),
     })
     .select('id')

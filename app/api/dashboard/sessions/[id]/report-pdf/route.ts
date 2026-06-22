@@ -243,7 +243,11 @@ function buildReportCoverHtml(params: {
       value: getReportInfoValue(params.draft, params.session, "location"),
     },
     {
-      label: "Reference Number",
+      label: "Report ID",
+      value: params.session.display_id ?? "",
+    },
+    {
+      label: "Reference / File Note",
       value: getReportInfoValue(params.draft, params.session, "reference_number"),
     },
     {
@@ -711,7 +715,11 @@ function renderReportInformationHtml(
       ),
     },
     {
-      label: "Reference Number",
+      label: "Report ID",
+      value: session.display_id ?? "",
+    },
+    {
+      label: "Reference / File Note",
       value: getReportInfoValue(_draft, session, "reference_number"),
     },
   ];
@@ -1374,6 +1382,7 @@ function buildFieldServiceReportHtml({
 }) {
   const details = normalizeFieldServiceDetails(session.field_service_details);
   const headerRows = [
+    { label: "Report ID", value: session.display_id ?? "" },
     { label: "Company", value: organizationName },
     {
       label: "Customer",
@@ -1774,7 +1783,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
         "Asset / Equipment",
         "Subject Name",
         "Location",
-        "Reference Number",
+        "Reference / File Note",
       ].includes(row.label),
   );
   const structuredFormDataHtml = buildStructuredFormDataHtml(

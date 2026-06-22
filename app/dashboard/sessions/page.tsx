@@ -102,7 +102,7 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
           Find a session
         </label>
         <div className="search-row">
-          <input id="q" name="q" type="search" defaultValue={searchTerm} placeholder="Search sessions" className="input" />
+          <input id="q" name="q" type="search" defaultValue={searchTerm} placeholder="Search by Report ID, title, customer, asset, VIN" className="input" />
           <button className="button button-primary touch-target">Search</button>
         </div>
       </form>

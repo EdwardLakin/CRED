@@ -45,6 +45,7 @@ export type SupportingEvidenceItem = {
   capture: CaptureItem;
   signedUrl: string | null;
   originalUrl?: string | null;
+  downloadUrl?: string | null;
   title: string;
   note: string | null;
   kind: "photo" | "video" | "audio" | "note" | "document" | "file";
@@ -521,6 +522,7 @@ export function ReportReview({
     | "created_at"
     | "updated_at"
     | "reviewed_at"
+    | "display_id"
   >;
   saveReportEditsAction: ServerAction | null;
   sourceFieldEntries: [string, unknown][];
@@ -544,7 +546,8 @@ export function ReportReview({
     ["Subject", getReportInfoValue(currentReport, session, "subject_name")],
     ["Asset / Equipment", getReportInfoValue(currentReport, session, "asset_equipment") || session.asset_label],
     ["Location", getReportInfoValue(currentReport, session, "location") || facilityLocation],
-    ["Reference Number", getReportInfoValue(currentReport, session, "reference_number")],
+    ["Report ID", session.display_id],
+    ["Reference / File Note", getReportInfoValue(currentReport, session, "reference_number")],
     ["Report Date", formatDateTime(currentReport?.updated_at ?? session.updated_at ?? session.created_at, timeZone)],
   ]
     .map(([label, value]) => [label, stripConfidenceText(String(value ?? "")).trim()])
@@ -636,7 +639,7 @@ export function ReportReview({
             <div>
               <h3>Report Details</h3>
               <p className="muted">
-                Edit the report title, customer, subject, asset, location, and reference or file note used across review, export, sharing, and delivery.
+                Edit the report title, customer, subject, asset, location, and optional reference or file note. The Report ID is generated separately for archive search and sorting.
               </p>
             </div>
           </summary>
@@ -1214,11 +1217,15 @@ function DocumentedObservations({
             <article key={entry.group.capture_id} className="evidence-first-card">
               <div className="evidence-first-media">
                 {isPhoto && item?.signedUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured.
-                  <img className="pdf-safe-image" src={item.signedUrl} alt={item.title} loading="eager" decoding="sync" />
+                  <div className="downloadable-evidence-preview">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured. */}
+                    <img className="pdf-safe-image" src={item.signedUrl} alt={item.title} loading="eager" decoding="sync" />
+                    {item.downloadUrl ? <a className="evidence-download-overlay" href={item.downloadUrl} download aria-label={`Download original ${item.title}`}>⬇</a> : null}
+                  </div>
                 ) : item?.signedUrl && isDocument ? (
-                  <div className="review-evidence-placeholder">
+                  <div className="review-evidence-placeholder downloadable-evidence-preview">
                     <a href={item.signedUrl}>Open Supporting Document</a>
+                    {item.downloadUrl ? <a className="evidence-download-overlay" href={item.downloadUrl} download aria-label={`Download original ${item.title}`}>⬇</a> : null}
                   </div>
                 ) : (
                   <div className="review-evidence-placeholder">
@@ -1341,8 +1348,8 @@ function EvidenceGallery({
                   // eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured.
                   <img className="pdf-safe-image" src={item.signedUrl} alt={item.title} loading="eager" decoding="sync" />
                 ) : null}
-                {item.originalUrl ? (
-                  <a className="secondary-link subtle-download-link" href={item.originalUrl} download target="_blank" rel="noreferrer">Download Original</a>
+                {item.downloadUrl ? (
+                  <a className="secondary-link subtle-download-link" href={item.downloadUrl} download>Download Original</a>
                 ) : null}
                 <strong>{item.title}</strong>
               </div>
@@ -1383,8 +1390,11 @@ function EvidenceGallery({
             {photoEvidence.slice(0, 8).map((item) => (
               <article key={item.capture.id} className="review-photo-card">
                 {item.signedUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured.
-                  <img className="pdf-safe-image" src={item.signedUrl} alt={item.title} loading="eager" decoding="sync" />
+                  <div className="downloadable-evidence-preview">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured. */}
+                    <img className="pdf-safe-image" src={item.signedUrl} alt={item.title} loading="eager" decoding="sync" />
+                    {item.downloadUrl ? <a className="evidence-download-overlay" href={item.downloadUrl} download aria-label={`Download original ${item.title}`}>⬇</a> : null}
+                  </div>
                 ) : (
                   <div className="review-evidence-placeholder">Photo saved</div>
                 )}
@@ -1408,7 +1418,7 @@ function EvidenceGallery({
           <div className="review-note-list">
             {noteEvidence.slice(0, 8).map((item) => (
               <article key={item.capture.id} className="review-note-card">
-                <strong>{item.title}</strong>
+                <div className="report-card-action-row"><strong>{item.title}</strong>{item.downloadUrl ? <a className="secondary-link subtle-download-link" href={item.downloadUrl} download>Download Original</a> : null}</div>
                 <p>{item.note ?? "Text note saved for this report."}</p>
               </article>
             ))}
@@ -1424,7 +1434,7 @@ function EvidenceGallery({
           <div className="review-note-list">
             {otherEvidence.slice(0, 6).map((item) => (
               <article key={item.capture.id} className="review-note-card">
-                <strong>{item.title}</strong>
+                <div className="report-card-action-row"><strong>{item.title}</strong>{item.downloadUrl ? <a className="secondary-link subtle-download-link" href={item.downloadUrl} download>Download Original</a> : null}</div>
                 <p className="muted">
                   {stripConfidenceText(item.note ?? "Saved with the report.")}
                 </p>
