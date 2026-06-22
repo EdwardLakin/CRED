@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
+import { PendingActionButton } from '@/features/reports/review/PendingActionButton'
 
 type Props = {
   defaultValue: string
@@ -52,14 +53,14 @@ export function FinalNotesEditor({ defaultValue, editedByUser, includeInExport, 
           Include executive summary in export
         </label>
         <div className="form-actions report-inline-actions">
-          <button className="button button-primary touch-target">Save Summary</button>
+          <PendingActionButton className="button button-primary touch-target" pendingLabel="Saving…">Save Summary</PendingActionButton>
           <button type="button" className="button button-secondary touch-target" onClick={copyNotes}>Copy Summary</button>
           <button type="button" className="button button-secondary touch-target" onClick={clearNotes}>Clear</button>
         </div>
       </form>
       <form action={generateAction} onSubmit={confirmPrepareAgain} className="form-actions report-inline-actions">
-        <button className="button button-secondary touch-target" name="final_notes_action" value="generate">Generate Summary</button>
-        <button className="button button-secondary touch-target" name="final_notes_action" value="regenerate">Generate Again</button>
+        <PendingActionButton className="button button-secondary touch-target" name="final_notes_action" value="generate" pendingLabel="Preparing report…">Generate Summary</PendingActionButton>
+        <PendingActionButton className="button button-secondary touch-target" name="final_notes_action" value="regenerate" pendingLabel="Regenerating…">Generate Again</PendingActionButton>
       </form>
       {message ? <p className="success compact-success">{message}</p> : null}
     </details>

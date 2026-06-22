@@ -79,6 +79,7 @@ export type NormalizedFormField = {
   unit?: string | null
   status_choices?: string[]
   notes?: string | null
+  section_title?: string
 }
 
 export type NormalizedReportSection = {
@@ -557,23 +558,77 @@ function getSourceDocumentFields(capture: CaptureLike) {
   return { sourceDocument, sections, fields }
 }
 
+
+function getNestedArray(value: unknown, keys: string[]): unknown[] {
+  if (!isRecord(value)) return []
+  for (const key of keys) {
+    const candidate = value[key]
+    if (Array.isArray(candidate)) return candidate
+  }
+  return []
+}
+
+function sourceDocumentEvidence(capture: CaptureLike) {
+  const data = isRecord(capture.extracted_data) ? capture.extracted_data : {}
+  const { sourceDocument, sections, fields } = getSourceDocumentFields(capture)
+  const extraction = isRecord(data.extraction) ? data.extraction : {}
+  const tables = [...getNestedArray(sourceDocument, ['tables', 'table_data']), ...getNestedArray(extraction, ['tables', 'table_data'])]
+  const rows = [...getNestedArray(sourceDocument, ['rows', 'checklist_rows', 'line_items', 'items']), ...getNestedArray(extraction, ['rows', 'checklist_rows', 'line_items', 'items'])]
+  const extractionFields = Object.keys(getExtractionFields(capture.extracted_data))
+  return { sourceDocument, sections, fields, tables, rows, extractionFields }
+}
+
+function getSourceDocumentClassification(capture: CaptureLike) {
+  const { sourceDocument } = getSourceDocumentFields(capture)
+  const data = isRecord(capture.extracted_data) ? capture.extracted_data : {}
+  const extraction = isRecord(data.extraction) ? data.extraction : {}
+  return clean(sourceDocument?.type ?? sourceDocument?.classification ?? sourceDocument?.document_type ?? extraction.classification ?? extraction.document_type, 120).toLowerCase()
+}
+
+function structuralSignalScore(capture: CaptureLike) {
+  const text = textForCapture(capture)
+  const ocr = capture.ocr_text ?? ''
+  const lines = ocr.split(/\r?\n/).map((line) => clean(line, 180)).filter(Boolean)
+  const { sourceDocument, sections, fields, tables, rows, extractionFields } = sourceDocumentEvidence(capture)
+  let score = 0
+  const classification = getSourceDocumentClassification(capture)
+  if (/form|checklist|inspection|worksheet|template|report|document|sheet/.test(classification)) score += 5
+  if (sourceDocument) score += 2
+  if (sections.length) score += Math.min(sections.length, 4) * 1.2
+  if (fields.length || extractionFields.length) score += Math.min(fields.length + extractionFields.length, 10) * 0.45
+  if (tables.length) score += 3
+  if (rows.length) score += Math.min(rows.length, 10) * 0.6
+  const delimitedLines = lines.filter((line) => /\||\t| {2,}/.test(line)).length
+  const labelValueLines = lines.filter((line) => /[A-Za-z][A-Za-z0-9 /#()_-]{1,40}\s*[:=]/.test(line)).length
+  const shortLabelLines = lines.filter((line) => line.length >= 3 && line.length <= 70 && /[A-Za-z]/.test(line) && !/[.!?]$/.test(line)).length
+  if (delimitedLines >= 2) score += 2.5
+  if (labelValueLines >= 3) score += 2
+  if (shortLabelLines >= 6) score += 2
+  if (/☐|☑|□|■|\[[ xX✓✔]?\]/.test(ocr)) score += 2
+  if (/\b(?:yes|no|ok|n\/a|na)\b\s+\b(?:yes|no|ok|n\/a|na)\b/i.test(ocr)) score += 1.5
+  if (/photo of|damage|leak|rust|broken|vehicle exterior|equipment photo/.test(text) && score < 5) score -= 4
+  return score
+}
+
+function hasReliableFormLikeEvidence(capture: CaptureLike, index = 0) {
+  return structuralSignalScore(capture) >= (index === 0 ? 5.5 : 6.5)
+}
+
 export function scoreFormReferenceCapture(capture: CaptureLike, index = 0) {
   const text = textForCapture(capture)
-  const fieldKeys = Object.keys(getExtractionFields(capture.extracted_data))
-  const { sourceDocument, sections, fields } = getSourceDocumentFields(capture)
+  const { sections, fields, tables, rows, extractionFields } = sourceDocumentEvidence(capture)
   const keywordHits = FORM_SECTION_KEYWORDS.filter((keyword) => text.includes(keyword)).length
   const layoutHits = FORM_LAYOUT_TERMS.filter((term) => text.includes(term)).length
-  let score = 0
-  if (sourceDocument) score += 5
-  if (capture.media_kind === 'document') score += 4
-  if (index === 0) score += 2
-  if (/form|sheet|checklist|inspection|work order|field service|report/.test(text)) score += 3
-  score += Math.min(fieldKeys.length, 8) * 0.7
-  score += Math.min(sections.length + fields.length, 8) * 0.8
-  score += Math.min(keywordHits, 8) * 0.8
-  score += Math.min(layoutHits, 5) * 0.4
-  if (capture.media_kind === 'image' && keywordHits >= 2 && (fieldKeys.length >= 2 || layoutHits >= 2)) score += 2
-  if (/photo of|damage|leak|rust|broken|vehicle exterior|equipment photo/.test(text) && keywordHits < 2 && fieldKeys.length < 3) score -= 3
+  let score = structuralSignalScore(capture)
+  if (capture.media_kind === 'document') score += 2
+  if (index === 0) score += 1.5
+  if (/form|sheet|checklist|inspection|work order|field service|report|template/.test(text)) score += 2
+  score += Math.min(extractionFields.length, 8) * 0.4
+  score += Math.min(sections.length + fields.length + tables.length + rows.length, 12) * 0.35
+  score += Math.min(keywordHits, 8) * 0.35
+  score += Math.min(layoutHits, 5) * 0.25
+  if (capture.media_kind === 'image' && (hasDocumentTextContext(capture) || hasReliableFormLikeEvidence(capture, index))) score += 2
+  if (/photo of|damage|leak|rust|broken|vehicle exterior|equipment photo/.test(text) && structuralSignalScore(capture) < 5) score -= 3
   return score
 }
 
@@ -595,13 +650,16 @@ function getStructureSourceFromText(text: string): ReportStructureSource | null 
 }
 
 export function getReportStructureSourceCapture(captures: CaptureLike[]) {
-  return captures.find((capture) => {
-    const sourceDocumentType = getSourceDocumentType(capture)
-    const text = textForCapture(capture)
-    if (capture.type !== 'document' && capture.media_kind !== 'document') return false
-    if (sourceDocumentType === 'other' || sourceDocumentType === 'diagnostic_procedure') return true
-    return Boolean(getStructureSourceFromText(text))
-  }) ?? null
+  return captures
+    .map((capture, index) => ({ capture, index, score: scoreFormReferenceCapture(capture, index) }))
+    .filter(({ capture, index }) => {
+      const sourceDocumentType = getSourceDocumentType(capture)
+      const text = textForCapture(capture)
+      if (sourceDocumentType === 'diagnostic_procedure') return capture.type === 'document' || capture.media_kind === 'document'
+      if (getStructureSourceFromText(text)) return hasDocumentTextContext(capture) || hasReliableFormLikeEvidence(capture, index)
+      return hasReliableFormLikeEvidence(capture, index)
+    })
+    .sort((a, b) => a.index - b.index || b.score - a.score)[0]?.capture ?? null
 }
 
 export function getReportStructureSourceMetadata(captures: CaptureLike[]) {
@@ -616,7 +674,7 @@ export function getReportStructureSourceMetadata(captures: CaptureLike[]) {
 
   const text = textForCapture(capture)
   return {
-    report_structure_source: getStructureSourceFromText(text) ?? 'uploaded_form',
+    report_structure_source: getStructureSourceFromText(text) ?? (/template/.test(getSourceDocumentClassification(capture)) ? 'uploaded_template' : /report/.test(getSourceDocumentClassification(capture)) ? 'uploaded_report' : 'uploaded_form'),
     source_capture_id: capture.id,
     source_document_name: getSourceDocumentLabel(capture) ?? getDeterministicReferenceTitle(capture) ?? 'Uploaded document',
   }
@@ -685,11 +743,85 @@ function formatFinding(item: StructuredReportItem) {
   return details ? `${title}: ${details}` : title
 }
 
+function explicitStatusFromText(value: string) {
+  const trimmed = clean(value, 80)
+  if (!trimmed) return null
+  const marked = trimmed.match(/(?:☑|■|\[[xX✓✔]\])\s*([^|,;]+)|([^|,;]+)\s*(?:☑|■|\[[xX✓✔]\])/ )
+  if (marked) return clean(marked[1] ?? marked[2], 80) || null
+  if (/^(?:x|✓|✔)$/i.test(trimmed)) return null
+  if (/^(?:☐|□|\[ \])(?:\s+[^☑■✓✔xX]+)+$/i.test(trimmed) && !/☑|■|✓|✔|\[[xX✓✔]\]/.test(trimmed)) return null
+  return trimmed
+}
+
+function rowsFromStructuredExtraction(capture: CaptureLike): NormalizedFormField[] {
+  const { fields, rows } = sourceDocumentEvidence(capture)
+  const result: NormalizedFormField[] = []
+  const addRecord = (record: unknown, index: number) => {
+    if (!isRecord(record)) return
+    const label = clean(record.label ?? record.name ?? record.title ?? record.field_label ?? record.item ?? record.description ?? record.question, 160)
+    if (!label) return
+    const rawValue = record.value ?? record.status ?? record.selection ?? record.checked_value ?? record.mark ?? record.result
+    const value = clean(rawValue, 300) || 'Not captured'
+    result.push({
+      key: clean(record.id ?? record.key, 120) || slug(label, `structured_row_${index + 1}`),
+      label,
+      value,
+      field_type: normalizeBlueprintFieldType(record.field_type ?? record.type, label, value),
+      section_title: clean(record.section_title ?? record.section ?? record.group, 120) || undefined,
+      status_choices: Array.isArray(record.status_choices) ? record.status_choices.map((choice) => clean(choice, 80)).filter(Boolean) : undefined,
+      source_capture_id: capture.id,
+    })
+  }
+  fields.forEach(addRecord)
+  rows.forEach(addRecord)
+  return result
+}
+
 function labelRowsFromText(capture: CaptureLike): NormalizedFormField[] {
-  const labels = Array.from(new Set((capture.ocr_text ?? '').split(/\n| {2,}|\t|\|/)
-    .map((part) => clean(part.replace(/[:_\-–—]+$/g, ''), 80))
-    .filter((part) => part.length >= 3 && part.length <= 60 && /[a-z]/i.test(part) && FORM_SECTION_KEYWORDS.some((keyword) => part.toLowerCase().includes(keyword)))))
-  return labels.slice(0, 18).map((label, index) => ({ key: slug(label, `label_${index + 1}`), label, value: 'Not captured', source_capture_id: capture.id }))
+  const structuredRows = rowsFromStructuredExtraction(capture)
+  if (structuredRows.length > 0) return structuredRows.slice(0, 120)
+
+  const lines = (capture.ocr_text ?? '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  const rows: NormalizedFormField[] = []
+  let currentSection = 'Captured form'
+  let statusChoices: string[] = []
+
+  for (const line of lines) {
+    const parts = line.split(/\||\t| {2,}/).map((part) => clean(part, 120)).filter(Boolean)
+    const detectedChoices = parts.filter((part) => /^(?:yes|no|pass|fail|ok|n\/?a|na|good|fair|poor|complete|incomplete)$/i.test(part))
+    if (detectedChoices.length >= 2) {
+      const heading = parts.find((part) => !detectedChoices.includes(part) && /[A-Za-z]/.test(part))
+      if (heading) currentSection = heading
+      statusChoices = detectedChoices
+      continue
+    }
+    const colon = line.match(/^([A-Za-z][A-Za-z0-9 /#()._-]{1,70})\s*[:=]\s*(.+)$/)
+    if (colon) {
+      rows.push({ key: slug(colon[1], `field_${rows.length + 1}`), label: clean(colon[1], 120), value: clean(colon[2], 300) || 'Not captured', source_capture_id: capture.id, field_type: inferBlueprintFieldType(colon[1], colon[2]), section_title: currentSection, status_choices: statusChoices.length ? statusChoices : undefined })
+      continue
+    }
+    if (parts.length >= 2) {
+      const label = parts[0]
+      const value = explicitStatusFromText(parts.slice(1).join(' '))
+      if (label.length >= 2 && /[a-z]/i.test(label)) rows.push({ key: slug(`${currentSection}_${label}`, `row_${rows.length + 1}`), label, value: value ?? 'Not captured', source_capture_id: capture.id, field_type: inferBlueprintFieldType(label, value ?? ''), section_title: currentSection, status_choices: statusChoices.length ? statusChoices : undefined })
+      continue
+    }
+    if (line.length <= 70 && /[A-Za-z]/.test(line) && !/[.!?]$/.test(line)) {
+      const looksHeading = rows.length === 0 || /^[A-Z0-9 /&()-]+$/.test(line) || /section|part|area|details|information|notes|signature/i.test(line)
+      if (looksHeading) currentSection = line
+      else rows.push({ key: slug(`${currentSection}_${line}`, `label_${rows.length + 1}`), label: line, value: 'Not captured', source_capture_id: capture.id, section_title: currentSection, status_choices: statusChoices.length ? statusChoices : undefined })
+    }
+  }
+
+  const extractionRows = fieldRowsFromCapture(capture)
+  const merged = [...extractionRows, ...rows]
+  const seen = new Set<string>()
+  return merged.filter((row) => {
+    const key = normalizeForMatch(row.label)
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  }).slice(0, 120)
 }
 
 function inferSectionTitle(key: string) {
@@ -921,9 +1053,10 @@ export function deriveFormSectionsFromCaptures(captures: CaptureLike[]): Normali
     }
 
     const rows = fieldRowsFromCapture(capture)
-    const fallbackRows = rows.length > 0 ? [] : labelRowsFromText(capture)
+    const existingLabels = new Set(rows.map((row) => normalizeForMatch(row.label)))
+    const fallbackRows = labelRowsFromText(capture).filter((row) => !existingLabels.has(normalizeForMatch(row.label)))
     for (const field of [...rows, ...fallbackRows]) {
-      const title = inferSectionTitle(`${field.key} ${field.label}`)
+      const title = field.section_title || inferSectionTitle(`${field.key} ${field.label}`)
       buckets.set(title, [...(buckets.get(title) ?? []), field])
       sectionSources.set(title, Array.from(new Set([...(sectionSources.get(title) ?? []), capture.id])))
     }
@@ -1817,7 +1950,7 @@ const KNOWN_FORM_RULES: Array<{ classification: FormClassification; confidence: 
   { classification: 'COMMERCIAL_VEHICLE_ROI', confidence: 0.86, patterns: [/commercial vehicle/i, /record of inspection|\broi\b/i] },
   { classification: 'WAJAX_FIELD_ORDER', confidence: 0.9, patterns: [/\bwajax\b/i, /field (service )?(order|report)|time card|charges/i] },
   { classification: 'GENERIC_WORK_ORDER', confidence: 0.72, patterns: [/work order|repair order|complaint/i, /cause|correction|customer/i] },
-  { classification: 'GENERIC_INSPECTION_FORM', confidence: 0.7, patterns: [/inspection|checklist|pass|fail/i, /tire|brake|lighting|vehicle/i] },
+  { classification: 'GENERIC_INSPECTION_FORM', confidence: 0.72, patterns: [/inspection|checklist|audit|review/i, /pass|fail|ok|n\/?a|checkbox|☐|☑|status/i] },
   { classification: 'GENERIC_SERVICE_REPORT', confidence: 0.68, patterns: [/service report|field service/i, /equipment|work performed|technician/i] },
 ]
 
@@ -1859,9 +1992,10 @@ export function extractFormBlueprint(captures: CaptureLike[]): FormBlueprint | n
     }
 
     const rows = fieldRowsFromCapture(capture)
-    const fallbackRows = rows.length > 0 ? [] : labelRowsFromText(capture)
+    const existingLabels = new Set(rows.map((row) => normalizeForMatch(row.label)))
+    const fallbackRows = labelRowsFromText(capture).filter((row) => !existingLabels.has(normalizeForMatch(row.label)))
     for (const [index, row] of [...rows, ...fallbackRows].entries()) {
-      const sectionTitle = inferSectionTitle(`${row.key} ${row.label}`)
+      const sectionTitle = row.section_title || inferSectionTitle(`${row.key} ${row.label}`)
       const sectionId = slug(sectionTitle, `section_${captureIndex + 1}`)
       if (!sections.has(sectionId)) sections.set(sectionId, { id: sectionId, title: sectionTitle, page_index: captureIndex + 1, field_ids: [] })
       const fieldType = inferBlueprintFieldType(row.label, row.value)
