@@ -1,7 +1,9 @@
+import { requireUsageAllowance, recordUsageEvent, type UsageEventType } from '@/features/usage'
 import { analyzeCaptureImage } from '@/lib/ai/capture-analysis-service'
 import { queueSessionProcessingJobs } from '@/lib/capture-processing/queue'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { Json } from '@/lib/supabase/database.types'
+import { normalizeBillingPlan } from '@/lib/stripe'
 
 const BUCKET = 'documentation-captures'
 const LOCK_STALE_MINUTES = 10
@@ -28,6 +30,7 @@ type QueryBuilder = {
   eq: (...args: unknown[]) => QueryBuilder
   maybeSingle: () => Promise<{ data: unknown; error: unknown }>
   single: () => Promise<{ data: unknown; error: unknown }>
+  insert: (...args: unknown[]) => Promise<{ data: unknown; error: unknown }>
   upsert: (...args: unknown[]) => Promise<{ data: unknown; error: unknown }>
   count?: number | null
 }
@@ -215,10 +218,28 @@ async function processJob(supabase: ReturnType<typeof createAdminClient>, job: J
     .eq('id', item.id)
     .eq('organization_id', item.organization_id)
 
+  const operation = job.job_type === 'extract_capture' || job.job_type === 'generate_capture_note' ? 'extract_capture' : 'classify_capture'
+  const eventType: UsageEventType = operation === 'extract_capture' ? 'ai_extraction' : 'ai_classification'
+
+  const { data: organization, error: organizationError } = await db(supabase)
+    .from('organizations')
+    .select('plan')
+    .eq('id', job.organization_id)
+    .single()
+  if (organizationError) throw organizationError
+
+  const allowance = await requireUsageAllowance({
+    supabase,
+    organizationId: job.organization_id,
+    plan: normalizeBillingPlan((organization as { plan?: string | null } | null)?.plan),
+    eventType,
+    quantity: 1,
+  })
+  if (!allowance.ok) throw new Error(allowance.message)
+
   const { data: signed, error: signedError } = await supabase.storage.from(BUCKET).createSignedUrl(item.storage_path, SIGNED_URL_SECONDS)
   if (signedError || !signed?.signedUrl) throw new Error('Unable to create signed url for capture analysis')
 
-  const operation = job.job_type === 'extract_capture' || job.job_type === 'generate_capture_note' ? 'extract_capture' : 'classify_capture'
   const result = await analyzeCaptureImage(operation, {
     signedImageUrl: signed.signedUrl,
     detectedType: getDetectedType(item.extracted_data),
@@ -238,6 +259,23 @@ async function processJob(supabase: ReturnType<typeof createAdminClient>, job: J
     .eq('id', item.id)
     .eq('organization_id', item.organization_id)
     .eq('documentation_session_id', item.documentation_session_id)
+
+  await recordUsageEvent({
+    supabase,
+    organizationId: job.organization_id,
+    eventType,
+    quantity: 1,
+    metadata: {
+      documentation_session_id: job.documentation_session_id,
+      capture_item_id: job.capture_item_id,
+      job_id: job.id,
+      background: true,
+      operation: result.usage.operation,
+      provider: result.usage.provider,
+      model: result.usage.model,
+      estimated_cost_cents: result.usage.estimatedCostCents,
+    },
+  })
 
   await db(supabase)
     .from('ai_usage_events')

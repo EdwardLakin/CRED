@@ -1,3 +1,5 @@
+import 'server-only'
+
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { getPlanLimits } from '@/features/billing/limits'
@@ -32,6 +34,30 @@ export type CurrentUsage = {
 }
 
 type Supabase = SupabaseClient<Database>
+
+const AI_LIMITED_EVENT_TYPES = [
+  'ai_classification',
+  'ai_extraction',
+  'ai_report_draft_generation',
+] as const satisfies readonly UsageEventType[]
+
+function isAiLimitedEventType(eventType: UsageEventType) {
+  return (AI_LIMITED_EVENT_TYPES as readonly UsageEventType[]).includes(eventType)
+}
+
+export function isAiUsageLimitExempt(organizationId: string): boolean {
+  const configuredOrganizationIds = process.env.AI_USAGE_BYPASS_ORGANIZATION_IDS
+
+  if (!configuredOrganizationIds) {
+    return false
+  }
+
+  return configuredOrganizationIds
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean)
+    .includes(organizationId)
+}
 
 export function getCurrentCalendarMonthPeriod(now = new Date()): UsagePeriod {
   const startsAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
@@ -174,8 +200,10 @@ export async function requireUsageAllowance({
     return { ok: false as const, message: 'Storage limit reached for your plan.' }
   }
 
-  if ((eventType === 'ai_classification' || eventType === 'ai_extraction' || eventType === 'ai_report_draft_generation') && usage.aiActionsThisMonth + quantity > limits.aiActionsPerMonth) {
-    return { ok: false as const, message: eventType === 'ai_classification' ? 'AI usage limit reached for this month.' : 'AI usage limit reached for this month.' }
+  const aiLimitExempt = isAiLimitedEventType(eventType) && isAiUsageLimitExempt(organizationId)
+
+  if (isAiLimitedEventType(eventType) && !aiLimitExempt && usage.aiActionsThisMonth + quantity > limits.aiActionsPerMonth) {
+    return { ok: false as const, message: 'AI usage limit reached for this month.', aiLimitExempt: false }
   }
 
   if (eventType === 'email_report_sent' && usage.emailSendsThisMonth + quantity > limits.emailSendsPerMonth) {
@@ -186,5 +214,5 @@ export async function requireUsageAllowance({
     return { ok: false as const, message: 'Share link limit reached for this plan.' }
   }
 
-  return { ok: true as const, limits, usage }
+  return { ok: true as const, limits, usage, aiLimitExempt }
 }
