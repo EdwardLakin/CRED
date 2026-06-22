@@ -5110,3 +5110,19 @@ a:focus-visible {
     grid-template-columns: minmax(0, 1fr) 74px;
   }
 }
+
+.button-spinner {
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  margin-right: 0.45rem;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  vertical-align: -0.12em;
+  animation: cred-button-spin 0.75s linear infinite;
+}
+
+@keyframes cred-button-spin {
+  to { transform: rotate(360deg); }
+}

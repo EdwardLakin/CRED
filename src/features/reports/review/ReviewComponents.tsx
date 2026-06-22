@@ -27,6 +27,7 @@ import {
   type EvidenceLightboxItem,
 } from "@/features/reports/review/EvidenceImageLightbox";
 import { SignatureCaptureForm } from "@/features/signatures";
+import { PendingActionButton, PendingNavigationLink } from "@/features/reports/review/PendingActionButton";
 import { useSavedSignature } from "@/features/signatures/actions";
 import type { Database } from "@/lib/supabase/database.types";
 
@@ -586,9 +587,9 @@ export function ReportReview({
             </Link>
             {currentReport ? (
               <form action={generateReportAction}>
-                <button className="button button-secondary touch-target">
+                <PendingActionButton className="button button-secondary touch-target" pendingLabel="Regenerating…">
                   Regenerate Report
-                </button>
+                </PendingActionButton>
               </form>
             ) : null}
           </div>
@@ -643,9 +644,9 @@ export function ReportReview({
               Continue Capturing
             </Link>
             {hasPrepareError ? (
-              <button className="button button-secondary touch-target">
+              <PendingActionButton className="button button-secondary touch-target" pendingLabel="Preparing report…">
                 Try Again
-              </button>
+              </PendingActionButton>
             ) : null}
           </div>
         </form>
@@ -909,9 +910,9 @@ export function ReportReview({
           </details>
 
           <div className="form-actions report-inline-actions report-primary-flow">
-            <button className="button button-primary touch-target">
+            <PendingActionButton className="button button-primary touch-target" pendingLabel="Saving edits…">
               Save Changes
-            </button>
+            </PendingActionButton>
             <Link
               href={`/dashboard/sessions/${session.id}/capture`}
               className="button button-secondary touch-target"
@@ -1668,9 +1669,9 @@ export function InlineReviewPanel({
             </label>
           ) : null}
           <div className="form-actions report-inline-actions">
-            <button className="button button-primary touch-target">
+            <PendingActionButton className="button button-primary touch-target" pendingLabel="Approving…">
               Approve Report
-            </button>
+            </PendingActionButton>
           </div>
         </form>
       ) : null}
@@ -1779,12 +1780,13 @@ export function ExportPanel({
                   disabled={!isReadyForExport}
                 />
               </div>
-              <button
+              <PendingActionButton
                 className="button button-secondary touch-target"
                 disabled={!isReadyForExport}
+                pendingLabel="Sending…"
               >
                 Send Email
-              </button>
+              </PendingActionButton>
             </form>
           </details>
 
@@ -1820,12 +1822,13 @@ export function ExportPanel({
                   disabled={!isReadyForExport}
                 />
               </div>
-              <button
+              <PendingActionButton
                 className="button button-secondary touch-target"
                 disabled={!isReadyForExport}
+                pendingLabel="Creating link…"
               >
                 Copy Share Link
-              </button>
+              </PendingActionButton>
             </form>
             {activeShareTokens.length > 0 ? (
               <div
@@ -1868,19 +1871,13 @@ export function ExportPanel({
           </details>
 
           {isReadyForExport ? (
-            <Link
+            <PendingNavigationLink
               href={reportPath}
               className="export-action-tile export-action-link"
               target="_blank"
-            >
-              <span
-                className="export-tile-icon export-tile-icon-print"
-                aria-hidden="true"
-              >
-                ⎙
-              </span>
-              Preview / Print
-            </Link>
+              idleLabel="Preview / Print"
+              pendingLabel="Preparing report…"
+            />
           ) : (
             <span
               className="export-action-tile export-action-link disabled-action"
@@ -1914,12 +1911,13 @@ export function ExportPanel({
               className="form-stack export-action-details"
             >
               <p className="muted">Keep a saved copy of this report.</p>
-              <button
+              <PendingActionButton
                 className="button button-secondary touch-target"
                 disabled={!isReadyForExport}
+                pendingLabel="Saving…"
               >
                 Save in CRED
-              </button>
+              </PendingActionButton>
             </form>
           </details>
         </div>
