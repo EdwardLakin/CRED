@@ -4714,6 +4714,18 @@ a:focus-visible {
   position: relative;
 }
 
+.sr-only {
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
 .downloadable-evidence-preview > img {
   display: block;
 }
@@ -4730,7 +4742,10 @@ a:focus-visible {
   height: 2.25rem;
   justify-content: center;
   line-height: 1;
+  min-height: 2.25rem;
+  min-width: 2.25rem;
   overflow: hidden;
+  padding: 0;
   position: absolute;
   right: 0.65rem;
   text-decoration: none;
@@ -4746,6 +4761,8 @@ a:focus-visible {
   border-color: rgba(255, 255, 255, 0.5);
   color: #fff;
   opacity: 1;
+  outline: 2px solid rgba(255, 255, 255, 0.32);
+  outline-offset: 2px;
 }
 
 .evidence-download-icon {
@@ -4762,8 +4779,15 @@ a:focus-visible {
 
 @media print {
   .evidence-download-overlay,
+  .evidence-expand-overlay,
+  .evidence-lightbox,
   .subtle-download-link {
     display: none !important;
+  }
+
+  .evidence-image-expand-button {
+    cursor: default;
+    pointer-events: none;
   }
 }
 

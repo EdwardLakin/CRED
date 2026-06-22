@@ -1123,17 +1123,35 @@ function getGroupedEvidenceItems(
     );
 }
 
+function getLightboxItemId(item: SupportingEvidenceItem) {
+  return (
+    item.capture.storage_path?.trim() ||
+    item.originalUrl?.trim() ||
+    item.downloadUrl?.trim() ||
+    item.signedUrl?.trim() ||
+    item.capture.id
+  );
+}
+
+function toLightboxItem(item: SupportingEvidenceItem): EvidenceLightboxItem | null {
+  if (item.kind !== "photo" || !item.signedUrl) return null;
+  return {
+    id: getLightboxItemId(item),
+    captureId: item.capture.id,
+    src: item.signedUrl,
+    downloadUrl: item.downloadUrl ?? item.originalUrl ?? null,
+    title: item.title,
+    note: stripConfidenceText(item.note ?? ""),
+  };
+}
+
 function getLightboxItems(
   items: SupportingEvidenceItem[],
 ): EvidenceLightboxItem[] {
-  return items
-    .filter((item) => item.kind === "photo" && Boolean(item.signedUrl))
-    .map((item) => ({
-      id: item.capture.id,
-      src: item.signedUrl!,
-      title: item.title,
-      note: stripConfidenceText(item.note ?? ""),
-    }));
+  return items.flatMap((item) => {
+    const lightboxItem = toLightboxItem(item);
+    return lightboxItem ? [lightboxItem] : [];
+  });
 }
 
 function DownloadOriginalLink({
@@ -1241,7 +1259,7 @@ function DocumentedObservations({
                       items={getLightboxItems(
                         groupItems.length ? groupItems : supportingEvidence,
                       )}
-                      currentId={item.capture.id}
+                      currentId={getLightboxItemId(item)}
                       imageClassName="pdf-safe-image"
                     />
                     <DownloadOriginalLink item={item} />
@@ -1285,7 +1303,7 @@ function DocumentedObservations({
                         >
                           <EvidenceImageTrigger
                             items={getLightboxItems(photoGroupItems)}
-                            currentId={groupItem.capture.id}
+                            currentId={getLightboxItemId(groupItem)}
                             imageClassName="pdf-safe-image"
                           />
                           <DownloadOriginalLink item={groupItem} />
@@ -1373,7 +1391,7 @@ function EvidenceGallery({
                 {item.kind === "photo" && item.signedUrl ? (
                   <EvidenceImageTrigger
                     items={getLightboxItems(evidenceItems)}
-                    currentId={item.capture.id}
+                    currentId={getLightboxItemId(item)}
                     imageClassName="pdf-safe-image"
                   />
                 ) : null}
@@ -1471,7 +1489,7 @@ function EvidenceGallery({
                   <div className="downloadable-evidence-preview">
                     <EvidenceImageTrigger
                       items={getLightboxItems(photoEvidence)}
-                      currentId={item.capture.id}
+                      currentId={getLightboxItemId(item)}
                       imageClassName="pdf-safe-image"
                     />
                     <DownloadOriginalLink item={item} />
