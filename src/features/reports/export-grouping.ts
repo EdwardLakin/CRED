@@ -21,12 +21,42 @@ export function compareObservationGroupCaptures(
   );
 }
 
-export function getOrderedObservationGroupCaptures<TCapture extends ExportGroupCapture>(
-  primary: TCapture,
-  captures: TCapture[],
+export function getObservationGroupIdentity(capture: ExportGroupCapture) {
+  return [capture.id, capture.observation_group_id].filter(
+    (value): value is string => Boolean(value),
+  );
+}
+
+export function capturesShareObservationGroup(
+  left: ExportGroupCapture,
+  right: ExportGroupCapture,
 ) {
-  const groupKey = getObservationGroupKey(primary);
+  const leftKeys = new Set(getObservationGroupIdentity(left));
+  return getObservationGroupIdentity(right).some((key) => leftKeys.has(key));
+}
+
+export function getOrderedObservationGroupCaptures<
+  TCapture extends ExportGroupCapture,
+>(primary: TCapture, captures: TCapture[]) {
+  const groupKeys = new Set(getObservationGroupIdentity(primary));
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    for (const capture of captures) {
+      const identities = getObservationGroupIdentity(capture);
+      if (!identities.some((key) => groupKeys.has(key))) continue;
+      for (const key of identities) {
+        if (groupKeys.has(key)) continue;
+        groupKeys.add(key);
+        changed = true;
+      }
+    }
+  }
+
   return captures
-    .filter((capture) => getObservationGroupKey(capture) === groupKey)
+    .filter((capture) =>
+      getObservationGroupIdentity(capture).some((key) => groupKeys.has(key)),
+    )
     .sort(compareObservationGroupCaptures);
 }
