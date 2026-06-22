@@ -4720,29 +4720,37 @@ a:focus-visible {
 
 .evidence-download-overlay {
   align-items: center;
-  background: #fff;
-  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.24);
   border-radius: 999px;
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.16);
-  color: var(--text);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.28);
+  color: #fff;
   display: inline-flex;
-  font-size: 0.95rem;
-  font-weight: 900;
+  flex: 0 0 auto;
   height: 2.25rem;
   justify-content: center;
+  line-height: 1;
+  overflow: hidden;
   position: absolute;
   right: 0.65rem;
   text-decoration: none;
   top: 0.65rem;
+  white-space: nowrap;
   width: 2.25rem;
-  z-index: 2;
+  z-index: 3;
 }
 
 .evidence-download-overlay:hover,
 .evidence-download-overlay:focus-visible {
-  background: var(--primary);
-  color: white;
+  background: rgba(15, 23, 42, 0.92);
+  border-color: rgba(255, 255, 255, 0.5);
+  color: #fff;
   opacity: 1;
+}
+
+.evidence-download-icon {
+  height: 1.15rem;
+  width: 1.15rem;
 }
 
 .report-card-action-row {

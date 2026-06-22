@@ -1149,10 +1149,21 @@ function DownloadOriginalLink({
       className={className}
       href={item.downloadUrl}
       download
-      aria-label={`Download original ${item.title}`}
+      aria-label="Download original"
       title="Download original"
     >
-      ⬇<span className="sr-only">Download original</span>
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 20 20"
+        focusable="false"
+        className="evidence-download-icon"
+      >
+        <path
+          d="M10 2.5a.75.75 0 0 1 .75.75v7.69l2.22-2.22a.75.75 0 1 1 1.06 1.06l-3.5 3.5a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 1 1 1.06-1.06l2.22 2.22V3.25A.75.75 0 0 1 10 2.5Zm-5.25 10a.75.75 0 0 1 .75.75v1.5c0 .414.336.75.75.75h7.5a.75.75 0 0 0 .75-.75v-1.5a.75.75 0 0 1 1.5 0v1.5A2.25 2.25 0 0 1 13.75 17h-7.5A2.25 2.25 0 0 1 4 14.75v-1.5a.75.75 0 0 1 .75-.75Z"
+          fill="currentColor"
+        />
+      </svg>
+      <span className="sr-only">Download original</span>
     </a>
   );
 }
@@ -1277,6 +1288,7 @@ function DocumentedObservations({
                             currentId={groupItem.capture.id}
                             imageClassName="pdf-safe-image"
                           />
+                          <DownloadOriginalLink item={groupItem} />
                         </div>
                       ))}
                     </div>
