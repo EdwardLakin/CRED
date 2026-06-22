@@ -3,6 +3,7 @@ import { CAPTURE_TYPE_LABELS, getCaptureProcessingLabel, getCaptureProcessingSta
 import { formatDateTime } from '@/features/sessions'
 import { DeleteEvidenceButton } from '@/features/capture/components/DeleteEvidenceButton'
 import { EVIDENCE_CATEGORY_LABELS, normalizeEvidenceCategory } from '@/features/capture/evidence-category'
+import { EvidenceImageTrigger } from '@/features/reports/review/EvidenceImageLightbox'
 
 function getCaptureLabel(capture: CaptureItem) {
   const sourceDocument = getSourceDocumentMetadata(capture.extracted_data)
@@ -35,6 +36,15 @@ export function RecentCapturesList({ captures, signedUrls, limit = 6, timeZone =
     return <div className="empty-state capture-empty-state">No captures yet. Use Camera or Gallery to add evidence.</div>
   }
 
+  const lightboxItems = recentCaptures
+    .filter((capture) => (capture.media_kind === 'image' || capture.type === 'photo') && signedUrls[capture.id])
+    .map((capture) => ({
+      id: capture.id,
+      src: signedUrls[capture.id],
+      title: getCaptureLabel(capture),
+      note: capture.technician_note?.trim() || capture.transcript?.trim() || null,
+    }))
+
   return (
     <div className="recent-capture-list">
       {recentCaptures.map((capture) => (
@@ -44,6 +54,11 @@ export function RecentCapturesList({ captures, signedUrls, limit = 6, timeZone =
             <p className="muted">{getCaptureMeta(capture)} · {formatDateTime(capture.captured_at ?? capture.created_at, timeZone)}</p>
             <span className="classification-pill success">{EVIDENCE_CATEGORY_LABELS[normalizeEvidenceCategory(capture.evidence_category)]}</span>
           </div>
+          {(capture.media_kind === 'image' || capture.type === 'photo') && signedUrls[capture.id] ? (
+            <div className="recent-capture-thumb downloadable-evidence-preview">
+              <EvidenceImageTrigger items={lightboxItems} currentId={capture.id} imageClassName="pdf-safe-image" />
+            </div>
+          ) : null}
           <div className="capture-card-actions">
             <span className={`ai-status-pill ${getCaptureStatusVariant(getCaptureProcessingStatus(capture))}`}>
               {getCaptureProcessingLabel(getCaptureProcessingStatus(capture), imageAiAssistEnabled)}
@@ -54,8 +69,8 @@ export function RecentCapturesList({ captures, signedUrls, limit = 6, timeZone =
               </a>
             ) : null}
             {signedUrls[capture.id] ? (
-              <a href={signedUrls[capture.id]} download target="_blank" rel="noreferrer" className="secondary-link touch-target">
-                Download Original
+              <a href={`/api/dashboard/sessions/${capture.documentation_session_id}/evidence/${capture.id}/media?download=1`} download aria-label={`Download original ${getCaptureLabel(capture)}`} className="secondary-link touch-target icon-download-link">
+                ⬇<span className="sr-only">Download original</span>
               </a>
             ) : null}
             <DeleteEvidenceButton captureId={capture.id} />

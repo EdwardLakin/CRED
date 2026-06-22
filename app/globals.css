@@ -4758,3 +4758,131 @@ a:focus-visible {
     display: none !important;
   }
 }
+
+.evidence-image-expand-button {
+  background: transparent;
+  border: 0;
+  border-radius: inherit;
+  color: inherit;
+  cursor: zoom-in;
+  display: block;
+  padding: 0;
+  position: relative;
+  width: 100%;
+}
+
+.evidence-image-expand-button > img {
+  display: block;
+}
+
+.evidence-expand-overlay {
+  align-items: center;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.22);
+  display: inline-flex;
+  font-size: 0.95rem;
+  font-weight: 900;
+  height: 2.25rem;
+  justify-content: center;
+  left: 0.65rem;
+  position: absolute;
+  top: 0.65rem;
+  width: 2.25rem;
+  z-index: 2;
+}
+
+.icon-download-link {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
+  min-height: 2.5rem;
+  min-width: 2.5rem;
+}
+
+.evidence-lightbox {
+  align-items: center;
+  background: rgba(2, 6, 23, 0.82);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 1rem;
+  position: fixed;
+  z-index: 1000;
+}
+
+.evidence-lightbox-panel {
+  background: var(--surface);
+  border-radius: 18px;
+  box-shadow: 0 24px 80px rgba(2, 6, 23, 0.45);
+  max-height: min(92vh, 920px);
+  max-width: min(94vw, 1120px);
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+}
+
+.evidence-lightbox-image-wrap {
+  align-items: center;
+  background: #020617;
+  display: flex;
+  justify-content: center;
+  min-height: 45vh;
+}
+
+.evidence-lightbox-image-wrap img {
+  max-height: 76vh;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.evidence-lightbox-close,
+.evidence-lightbox-nav button {
+  align-items: center;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 1.5rem;
+  font-weight: 900;
+  height: 2.75rem;
+  justify-content: center;
+  min-width: 2.75rem;
+}
+
+.evidence-lightbox-close {
+  position: absolute;
+  right: 0.75rem;
+  top: 0.75rem;
+  z-index: 2;
+}
+
+.evidence-lightbox-caption {
+  padding: 1rem 1.25rem;
+}
+
+.evidence-lightbox-caption p {
+  margin: 0.35rem 0 0;
+}
+
+.evidence-lightbox-nav {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  padding: 0 1.25rem 1rem;
+}
+
+.recent-capture-thumb {
+  max-width: 140px;
+}
+
+@media print {
+  .evidence-expand-overlay,
+  .evidence-lightbox {
+    display: none !important;
+  }
+}

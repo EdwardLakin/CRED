@@ -7,6 +7,7 @@ import {
   updateCaptureReview,
 } from '@/features/capture/actions'
 import { DeleteEvidenceButton } from '@/features/capture/components/DeleteEvidenceButton'
+import { EvidenceImageTrigger, type EvidenceLightboxItem } from '@/features/reports/review/EvidenceImageLightbox'
 import { EVIDENCE_CATEGORIES, EVIDENCE_CATEGORY_LABELS, normalizeEvidenceCategory } from '@/features/capture/evidence-category'
 import { formatDateTimeInTimeZone } from '@/lib/date-format'
 import type { Json } from '@/lib/supabase/database.types'
@@ -252,10 +253,12 @@ function MediaPreview({
   note,
   capture,
   signedUrl,
+  lightboxItems,
 }: {
   note: string
   capture: CaptureItem
   signedUrl?: string
+  lightboxItems: EvidenceLightboxItem[]
 }) {
   const mediaKind =
     capture.media_kind ||
@@ -281,11 +284,10 @@ function MediaPreview({
           className="evidence-media"
         />
       ) : signedUrl && mediaKind === 'image' ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={signedUrl}
-          alt="Captured evidence preview"
-          className="evidence-media"
+        <EvidenceImageTrigger
+          items={lightboxItems}
+          currentId={capture.id}
+          imageClassName="evidence-media"
         />
       ) : signedUrl ? (
         <a
@@ -315,9 +317,11 @@ function MediaPreview({
 function EvidenceCard({
   capture,
   signedUrl,
+  lightboxItems,
 }: {
   capture: CaptureItem
   signedUrl?: string
+  lightboxItems: EvidenceLightboxItem[]
 }) {
   const [state, formAction] = useActionState(updateCaptureReview, {})
   const initialNote = capture.technician_note ?? capture.transcript ?? ''
@@ -370,6 +374,7 @@ function EvidenceCard({
         note={overlayNote}
         capture={capture}
         signedUrl={signedUrl}
+        lightboxItems={lightboxItems}
       />
 
       <div className="capture-classification-row">
@@ -500,13 +505,12 @@ function EvidenceCard({
         ) : null}
         {signedUrl ? (
           <a
-            href={signedUrl}
+            href={`/api/dashboard/sessions/${capture.documentation_session_id}/evidence/${capture.id}/media?download=1`}
             download
-            target="_blank"
-            rel="noreferrer"
-            className="secondary-link capture-file-link touch-target"
+            aria-label={`Download original ${label}`}
+            className="secondary-link capture-file-link touch-target icon-download-link"
           >
-            Download Original
+            ⬇<span className="sr-only">Download original</span>
           </a>
         ) : null}
       </div>
@@ -647,6 +651,15 @@ export function CaptureList({
     )
   }
 
+  const lightboxItems = visibleCaptures
+    .filter((capture) => (capture.media_kind === 'image' || capture.type === 'photo') && signedUrls[capture.id])
+    .map((capture) => ({
+      id: capture.id,
+      src: signedUrls[capture.id],
+      title: capture.technician_note?.trim() || CAPTURE_TYPE_LABELS[capture.type as CaptureType] || 'Captured evidence',
+      note: capture.technician_note?.trim() || capture.transcript?.trim() || null,
+    }))
+
   return (
     <div className="capture-list evidence-feed">
       {visibleCaptures.map((capture) => (
@@ -654,6 +667,7 @@ export function CaptureList({
           key={capture.id}
           capture={capture}
           signedUrl={signedUrls[capture.id]}
+          lightboxItems={lightboxItems}
         />
       ))}
     </div>
