@@ -32,6 +32,10 @@ import {
   getDisplayReportTitle,
   getReportInfoValue,
 } from "@/features/reports/report-title";
+import {
+  getObservationGroupKey,
+  getOrderedObservationGroupCaptures,
+} from "@/features/reports/export-grouping";
 import { normalizeReportType } from "@/features/sessions/report-types";
 import {
   asDiagnosticRecordArray,
@@ -1061,9 +1065,6 @@ function getObservationCategoryLabel(
   return "Observation";
 }
 
-function getObservationGroupKey(capture: ReportCapture) {
-  return capture.observation_group_id ?? capture.id;
-}
 
 function buildDocumentedObservationsHtml(
   reviewDocument: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>,
@@ -1092,14 +1093,15 @@ function buildDocumentedObservationsHtml(
   const entryHtml = entries
     .map((entry, index) => {
       const capture = entry.capture;
-      const groupCaptures = allEntries
-        .map((candidate) => candidate.capture)
-        .filter(
-          (candidate) =>
-            getObservationGroupKey(candidate) ===
-            getObservationGroupKey(capture),
-        );
-      const imageAsset = imageAssets[capture.id];
+      const groupCaptures = getOrderedObservationGroupCaptures(
+        capture,
+        allEntries.map((candidate) => candidate.capture),
+      );
+      const primaryImageCapture =
+        groupCaptures.find((groupCapture) => groupCapture.id === capture.id) ??
+        groupCaptures[0] ??
+        capture;
+      const imageAsset = imageAssets[primaryImageCapture.id];
       const kind = getEvidenceKind(capture);
       const isDocument =
         kind === "document" || capture.media_kind === "document";
@@ -1109,12 +1111,20 @@ function buildDocumentedObservationsHtml(
           capture: groupCapture,
           asset: imageAssets[groupCapture.id],
         }));
-      const mediaHtml =
-        groupImageAssets.length > 0
-          ? `<div class="media supporting-export-grid">${groupImageAssets.map(({ capture: groupCapture, asset }) => renderExportImage(asset, getPrimaryEvidenceLabel(groupCapture), "Preview unavailable in printable export. Original evidence retained.")).join("")}</div>`
-          : imageAsset?.originalMediaUrl
-            ? `<p class="original-link"><a href="${escapeHtmlAttributeRaw(imageAsset.originalMediaUrl)}">Open supporting ${isDocument ? "document" : "file"}</a></p>`
-            : "";
+      const primaryImageAsset = groupImageAssets.find(
+        ({ capture: groupCapture }) => groupCapture.id === primaryImageCapture.id,
+      );
+      const supportingImageAssets = groupImageAssets.filter(
+        ({ capture: groupCapture }) => groupCapture.id !== primaryImageCapture.id,
+      );
+      const mediaHtml = primaryImageAsset
+        ? `<div class="media">${renderExportImage(primaryImageAsset.asset, getPrimaryEvidenceLabel(primaryImageAsset.capture), "Preview unavailable in printable export. Original evidence retained.")}</div>`
+        : imageAsset?.originalMediaUrl
+          ? `<p class="original-link"><a href="${escapeHtmlAttributeRaw(imageAsset.originalMediaUrl)}">Open supporting ${isDocument ? "document" : "file"}</a></p>`
+          : "";
+      const supportingImagesHtml = supportingImageAssets.length
+        ? `<div class="supporting-image-strip"><strong>Supporting images</strong><div class="supporting-export-grid">${supportingImageAssets.map(({ capture: groupCapture, asset }) => renderExportImage(asset, getPrimaryEvidenceLabel(groupCapture), "Preview unavailable in printable export. Original evidence retained.")).join("")}</div></div>`
+        : "";
       const renderedText: string[] = [];
       const technicianNote = stripConfidenceText(
         capture.technician_note || capture.transcript || "",
@@ -1149,7 +1159,7 @@ function buildDocumentedObservationsHtml(
       const technicianNoteHtml = technicianNote
         ? `<div class="technician-note-block"><h4>Technician Note</h4><p>${escapeHtml(technicianNote)}</p></div>`
         : "";
-      return `<article class="finding-card observation-card">${mediaHtml}<div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">${String(index + 1).padStart(2, "0")}</span><span class="observation-kind">${escapeHtml(getObservationCategoryLabel(entry))}</span></div><h3>${escapeHtml(heading)}</h3>${technicianNoteHtml}${groupImageAssets.length ? `<p class="proof-line"><strong>Supporting Images:</strong> ${groupImageAssets.length}</p>` : ""}${isDocument ? `<p class="proof-line"><strong>Supporting Document:</strong> ${escapeHtml(getPrimaryEvidenceLabel(capture))}</p>` : ""}${details.length ? `<div class="proof-block"><h4>Supporting Proof</h4>${renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value })))}</div>` : ""}${recommendations.length ? `<div class="proof-block"><h4>Recommended Action</h4><ul>${recommendations.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul></div>` : ""}</div></article>`;
+      return `<article class="finding-card observation-card">${mediaHtml}<div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">${String(index + 1).padStart(2, "0")}</span><span class="observation-kind">${escapeHtml(getObservationCategoryLabel(entry))}</span></div><h3>${escapeHtml(heading)}</h3>${technicianNoteHtml}${groupImageAssets.length ? `<p class="proof-line"><strong>Supporting Images:</strong> ${groupImageAssets.length}</p>` : ""}${isDocument ? `<p class="proof-line"><strong>Supporting Document:</strong> ${escapeHtml(getPrimaryEvidenceLabel(capture))}</p>` : ""}${details.length ? `<div class="proof-block"><h4>Supporting Proof</h4>${renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value })))}</div>` : ""}${recommendations.length ? `<div class="proof-block"><h4>Recommended Action</h4><ul>${recommendations.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul></div>` : ""}${supportingImagesHtml}</div></article>`;
     })
     .join("");
   const actionsHtml = actionCards
