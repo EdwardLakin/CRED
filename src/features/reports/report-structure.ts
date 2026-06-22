@@ -75,6 +75,10 @@ export type NormalizedFormField = {
   label: string
   value: string
   source_capture_id?: string
+  field_type?: string
+  unit?: string | null
+  status_choices?: string[]
+  notes?: string | null
 }
 
 export type NormalizedReportSection = {
@@ -689,6 +693,85 @@ function inferSectionTitle(key: string) {
   if (/charge|parts|misc|total|tax|price|amount/.test(lower)) return 'Miscellaneous and charges'
   if (/sign|accept|authorization|approval/.test(lower)) return 'Acceptance / signature'
   return 'Report details'
+}
+
+export function isReliableFormStructure(reportStructure: Json | null) {
+  const structure = isRecord(reportStructure) ? reportStructure : {}
+  if (structure.report_structure_source === 'generic_fallback') return false
+  if (structure.mode !== 'form_structured') return false
+  const blueprint = isRecord(structure.form_blueprint) ? structure.form_blueprint : null
+  if (!blueprint) return false
+  const sections = Array.isArray(blueprint.sections) ? blueprint.sections : []
+  const fields = Array.isArray(blueprint.fields) ? blueprint.fields : []
+  const confidence = typeof blueprint.classification_confidence === 'number'
+    ? blueprint.classification_confidence
+    : typeof blueprint.confidence === 'number' ? blueprint.confidence : 0
+  return sections.some(isRecord) && fields.some(isRecord) && confidence >= 0.6
+}
+
+function draftFieldOverrides(draftSections: DraftSectionLike[]) {
+  const overrides = new Map<string, string>()
+  for (const section of draftSections) {
+    const meta = isRecord(section.metadata) ? section.metadata : {}
+    const fields = Array.isArray(meta.fields) ? meta.fields : []
+    for (const field of fields) {
+      if (!isRecord(field)) continue
+      const key = clean(field.key, 120) || clean(field.label, 120)
+      const label = clean(field.label, 120)
+      const value = clean(field.value, 1000)
+      if (value) {
+        if (key) overrides.set(key, value)
+        if (label) overrides.set(normalizeForMatch(label), value)
+      }
+    }
+  }
+  return overrides
+}
+
+export function normalizeFormBlueprintSections(reportStructure: Json | null, captures: CaptureLike[], draftSections: DraftSectionLike[] = []): NormalizedReportSection[] {
+  if (!isReliableFormStructure(reportStructure)) return []
+  const structure = isRecord(reportStructure) ? reportStructure : {}
+  const blueprint = isRecord(structure.form_blueprint) ? structure.form_blueprint : null
+  if (!blueprint) return []
+  const captureIds = new Set(captures.map((capture) => capture.id))
+  const sections = (Array.isArray(blueprint.sections) ? blueprint.sections : []).flatMap((section): Record<string, unknown>[] => isRecord(section) ? [section] : [])
+  const fields = (Array.isArray(blueprint.fields) ? blueprint.fields : []).flatMap((field): Record<string, unknown>[] => isRecord(field) ? [field] : [])
+  const overrides = draftFieldOverrides(draftSections)
+  return sections.flatMap((section, sectionIndex): NormalizedReportSection[] => {
+    const sectionId = clean(section.id, 120) || `section_${sectionIndex + 1}`
+    const fieldIds = Array.isArray(section.field_ids) ? section.field_ids.filter((id): id is string => typeof id === 'string') : []
+    const sectionFields = fields
+      .filter((field) => clean(field.section_id, 120) === sectionId || fieldIds.includes(clean(field.id, 120)))
+      .map((field, fieldIndex): NormalizedFormField => {
+        const key = clean(field.id, 160) || clean(field.key, 120) || `field_${sectionIndex + 1}_${fieldIndex + 1}`
+        const label = clean(field.label, 180) || labelize(key)
+        const extractedValue = clean(field.value, 1000)
+        const value = overrides.get(key) ?? overrides.get(normalizeForMatch(label)) ?? extractedValue ?? 'Not captured'
+        const sourceId = clean(field.source_capture_id, 120)
+        const choices = Array.isArray(field.status_choices) ? field.status_choices.filter((choice): choice is string => typeof choice === 'string' && choice.trim().length > 0).map((choice) => clean(choice, 80)).filter(Boolean) : []
+        return {
+          key,
+          label,
+          value,
+          source_capture_id: sourceId && captureIds.has(sourceId) ? sourceId : undefined,
+          field_type: clean(field.field_type, 80) || undefined,
+          unit: clean(field.unit, 40) || null,
+          status_choices: choices.length > 0 ? choices : undefined,
+          notes: clean(field.notes, 1000) || null,
+        }
+      })
+    const title = clean(section.title, 180) || `Form section ${sectionIndex + 1}`
+    const sourceIds = Array.from(new Set(sectionFields.flatMap((field) => field.source_capture_id ? [field.source_capture_id] : [])))
+    return [{
+      key: sectionId,
+      title,
+      body: clean(section.description, 1200) || null,
+      fields: sectionFields,
+      source_capture_ids: sourceIds,
+      related_capture_ids: sourceIds,
+      source_field_group: title,
+    }]
+  })
 }
 
 export function deriveFormSectionsFromCaptures(captures: CaptureLike[]): NormalizedReportSection[] {

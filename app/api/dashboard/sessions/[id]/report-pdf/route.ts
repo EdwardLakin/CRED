@@ -23,6 +23,7 @@ import {
   getNormalizedRecommendedActions,
   isMeaningfulCustomerReportText,
   normalizeDraftSections,
+  normalizeFormBlueprintSections,
   shouldRenderDetail,
   splitRecommendationText,
   stripConfidenceText,
@@ -1071,6 +1072,53 @@ function getObservationCategoryLabel(
   return "Observation";
 }
 
+
+function buildFormStructuredReportHtml(
+  sections: ReturnType<typeof normalizeFormBlueprintSections>,
+  reportStructure: Json | null,
+  captureItems: ReportCapture[],
+  imageAssets: Record<string, ExportImageAsset>,
+) {
+  if (sections.length === 0) return "";
+  const structure = isRecord(reportStructure) ? reportStructure : {};
+  const mappings = Array.isArray(structure.evidence_field_mappings)
+    ? structure.evidence_field_mappings.flatMap((mapping): Record<string, unknown>[] =>
+        isRecord(mapping) ? [mapping] : [],
+      )
+    : [];
+  const capturesById = new Map(captureItems.map((capture) => [capture.id, capture]));
+  const renderedEvidence = new Set<string>();
+  const evidenceFor = (sectionKey: string, fieldKey: string | null) => {
+    const candidates = mappings.filter((mapping) => {
+      const sectionId = typeof mapping.section_id === "string" ? mapping.section_id : "";
+      const fieldId = typeof mapping.field_id === "string" ? mapping.field_id : null;
+      return sectionId === sectionKey && (!fieldKey || fieldId === fieldKey);
+    });
+    const images = candidates.flatMap((mapping) => {
+      const captureId = typeof mapping.capture_id === "string" ? mapping.capture_id : "";
+      if (!captureId || renderedEvidence.has(captureId)) return [];
+      const capture = capturesById.get(captureId);
+      const asset = imageAssets[captureId];
+      if (!capture || !asset) return [];
+      renderedEvidence.add(captureId);
+      return [{ capture, asset }];
+    });
+    if (images.length === 0) return "";
+    const group = `form-${sectionKey}-${fieldKey ?? "section"}`;
+    return `<div class="supporting-evidence-panel"><div class="supporting-evidence-heading"><strong>Evidence</strong><span>${images.length} item${images.length === 1 ? "" : "s"}</span></div><div class="supporting-export-grid">${images.map(({ capture, asset }, index) => `<div class="supporting-export-item">${renderExportImage(asset, getPrimaryEvidenceLabel(capture), "Preview unavailable in printable export. Original evidence retained.", { group, index, total: images.length })}</div>`).join("")}</div></div>`;
+  };
+  return `<section class="item service-section"><h2>Captured Form Structure</h2><p class="muted">Organized from the captured document structure and technician-approved edits.</p></section>${sections.map((section) => {
+    const rows = section.fields.map((field) => {
+      const valueParts = [field.value || "Not captured", field.unit ?? ""].filter(Boolean).join(" ");
+      const choices = field.status_choices?.length ? `<br><span class="muted">Choices: ${escapeHtml(field.status_choices.join(", "))}</span>` : "";
+      const notes = field.notes ? `<br><span class="muted">${escapeHtml(stripConfidenceText(field.notes))}</span>` : "";
+      return `<tr><th>${escapeHtml(field.label)}</th><td>${escapeHtml(stripConfidenceText(valueParts) || "Not captured")}${choices}${notes}${evidenceFor(section.key, field.key)}</td></tr>`;
+    }).join("");
+    const sectionEvidence = evidenceFor(section.key, null);
+    return `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2>${section.body ? `<p>${escapeHtml(stripConfidenceText(section.body))}</p>` : ""}${rows ? `<table class="checklist-table"><tbody>${rows}</tbody></table>` : `<p class="muted">No captured fields in this section.</p>`}${sectionEvidence}</section>`;
+  }).join("")}`;
+}
+
 function buildDocumentedObservationsHtml(
   reviewDocument: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>,
   imageAssets: Record<string, ExportImageAsset>,
@@ -1829,8 +1877,15 @@ export async function GET(_request: Request, { params }: RouteContext) {
     captureItems,
   );
   const derivedFormSections = deriveFormSectionsFromCaptures(captureItems);
+  const blueprintSections = normalizeFormBlueprintSections(
+    reportDraft?.report_structure ?? null,
+    captureItems,
+    visibleReportSections,
+  );
   const formSections =
-    documentSections.length > 0 ? documentSections : derivedFormSections;
+    blueprintSections.length > 0
+      ? blueprintSections
+      : documentSections.length > 0 ? documentSections : derivedFormSections;
   const isGenericEvidenceReport =
     getFormStructureSummary(reportDraft?.report_structure ?? null, formSections)
       .source === "generic_fallback";
@@ -1915,7 +1970,15 @@ export async function GET(_request: Request, { params }: RouteContext) {
       "[report-evidence-check] Included captures have no draft references; Evidence Appendix will render all included captures.",
       { session_id: session.id, included_capture_count: captureItems.length },
     );
-  const observationsHtml = buildDocumentedObservationsHtml(
+  const formStructuredHtml = blueprintSections.length > 0
+    ? buildFormStructuredReportHtml(
+        blueprintSections,
+        reportDraft?.report_structure ?? null,
+        captureItems,
+        imageAssets,
+      )
+    : "";
+  const observationsHtml = formStructuredHtml || buildDocumentedObservationsHtml(
     reviewDocument,
     imageAssets,
   );
