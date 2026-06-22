@@ -651,6 +651,7 @@ function structuralSignalScore(capture: CaptureLike) {
   if (shortLabelLines >= 6) score += 2
   if (/☐|☑|□|■|\[[ xX✓✔]?\]/.test(ocr)) score += 2
   if (/\b(?:yes|no|ok|n\/a|na)\b\s+\b(?:yes|no|ok|n\/a|na)\b/i.test(ocr)) score += 1.5
+  if (/(?:acceptable|needs\s+review|not\s+assessed|monitor|corrective\s+action|compliant|non-?compliant|not\s+reviewed)/i.test(ocr)) score += 1.5
   if (/photo of|damage|leak|rust|broken|vehicle exterior|equipment photo/.test(text) && score < 5) score -= 4
   return score
 }
@@ -688,7 +689,7 @@ function getSourceDocumentLabel(capture: CaptureLike) {
 }
 
 function getStructureSourceFromText(text: string): ReportStructureSource | null {
-  if (/\b(form|checklist|inspection sheet|inspection form|pm sheet|warranty form|audit form|worksheet|compliance document)\b/.test(text)) return 'uploaded_form'
+  if (/\b(form|checklist|inspection sheet|inspection form|inspection audit|pm sheet|warranty form|audit form|worksheet|compliance document)\b/.test(text)) return 'uploaded_form'
   if (/\btemplate\b/.test(text)) return 'uploaded_template'
   if (/\breport\b/.test(text)) return 'uploaded_report'
   return null
@@ -810,8 +811,35 @@ function explicitStatusFromText(value: string, statusChoices: string[] = []) {
   return trimmed
 }
 
+
+const GENERIC_STATUS_CHOICE = /^(?:yes|no|pass|fail|ok|n\/?a|na|acceptable|needs\s+review|not\s+assessed|monitor|corrective\s+action|compliant|non-?compliant|not\s+reviewed|good|fair|poor|complete|incomplete|satisfactory|unsatisfactory|repaired|replace)$/i
+
 function detectStatusChoices(parts: string[]) {
-  return parts.filter((part) => /^(?:yes|no|pass|fail|ok|n\/?a|na|good|fair|poor|complete|incomplete|satisfactory|unsatisfactory|repaired|replace)$/i.test(part))
+  return parts.filter((part) => GENERIC_STATUS_CHOICE.test(part))
+}
+
+function statusChoicesFromLine(line: string) {
+  const spacedParts = line.split(/\||\t| {2,}/).map((part) => clean(part, 120)).filter(Boolean)
+  const spacedChoices = detectStatusChoices(spacedParts)
+  if (spacedChoices.length >= 2) return { choices: spacedChoices, heading: spacedParts.find((part) => !spacedChoices.includes(part) && /[A-Za-z]/.test(part)) ?? '' }
+
+  const matches = Array.from(line.matchAll(/\b(Needs Review|Not Assessed|Corrective Action|Non-compliant|Noncompliant|Not Reviewed|Acceptable|Monitor|Compliant|Pass|Fail|N\/?A|NA|Yes|No|OK|Good|Fair|Poor|Complete|Incomplete|Satisfactory|Unsatisfactory|Repaired|Replace)\b/gi))
+  const choices = matches.map((match) => clean(match[1], 80)).filter(Boolean).filter((choice, index, all) => all.findIndex((item) => normalizeForMatch(item) === normalizeForMatch(choice)) === index)
+  const firstIndex = matches[0]?.index ?? -1
+  return { choices, heading: firstIndex > 0 ? clean(line.slice(0, firstIndex), 120) : '' }
+}
+
+function inlineMarkedStatusRow(line: string, currentSection: string, statusChoices: string[], captureId: string, fallbackIndex: number): NormalizedFormField | null {
+  const firstMarker = line.search(/☑|■|☐|□|\[[ xX✓✔]?\]|[✓✔]/)
+  if (firstMarker <= 0) return null
+  const label = clean(line.slice(0, firstMarker), 160)
+  if (!label || !/[A-Za-z]/.test(label)) return null
+  const markedValue = explicitStatusFromText(line.slice(firstMarker), statusChoices)
+  const choicesFromMarks = Array.from(line.slice(firstMarker).matchAll(/(?:☑|■|☐|□|\[[ xX✓✔]?\]|[✓✔])\s*([^☐□☑■✓✔\[]+)/g))
+    .map((match) => clean(match[1], 80))
+    .filter((choice) => choice && !/^(?:x|✓|✔)$/i.test(choice))
+  const choices = statusChoices.length ? statusChoices : choicesFromMarks
+  return { key: slug(`${currentSection}_${label}`, `row_${fallbackIndex}`), label, value: markedValue ?? 'Not captured', source_capture_id: captureId, field_type: 'pass_fail', section_title: currentSection, status_choices: choices.length ? choices : undefined }
 }
 
 function rowsFromStructuredExtraction(capture: CaptureLike): NormalizedFormField[] {
@@ -850,14 +878,21 @@ function labelRowsFromText(capture: CaptureLike): NormalizedFormField[] {
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex]
     const parts = line.split(/\||\t| {2,}/).map((part) => clean(part, 120)).filter(Boolean)
-    const detectedChoices = detectStatusChoices(parts)
-    if (detectedChoices.length >= 2) {
-      const heading = parts.find((part) => !detectedChoices.includes(part) && /[A-Za-z]/.test(part))
+    const statusHeader = statusChoicesFromLine(line)
+    const detectedChoices = statusHeader.choices
+    if (detectedChoices.length >= 2 && !/☑|■|☐|□|\[[ xX✓✔]?\]|[✓✔]/.test(line)) {
+      const heading = statusHeader.heading || parts.find((part) => !detectedChoices.includes(part) && /[A-Za-z]/.test(part))
       if (heading) {
         currentSection = heading
         currentSectionRowCount = 0
       }
       statusChoices = detectedChoices
+      continue
+    }
+    const inlineMarked = inlineMarkedStatusRow(line, currentSection, statusChoices, capture.id, rows.length + 1)
+    if (inlineMarked) {
+      rows.push(inlineMarked)
+      currentSectionRowCount += 1
       continue
     }
     const colon = line.match(/^([A-Za-z][A-Za-z0-9 /#()._-]{1,70})\s*[:=]\s*(.+)$/)
@@ -2014,7 +2049,6 @@ export type FormBlueprint = {
   measurement_fields: string[]
   header_fields: string[]
   footer_fields: string[]
-  extraction_diagnostics?: FormExtractionDiagnostics
 }
 
 export type FormExtractionDiagnostics = {
@@ -2044,7 +2078,7 @@ const KNOWN_FORM_RULES: Array<{ classification: FormClassification; confidence: 
   { classification: 'COMMERCIAL_VEHICLE_ROI', confidence: 0.86, patterns: [/commercial vehicle/i, /record of inspection|\broi\b/i] },
   { classification: 'WAJAX_FIELD_ORDER', confidence: 0.9, patterns: [/\bwajax\b/i, /field (service )?(order|report)|time card|charges/i] },
   { classification: 'GENERIC_WORK_ORDER', confidence: 0.72, patterns: [/work order|repair order|complaint/i, /cause|correction|customer/i] },
-  { classification: 'GENERIC_INSPECTION_FORM', confidence: 0.72, patterns: [/inspection|checklist|audit|review/i, /pass|fail|ok|n\/?a|checkbox|☐|☑|status/i] },
+  { classification: 'GENERIC_INSPECTION_FORM', confidence: 0.72, patterns: [/inspection|checklist|audit|review/i, /pass|fail|ok|n\/?a|acceptable|needs\s+review|not\s+assessed|monitor|corrective\s+action|compliant|non-?compliant|not\s+reviewed|checkbox|☐|☑|status/i] },
   { classification: 'GENERIC_SERVICE_REPORT', confidence: 0.68, patterns: [/service report|field service/i, /equipment|work performed|technician/i] },
 ]
 
@@ -2116,24 +2150,22 @@ export function extractFormBlueprint(captures: CaptureLike[]): FormBlueprint | n
 
   const blueprintSections = Array.from(sections.values()).slice(0, 40)
   const blueprintFields = fields.slice(0, 240)
-  const extractionDiagnostics: FormExtractionDiagnostics = {
-    ocr_line_count: formCaptures.reduce((count, capture) => count + ocrLinesFromCapture(capture).length, 0),
-    ocr_table_row_count: formCaptures.reduce((count, capture) => count + countOcrTableRows(capture), 0),
-    detected_section_count: sections.size,
-    detected_field_count: fields.length,
-    blueprint_section_count: blueprintSections.length,
-    blueprint_field_count: blueprintFields.length,
-    first_25_extracted_labels: fields.map((field) => field.label).slice(0, 25),
-  }
-
   if (process.env.NODE_ENV !== 'production') {
+    const extractionDiagnostics: FormExtractionDiagnostics = {
+      ocr_line_count: formCaptures.reduce((count, capture) => count + ocrLinesFromCapture(capture).length, 0),
+      ocr_table_row_count: formCaptures.reduce((count, capture) => count + countOcrTableRows(capture), 0),
+      detected_section_count: sections.size,
+      detected_field_count: fields.length,
+      blueprint_section_count: blueprintSections.length,
+      blueprint_field_count: blueprintFields.length,
+      first_25_extracted_labels: fields.map((field) => field.label).slice(0, 25),
+    }
     for (const capture of formCaptures) {
       const textSource = getCaptureDocumentTextSource(capture)
       console.info('[report-structure] document text diagnostics', {
         source: textSource.source,
         selected_text_length: textSource.text.length,
-        recovered_section_count: sections.size,
-        recovered_field_count: fields.length,
+        ...extractionDiagnostics,
       })
     }
   }
@@ -2155,7 +2187,6 @@ export function extractFormBlueprint(captures: CaptureLike[]): FormBlueprint | n
     measurement_fields: fields.filter((field) => field.field_type === 'measurement').map((field) => field.id),
     header_fields: fields.filter((field) => field.field_type === 'header').map((field) => field.id),
     footer_fields: fields.filter((field) => field.field_type === 'footer').map((field) => field.id),
-    extraction_diagnostics: extractionDiagnostics,
   }
 }
 
