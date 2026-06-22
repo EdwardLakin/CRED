@@ -227,8 +227,7 @@ function buildReportCoverHtml(params: {
     {
       label: "Subject",
       value:
-        getReportInfoValue(params.draft, params.session, "subject_name") ||
-        "",
+        getReportInfoValue(params.draft, params.session, "subject_name") || "",
     },
     {
       label: "Asset / Equipment",
@@ -248,12 +247,18 @@ function buildReportCoverHtml(params: {
     },
     {
       label: "Reference / File Note",
-      value: getReportInfoValue(params.draft, params.session, "reference_number"),
+      value: getReportInfoValue(
+        params.draft,
+        params.session,
+        "reference_number",
+      ),
     },
     {
       label: "Report Date",
       value: formatDateTimeInTimeZone(
-        params.draft?.updated_at ?? params.session.updated_at ?? params.session.created_at,
+        params.draft?.updated_at ??
+          params.session.updated_at ??
+          params.session.created_at,
         params.timeZone,
       ),
     },
@@ -291,7 +296,9 @@ function buildReportOverviewHtml(params: {
   reportTitle?: string;
 }) {
   const summary = stripConfidenceText(params.summary ?? "").trim();
-  const summaryText = summary || `This ${params.reportTitle ? `${params.reportTitle} ` : ""}report documents technician observations, key concerns, supporting proof, and recommended next actions.`;
+  const summaryText =
+    summary ||
+    `This ${params.reportTitle ? `${params.reportTitle} ` : ""}report documents technician observations, key concerns, supporting proof, and recommended next actions.`;
   const paragraphs = summaryText
     .split(/\n{2,}/)
     .map((paragraph) => paragraph.trim())
@@ -413,16 +420,16 @@ function isImageEvidence(capture: ReportCapture) {
 }
 
 function getUserEvidenceText(capture: ReportCapture) {
-  const userText = capture.technician_note?.trim() || capture.transcript?.trim();
+  const userText =
+    capture.technician_note?.trim() || capture.transcript?.trim();
   return userText && !looksLikeRawUploadFilename(userText) ? userText : "";
 }
 
-function getPrimaryEvidenceDescription(capture: ReportCapture) {
-  return getPrimaryEvidenceLabel(capture);
-}
-
 function getPrimaryEvidenceLabel(capture: ReportCapture) {
-  return getUserEvidenceText(capture) || getTrustedEvidenceTitle(capture);
+  return (
+    getUserEvidenceText(capture) ||
+    (getEvidenceKind(capture) === "image" ? "Supporting image" : "Observation")
+  );
 }
 
 function looksLikeRawUploadFilename(value: string) {
@@ -435,33 +442,6 @@ function looksLikeRawUploadFilename(value: string) {
       value,
     )
   );
-}
-
-function isSafeCustomerEvidenceTitle(value: unknown) {
-  const text = String(value ?? "").trim();
-  return Boolean(text) && !looksLikeRawUploadFilename(text);
-}
-
-function getTrustedManualEvidenceTitle(capture: ReportCapture) {
-  const data = isRecord(capture.extracted_data) ? capture.extracted_data : {};
-  const candidates = [
-    data.manual_title,
-    data.title,
-    data.classification_title,
-    data.document_title,
-    data.evidence_title,
-    data.label,
-  ];
-  const trusted = candidates.find(
-    (value) => typeof value === "string" && isSafeCustomerEvidenceTitle(value),
-  );
-  return typeof trusted === "string" ? trusted.trim() : "";
-}
-
-function getTrustedEvidenceTitle(capture: ReportCapture) {
-  const manualTitle = getTrustedManualEvidenceTitle(capture);
-  if (manualTitle) return manualTitle;
-  return getEvidenceTitle(capture);
 }
 
 function getUploadMimeType(capture: ReportCapture) {
@@ -1062,14 +1042,22 @@ function buildEvidenceItemsHtml(
     .join("");
 }
 
-function getObservationCategoryLabel(entry: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>["findings"][number]) {
+function getObservationCategoryLabel(
+  entry: ReturnType<
+    typeof buildNormalizedReportModel<ReportCapture>
+  >["findings"][number],
+) {
   const category = normalizeEvidenceCategory(entry.capture.evidence_category);
   if (category === "observation") return "Observation";
   if (category === "concern") return "Concern";
   if (category === "recommended_action") return "Recommended Action";
   if (entry.purpose === "concern") return "Concern";
   if (entry.purpose === "recommended_action") return "Recommended Action";
-  if (entry.purpose === "supporting_evidence" || entry.purpose === "reference_document") return "Supporting Evidence";
+  if (
+    entry.purpose === "supporting_evidence" ||
+    entry.purpose === "reference_document"
+  )
+    return "Supporting Evidence";
   return "Observation";
 }
 
@@ -1081,51 +1069,95 @@ function buildDocumentedObservationsHtml(
   reviewDocument: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>,
   imageAssets: Record<string, ExportImageAsset>,
 ) {
-  const renderedIds = new Set<string>();
-  const entries = [
+  const allEntries = [
     ...reviewDocument.findings,
     ...reviewDocument.concerns,
     ...reviewDocument.recommendedActionEvidence,
     ...reviewDocument.referenceDocuments,
     ...reviewDocument.additionalNotes,
     ...reviewDocument.supportingEvidence,
-  ].filter((entry) => {
+  ];
+  const renderedIds = new Set<string>();
+  const entries = allEntries.filter((entry) => {
     const groupKey = getObservationGroupKey(entry.capture);
     if (renderedIds.has(groupKey)) return false;
     renderedIds.add(groupKey);
     return true;
   });
-  const actionCards = reviewDocument.categorizedRecommendedActions.filter((item) => item.action.trim());
-  if (entries.length === 0 && actionCards.length === 0) return '<section class="item service-section"><h2>Documented Observations</h2><p class="muted">No documented observations added yet.</p></section>';
-  const entryHtml = entries.map((entry, index) => {
-    const capture = entry.capture;
-    const groupCaptures = entries.map((candidate) => candidate.capture).filter((candidate) => getObservationGroupKey(candidate) === getObservationGroupKey(capture));
-    const imageAsset = imageAssets[capture.id];
-    const kind = getEvidenceKind(capture);
-    const isDocument = kind === "document" || capture.media_kind === "document";
-    const groupImageAssets = groupCaptures.filter((groupCapture) => getEvidenceKind(groupCapture) === "image").map((groupCapture) => ({ capture: groupCapture, asset: imageAssets[groupCapture.id] }));
-    const mediaHtml = groupImageAssets.length > 0
-      ? `<div class="media supporting-export-grid">${groupImageAssets.map(({ capture: groupCapture, asset }) => renderExportImage(asset, getPrimaryEvidenceLabel(groupCapture), "Preview unavailable in printable export. Original evidence retained.")).join("")}</div>`
-      : imageAsset?.originalMediaUrl
-        ? `<p class="original-link"><a href="${escapeHtmlAttributeRaw(imageAsset.originalMediaUrl)}">Open supporting ${isDocument ? "document" : "file"}</a></p>`
+  const actionCards = reviewDocument.categorizedRecommendedActions.filter(
+    (item) => item.action.trim(),
+  );
+  if (entries.length === 0 && actionCards.length === 0)
+    return '<section class="item service-section"><h2>Documented Observations</h2><p class="muted">No documented observations added yet.</p></section>';
+  const entryHtml = entries
+    .map((entry, index) => {
+      const capture = entry.capture;
+      const groupCaptures = allEntries
+        .map((candidate) => candidate.capture)
+        .filter(
+          (candidate) =>
+            getObservationGroupKey(candidate) ===
+            getObservationGroupKey(capture),
+        );
+      const imageAsset = imageAssets[capture.id];
+      const kind = getEvidenceKind(capture);
+      const isDocument =
+        kind === "document" || capture.media_kind === "document";
+      const groupImageAssets = groupCaptures
+        .filter((groupCapture) => getEvidenceKind(groupCapture) === "image")
+        .map((groupCapture) => ({
+          capture: groupCapture,
+          asset: imageAssets[groupCapture.id],
+        }));
+      const mediaHtml =
+        groupImageAssets.length > 0
+          ? `<div class="media supporting-export-grid">${groupImageAssets.map(({ capture: groupCapture, asset }) => renderExportImage(asset, getPrimaryEvidenceLabel(groupCapture), "Preview unavailable in printable export. Original evidence retained.")).join("")}</div>`
+          : imageAsset?.originalMediaUrl
+            ? `<p class="original-link"><a href="${escapeHtmlAttributeRaw(imageAsset.originalMediaUrl)}">Open supporting ${isDocument ? "document" : "file"}</a></p>`
+            : "";
+      const renderedText: string[] = [];
+      const technicianNote = stripConfidenceText(
+        capture.technician_note || capture.transcript || "",
+      );
+      if (technicianNote) renderedText.push(technicianNote);
+      const details = dedupeEvidenceDetails(entry.group.details).filter(
+        (detail) => {
+          if (/^technician note$/i.test(detail.label)) return false;
+          const visible = shouldRenderDetail(
+            detail.label,
+            detail.value,
+            renderedText,
+          );
+          if (visible) renderedText.push(detail.value);
+          return visible;
+        },
+      );
+      const recommendations = entry.group.recommendations
+        .flatMap(splitRecommendationText)
+        .filter((value) => {
+          const visible = shouldRenderDetail(
+            "Recommendation",
+            value,
+            renderedText,
+          );
+          if (visible) renderedText.push(value);
+          return visible;
+        });
+      const heading = getUserEvidenceText(capture)
+        ? getPrimaryEvidenceLabel(capture)
+        : "Observation";
+      const technicianNoteHtml = technicianNote
+        ? `<div class="technician-note-block"><h4>Technician Note</h4><p>${escapeHtml(technicianNote)}</p></div>`
         : "";
-    const renderedText: string[] = [];
-    const technicianNote = stripConfidenceText(capture.technician_note || capture.transcript || "Technician note retained with supporting proof.");
-    renderedText.push(technicianNote);
-    const details = dedupeEvidenceDetails(entry.group.details).filter((detail) => {
-      if (/^technician note$/i.test(detail.label)) return false;
-      const visible = shouldRenderDetail(detail.label, detail.value, renderedText);
-      if (visible) renderedText.push(detail.value);
-      return visible;
-    });
-    const recommendations = entry.group.recommendations.flatMap(splitRecommendationText).filter((value) => {
-      const visible = shouldRenderDetail("Recommendation", value, renderedText);
-      if (visible) renderedText.push(value);
-      return visible;
-    });
-    return `<article class="finding-card observation-card">${mediaHtml}<div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">${String(index + 1).padStart(2, "0")}</span><span class="observation-kind">${escapeHtml(getObservationCategoryLabel(entry))}</span></div><h3>${escapeHtml(getPrimaryEvidenceLabel(capture))}</h3><div class="technician-note-block"><h4>Technician Note</h4><p>${escapeHtml(technicianNote)}</p></div>${groupImageAssets.length ? `<p class="proof-line"><strong>Supporting Images:</strong> ${groupImageAssets.length}</p>` : ""}${isDocument ? `<p class="proof-line"><strong>Supporting Document:</strong> ${escapeHtml(getPrimaryEvidenceLabel(capture))}</p>` : ""}${details.length ? `<div class="proof-block"><h4>Supporting Proof</h4>${renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value })))}</div>` : ""}${recommendations.length ? `<div class="proof-block"><h4>Recommended Action</h4><ul>${recommendations.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul></div>` : ""}</div></article>`;
-  }).join("");
-  const actionsHtml = actionCards.map((action, index) => `<article class="finding-card observation-card"><div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">${String(entries.length + index + 1).padStart(2, "0")}</span><span class="observation-kind">Recommended Action</span></div><h3>Recommended Action</h3><div class="technician-note-block"><h4>Technician Note</h4><p>${escapeHtml(stripConfidenceText(action.action))}</p></div></div></article>`).join("");
+      return `<article class="finding-card observation-card">${mediaHtml}<div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">${String(index + 1).padStart(2, "0")}</span><span class="observation-kind">${escapeHtml(getObservationCategoryLabel(entry))}</span></div><h3>${escapeHtml(heading)}</h3>${technicianNoteHtml}${groupImageAssets.length ? `<p class="proof-line"><strong>Supporting Images:</strong> ${groupImageAssets.length}</p>` : ""}${isDocument ? `<p class="proof-line"><strong>Supporting Document:</strong> ${escapeHtml(getPrimaryEvidenceLabel(capture))}</p>` : ""}${details.length ? `<div class="proof-block"><h4>Supporting Proof</h4>${renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value })))}</div>` : ""}${recommendations.length ? `<div class="proof-block"><h4>Recommended Action</h4><ul>${recommendations.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul></div>` : ""}</div></article>`;
+    })
+    .join("");
+  const actionsHtml = actionCards
+    .map(
+      (action, index) =>
+        `<article class="finding-card observation-card"><div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">${String(entries.length + index + 1).padStart(2, "0")}</span><span class="observation-kind">Recommended Action</span></div><h3>Recommended Action</h3><div class="technician-note-block"><h4>Technician Note</h4><p>${escapeHtml(stripConfidenceText(action.action))}</p></div></div></article>`,
+    )
+    .join("");
   return `<section class="item service-section findings-section documented-observations"><div class="section-heading"><p class="eyebrow">Technician says this. Here’s the proof.</p><h2>Documented Observations</h2></div><p class="muted section-intro">Technician notes are the source of truth. Each supporting photo or document appears once with the observation it supports.</p>${entryHtml}${actionsHtml}</section>`;
 }
 
@@ -1854,8 +1886,18 @@ export async function GET(_request: Request, { params }: RouteContext) {
       "[report-evidence-check] Included captures have no draft references; Evidence Appendix will render all included captures.",
       { session_id: session.id, included_capture_count: captureItems.length },
     );
-  const observationsHtml = buildDocumentedObservationsHtml(reviewDocument, imageAssets);
-  const approvalHtml = buildApprovalHtml({ profile: reportProfile, signatures: reportSignatures, signatureUrls, draft: reportDraft, session, timeZone });
+  const observationsHtml = buildDocumentedObservationsHtml(
+    reviewDocument,
+    imageAssets,
+  );
+  const approvalHtml = buildApprovalHtml({
+    profile: reportProfile,
+    signatures: reportSignatures,
+    signatureUrls,
+    draft: reportDraft,
+    session,
+    timeZone,
+  });
 
   const toolbarHtml = previewOnly
     ? ""

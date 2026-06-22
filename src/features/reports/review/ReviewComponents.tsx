@@ -20,14 +20,12 @@ import {
 import { buildUniversalReportDocument } from "@/features/reports/report-document";
 import { getReportInfoValue } from "@/features/reports/report-title";
 import { disableReportShareLink } from "@/features/reports/actions";
-import { updateSessionMetadata } from "@/features/sessions/actions";
 import { formatDateTime } from "@/features/sessions";
 import { requireSessionWorkspace } from "@/features/sessions/data";
 import {
-  SESSION_METADATA_FIELDS,
-  normalizeSessionMetadata,
-} from "@/features/sessions/report-types";
-import { EvidenceImageTrigger, type EvidenceLightboxItem } from "@/features/reports/review/EvidenceImageLightbox";
+  EvidenceImageTrigger,
+  type EvidenceLightboxItem,
+} from "@/features/reports/review/EvidenceImageLightbox";
 import { SignatureCaptureForm } from "@/features/signatures";
 import { useSavedSignature } from "@/features/signatures/actions";
 import type { Database } from "@/lib/supabase/database.types";
@@ -479,7 +477,6 @@ export function ReportReview({
   reportSections,
   currentReport,
   generateReportAction,
-  generateSummaryAction,
   hasPendingEvidence,
   hasPrepareError,
   isEditingReport,
@@ -500,7 +497,6 @@ export function ReportReview({
   reportSections: AiReportDraftSection[];
   currentReport: AiReportDraft | null;
   generateReportAction: ServerAction;
-  generateSummaryAction: ServerAction;
   hasPendingEvidence: boolean;
   hasPrepareError: boolean;
   isEditingReport: boolean;
@@ -541,13 +537,34 @@ export function ReportReview({
   const coverDetails = [
     ["Report Title", displayReportTitle],
     ["Organization", facilityName],
-    ["Customer / Client", getReportInfoValue(currentReport, session, "customer_client") || session.customer_name],
-    ["Asset / Equipment", getReportInfoValue(currentReport, session, "asset_equipment") || session.asset_label],
-    ["Location", getReportInfoValue(currentReport, session, "location") || facilityLocation],
+    [
+      "Customer / Client",
+      getReportInfoValue(currentReport, session, "customer_client") ||
+        session.customer_name,
+    ],
+    [
+      "Asset / Equipment",
+      getReportInfoValue(currentReport, session, "asset_equipment") ||
+        session.asset_label,
+    ],
+    [
+      "Location",
+      getReportInfoValue(currentReport, session, "location") ||
+        facilityLocation,
+    ],
     ["Report ID", session.display_id],
-    ["Report Date", formatDateTime(currentReport?.updated_at ?? session.updated_at ?? session.created_at, timeZone)],
+    [
+      "Report Date",
+      formatDateTime(
+        currentReport?.updated_at ?? session.updated_at ?? session.created_at,
+        timeZone,
+      ),
+    ],
   ]
-    .map(([label, value]) => [label, stripConfidenceText(String(value ?? "")).trim()])
+    .map(([label, value]) => [
+      label,
+      stripConfidenceText(String(value ?? "")).trim(),
+    ])
     .filter(([, value]) => value);
   return (
     <section className="card detail-card report-command-card form-stack generated-report-card">
@@ -630,52 +647,6 @@ export function ReportReview({
         </form>
       ) : null}
 
-      {!isEditingReport ? null : (
-        <details className="report-subsection report-document-section" open>
-          <summary className="report-section-title-row">
-            <div>
-              <h3>Report Details</h3>
-              <p className="muted">
-                Edit the report title, customer, subject, asset, and location. The Report ID is generated separately for archive search and sorting.
-              </p>
-            </div>
-          </summary>
-          <form
-            action={updateSessionMetadata.bind(null, session.id)}
-            className="form-stack report-edit-form"
-          >
-            <label className="field-stack">
-              <span className="label">Report Title</span>
-              <input className="input" name="report_title" maxLength={180} defaultValue={displayReportTitle} />
-            </label>
-            <div className="report-field-grid">
-              {SESSION_METADATA_FIELDS.filter((field) => field.name !== "reference_number").map((field) => {
-                const metadata = normalizeSessionMetadata(
-                  session.session_metadata,
-                  session,
-                );
-                return (
-                  <label className="field-stack" key={field.name}>
-                    <span className="label">{field.label}</span>
-                    <input
-                      className="input"
-                      name={field.name}
-                      maxLength={field.maxLength}
-                      defaultValue={metadata[field.name]}
-                    />
-                  </label>
-                );
-              })}
-            </div>
-            <div className="form-actions">
-              <button className="button button-secondary touch-target">
-                Save report information
-              </button>
-            </div>
-          </form>
-        </details>
-      )}
-
       {currentReport && isEditingReport && saveReportEditsAction ? (
         <form
           action={saveReportEditsAction}
@@ -756,10 +727,9 @@ export function ReportReview({
                 />
               </label>
             </div>
-            <div className="form-actions report-inline-actions">
-              <button formAction={generateSummaryAction} className="button button-secondary touch-target">
-                Generate Summary
-              </button>
+            <div className="report-field-card">
+              <span>Report ID</span>
+              <strong>{session.display_id ?? "Generated after save"}</strong>
             </div>
             <label className="field-stack">
               <span className="label">Executive Summary</span>
@@ -775,95 +745,100 @@ export function ReportReview({
           <details className="report-subsection report-edit-panel">
             <summary>
               <h3>Report Sections</h3>
-              <p className="muted">Edit Findings, Concerns, Recommended Actions, and Supporting Evidence sections.</p>
+              <p className="muted">
+                Edit Findings, Concerns, Recommended Actions, and Supporting
+                Evidence sections.
+              </p>
             </summary>
-          <div className="report-content-grid">
-            {editableSections.map((section) => {
-              const included = !isHiddenFromReport(section.metadata);
-              return (
-                <article
-                  key={section.id}
-                  className="report-edit-panel report-edit-item"
-                >
-                  <label className="report-visibility-toggle">
-                    <input
-                      type="checkbox"
-                      name={`section_include_${section.id}`}
-                      defaultChecked={included}
-                    />
-                    <span>Include in report</span>
-                  </label>
-                  <label className="field-stack">
-                    <span className="label">Heading</span>
-                    <input
-                      className="input"
-                      name={`section_title_${section.id}`}
-                      defaultValue={stripConfidenceText(section.title)}
-                    />
-                  </label>
-                  <label className="field-stack">
-                    <span className="label">Report text</span>
-                    <textarea
-                      className="input text-area"
-                      name={`section_body_${section.id}`}
-                      rows={5}
-                      defaultValue={stripConfidenceText(section.body ?? "")}
-                    />
-                  </label>
-                  {normalizeDraftSections([section], []).flatMap(
-                    (item) => item.fields,
-                  ).length > 0 ? (
-                    <div className="report-field-grid">
+            <div className="report-content-grid">
+              {editableSections.map((section) => {
+                const included = !isHiddenFromReport(section.metadata);
+                return (
+                  <article
+                    key={section.id}
+                    className="report-edit-panel report-edit-item"
+                  >
+                    <label className="report-visibility-toggle">
                       <input
-                        type="hidden"
-                        name={`section_field_count_${section.id}`}
-                        value={
-                          normalizeDraftSections([section], []).flatMap(
-                            (item) => item.fields,
-                          ).length
-                        }
+                        type="checkbox"
+                        name={`section_include_${section.id}`}
+                        defaultChecked={included}
                       />
-                      {normalizeDraftSections([section], [])
-                        .flatMap((item) => item.fields)
-                        .map((field, fieldIndex) => (
-                          <div
-                            key={`${section.id}-${field.key}-${fieldIndex}`}
-                            className="report-field-card report-edit-field-card"
-                          >
-                            <input
-                              type="hidden"
-                              name={`section_field_key_${section.id}_${fieldIndex}`}
-                              value={field.key}
-                            />
-                            <input
-                              type="hidden"
-                              name={`section_field_label_${section.id}_${fieldIndex}`}
-                              value={field.label}
-                            />
-                            <label className="report-visibility-toggle">
+                      <span>Include in report</span>
+                    </label>
+                    <label className="field-stack">
+                      <span className="label">Heading</span>
+                      <input
+                        className="input"
+                        name={`section_title_${section.id}`}
+                        defaultValue={stripConfidenceText(section.title)}
+                      />
+                    </label>
+                    <label className="field-stack">
+                      <span className="label">Report text</span>
+                      <textarea
+                        className="input text-area"
+                        name={`section_body_${section.id}`}
+                        rows={5}
+                        defaultValue={stripConfidenceText(section.body ?? "")}
+                      />
+                    </label>
+                    {normalizeDraftSections([section], []).flatMap(
+                      (item) => item.fields,
+                    ).length > 0 ? (
+                      <div className="report-field-grid">
+                        <input
+                          type="hidden"
+                          name={`section_field_count_${section.id}`}
+                          value={
+                            normalizeDraftSections([section], []).flatMap(
+                              (item) => item.fields,
+                            ).length
+                          }
+                        />
+                        {normalizeDraftSections([section], [])
+                          .flatMap((item) => item.fields)
+                          .map((field, fieldIndex) => (
+                            <div
+                              key={`${section.id}-${field.key}-${fieldIndex}`}
+                              className="report-field-card report-edit-field-card"
+                            >
                               <input
-                                type="checkbox"
-                                name={`section_field_include_${section.id}_${fieldIndex}`}
-                                defaultChecked
+                                type="hidden"
+                                name={`section_field_key_${section.id}_${fieldIndex}`}
+                                value={field.key}
                               />
-                              <span>Include in report</span>
-                            </label>
-                            <label className="field-stack">
-                              <span className="label">{field.label}</span>
                               <input
-                                className="input"
-                                name={`section_field_value_${section.id}_${fieldIndex}`}
-                                defaultValue={stripConfidenceText(field.value)}
+                                type="hidden"
+                                name={`section_field_label_${section.id}_${fieldIndex}`}
+                                value={field.label}
                               />
-                            </label>
-                          </div>
-                        ))}
-                    </div>
-                  ) : null}
-                </article>
-              );
-            })}
-          </div>
+                              <label className="report-visibility-toggle">
+                                <input
+                                  type="checkbox"
+                                  name={`section_field_include_${section.id}_${fieldIndex}`}
+                                  defaultChecked
+                                />
+                                <span>Include in report</span>
+                              </label>
+                              <label className="field-stack">
+                                <span className="label">{field.label}</span>
+                                <input
+                                  className="input"
+                                  name={`section_field_value_${section.id}_${fieldIndex}`}
+                                  defaultValue={stripConfidenceText(
+                                    field.value,
+                                  )}
+                                />
+                              </label>
+                            </div>
+                          ))}
+                      </div>
+                    ) : null}
+                  </article>
+                );
+              })}
+            </div>
           </details>
 
           <details className="report-subsection report-edit-panel" open>
@@ -1110,7 +1085,9 @@ export function InspectorFacilityPanel({
 }
 
 function getObservationCategoryLabel(
-  entry: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>["findings"][number],
+  entry: ReturnType<
+    typeof buildNormalizedReportModel<CaptureItem>
+  >["findings"][number],
 ) {
   const category = normalizeEvidenceCategory(entry.capture.evidence_category);
   if (category === "observation") return "Observation";
@@ -1118,24 +1095,37 @@ function getObservationCategoryLabel(
   if (category === "recommended_action") return "Recommended Action";
   if (entry.purpose === "concern") return "Concern";
   if (entry.purpose === "recommended_action") return "Recommended Action";
-  if (entry.purpose === "supporting_evidence" || entry.purpose === "reference_document") return "Supporting Evidence";
+  if (
+    entry.purpose === "supporting_evidence" ||
+    entry.purpose === "reference_document"
+  )
+    return "Supporting Evidence";
   return "Observation";
 }
-
 
 function getObservationGroupKey(capture: CaptureItem) {
   return capture.observation_group_id ?? capture.id;
 }
 
-function getGroupedEvidenceItems(primary: SupportingEvidenceItem | undefined, allItems: SupportingEvidenceItem[]) {
+function getGroupedEvidenceItems(
+  primary: SupportingEvidenceItem | undefined,
+  allItems: SupportingEvidenceItem[],
+) {
   if (!primary) return [] as SupportingEvidenceItem[];
   const groupKey = getObservationGroupKey(primary.capture);
   return allItems
     .filter((item) => getObservationGroupKey(item.capture) === groupKey)
-    .sort((a, b) => (a.capture.group_order ?? (a.capture.id === groupKey ? 1 : 999)) - (b.capture.group_order ?? (b.capture.id === groupKey ? 1 : 999)) || a.capture.captured_at.localeCompare(b.capture.captured_at));
+    .sort(
+      (a, b) =>
+        (a.capture.group_order ?? (a.capture.id === groupKey ? 1 : 999)) -
+          (b.capture.group_order ?? (b.capture.id === groupKey ? 1 : 999)) ||
+        a.capture.captured_at.localeCompare(b.capture.captured_at),
+    );
 }
 
-function getLightboxItems(items: SupportingEvidenceItem[]): EvidenceLightboxItem[] {
+function getLightboxItems(
+  items: SupportingEvidenceItem[],
+): EvidenceLightboxItem[] {
   return items
     .filter((item) => item.kind === "photo" && Boolean(item.signedUrl))
     .map((item) => ({
@@ -1209,23 +1199,40 @@ function DocumentedObservations({
       </div>
       <div className="evidence-first-list">
         {entries.map((entry) => {
-          const item = evidenceById.get(entry.group.capture_id);
+          const groupKey = getObservationGroupKey(entry.capture);
+          const item =
+            evidenceById.get(entry.group.capture_id) ??
+            supportingEvidence.find(
+              (candidate) =>
+                getObservationGroupKey(candidate.capture) === groupKey,
+            );
           const technicianNote = stripConfidenceText(
             entry.capture.technician_note?.trim() ||
               entry.capture.transcript?.trim() ||
               item?.note ||
-              "Technician note retained with supporting proof.",
+              "",
           );
           const groupItems = getGroupedEvidenceItems(item, supportingEvidence);
-          const photoGroupItems = groupItems.filter((groupItem) => groupItem.kind === "photo" && groupItem.signedUrl);
+          const photoGroupItems = groupItems.filter(
+            (groupItem) => groupItem.kind === "photo" && groupItem.signedUrl,
+          );
           const isPhoto = item?.kind === "photo";
           const isDocument = item?.kind === "document" || item?.kind === "file";
           return (
-            <article key={entry.group.capture_id} className="evidence-first-card">
+            <article
+              key={entry.group.capture_id}
+              className="evidence-first-card"
+            >
               <div className="evidence-first-media">
                 {isPhoto && item?.signedUrl ? (
                   <div className="downloadable-evidence-preview">
-                    <EvidenceImageTrigger items={getLightboxItems(groupItems.length ? groupItems : supportingEvidence)} currentId={item.capture.id} imageClassName="pdf-safe-image" />
+                    <EvidenceImageTrigger
+                      items={getLightboxItems(
+                        groupItems.length ? groupItems : supportingEvidence,
+                      )}
+                      currentId={item.capture.id}
+                      imageClassName="pdf-safe-image"
+                    />
                     <DownloadOriginalLink item={item} />
                   </div>
                 ) : item?.signedUrl && isDocument ? (
@@ -1241,20 +1248,35 @@ function DocumentedObservations({
               </div>
               <div className="evidence-first-body">
                 <div className="finding-card-header">
-                  <h4>{item?.title ?? getEvidenceTitle(entry.capture)}</h4>
-                  <span className="severity-badge">{getObservationCategoryLabel(entry)}</span>
+                  <h4>
+                    {technicianNote
+                      ? (item?.title ?? getEvidenceTitle(entry.capture))
+                      : "Untitled observation"}
+                  </h4>
+                  <span className="severity-badge">
+                    {getObservationCategoryLabel(entry)}
+                  </span>
                 </div>
-                <div>
-                  <strong>Technician Note</strong>
-                  <p>{technicianNote}</p>
-                </div>
+                {technicianNote ? (
+                  <div>
+                    <strong>Technician Note</strong>
+                    <p>{technicianNote}</p>
+                  </div>
+                ) : null}
                 {photoGroupItems.length > 1 ? (
                   <div className="supporting-image-strip">
                     <strong>Supporting images</strong>
                     <div className="supporting-image-grid">
                       {photoGroupItems.map((groupItem) => (
-                        <div key={groupItem.capture.id} className="supporting-image-thumb downloadable-evidence-preview">
-                          <EvidenceImageTrigger items={getLightboxItems(photoGroupItems)} currentId={groupItem.capture.id} imageClassName="pdf-safe-image" />
+                        <div
+                          key={groupItem.capture.id}
+                          className="supporting-image-thumb downloadable-evidence-preview"
+                        >
+                          <EvidenceImageTrigger
+                            items={getLightboxItems(photoGroupItems)}
+                            currentId={groupItem.capture.id}
+                            imageClassName="pdf-safe-image"
+                          />
                         </div>
                       ))}
                     </div>
@@ -1269,7 +1291,9 @@ function DocumentedObservations({
             <div className="evidence-first-body">
               <div className="finding-card-header">
                 <div>
-                  <p className="eyebrow">Observation {entries.length + index + 1}</p>
+                  <p className="eyebrow">
+                    Observation {entries.length + index + 1}
+                  </p>
                   <h4>Recommended Action</h4>
                 </div>
                 <span className="severity-badge">Recommended Action</span>
@@ -1335,28 +1359,70 @@ function EvidenceGallery({
               </div>
               <div className="report-edit-evidence-preview">
                 {item.kind === "photo" && item.signedUrl ? (
-                  <EvidenceImageTrigger items={getLightboxItems(evidenceItems)} currentId={item.capture.id} imageClassName="pdf-safe-image" />
+                  <EvidenceImageTrigger
+                    items={getLightboxItems(evidenceItems)}
+                    currentId={item.capture.id}
+                    imageClassName="pdf-safe-image"
+                  />
                 ) : null}
                 {item.downloadUrl ? (
-                  <DownloadOriginalLink item={item} className="secondary-link subtle-download-link icon-download-link" />
+                  <DownloadOriginalLink
+                    item={item}
+                    className="secondary-link subtle-download-link icon-download-link"
+                  />
                 ) : null}
                 <strong>{item.title}</strong>
               </div>
               <label className="field-stack compact-field">
                 <span className="label">Group with observation</span>
-                <select className="input" name={`capture_group_with_${item.capture.id}`} defaultValue={item.capture.observation_group_id ?? item.capture.id}>
-                  <option value={item.capture.id}>Standalone observation</option>
-                  {evidenceItems.filter((candidate) => candidate.capture.id !== item.capture.id).map((candidate) => (
-                    <option key={candidate.capture.id} value={candidate.capture.observation_group_id ?? candidate.capture.id}>
-                      {candidate.title}
-                    </option>
-                  ))}
+                <select
+                  className="input"
+                  name={`capture_group_with_${item.capture.id}`}
+                  defaultValue={
+                    item.capture.observation_group_id ?? item.capture.id
+                  }
+                >
+                  <option value={item.capture.id}>
+                    Standalone observation
+                  </option>
+                  {evidenceItems
+                    .filter(
+                      (candidate) => candidate.capture.id !== item.capture.id,
+                    )
+                    .map((candidate) => (
+                      <option
+                        key={candidate.capture.id}
+                        value={
+                          candidate.capture.observation_group_id ??
+                          candidate.capture.id
+                        }
+                      >
+                        {candidate.title}
+                      </option>
+                    ))}
                 </select>
               </label>
-              <div className="evidence-category-pills" role="radiogroup" aria-label="Evidence category">
+              <div
+                className="evidence-category-pills"
+                role="radiogroup"
+                aria-label="Evidence category"
+              >
                 {EVIDENCE_CATEGORIES.map((category) => (
-                  <label key={category} className={`status-pill compact evidence-category-pill ${category === normalizeEvidenceCategory(item.capture.evidence_category) ? "success" : "neutral"}`}>
-                    <input type="radio" name={`capture_category_${item.capture.id}`} value={category} defaultChecked={category === normalizeEvidenceCategory(item.capture.evidence_category)} />
+                  <label
+                    key={category}
+                    className={`status-pill compact evidence-category-pill ${category === normalizeEvidenceCategory(item.capture.evidence_category) ? "success" : "neutral"}`}
+                  >
+                    <input
+                      type="radio"
+                      name={`capture_category_${item.capture.id}`}
+                      value={category}
+                      defaultChecked={
+                        category ===
+                        normalizeEvidenceCategory(
+                          item.capture.evidence_category,
+                        )
+                      }
+                    />
                     {EVIDENCE_CATEGORY_LABELS[category]}
                   </label>
                 ))}
@@ -1391,7 +1457,11 @@ function EvidenceGallery({
               <article key={item.capture.id} className="review-photo-card">
                 {item.signedUrl ? (
                   <div className="downloadable-evidence-preview">
-                    <EvidenceImageTrigger items={getLightboxItems(photoEvidence)} currentId={item.capture.id} imageClassName="pdf-safe-image" />
+                    <EvidenceImageTrigger
+                      items={getLightboxItems(photoEvidence)}
+                      currentId={item.capture.id}
+                      imageClassName="pdf-safe-image"
+                    />
                     <DownloadOriginalLink item={item} />
                   </div>
                 ) : (
@@ -1417,7 +1487,15 @@ function EvidenceGallery({
           <div className="review-note-list">
             {noteEvidence.slice(0, 8).map((item) => (
               <article key={item.capture.id} className="review-note-card">
-                <div className="report-card-action-row"><strong>{item.title}</strong>{item.downloadUrl ? <DownloadOriginalLink item={item} className="secondary-link subtle-download-link icon-download-link" /> : null}</div>
+                <div className="report-card-action-row">
+                  <strong>{item.title}</strong>
+                  {item.downloadUrl ? (
+                    <DownloadOriginalLink
+                      item={item}
+                      className="secondary-link subtle-download-link icon-download-link"
+                    />
+                  ) : null}
+                </div>
                 <p>{item.note ?? "Text note saved for this report."}</p>
               </article>
             ))}
@@ -1433,7 +1511,15 @@ function EvidenceGallery({
           <div className="review-note-list">
             {otherEvidence.slice(0, 6).map((item) => (
               <article key={item.capture.id} className="review-note-card">
-                <div className="report-card-action-row"><strong>{item.title}</strong>{item.downloadUrl ? <DownloadOriginalLink item={item} className="secondary-link subtle-download-link icon-download-link" /> : null}</div>
+                <div className="report-card-action-row">
+                  <strong>{item.title}</strong>
+                  {item.downloadUrl ? (
+                    <DownloadOriginalLink
+                      item={item}
+                      className="secondary-link subtle-download-link icon-download-link"
+                    />
+                  ) : null}
+                </div>
                 <p className="muted">
                   {stripConfidenceText(item.note ?? "Saved with the report.")}
                 </p>
@@ -1558,18 +1644,27 @@ export function ExportPanel({
           </p>
         ) : null}
 
-        <div className="export-action-tiles" aria-label="Report delivery options">
+        <div
+          className="export-action-tiles"
+          aria-label="Report delivery options"
+        >
           <details
             className="export-action-tile"
             aria-disabled={!isReadyForExport}
           >
             <summary>
-              <span className="export-tile-icon export-tile-icon-email" aria-hidden="true">
+              <span
+                className="export-tile-icon export-tile-icon-email"
+                aria-hidden="true"
+              >
                 ✉
               </span>
               <strong>Email Report</strong>
             </summary>
-            <form action={emailAction} className="form-stack export-action-details">
+            <form
+              action={emailAction}
+              className="form-stack export-action-details"
+            >
               <p className="muted">
                 Send a secure documentation link to recipients.
               </p>
@@ -1612,13 +1707,21 @@ export function ExportPanel({
             aria-disabled={!isReadyForExport}
           >
             <summary>
-              <span className="export-tile-icon export-tile-icon-share" aria-hidden="true">
+              <span
+                className="export-tile-icon export-tile-icon-share"
+                aria-hidden="true"
+              >
                 🔗
               </span>
               <strong>Share Link</strong>
             </summary>
-            <form action={shareAction} className="form-stack export-action-details">
-              <p className="muted">Create a secure link for this documentation.</p>
+            <form
+              action={shareAction}
+              className="form-stack export-action-details"
+            >
+              <p className="muted">
+                Create a secure link for this documentation.
+              </p>
               <div className="field-stack">
                 <label htmlFor="expires_at" className="label">
                   Expiration date
@@ -1684,7 +1787,10 @@ export function ExportPanel({
               className="export-action-tile export-action-link"
               target="_blank"
             >
-              <span className="export-tile-icon export-tile-icon-print" aria-hidden="true">
+              <span
+                className="export-tile-icon export-tile-icon-print"
+                aria-hidden="true"
+              >
                 ⎙
               </span>
               Preview / Print
@@ -1694,7 +1800,10 @@ export function ExportPanel({
               className="export-action-tile export-action-link disabled-action"
               aria-disabled="true"
             >
-              <span className="export-tile-icon export-tile-icon-print" aria-hidden="true">
+              <span
+                className="export-tile-icon export-tile-icon-print"
+                aria-hidden="true"
+              >
                 ⎙
               </span>
               Preview / Print
@@ -1706,12 +1815,18 @@ export function ExportPanel({
             aria-disabled={!isReadyForExport}
           >
             <summary>
-              <span className="export-tile-icon export-tile-icon-save" aria-hidden="true">
+              <span
+                className="export-tile-icon export-tile-icon-save"
+                aria-hidden="true"
+              >
                 ▤
               </span>
               <strong>Save in CRED</strong>
             </summary>
-            <form action={saveAction} className="form-stack export-action-details">
+            <form
+              action={saveAction}
+              className="form-stack export-action-details"
+            >
               <p className="muted">Keep a saved copy of this report.</p>
               <button
                 className="button button-secondary touch-target"
@@ -1727,7 +1842,6 @@ export function ExportPanel({
           Open the browser-friendly report. Use your browser’s Print or Share
           menu to save as PDF.
         </p>
-
       </div>
     </details>
   );
