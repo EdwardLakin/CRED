@@ -822,9 +822,10 @@ function labelRowsFromText(capture: CaptureLike): NormalizedFormField[] {
       continue
     }
     if (line.length <= 70 && /[A-Za-z]/.test(line) && !/[.!?]$/.test(line)) {
-      const looksHeading = rows.length === 0 || (statusChoices.length > 0 && parts.length === 1 && !/☐|☑|□|■|\[[ xX✓✔]?\]/.test(line)) || /^[A-Z0-9 /&()-]+$/.test(line) || /section|part|area|details|information|notes|signature/i.test(line)
-      if (looksHeading) currentSection = line
-      else rows.push({ key: slug(`${currentSection}_${line}`, `label_${rows.length + 1}`), label: line, value: 'Not captured', source_capture_id: capture.id, section_title: currentSection, status_choices: statusChoices.length ? statusChoices : undefined })
+      const looksKnownSection = isKnownInspectionSectionTitle(line)
+      const looksHeading = rows.length === 0 || looksKnownSection || /^[A-Z0-9 /&()-]+$/.test(line) || /section|part|area|details|information|notes|signature/i.test(line)
+      if (looksHeading && (looksKnownSection || statusChoices.length === 0 || /section|part|area|details|information|notes|signature/i.test(line))) currentSection = line
+      else rows.push({ key: slug(`${currentSection}_${line}`, `label_${rows.length + 1}`), label: line, value: 'Not captured', source_capture_id: capture.id, field_type: statusChoices.length ? 'pass_fail' : undefined, section_title: currentSection, status_choices: statusChoices.length ? statusChoices : undefined })
     }
   }
 
@@ -953,6 +954,7 @@ function canonicalFormBlueprintFromStructure(reportStructure: Json | null): Form
     const section = sections.find((item) => item.id === sectionId)
     if (section && !section.field_ids.includes(id)) section.field_ids.push(id)
   }
+
 
   return {
     version: 1,
@@ -1949,6 +1951,17 @@ export type FormBlueprint = {
   measurement_fields: string[]
   header_fields: string[]
   footer_fields: string[]
+  extraction_diagnostics?: FormExtractionDiagnostics
+}
+
+export type FormExtractionDiagnostics = {
+  ocr_line_count: number
+  ocr_table_row_count: number
+  detected_section_count: number
+  detected_field_count: number
+  blueprint_section_count: number
+  blueprint_field_count: number
+  first_25_extracted_labels: string[]
 }
 
 export type EvidenceFieldMapping = {
@@ -1971,6 +1984,46 @@ const KNOWN_FORM_RULES: Array<{ classification: FormClassification; confidence: 
   { classification: 'GENERIC_INSPECTION_FORM', confidence: 0.72, patterns: [/inspection|checklist|audit|review/i, /pass|fail|ok|n\/?a|checkbox|☐|☑|status/i] },
   { classification: 'GENERIC_SERVICE_REPORT', confidence: 0.68, patterns: [/service report|field service/i, /equipment|work performed|technician/i] },
 ]
+
+const HANSEN_CHECKLIST_SECTION_TITLES = new Set([
+  'powertrain',
+  'suspension',
+  'air brakes',
+  'steering',
+  'coupling device',
+  'instruments equipment',
+  'instruments and equipment',
+  'lighting system',
+  'body chassis',
+  'body and chassis',
+  'tires wheels',
+  'tires and wheels',
+  'head rack',
+])
+
+function normalizeSectionCandidate(value: string) {
+  return normalizeForMatch(value).replace(/\s+/g, ' ').trim()
+}
+
+function isKnownInspectionSectionTitle(value: string) {
+  const normalized = normalizeSectionCandidate(value)
+  return HANSEN_CHECKLIST_SECTION_TITLES.has(normalized)
+}
+
+function ocrLinesFromCapture(capture: CaptureLike) {
+  return (capture.ocr_text ?? '').split(/\r?\n/).map((line) => clean(line, 300)).filter(Boolean)
+}
+
+function countOcrTableRows(capture: CaptureLike) {
+  const { tables, rows } = sourceDocumentEvidence(capture)
+  const structuredTableRows = tables.reduce<number>((count, table) => {
+    if (!isRecord(table)) return count
+    const tableRows = Array.isArray(table.rows) ? table.rows : Array.isArray(table.data) ? table.data : []
+    return count + tableRows.length
+  }, 0)
+  const textTableRows = ocrLinesFromCapture(capture).filter((line) => /\||\t| {2,}|☐|☑|□|■|\[[ xX✓✔]?\]/.test(line)).length
+  return rows.length + structuredTableRows + textTableRows
+}
 
 function classifyFormBlueprintText(text: string): { classification: FormClassification; confidence: number } {
   for (const rule of KNOWN_FORM_RULES) {
@@ -2023,6 +2076,18 @@ export function extractFormBlueprint(captures: CaptureLike[]): FormBlueprint | n
     }
   }
 
+  const blueprintSections = Array.from(sections.values()).slice(0, 40)
+  const blueprintFields = fields.slice(0, 240)
+  const extractionDiagnostics: FormExtractionDiagnostics = {
+    ocr_line_count: formCaptures.reduce((count, capture) => count + ocrLinesFromCapture(capture).length, 0),
+    ocr_table_row_count: formCaptures.reduce((count, capture) => count + countOcrTableRows(capture), 0),
+    detected_section_count: sections.size,
+    detected_field_count: fields.length,
+    blueprint_section_count: blueprintSections.length,
+    blueprint_field_count: blueprintFields.length,
+    first_25_extracted_labels: fields.map((field) => field.label).slice(0, 25),
+  }
+
   return {
     version: 1,
     document_type: classification.classification === 'CUSTOM_FORM' ? 'custom_form' : classification.classification.toLowerCase(),
@@ -2030,8 +2095,8 @@ export function extractFormBlueprint(captures: CaptureLike[]): FormBlueprint | n
     classification_confidence: classification.confidence,
     source_capture_ids: formCaptures.map((capture) => capture.id),
     pages,
-    sections: Array.from(sections.values()).slice(0, 40),
-    fields: fields.slice(0, 240),
+    sections: blueprintSections,
+    fields: blueprintFields,
     tables: [],
     checkboxes: fields.filter((field) => field.field_type === 'checkbox').map((field) => field.id),
     pass_fail_indicators: fields.filter((field) => field.field_type === 'pass_fail').map((field) => field.id),
@@ -2040,6 +2105,7 @@ export function extractFormBlueprint(captures: CaptureLike[]): FormBlueprint | n
     measurement_fields: fields.filter((field) => field.field_type === 'measurement').map((field) => field.id),
     header_fields: fields.filter((field) => field.field_type === 'header').map((field) => field.id),
     footer_fields: fields.filter((field) => field.field_type === 'footer').map((field) => field.id),
+    extraction_diagnostics: extractionDiagnostics,
   }
 }
 
