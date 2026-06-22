@@ -1,6 +1,6 @@
 import { Card } from '@/components/ui'
 import { formatBytes, getPlanLimits } from '@/features/billing'
-import { getCurrentUsage } from '@/features/usage'
+import { getCurrentUsage, isAiUsageLimitExempt } from '@/features/usage/limits'
 import type { OrganizationPlan } from '@/lib/stripe'
 import type { Database } from '@/lib/supabase/database.types'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -9,22 +9,22 @@ type UsageMetricProps = {
   label: string
   used: string
   limit: string
-  percent: number
+  percent: number | null
 }
 
 function UsageMetric({ label, used, limit, percent }: UsageMetricProps) {
-  const safePercent = Math.min(Math.max(percent, 0), 100)
+  const safePercent = percent === null ? null : Math.min(Math.max(percent, 0), 100)
 
   return (
     <div className="usage-metric">
       <div className="guided-progress-meta">
         <strong>{label}</strong>
         <span>
-          {used} / {limit}
+          {percent === null ? `${used} used · ${limit}` : `${used} / ${limit}`}
         </span>
       </div>
       <div className="guided-progress-track" aria-hidden="true">
-        <div className="guided-progress-fill" style={{ width: `${safePercent}%` }} />
+        <div className="guided-progress-fill" style={{ width: safePercent === null ? '0%' : `${safePercent}%` }} />
       </div>
     </div>
   )
@@ -41,6 +41,7 @@ export async function UsageSummaryCard({
 }) {
   const limits = getPlanLimits(plan)
   const usage = await getCurrentUsage(supabase, organizationId)
+  const aiLimitExempt = isAiUsageLimitExempt(organizationId)
 
   return (
     <Card className="dashboard-card workspace-card usage-summary-card">
@@ -61,8 +62,8 @@ export async function UsageSummaryCard({
         <UsageMetric
           label="AI actions"
           used={usage.aiActionsThisMonth.toLocaleString()}
-          limit={limits.aiActionsPerMonth.toLocaleString()}
-          percent={(usage.aiActionsThisMonth / limits.aiActionsPerMonth) * 100}
+          limit={aiLimitExempt ? 'Unlimited' : limits.aiActionsPerMonth.toLocaleString()}
+          percent={aiLimitExempt ? null : (usage.aiActionsThisMonth / limits.aiActionsPerMonth) * 100}
         />
         <UsageMetric
           label="Email sends"

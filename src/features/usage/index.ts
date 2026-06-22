@@ -2,6 +2,7 @@ export {
   getActiveShareLinkCount,
   getCurrentCalendarMonthPeriod,
   getCurrentUsage,
+  isAiUsageLimitExempt,
   recordUsageEvent,
   requireUsageAllowance,
   USAGE_EVENT_TYPES,
