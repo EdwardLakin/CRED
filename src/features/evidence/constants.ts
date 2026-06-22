@@ -99,6 +99,7 @@ export const EVIDENCE_WORKSPACE_LABELS = {
   timeline: 'Timeline',
   entities: 'Entities',
   assertions: 'Factual Observations',
+  relationships: 'Relationship Explorer',
   report: 'Existing Report',
   includeInOutputs: 'Include in outputs',
   suggested: 'Suggested',
