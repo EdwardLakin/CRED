@@ -50,6 +50,7 @@ type Capture = {
   technician_note: string | null
   transcript: string | null
   capture_ai_analysis: Json
+  ocr_text: string | null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -64,6 +65,15 @@ function mergeJson(base: Json, patch: Json | undefined): Json {
 
 function retryDelay(attempts: number) {
   return attempts <= 1 ? 60_000 : 5 * 60_000
+}
+
+
+export function getExtractionOcrTextUpdate(operation: string, existingOcrText: string | null | undefined, analysis: Json | undefined): string | null | undefined {
+  if (operation !== 'extract_capture') return undefined
+  const existing = typeof existingOcrText === 'string' ? existingOcrText.trim() : ''
+  if (existing) return existingOcrText ?? existing
+  const extractedText = isRecord(analysis) && typeof analysis.extracted_text === 'string' ? analysis.extracted_text.trim() : ''
+  return extractedText || undefined
 }
 
 function isPermanentFailure(error: unknown) {
@@ -202,7 +212,7 @@ async function processJob(supabase: ReturnType<typeof createAdminClient>, job: J
   if (!job.capture_item_id) throw new Error('missing capture_item_id')
   const { data: capture, error } = await db(supabase)
     .from('capture_items')
-    .select('id, organization_id, documentation_session_id, storage_path, extracted_data, technician_note, transcript, capture_ai_analysis')
+    .select('id, organization_id, documentation_session_id, storage_path, extracted_data, technician_note, transcript, capture_ai_analysis, ocr_text')
     .eq('id', job.capture_item_id)
     .eq('organization_id', job.organization_id)
     .eq('documentation_session_id', job.documentation_session_id)
@@ -247,15 +257,19 @@ async function processJob(supabase: ReturnType<typeof createAdminClient>, job: J
     sourceDocument: getSourceDocument(item.extracted_data),
   })
 
+  const ocrTextUpdate = getExtractionOcrTextUpdate(operation, item.ocr_text, result.analysis)
+  const captureUpdate: Record<string, unknown> = {
+    ai_status: result.status === 'needs_review' ? 'needs_review' : 'extracted',
+    processing_status: result.status === 'needs_review' ? 'needs_review' : 'analyzed',
+    ai_summary: result.summary,
+    capture_ai_analysis: mergeJson(item.capture_ai_analysis, result.analysis),
+    extracted_data: mergeJson(item.extracted_data, result.extractedDataPatch),
+  }
+  if (ocrTextUpdate !== undefined) captureUpdate.ocr_text = ocrTextUpdate
+
   await db(supabase)
     .from('capture_items')
-    .update({
-      ai_status: result.status === 'needs_review' ? 'needs_review' : 'extracted',
-      processing_status: result.status === 'needs_review' ? 'needs_review' : 'analyzed',
-      ai_summary: result.summary,
-      capture_ai_analysis: mergeJson(item.capture_ai_analysis, result.analysis),
-      extracted_data: mergeJson(item.extracted_data, result.extractedDataPatch),
-    })
+    .update(captureUpdate)
     .eq('id', item.id)
     .eq('organization_id', item.organization_id)
     .eq('documentation_session_id', item.documentation_session_id)

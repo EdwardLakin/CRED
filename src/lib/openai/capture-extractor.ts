@@ -138,7 +138,7 @@ const TARGET_INSTRUCTIONS: Partial<Record<ExtractionTargetType, string>> = {
     'Source Document: Odometer. Prioritize odometer and hour_meter if present. Extract the reading exactly as displayed.',
   hour_meter: 'Focus on the hour meter reading exactly as displayed.',
   inspection_sheet:
-    'Focus on inspection/checklist title, visible date, inspector, and form type. Put inspector/checklist title in notes if no direct field fits.',
+    'Source Document: Inspection Sheet. Preserve the full visible raw document text in extracted_text, including page order, section headings, checklist row labels, visible status-column labels, readable marked statuses, unresolved rows with no readable mark, tables, and row ordering. Extract title, visible date, inspector, and form type when clear. Do not invent statuses, values, rows, or domain-specific schema fields; put inspector/checklist title in notes if no direct field fits.',
   brake_measurement:
     'Extract brake component, location, exact measurement, condition, recommendation, and severity. Use technician note/transcript as strong context for brake pad/rotor/lining/caliper/shoe/drum measurements when visually plausible.',
   tire_tread_measurement:

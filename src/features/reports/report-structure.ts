@@ -10,6 +10,7 @@ type CaptureLike = {
   technician_note?: string | null
   transcript?: string | null
   extracted_data: Json | null
+  capture_ai_analysis?: Json | null
   evidence_category?: string | null
 }
 
@@ -21,7 +22,7 @@ function hasDocumentTextContext(capture: CaptureLike) {
   return Boolean(
     capture.type === 'document' ||
       capture.media_kind === 'document' ||
-      capture.ocr_text?.trim() ||
+      getCaptureDocumentText(capture) ||
       (isRecord(capture.extracted_data) && (isRecord(capture.extracted_data.source_document) || isRecord(capture.extracted_data.extraction)))
   )
 }
@@ -258,7 +259,7 @@ function captureDeterministicRuleText(capture: CaptureLike) {
   const fields = Object.entries(getExtractionFields(capture.extracted_data))
     .map(([key, value]) => `${key} ${typeof value === 'string' ? value : JSON.stringify(value)}`)
     .join(' ')
-  return normalizeForMatch(`${capture.type ?? ''} ${capture.media_kind ?? ''} ${capture.technician_note ?? ''} ${capture.transcript ?? ''} ${capture.ai_summary ?? ''} ${capture.ocr_text ?? ''} ${documentTextForCapture(capture)} ${fields}`)
+  return normalizeForMatch(`${capture.type ?? ''} ${capture.media_kind ?? ''} ${capture.technician_note ?? ''} ${capture.transcript ?? ''} ${capture.ai_summary ?? ''} ${getCaptureDocumentText(capture)} ${documentTextForCapture(capture)} ${fields}`)
 }
 
 function captureNoteAndFieldText(capture: CaptureLike) {
@@ -415,12 +416,56 @@ export function getExtractionFields(extractedData: Json | null): Record<string, 
   return extractedData.extraction.fields
 }
 
+
+function trimmedString(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function getNestedString(value: unknown, path: string[]) {
+  let current: unknown = value
+  for (const key of path) {
+    if (!isRecord(current)) return ''
+    current = current[key]
+  }
+  return trimmedString(current)
+}
+
+function uniqueNonEmpty(values: Array<{ source: string; text: string }>) {
+  const seen = new Set<string>()
+  return values.filter((item) => {
+    const normalized = normalizeForMatch(item.text)
+    if (!normalized || seen.has(normalized)) return false
+    seen.add(normalized)
+    return true
+  })
+}
+
+export function getCaptureDocumentTextSource(capture: CaptureLike): { source: string; text: string } {
+  const ocrText = trimmedString(capture.ocr_text)
+  if (ocrText) return { source: 'ocr_text', text: ocrText }
+
+  const candidates = uniqueNonEmpty([
+    { source: 'extracted_data.extraction.extracted_text', text: getNestedString(capture.extracted_data, ['extraction', 'extracted_text']) },
+    { source: 'capture_ai_analysis.extracted_text', text: getNestedString(capture.capture_ai_analysis, ['extracted_text']) },
+    { source: 'extracted_data.capture_ai_analysis.extracted_text', text: getNestedString(capture.extracted_data, ['capture_ai_analysis', 'extracted_text']) },
+    { source: 'extracted_data.source_document.text', text: getNestedString(capture.extracted_data, ['source_document', 'text']) },
+    { source: 'extracted_data.source_document.extracted_text', text: getNestedString(capture.extracted_data, ['source_document', 'extracted_text']) },
+    { source: 'extracted_data.extracted_text', text: getNestedString(capture.extracted_data, ['extracted_text']) },
+  ])
+
+  return candidates.sort((a, b) => b.text.length - a.text.length)[0] ?? { source: 'none', text: '' }
+}
+
+export function getCaptureDocumentText(capture: CaptureLike): string {
+  return getCaptureDocumentTextSource(capture).text
+}
+
 function textForCapture(capture: CaptureLike) {
-  return `${capture.ocr_text ?? ''} ${capture.ai_summary ?? ''} ${capture.technician_note ?? ''} ${capture.transcript ?? ''} ${JSON.stringify(capture.extracted_data ?? {})}`.toLowerCase()
+  return `${getCaptureDocumentText(capture)} ${capture.ai_summary ?? ''} ${capture.technician_note ?? ''} ${capture.transcript ?? ''} ${JSON.stringify(capture.extracted_data ?? {})} ${JSON.stringify(capture.capture_ai_analysis ?? {})}`.toLowerCase()
 }
 
 function documentTextForCapture(capture: CaptureLike) {
-  return `${capture.ocr_text ?? ''} ${capture.ai_summary ?? ''} ${JSON.stringify(capture.extracted_data ?? {})}`.toLowerCase()
+  return `${getCaptureDocumentText(capture)} ${capture.ai_summary ?? ''} ${JSON.stringify(capture.extracted_data ?? {})} ${JSON.stringify(capture.capture_ai_analysis ?? {})}`.toLowerCase()
 }
 
 function isNoteCapture(capture: CaptureLike) {
@@ -587,7 +632,7 @@ function getSourceDocumentClassification(capture: CaptureLike) {
 
 function structuralSignalScore(capture: CaptureLike) {
   const text = textForCapture(capture)
-  const ocr = capture.ocr_text ?? ''
+  const ocr = getCaptureDocumentText(capture)
   const lines = ocr.split(/\r?\n/).map((line) => clean(line, 180)).filter(Boolean)
   const { sourceDocument, sections, fields, tables, rows, extractionFields } = sourceDocumentEvidence(capture)
   let score = 0
@@ -796,36 +841,54 @@ function rowsFromStructuredExtraction(capture: CaptureLike): NormalizedFormField
 function labelRowsFromText(capture: CaptureLike): NormalizedFormField[] {
   const structuredRows = rowsFromStructuredExtraction(capture)
 
-  const lines = (capture.ocr_text ?? '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  const lines = getCaptureDocumentText(capture).split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
   const rows: NormalizedFormField[] = []
   let currentSection = 'Captured form'
   let statusChoices: string[] = []
+  let currentSectionRowCount = 0
 
-  for (const line of lines) {
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex]
     const parts = line.split(/\||\t| {2,}/).map((part) => clean(part, 120)).filter(Boolean)
     const detectedChoices = detectStatusChoices(parts)
     if (detectedChoices.length >= 2) {
       const heading = parts.find((part) => !detectedChoices.includes(part) && /[A-Za-z]/.test(part))
-      if (heading) currentSection = heading
+      if (heading) {
+        currentSection = heading
+        currentSectionRowCount = 0
+      }
       statusChoices = detectedChoices
       continue
     }
     const colon = line.match(/^([A-Za-z][A-Za-z0-9 /#()._-]{1,70})\s*[:=]\s*(.+)$/)
     if (colon) {
       rows.push({ key: slug(colon[1], `field_${rows.length + 1}`), label: clean(colon[1], 120), value: clean(colon[2], 300) || 'Not captured', source_capture_id: capture.id, field_type: inferBlueprintFieldType(colon[1], colon[2]), section_title: currentSection, status_choices: statusChoices.length ? statusChoices : undefined })
+      currentSectionRowCount += 1
       continue
     }
     if (parts.length >= 2) {
       const label = parts[0]
       const value = explicitStatusFromText(parts.slice(1).join(' '), statusChoices)
-      if (label.length >= 2 && /[a-z]/i.test(label)) rows.push({ key: slug(`${currentSection}_${label}`, `row_${rows.length + 1}`), label, value: value ?? 'Not captured', source_capture_id: capture.id, field_type: inferBlueprintFieldType(label, value ?? ''), section_title: currentSection, status_choices: statusChoices.length ? statusChoices : undefined })
+      if (label.length >= 2 && /[a-z]/i.test(label)) {
+        rows.push({ key: slug(`${currentSection}_${label}`, `row_${rows.length + 1}`), label, value: value ?? 'Not captured', source_capture_id: capture.id, field_type: inferBlueprintFieldType(label, value ?? ''), section_title: currentSection, status_choices: statusChoices.length ? statusChoices : undefined })
+        currentSectionRowCount += 1
+      }
       continue
     }
     if (line.length <= 70 && /[A-Za-z]/.test(line) && !/[.!?]$/.test(line)) {
-      const looksKnownSection = isKnownInspectionSectionTitle(line)
-      const looksHeading = rows.length === 0 || looksKnownSection || /^[A-Z0-9 /&()-]+$/.test(line) || /section|part|area|details|information|notes|signature/i.test(line)
-      if (looksHeading && (looksKnownSection || statusChoices.length === 0 || /section|part|area|details|information|notes|signature/i.test(line))) currentSection = line
-      else rows.push({ key: slug(`${currentSection}_${line}`, `label_${rows.length + 1}`), label: line, value: 'Not captured', source_capture_id: capture.id, field_type: statusChoices.length ? 'pass_fail' : undefined, section_title: currentSection, status_choices: statusChoices.length ? statusChoices : undefined })
+      const nextLine = lines[lineIndex + 1] ?? ''
+      const nextParts = nextLine.split(/\||\t| {2,}/).map((part) => clean(part, 120)).filter(Boolean)
+      const nextLooksLikeRow = nextLine.length <= 90 && /[A-Za-z]/.test(nextLine) && detectStatusChoices(nextParts).length < 2 && !/[:=]/.test(nextLine)
+      const looksStructuralHeading = /^[A-Z0-9 /&()-]+$/.test(line) || /section|part|area|details|information|notes|signature/i.test(line) || (statusChoices.length > 0 && currentSectionRowCount > 0 && nextLooksLikeRow)
+      const looksHeading = rows.length === 0 || looksStructuralHeading
+      if (looksHeading && (statusChoices.length === 0 || looksStructuralHeading)) {
+        currentSection = line
+        currentSectionRowCount = 0
+      }
+      else {
+        rows.push({ key: slug(`${currentSection}_${line}`, `label_${rows.length + 1}`), label: line, value: 'Not captured', source_capture_id: capture.id, field_type: statusChoices.length ? 'pass_fail' : undefined, section_title: currentSection, status_choices: statusChoices.length ? statusChoices : undefined })
+        currentSectionRowCount += 1
+      }
     }
   }
 
@@ -1853,7 +1916,7 @@ function detectDuplicateFlags(captures: CaptureLike[]) {
     flags.push({ capture_id: captureId, duplicate_of_capture_id: duplicateOf, reason, label: 'Possible Duplicate' })
   }
   for (const capture of captures) {
-    const textKey = normalizeForMatch(`${capture.type ?? ''} ${capture.media_kind ?? ''} ${capture.ocr_text ?? ''} ${capture.ai_summary ?? ''} ${JSON.stringify(getExtractionFields(capture.extracted_data))}`).slice(0, 500)
+    const textKey = normalizeForMatch(`${capture.type ?? ''} ${capture.media_kind ?? ''} ${getCaptureDocumentText(capture)} ${capture.ai_summary ?? ''} ${JSON.stringify(getExtractionFields(capture.extracted_data))}`).slice(0, 500)
     if (textKey.length >= 12) {
       const duplicateOf = seen.get(textKey)
       if (duplicateOf) flagOnce(capture.id, duplicateOf, 'Same document, upload, or highly similar extracted evidence was captured more than once. It was flagged for review and not deleted.')
@@ -1985,33 +2048,8 @@ const KNOWN_FORM_RULES: Array<{ classification: FormClassification; confidence: 
   { classification: 'GENERIC_SERVICE_REPORT', confidence: 0.68, patterns: [/service report|field service/i, /equipment|work performed|technician/i] },
 ]
 
-const HANSEN_CHECKLIST_SECTION_TITLES = new Set([
-  'powertrain',
-  'suspension',
-  'air brakes',
-  'steering',
-  'coupling device',
-  'instruments equipment',
-  'instruments and equipment',
-  'lighting system',
-  'body chassis',
-  'body and chassis',
-  'tires wheels',
-  'tires and wheels',
-  'head rack',
-])
-
-function normalizeSectionCandidate(value: string) {
-  return normalizeForMatch(value).replace(/\s+/g, ' ').trim()
-}
-
-function isKnownInspectionSectionTitle(value: string) {
-  const normalized = normalizeSectionCandidate(value)
-  return HANSEN_CHECKLIST_SECTION_TITLES.has(normalized)
-}
-
 function ocrLinesFromCapture(capture: CaptureLike) {
-  return (capture.ocr_text ?? '').split(/\r?\n/).map((line) => clean(line, 300)).filter(Boolean)
+  return getCaptureDocumentText(capture).split(/\r?\n/).map((line) => clean(line, 300)).filter(Boolean)
 }
 
 function countOcrTableRows(capture: CaptureLike) {
@@ -2088,6 +2126,18 @@ export function extractFormBlueprint(captures: CaptureLike[]): FormBlueprint | n
     first_25_extracted_labels: fields.map((field) => field.label).slice(0, 25),
   }
 
+  if (process.env.NODE_ENV !== 'production') {
+    for (const capture of formCaptures) {
+      const textSource = getCaptureDocumentTextSource(capture)
+      console.info('[report-structure] document text diagnostics', {
+        source: textSource.source,
+        selected_text_length: textSource.text.length,
+        recovered_section_count: sections.size,
+        recovered_field_count: fields.length,
+      })
+    }
+  }
+
   return {
     version: 1,
     document_type: classification.classification === 'CUSTOM_FORM' ? 'custom_form' : classification.classification.toLowerCase(),
@@ -2114,7 +2164,7 @@ function truthSourceForCapture(capture: CaptureLike): EvidenceFieldMapping['trut
   if (clean(capture.transcript, 20)) return 'technician_transcript'
   if (Object.keys(getExtractionFields(capture.extracted_data)).some((key) => /measurement|reading|value|depth|mm|psi|volt/i.test(key))) return 'captured_measurement'
   if (isRecord(capture.extracted_data) && isRecord(capture.extracted_data.guidance)) return 'explicit_selection'
-  if (clean(capture.ai_summary, 20) || clean(capture.ocr_text, 20)) return 'ai_extraction'
+  if (clean(capture.ai_summary, 20) || clean(getCaptureDocumentText(capture), 20)) return 'ai_extraction'
   return 'ai_inference'
 }
 
@@ -2124,7 +2174,7 @@ export function mapEvidenceToFormBlueprint(captures: CaptureLike[], blueprint: F
   const sections = new Map(blueprint.sections.map((section) => [section.id, section]))
   const evidenceCaptures = captures.filter((capture) => !sourceIds.has(capture.id))
   return evidenceCaptures.flatMap((capture) => {
-    const captureText = normalizeForMatch(`${capture.technician_note ?? ''} ${capture.transcript ?? ''} ${capture.ai_summary ?? ''} ${capture.ocr_text ?? ''} ${JSON.stringify(getExtractionFields(capture.extracted_data))}`)
+    const captureText = normalizeForMatch(`${capture.technician_note ?? ''} ${capture.transcript ?? ''} ${capture.ai_summary ?? ''} ${getCaptureDocumentText(capture)} ${JSON.stringify(getExtractionFields(capture.extracted_data))}`)
     if (!captureText) return []
     const candidates = blueprint.fields.map((field) => {
       const section = field.section_id ? sections.get(field.section_id) : null
