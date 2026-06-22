@@ -303,8 +303,13 @@ export default async function SessionReportPreviewPage({
   const supportingEvidence = visibleCaptures.map((capture) => ({
     capture,
     signedUrl: signedEvidenceUrls[capture.id] ?? null,
-    originalUrl: originalEvidenceUrls[capture.id] ?? signedEvidenceUrls[capture.id] ?? null,
-    downloadUrl: capture.storage_path ? `/api/dashboard/sessions/${session.id}/evidence/${capture.id}/media?download=1` : null,
+    originalUrl:
+      originalEvidenceUrls[capture.id] ??
+      signedEvidenceUrls[capture.id] ??
+      null,
+    downloadUrl: capture.storage_path
+      ? `/api/dashboard/sessions/${session.id}/evidence/${capture.id}/media?download=1`
+      : null,
     title: getEvidenceTitle(capture),
     note: getEvidenceNote(capture),
     kind: getEvidenceKind(capture),
@@ -407,7 +412,8 @@ export default async function SessionReportPreviewPage({
           <p className="eyebrow guided-eyebrow">Review</p>
           <h1>Your Report</h1>
           <p className="muted">
-            Review and organize captured evidence before approving the finished report.
+            Review and organize captured evidence before approving the finished
+            report.
           </p>
         </div>
         <div className="page-actions report-preview-actions compact-report-actions">
@@ -475,7 +481,6 @@ export default async function SessionReportPreviewPage({
             currentReport={currentReport}
             isEditingReport={isEditingReport}
             generateReportAction={generateReportAction}
-            generateSummaryAction={generateFinalNotesAction}
             hasPendingEvidence={hasPendingEvidence}
             hasPrepareError={Boolean(status.error)}
             noteEvidence={noteEvidence}
