@@ -875,6 +875,60 @@ export interface Database {
         }
         Relationships: []
       }
+      evidence_deliverables: {
+        Row: {
+          id: string
+          documentation_session_id: string
+          organization_id: string
+          deliverable_type: string
+          title: string
+          status: string
+          summary: string | null
+          content: Json
+          source_ids: Json
+          provenance: Json
+          generated_by: string | null
+          generated_at: string
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          documentation_session_id: string
+          organization_id: string
+          deliverable_type: string
+          title: string
+          status?: string
+          summary?: string | null
+          content?: Json
+          source_ids?: Json
+          provenance?: Json
+          generated_by?: string | null
+          generated_at?: string
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          documentation_session_id?: string
+          organization_id?: string
+          deliverable_type?: string
+          title?: string
+          status?: string
+          summary?: string | null
+          content?: Json
+          source_ids?: Json
+          provenance?: Json
+          generated_by?: string | null
+          generated_at?: string
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: []
+      }
       evidence_relationships: {
         Row: {
           id: string

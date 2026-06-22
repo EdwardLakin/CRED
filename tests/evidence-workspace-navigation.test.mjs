@@ -25,7 +25,7 @@ test('session detail renders a unified Evidence Workspace overview with all coun
 })
 
 test('workspace navigation cards and backlinks use the standard workspace labels', () => {
-  for (const label of ['Evidence Library', 'Timeline', 'Entities', 'Factual Observations', 'Existing Report']) {
+  for (const label of ['Evidence Library', 'Timeline', 'Entities', 'Factual Observations', 'Deliverables', 'Existing Report']) {
     assert.match(constants, new RegExp(label))
     assert.match(navComponent, new RegExp(label))
   }
@@ -38,6 +38,5 @@ test('workspace review and output labels are standardized without restricted lan
   }
   assert.match(evidenceForms, /formatEvidenceReviewStatus/)
   assert.match(timelineComponent, /formatSuggestionReviewStatus/)
-  assert.doesNotMatch(navComponent, /deliverables/i)
   assert.doesNotMatch(navComponent, /industry-specific/i)
 })

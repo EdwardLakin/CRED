@@ -100,6 +100,7 @@ export const EVIDENCE_WORKSPACE_LABELS = {
   entities: 'Entities',
   assertions: 'Factual Observations',
   relationships: 'Relationship Explorer',
+  deliverables: 'Deliverables',
   report: 'Existing Report',
   includeInOutputs: 'Include in outputs',
   suggested: 'Suggested',
