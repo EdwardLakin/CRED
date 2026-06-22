@@ -174,7 +174,7 @@ export default async function SessionReportPreviewPage({
   const { data: session, error: sessionError } = await supabase
     .from("documentation_sessions")
     .select(
-      "id, title, session_type, session_metadata, organization_id, workflow_template_id, review_status, reviewed_at, reviewed_by, asset_label, vin, unit_number, customer_name, suggested_details, final_notes, final_notes_ai_generated, final_notes_updated_at, final_notes_edited_by_user, include_final_notes_in_export, created_at, updated_at",
+      "id, title, session_type, session_metadata, organization_id, workflow_template_id, review_status, reviewed_at, reviewed_by, display_id, asset_label, vin, unit_number, customer_name, suggested_details, final_notes, final_notes_ai_generated, final_notes_updated_at, final_notes_edited_by_user, include_final_notes_in_export, created_at, updated_at",
     )
     .eq("id", id)
     .eq("organization_id", profile.organization_id)
@@ -308,6 +308,7 @@ export default async function SessionReportPreviewPage({
     capture,
     signedUrl: signedEvidenceUrls[capture.id] ?? null,
     originalUrl: originalEvidenceUrls[capture.id] ?? signedEvidenceUrls[capture.id] ?? null,
+    downloadUrl: capture.storage_path ? `/api/dashboard/sessions/${session.id}/evidence/${capture.id}/media?download=1` : null,
     title: getEvidenceTitle(capture),
     note: getEvidenceNote(capture),
     kind: getEvidenceKind(capture),

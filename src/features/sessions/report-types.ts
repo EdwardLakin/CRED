@@ -25,7 +25,7 @@ export type SessionMetadata = {
 export const SESSION_METADATA_FIELDS: Array<{ name: keyof SessionMetadata; label: string; maxLength: number }> = [
   { name: 'customer_client', label: 'Customer / Client', maxLength: 180 },
   { name: 'asset_equipment', label: 'Asset / Equipment', maxLength: 180 },
-  { name: 'reference_number', label: 'Reference Number', maxLength: 120 },
+  { name: 'reference_number', label: 'Reference / File Note', maxLength: 120 },
   { name: 'location', label: 'Location', maxLength: 240 },
   { name: 'subject_name', label: 'Subject Name', maxLength: 180 },
 ]
