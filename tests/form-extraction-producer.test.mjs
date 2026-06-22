@@ -129,3 +129,57 @@ test("generic status columns preserve explicit marks and leave unchecked rows un
   assert.equal(springs?.value, "Fail");
   assert.equal(lowAir?.value, "Not captured");
 });
+
+const hansenQuarterlyCapture = {
+  id: "hansen-quarterly-form",
+  type: "photo",
+  media_kind: "image",
+  ai_summary: "Hansen quarterly inspection checklist form with pass fail na columns.",
+  ocr_text: `Hansen's Quarterly Inspection - Tractor
+VIN: 2HSCHAPR45C123456
+Unit Number: 4108
+Inspection Item        Pass   Fail   N/A
+Powertrain
+Engine/Transmission Leaks
+Engine mounts
+Suspension
+Springs
+Air Brakes
+Low air warning
+Steering
+Steering wheel lash
+Coupling Device
+Fifth wheel jaws
+Instruments & Equipment
+Horn
+Lighting System
+Headlamps
+Body & Chassis
+Frame
+Tires & Wheels
+Tire tread
+Head Rack
+Head rack secure`,
+  technician_note: null,
+  transcript: null,
+  evidence_category: null,
+  extracted_data: { extraction: { fields: { vin: "2HSCHAPR45C123456", unit_number: "4108" } } },
+};
+
+test("Hansen checklist labels survive without captured values or checkbox marks", async () => {
+  const { extractFormBlueprint, normalizeFormBlueprintSections } = await loadReportStructure();
+  const blueprint = extractFormBlueprint([hansenQuarterlyCapture]);
+  assert.ok(blueprint);
+  const sectionTitles = blueprint.sections.map((section) => section.title);
+  for (const title of ["Powertrain", "Suspension", "Air Brakes", "Steering", "Coupling Device", "Instruments & Equipment", "Lighting System", "Body & Chassis", "Tires & Wheels", "Head Rack"]) {
+    assert.ok(sectionTitles.includes(title), `${title} section should be preserved`);
+  }
+  const leak = blueprint.fields.find((field) => field.label === "Engine/Transmission Leaks");
+  assert.ok(leak);
+  assert.equal(leak.value, null);
+  assert.ok(blueprint.extraction_diagnostics.ocr_line_count >= 20);
+  assert.ok(blueprint.extraction_diagnostics.detected_section_count >= 10);
+  assert.ok(blueprint.extraction_diagnostics.first_25_extracted_labels.includes("Engine/Transmission Leaks"));
+  const sections = normalizeFormBlueprintSections({ mode: "form_structured", report_structure_source: "uploaded_form", form_blueprint: blueprint }, [hansenQuarterlyCapture]);
+  assert.equal(sections.find((section) => section.title === "Powertrain")?.fields.find((field) => field.label === "Engine/Transmission Leaks")?.value, "Not captured");
+});
