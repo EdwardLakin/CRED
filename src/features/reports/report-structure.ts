@@ -606,6 +606,7 @@ function structuralSignalScore(capture: CaptureLike) {
   if (shortLabelLines >= 6) score += 2
   if (/☐|☑|□|■|\[[ xX✓✔]?\]/.test(ocr)) score += 2
   if (/\b(?:yes|no|ok|n\/a|na)\b\s+\b(?:yes|no|ok|n\/a|na)\b/i.test(ocr)) score += 1.5
+  if (/\b(?:acceptable|needs review|not assessed|compliant|non-compliant|not reviewed|corrective action|monitor)\b/i.test(ocr)) score += 2
   if (/photo of|damage|leak|rust|broken|vehicle exterior|equipment photo/.test(text) && score < 5) score -= 4
   return score
 }
@@ -622,7 +623,7 @@ export function scoreFormReferenceCapture(capture: CaptureLike, index = 0) {
   let score = structuralSignalScore(capture)
   if (capture.media_kind === 'document') score += 2
   if (index === 0) score += 1.5
-  if (/form|sheet|checklist|inspection|work order|field service|report|template/.test(text)) score += 2
+  if (/form|sheet|checklist|inspection|audit|review|procedure|matrix|work order|field service|report|template/.test(text)) score += 2
   score += Math.min(extractionFields.length, 8) * 0.4
   score += Math.min(sections.length + fields.length + tables.length + rows.length, 12) * 0.35
   score += Math.min(keywordHits, 8) * 0.35
@@ -766,7 +767,27 @@ function explicitStatusFromText(value: string, statusChoices: string[] = []) {
 }
 
 function detectStatusChoices(parts: string[]) {
-  return parts.filter((part) => /^(?:yes|no|pass|fail|ok|n\/?a|na|good|fair|poor|complete|incomplete|satisfactory|unsatisfactory|repaired|replace)$/i.test(part))
+  const explicitChoices = parts.filter((part) => /^(?:yes|no|pass|fail|ok|n\/?a|na|good|fair|poor|complete|incomplete|satisfactory|unsatisfactory|repaired|replace|acceptable|needs review|not assessed|monitor|corrective action|compliant|non-compliant|not reviewed)$/i.test(part))
+  if (explicitChoices.length >= 2) return explicitChoices
+  const candidateChoices = parts.slice(1).filter((part) => /^[A-Za-z][A-Za-z /-]{0,24}$/.test(part) && part.split(/\s+/).length <= 3)
+  return candidateChoices.length >= 2 ? candidateChoices : []
+}
+
+function isStatusHeaderLine(parts: string[], choices: string[]) {
+  return choices.length >= 2 && parts.length >= choices.length + 1
+}
+
+function isPotentialSectionHeading(line: string) {
+  const words = line.split(/\s+/).filter(Boolean)
+  if (words.length === 0 || words.length > 4 || line.length > 70) return false
+  if (/[:=]|[.!?]$|☐|☑|□|■|\[[ xX✓✔]?\]/.test(line)) return false
+  if (/section|part|area|details|information|notes|signature|category|group/i.test(line)) return true
+  if (/^[A-Z0-9 /&()-]+$/.test(line)) return true
+  return words.every((word) => /^(?:[A-Z][a-z0-9/&()-]*|&|and|or|of|the)$/i.test(word) && (word.length <= 3 || /^[A-Z]/.test(word)))
+}
+
+function lineParts(line: string) {
+  return line.split(/\||\t| {2,}/).map((part) => clean(part, 120)).filter(Boolean)
 }
 
 function rowsFromStructuredExtraction(capture: CaptureLike): NormalizedFormField[] {
@@ -801,31 +822,65 @@ function labelRowsFromText(capture: CaptureLike): NormalizedFormField[] {
   let currentSection = 'Captured form'
   let statusChoices: string[] = []
 
-  for (const line of lines) {
-    const parts = line.split(/\||\t| {2,}/).map((part) => clean(part, 120)).filter(Boolean)
+  let fieldCountInCurrentSection = 0
+  let awaitingFirstStatusGroup = false
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex]
+    const parts = lineParts(line)
     const detectedChoices = detectStatusChoices(parts)
-    if (detectedChoices.length >= 2) {
+    if (isStatusHeaderLine(parts, detectedChoices)) {
       const heading = parts.find((part) => !detectedChoices.includes(part) && /[A-Za-z]/.test(part))
-      if (heading) currentSection = heading
+      if (heading) {
+        currentSection = heading
+        fieldCountInCurrentSection = 0
+      }
       statusChoices = detectedChoices
+      awaitingFirstStatusGroup = true
       continue
     }
     const colon = line.match(/^([A-Za-z][A-Za-z0-9 /#()._-]{1,70})\s*[:=]\s*(.+)$/)
     if (colon) {
       rows.push({ key: slug(colon[1], `field_${rows.length + 1}`), label: clean(colon[1], 120), value: clean(colon[2], 300) || 'Not captured', source_capture_id: capture.id, field_type: inferBlueprintFieldType(colon[1], colon[2]), section_title: currentSection, status_choices: statusChoices.length ? statusChoices : undefined })
+      fieldCountInCurrentSection += 1
+      continue
+    }
+    if (statusChoices.length && /☐|☑|□|■|\[[ xX✓✔]?\]/.test(line) && parts.length === 1) {
+      const firstMarker = line.search(/☐|☑|□|■|\[[ xX✓✔]?\]/)
+      const label = clean(line.slice(0, firstMarker), 120)
+      const value = explicitStatusFromText(line.slice(firstMarker), statusChoices)
+      if (label.length >= 2 && /[a-z]/i.test(label)) {
+        rows.push({ key: slug(`${currentSection}_${label}`, `row_${rows.length + 1}`), label, value: value ?? 'Not captured', source_capture_id: capture.id, field_type: 'pass_fail', section_title: currentSection, status_choices: statusChoices })
+        fieldCountInCurrentSection += 1
+        awaitingFirstStatusGroup = false
+      }
       continue
     }
     if (parts.length >= 2) {
       const label = parts[0]
       const value = explicitStatusFromText(parts.slice(1).join(' '), statusChoices)
-      if (label.length >= 2 && /[a-z]/i.test(label)) rows.push({ key: slug(`${currentSection}_${label}`, `row_${rows.length + 1}`), label, value: value ?? 'Not captured', source_capture_id: capture.id, field_type: inferBlueprintFieldType(label, value ?? ''), section_title: currentSection, status_choices: statusChoices.length ? statusChoices : undefined })
+      if (label.length >= 2 && /[a-z]/i.test(label)) {
+        rows.push({ key: slug(`${currentSection}_${label}`, `row_${rows.length + 1}`), label, value: value ?? 'Not captured', source_capture_id: capture.id, field_type: inferBlueprintFieldType(label, value ?? ''), section_title: currentSection, status_choices: statusChoices.length ? statusChoices : undefined })
+        fieldCountInCurrentSection += 1
+        awaitingFirstStatusGroup = false
+      }
       continue
     }
     if (line.length <= 70 && /[A-Za-z]/.test(line) && !/[.!?]$/.test(line)) {
-      const looksKnownSection = isKnownInspectionSectionTitle(line)
-      const looksHeading = rows.length === 0 || looksKnownSection || /^[A-Z0-9 /&()-]+$/.test(line) || /section|part|area|details|information|notes|signature/i.test(line)
-      if (looksHeading && (looksKnownSection || statusChoices.length === 0 || /section|part|area|details|information|notes|signature/i.test(line))) currentSection = line
-      else rows.push({ key: slug(`${currentSection}_${line}`, `label_${rows.length + 1}`), label: line, value: 'Not captured', source_capture_id: capture.id, field_type: statusChoices.length ? 'pass_fail' : undefined, section_title: currentSection, status_choices: statusChoices.length ? statusChoices : undefined })
+      const nextLine = lines.slice(lineIndex + 1).find(Boolean) ?? ''
+      const nextParts = nextLine ? lineParts(nextLine) : []
+      const nextChoices = detectStatusChoices(nextParts)
+      const nextLooksLikeRow = Boolean(nextLine) && !isStatusHeaderLine(nextParts, nextChoices) && /[A-Za-z]/.test(nextLine) && !/:/.test(nextLine)
+      const startsGroup = isPotentialSectionHeading(line) && nextLooksLikeRow && (awaitingFirstStatusGroup || fieldCountInCurrentSection > 0 || rows.length === 0 || statusChoices.length === 0)
+      if (startsGroup) {
+        currentSection = line
+        fieldCountInCurrentSection = 0
+        awaitingFirstStatusGroup = false
+      } else {
+        rows.push({ key: slug(`${currentSection}_${line}`, `label_${rows.length + 1}`), label: line, value: 'Not captured', source_capture_id: capture.id, field_type: statusChoices.length ? 'pass_fail' : undefined, section_title: currentSection, status_choices: statusChoices.length ? statusChoices : undefined })
+        fieldCountInCurrentSection += 1
+        awaitingFirstStatusGroup = false
+      }
     }
   }
 
@@ -1951,17 +2006,6 @@ export type FormBlueprint = {
   measurement_fields: string[]
   header_fields: string[]
   footer_fields: string[]
-  extraction_diagnostics?: FormExtractionDiagnostics
-}
-
-export type FormExtractionDiagnostics = {
-  ocr_line_count: number
-  ocr_table_row_count: number
-  detected_section_count: number
-  detected_field_count: number
-  blueprint_section_count: number
-  blueprint_field_count: number
-  first_25_extracted_labels: string[]
 }
 
 export type EvidenceFieldMapping = {
@@ -1981,49 +2025,9 @@ const KNOWN_FORM_RULES: Array<{ classification: FormClassification; confidence: 
   { classification: 'COMMERCIAL_VEHICLE_ROI', confidence: 0.86, patterns: [/commercial vehicle/i, /record of inspection|\broi\b/i] },
   { classification: 'WAJAX_FIELD_ORDER', confidence: 0.9, patterns: [/\bwajax\b/i, /field (service )?(order|report)|time card|charges/i] },
   { classification: 'GENERIC_WORK_ORDER', confidence: 0.72, patterns: [/work order|repair order|complaint/i, /cause|correction|customer/i] },
-  { classification: 'GENERIC_INSPECTION_FORM', confidence: 0.72, patterns: [/inspection|checklist|audit|review/i, /pass|fail|ok|n\/?a|checkbox|☐|☑|status/i] },
+  { classification: 'GENERIC_INSPECTION_FORM', confidence: 0.72, patterns: [/inspection|checklist|audit|review/i, /pass|fail|ok|n\/?a|checkbox|☐|☑|status|acceptable|needs review|not assessed|compliant|non-compliant|not reviewed/i] },
   { classification: 'GENERIC_SERVICE_REPORT', confidence: 0.68, patterns: [/service report|field service/i, /equipment|work performed|technician/i] },
 ]
-
-const HANSEN_CHECKLIST_SECTION_TITLES = new Set([
-  'powertrain',
-  'suspension',
-  'air brakes',
-  'steering',
-  'coupling device',
-  'instruments equipment',
-  'instruments and equipment',
-  'lighting system',
-  'body chassis',
-  'body and chassis',
-  'tires wheels',
-  'tires and wheels',
-  'head rack',
-])
-
-function normalizeSectionCandidate(value: string) {
-  return normalizeForMatch(value).replace(/\s+/g, ' ').trim()
-}
-
-function isKnownInspectionSectionTitle(value: string) {
-  const normalized = normalizeSectionCandidate(value)
-  return HANSEN_CHECKLIST_SECTION_TITLES.has(normalized)
-}
-
-function ocrLinesFromCapture(capture: CaptureLike) {
-  return (capture.ocr_text ?? '').split(/\r?\n/).map((line) => clean(line, 300)).filter(Boolean)
-}
-
-function countOcrTableRows(capture: CaptureLike) {
-  const { tables, rows } = sourceDocumentEvidence(capture)
-  const structuredTableRows = tables.reduce<number>((count, table) => {
-    if (!isRecord(table)) return count
-    const tableRows = Array.isArray(table.rows) ? table.rows : Array.isArray(table.data) ? table.data : []
-    return count + tableRows.length
-  }, 0)
-  const textTableRows = ocrLinesFromCapture(capture).filter((line) => /\||\t| {2,}|☐|☑|□|■|\[[ xX✓✔]?\]/.test(line)).length
-  return rows.length + structuredTableRows + textTableRows
-}
 
 function classifyFormBlueprintText(text: string): { classification: FormClassification; confidence: number } {
   for (const rule of KNOWN_FORM_RULES) {
@@ -2078,16 +2082,6 @@ export function extractFormBlueprint(captures: CaptureLike[]): FormBlueprint | n
 
   const blueprintSections = Array.from(sections.values()).slice(0, 40)
   const blueprintFields = fields.slice(0, 240)
-  const extractionDiagnostics: FormExtractionDiagnostics = {
-    ocr_line_count: formCaptures.reduce((count, capture) => count + ocrLinesFromCapture(capture).length, 0),
-    ocr_table_row_count: formCaptures.reduce((count, capture) => count + countOcrTableRows(capture), 0),
-    detected_section_count: sections.size,
-    detected_field_count: fields.length,
-    blueprint_section_count: blueprintSections.length,
-    blueprint_field_count: blueprintFields.length,
-    first_25_extracted_labels: fields.map((field) => field.label).slice(0, 25),
-  }
-
   return {
     version: 1,
     document_type: classification.classification === 'CUSTOM_FORM' ? 'custom_form' : classification.classification.toLowerCase(),
@@ -2105,7 +2099,6 @@ export function extractFormBlueprint(captures: CaptureLike[]): FormBlueprint | n
     measurement_fields: fields.filter((field) => field.field_type === 'measurement').map((field) => field.id),
     header_fields: fields.filter((field) => field.field_type === 'header').map((field) => field.id),
     footer_fields: fields.filter((field) => field.field_type === 'footer').map((field) => field.id),
-    extraction_diagnostics: extractionDiagnostics,
   }
 }
 

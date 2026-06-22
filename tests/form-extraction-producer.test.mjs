@@ -134,7 +134,7 @@ const hansenQuarterlyCapture = {
   id: "hansen-quarterly-form",
   type: "photo",
   media_kind: "image",
-  ai_summary: "Hansen quarterly inspection checklist form with pass fail na columns.",
+  ai_summary: "Quarterly inspection checklist form with status columns.",
   ocr_text: `Hansen's Quarterly Inspection - Tractor
 VIN: 2HSCHAPR45C123456
 Unit Number: 4108
@@ -166,7 +166,7 @@ Head rack secure`,
   extracted_data: { extraction: { fields: { vin: "2HSCHAPR45C123456", unit_number: "4108" } } },
 };
 
-test("Hansen checklist labels survive without captured values or checkbox marks", async () => {
+test("sample checklist labels survive without captured values or checkbox marks", async () => {
   const { extractFormBlueprint, normalizeFormBlueprintSections } = await loadReportStructure();
   const blueprint = extractFormBlueprint([hansenQuarterlyCapture]);
   assert.ok(blueprint);
@@ -177,9 +177,74 @@ test("Hansen checklist labels survive without captured values or checkbox marks"
   const leak = blueprint.fields.find((field) => field.label === "Engine/Transmission Leaks");
   assert.ok(leak);
   assert.equal(leak.value, null);
-  assert.ok(blueprint.extraction_diagnostics.ocr_line_count >= 20);
-  assert.ok(blueprint.extraction_diagnostics.detected_section_count >= 10);
-  assert.ok(blueprint.extraction_diagnostics.first_25_extracted_labels.includes("Engine/Transmission Leaks"));
+  assert.equal(blueprint.extraction_diagnostics, undefined);
+  assert.ok(blueprint.fields.some((field) => field.label === "Engine/Transmission Leaks"));
   const sections = normalizeFormBlueprintSections({ mode: "form_structured", report_structure_source: "uploaded_form", form_blueprint: blueprint }, [hansenQuarterlyCapture]);
   assert.equal(sections.find((section) => section.title === "Powertrain")?.fields.find((field) => field.label === "Engine/Transmission Leaks")?.value, "Not captured");
+});
+
+const buildingInspectionCapture = {
+  id: "building-form",
+  type: "photo",
+  media_kind: "image",
+  ai_summary: "Structured building inspection checklist with neutral section headings and status columns.",
+  ocr_text: `Building Review
+Site: North Annex
+Category            Acceptable   Needs review   Not assessed
+Building Exterior
+Roof condition      ☑ Acceptable ☐ Needs review ☐ Not assessed
+Window seal condition
+Emergency Lighting
+Exit sign visibility ☐ Acceptable ☑ Needs review ☐ Not assessed
+Battery backup condition`,
+  technician_note: null,
+  transcript: null,
+  evidence_category: null,
+  extracted_data: { extraction: { fields: { site: "North Annex" } } },
+};
+
+test("non-automotive section headings and label-only checklist rows use the same generic structure recovery", async () => {
+  const { extractFormBlueprint, normalizeFormBlueprintSections } = await loadReportStructure();
+  const blueprint = extractFormBlueprint([buildingInspectionCapture]);
+  assert.ok(blueprint);
+  const sections = normalizeFormBlueprintSections({ mode: "form_structured", report_structure_source: "uploaded_form", form_blueprint: blueprint }, [buildingInspectionCapture]);
+  assert.ok(sections.find((section) => section.title === "Building Exterior")?.fields.some((field) => field.label === "Window seal condition" && field.value === "Not captured"));
+  assert.ok(sections.find((section) => section.title === "Emergency Lighting")?.fields.some((field) => field.label === "Exit sign visibility" && field.value === "Needs review"));
+  assert.ok(sections.find((section) => section.title === "Emergency Lighting")?.fields.some((field) => field.label === "Battery backup condition" && field.value === "Not captured"));
+});
+
+const complianceCapture = {
+  id: "compliance-form",
+  type: "photo",
+  media_kind: "image",
+  ai_summary: "Policy review matrix with custom compliance status vocabulary.",
+  ocr_text: `Procedure Review
+Requirement          Compliant   Non-compliant   Not reviewed
+Document Control
+Document authorization  ☐ Compliant ☐ Non-compliant ☑ Not reviewed
+Medication Safety
+Medication reconciliation
+Storage temperature log  ☑ Compliant ☐ Non-compliant ☐ Not reviewed`,
+  technician_note: null,
+  transcript: null,
+  evidence_category: null,
+  extracted_data: null,
+};
+
+test("different status vocabulary is detected without pass fail assumptions", async () => {
+  const { extractFormBlueprint, normalizeFormBlueprintSections } = await loadReportStructure();
+  const blueprint = extractFormBlueprint([complianceCapture]);
+  assert.ok(blueprint);
+  const sections = normalizeFormBlueprintSections({ mode: "form_structured", report_structure_source: "uploaded_form", form_blueprint: blueprint }, [complianceCapture]);
+  const fields = sections.flatMap((section) => section.fields);
+  assert.deepEqual(fields.find((field) => field.label === "Document authorization")?.status_choices, ["Compliant", "Non-compliant", "Not reviewed"]);
+  assert.equal(fields.find((field) => field.label === "Document authorization")?.value, "Not reviewed");
+  assert.equal(fields.find((field) => field.label === "Medication reconciliation")?.value, "Not captured");
+  assert.equal(fields.find((field) => field.label === "Storage temperature log")?.value, "Compliant");
+});
+
+test("production form extraction has no sample-specific section matching rules", () => {
+  const production = readFileSync("src/features/reports/report-structure.ts", "utf8") + readFileSync("src/features/reports/actions.ts", "utf8");
+  assert.doesNotMatch(production, /HANSEN|Hansen|Powertrain|Suspension|Air Brakes|Coupling Device|Instruments & Equipment|Lighting System|Body & Chassis|Tires & Wheels|Head Rack/);
+  assert.doesNotMatch(production, /HANSEN_CHECKLIST_SECTION_TITLES|isKnownInspectionSectionTitle/);
 });

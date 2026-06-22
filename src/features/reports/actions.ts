@@ -816,8 +816,14 @@ export async function generateAiReportDraft(sessionId: string) {
   draftOutput = { ...draftOutput, sections: ensureDraftSectionsReferenceCaptures(draftOutput.sections, normalizedCaptures) }
   const evidenceGroups = buildEvidenceGroups(normalizedCaptures, draftOutput.sections, draftOutput.measurements, draftOutput.findings)
   const formDebug = normalizedCaptures.map((capture, index) => ({ id: capture.id, score: Number(scoreFormReferenceCapture(capture, index).toFixed(2)) }))
+  const formExtractionDiagnostics = formBlueprint ? {
+    ocr_line_count: normalizedCaptures.reduce((count, capture) => count + (capture.ocr_text ?? '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean).length, 0),
+    detected_section_count: formBlueprint.sections.length,
+    detected_field_count: formBlueprint.fields.length,
+    first_25_extracted_labels: formBlueprint.fields.map((field) => field.label).slice(0, 25),
+  } : null
   if (process.env.NODE_ENV !== 'production') {
-    console.info('[report-structure]', { session_id: session.id, mode: formSections.length > 0 ? 'form_structured' : 'evidence_first', form_capture_ids: formCaptureIds, scores: formDebug, form_extraction_diagnostics: formBlueprint?.extraction_diagnostics ?? null })
+    console.info('[report-structure]', { session_id: session.id, mode: formSections.length > 0 ? 'form_structured' : 'evidence_first', form_capture_ids: formCaptureIds, scores: formDebug, form_extraction_diagnostics: formExtractionDiagnostics })
   }
   const rawReportStructure: Json = safeJson({
     version: 2,
@@ -829,7 +835,6 @@ export async function generateAiReportDraft(sessionId: string) {
     evidence_field_mappings: evidenceFieldMappings,
     export_package: { artifacts: ['structured_form_data', 'evidence_report', 'evidence_appendix'], duplicate_policy: 'evidence_used_once_as_truth' },
     form_capture_ids: formCaptureIds,
-    form_extraction_diagnostics: formBlueprint?.extraction_diagnostics ?? null,
     evidence_groups: buildEvidencePackages(normalizedCaptures, evidenceGroups),
     evidence_cards: evidenceGroups,
     normalized_report_fields: buildNormalizedReportFields(normalizedCaptures),
