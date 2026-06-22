@@ -13,6 +13,7 @@ import {
   getFormStructureSummary,
   sanitizeReportStructureForSession,
   normalizeDraftSections,
+  normalizeFormBlueprintSections,
   stripConfidenceText,
   sanitizeCapturesForImageAiAssist,
 } from "@/features/reports/report-structure";
@@ -322,14 +323,21 @@ export default async function SessionReportPreviewPage({
     visibleCaptures,
   );
   const derivedFormSections = deriveFormSectionsFromCaptures(visibleCaptures);
-  const documentSections =
-    normalizedReportSections.length > 0
-      ? normalizedReportSections
-      : derivedFormSections;
   const sanitizedReportStructure = sanitizeReportStructureForSession(
     currentReport?.report_structure ?? null,
     visibleCaptures.map((capture) => capture.id),
   );
+  const blueprintSections = normalizeFormBlueprintSections(
+    sanitizedReportStructure,
+    visibleCaptures,
+    visibleReportSections,
+  );
+  const documentSections =
+    blueprintSections.length > 0
+      ? blueprintSections
+      : normalizedReportSections.length > 0
+        ? normalizedReportSections
+        : derivedFormSections;
   const formStructureSummary = getFormStructureSummary(
     sanitizedReportStructure,
     documentSections,

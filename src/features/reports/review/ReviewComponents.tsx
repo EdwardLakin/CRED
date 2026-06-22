@@ -491,6 +491,7 @@ export function ReportReview({
   facilityName,
   facilityLocation,
   displayReportTitle,
+  isGenericEvidenceReport,
   reportDocument,
   timeZone,
 }: {
@@ -573,6 +574,9 @@ export function ReportReview({
           <p className="eyebrow">Review Report</p>
           <h2>{displayReportTitle}</h2>
           <p className="muted">{reportDocument.trustStatement}</p>
+          {!isGenericEvidenceReport && reviewDocument.sections.length > 0 ? (
+            <p className="status-pill neutral">Organized from captured form</p>
+          ) : null}
           <div className="form-actions report-inline-actions">
             <Link
               href={`/dashboard/sessions/${session.id}/capture`}
@@ -919,11 +923,16 @@ export function ReportReview({
       ) : null}
 
       {!isEditingReport ? (
-        <DocumentedObservations
-          reviewDocument={reviewDocument}
-          supportingEvidence={supportingEvidence}
-          includedEvidenceCount={includedEvidenceCount}
-        />
+        <>
+          {!isGenericEvidenceReport ? (
+            <FormStructuredReview reviewDocument={reviewDocument} />
+          ) : null}
+          <DocumentedObservations
+            reviewDocument={reviewDocument}
+            supportingEvidence={supportingEvidence}
+            includedEvidenceCount={includedEvidenceCount}
+          />
+        </>
       ) : null}
     </section>
   );
@@ -1183,6 +1192,53 @@ function DownloadOriginalLink({
       </svg>
       <span className="sr-only">Download original</span>
     </a>
+  );
+}
+
+
+function FormStructuredReview({
+  reviewDocument,
+}: {
+  reviewDocument: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>;
+}) {
+  const sections = reviewDocument.sections.filter(
+    (section) => section.fields.length > 0 || section.body,
+  );
+  if (sections.length === 0) return null;
+  return (
+    <section className="report-subsection report-supporting-section">
+      <div className="report-section-title-row">
+        <div>
+          <h3>Captured Form Structure</h3>
+          <p className="muted">
+            CRED organized this review from the captured document structure.
+          </p>
+        </div>
+      </div>
+      <div className="report-content-grid">
+        {sections.map((section) => (
+          <article key={section.key} className="report-edit-panel">
+            <h4>{section.title}</h4>
+            {section.body ? <p>{stripConfidenceText(section.body)}</p> : null}
+            {section.fields.length > 0 ? (
+              <div className="report-field-grid">
+                {section.fields.map((field) => (
+                  <div key={`${section.key}-${field.key}`} className="report-field-card">
+                    <span>{field.label}</span>
+                    <strong>{stripConfidenceText(field.value) || "Not captured"}</strong>
+                    {field.status_choices?.length ? (
+                      <small className="muted">Choices: {field.status_choices.join(", ")}</small>
+                    ) : null}
+                    {field.unit ? <small className="muted">Unit: {field.unit}</small> : null}
+                    {field.notes ? <small className="muted">{stripConfidenceText(field.notes)}</small> : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 
