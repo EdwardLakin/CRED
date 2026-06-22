@@ -376,6 +376,28 @@ function sanitizeText(value: unknown, maxLength = 220) {
   return trimmed ? trimmed.slice(0, maxLength) : null
 }
 
+function sanitizeDocumentText(value: unknown, maxLength = 4000) {
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  const normalized = value
+    .replace(/\r\n?/g, '\n')
+    .replace(/[\v\f]+/g, '\n')
+    .replace(/\u00a0/g, ' ')
+    .split('\n')
+    .map((line) => line.replace(/^[^\S\n]+|[^\S\n]+$/g, ''))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+
+  if (!normalized) {
+    return null
+  }
+
+  return normalized.slice(0, maxLength).trim()
+}
+
 function sanitizeVin(value: unknown) {
   const text = sanitizeText(value, 32)
 
@@ -512,7 +534,7 @@ export function validateCaptureExtraction(
     confidence: clampConfidence(value.confidence),
     fields: sanitizeFields(value.fields),
     notes,
-    extracted_text: sanitizeText(value.extracted_text, 4000),
+    extracted_text: sanitizeDocumentText(value.extracted_text, 4000),
     extracted_values: sanitizeExtractedValues(value.extracted_values),
     generated_note: sanitizeText(value.generated_note, 600),
     generated_observation: sanitizeText(value.generated_observation, 600),

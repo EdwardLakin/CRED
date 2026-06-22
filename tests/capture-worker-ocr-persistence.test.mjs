@@ -18,6 +18,7 @@ async function loadWorker() {
 test("extraction OCR persistence writes non-empty extracted text only when safe", async () => {
   const { getExtractionOcrTextUpdate } = await loadWorker();
   assert.equal(getExtractionOcrTextUpdate("extract_capture", null, { extracted_text: "  Full document text  " }), "Full document text");
+  assert.equal(getExtractionOcrTextUpdate("extract_capture", null, { extracted_text: "  Header\nRow 1     Pass   Fail\nRow 2  " }), "Header\nRow 1     Pass   Fail\nRow 2");
   assert.equal(getExtractionOcrTextUpdate("extract_capture", " Existing OCR ", { extracted_text: "Full document text" }), " Existing OCR ");
   assert.equal(getExtractionOcrTextUpdate("classify_capture", null, { extracted_text: "classification text" }), undefined);
   assert.equal(getExtractionOcrTextUpdate("extract_capture", null, { extracted_text: "   " }), undefined);
