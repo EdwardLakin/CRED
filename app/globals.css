@@ -4936,7 +4936,7 @@ a:focus-visible {
   border-radius: 0.75rem;
 }
 
-.supporting-image-thumb img,
+.supporting-image-thumb .evidence-image-expand-button > img,
 .supporting-export-grid img {
   width: 100%;
   height: 100%;
