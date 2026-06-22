@@ -29,6 +29,7 @@ import {
   SESSION_METADATA_FIELDS,
   normalizeSessionMetadata,
 } from "@/features/sessions/report-types";
+import { EvidenceImageTrigger, type EvidenceLightboxItem } from "@/features/reports/review/EvidenceImageLightbox";
 import { SignatureCaptureForm } from "@/features/signatures";
 import { useSavedSignature } from "@/features/signatures/actions";
 import type { Database } from "@/lib/supabase/database.types";
@@ -1137,6 +1138,38 @@ function getObservationCategoryLabel(
   return "Observation";
 }
 
+function getLightboxItems(items: SupportingEvidenceItem[]): EvidenceLightboxItem[] {
+  return items
+    .filter((item) => item.kind === "photo" && Boolean(item.signedUrl))
+    .map((item) => ({
+      id: item.capture.id,
+      src: item.signedUrl!,
+      title: item.title,
+      note: stripConfidenceText(item.note ?? ""),
+    }));
+}
+
+function DownloadOriginalLink({
+  item,
+  className = "evidence-download-overlay",
+}: {
+  item: SupportingEvidenceItem;
+  className?: string;
+}) {
+  if (!item.downloadUrl) return null;
+  return (
+    <a
+      className={className}
+      href={item.downloadUrl}
+      download
+      aria-label={`Download original ${item.title}`}
+      title="Download original"
+    >
+      ⬇<span className="sr-only">Download original</span>
+    </a>
+  );
+}
+
 function DocumentedObservations({
   reviewDocument,
   supportingEvidence,
@@ -1218,14 +1251,13 @@ function DocumentedObservations({
               <div className="evidence-first-media">
                 {isPhoto && item?.signedUrl ? (
                   <div className="downloadable-evidence-preview">
-                    {/* eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured. */}
-                    <img className="pdf-safe-image" src={item.signedUrl} alt={item.title} loading="eager" decoding="sync" />
-                    {item.downloadUrl ? <a className="evidence-download-overlay" href={item.downloadUrl} download aria-label={`Download original ${item.title}`}>⬇</a> : null}
+                    <EvidenceImageTrigger items={getLightboxItems(supportingEvidence)} currentId={item.capture.id} imageClassName="pdf-safe-image" />
+                    <DownloadOriginalLink item={item} />
                   </div>
                 ) : item?.signedUrl && isDocument ? (
                   <div className="review-evidence-placeholder downloadable-evidence-preview">
                     <a href={item.signedUrl}>Open Supporting Document</a>
-                    {item.downloadUrl ? <a className="evidence-download-overlay" href={item.downloadUrl} download aria-label={`Download original ${item.title}`}>⬇</a> : null}
+                    <DownloadOriginalLink item={item} />
                   </div>
                 ) : (
                   <div className="review-evidence-placeholder">
@@ -1345,11 +1377,10 @@ function EvidenceGallery({
               </div>
               <div className="report-edit-evidence-preview">
                 {item.kind === "photo" && item.signedUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured.
-                  <img className="pdf-safe-image" src={item.signedUrl} alt={item.title} loading="eager" decoding="sync" />
+                  <EvidenceImageTrigger items={getLightboxItems(evidenceItems)} currentId={item.capture.id} imageClassName="pdf-safe-image" />
                 ) : null}
                 {item.downloadUrl ? (
-                  <a className="secondary-link subtle-download-link" href={item.downloadUrl} download>Download Original</a>
+                  <DownloadOriginalLink item={item} className="secondary-link subtle-download-link icon-download-link" />
                 ) : null}
                 <strong>{item.title}</strong>
               </div>
@@ -1391,9 +1422,8 @@ function EvidenceGallery({
               <article key={item.capture.id} className="review-photo-card">
                 {item.signedUrl ? (
                   <div className="downloadable-evidence-preview">
-                    {/* eslint-disable-next-line @next/next/no-img-element -- signed evidence URLs are short-lived Supabase links and should render exactly as captured. */}
-                    <img className="pdf-safe-image" src={item.signedUrl} alt={item.title} loading="eager" decoding="sync" />
-                    {item.downloadUrl ? <a className="evidence-download-overlay" href={item.downloadUrl} download aria-label={`Download original ${item.title}`}>⬇</a> : null}
+                    <EvidenceImageTrigger items={getLightboxItems(photoEvidence)} currentId={item.capture.id} imageClassName="pdf-safe-image" />
+                    <DownloadOriginalLink item={item} />
                   </div>
                 ) : (
                   <div className="review-evidence-placeholder">Photo saved</div>
@@ -1418,7 +1448,7 @@ function EvidenceGallery({
           <div className="review-note-list">
             {noteEvidence.slice(0, 8).map((item) => (
               <article key={item.capture.id} className="review-note-card">
-                <div className="report-card-action-row"><strong>{item.title}</strong>{item.downloadUrl ? <a className="secondary-link subtle-download-link" href={item.downloadUrl} download>Download Original</a> : null}</div>
+                <div className="report-card-action-row"><strong>{item.title}</strong>{item.downloadUrl ? <DownloadOriginalLink item={item} className="secondary-link subtle-download-link icon-download-link" /> : null}</div>
                 <p>{item.note ?? "Text note saved for this report."}</p>
               </article>
             ))}
@@ -1434,7 +1464,7 @@ function EvidenceGallery({
           <div className="review-note-list">
             {otherEvidence.slice(0, 6).map((item) => (
               <article key={item.capture.id} className="review-note-card">
-                <div className="report-card-action-row"><strong>{item.title}</strong>{item.downloadUrl ? <a className="secondary-link subtle-download-link" href={item.downloadUrl} download>Download Original</a> : null}</div>
+                <div className="report-card-action-row"><strong>{item.title}</strong>{item.downloadUrl ? <DownloadOriginalLink item={item} className="secondary-link subtle-download-link icon-download-link" /> : null}</div>
                 <p className="muted">
                   {stripConfidenceText(item.note ?? "Saved with the report.")}
                 </p>

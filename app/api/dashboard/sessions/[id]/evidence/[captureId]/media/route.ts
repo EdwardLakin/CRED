@@ -22,6 +22,17 @@ function cleanMediaError(status = 404) {
   });
 }
 
+function getSafeDownloadFilename(storagePath: string, fallbackId: string) {
+  const rawName = storagePath.split('/').pop() || `evidence-${fallbackId}`;
+  const safeName = rawName
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 120);
+  return safeName || `evidence-${fallbackId}`;
+}
+
 async function validateShareTokenAccess(
   supabase: SupabaseClient<Database>,
   token: string,
@@ -84,11 +95,10 @@ export async function GET(request: Request, { params }: RouteContext) {
 
     const { data: capture, error: captureError } = await supabase
       .from("capture_items")
-      .select("id, documentation_session_id, organization_id, storage_path, include_in_report, deleted_at")
+      .select("id, documentation_session_id, organization_id, storage_path, include_in_report, deleted_at, media_kind, type")
       .eq("id", captureId)
       .eq("documentation_session_id", id)
       .eq("organization_id", organizationId)
-      .eq("include_in_report", true)
       .is("deleted_at", null)
       .maybeSingle();
 
@@ -102,11 +112,37 @@ export async function GET(request: Request, { params }: RouteContext) {
       return cleanMediaError(capture ? 410 : 404);
     }
 
+    if (download) {
+      const { data, error } = await supabase.storage
+        .from(CAPTURE_BUCKET)
+        .download(capture.storage_path);
+
+      if (!data || error) {
+        console.warn("[report-media-capture-download]", {
+          session_id: id,
+          capture_id: captureId,
+          storage_path_exists: true,
+          error: error?.message ?? "No file returned",
+        });
+        return cleanMediaError(410);
+      }
+
+      const filename = getSafeDownloadFilename(capture.storage_path, capture.id);
+      return new Response(data.stream(), {
+        status: 200,
+        headers: {
+          "Content-Type": data.type || "application/octet-stream",
+          "Content-Length": String(data.size),
+          "Content-Disposition": `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+          "Cache-Control": "private, no-store",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    }
+
     const { data, error } = await supabase.storage
       .from(CAPTURE_BUCKET)
-      .createSignedUrl(capture.storage_path, 60 * 10, {
-        download: download || undefined,
-      });
+      .createSignedUrl(capture.storage_path, 60 * 10);
 
     if (!data?.signedUrl) {
       console.warn("[report-media-capture-signing]", {
