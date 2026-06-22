@@ -15,8 +15,6 @@ import {
   buildNormalizedReportModel,
   classifyReferenceDocumentTitle,
   normalizeDraftSections,
-  shouldRenderDetail,
-  splitRecommendationText,
   stripConfidenceText,
 } from "@/features/reports/report-structure";
 import { buildUniversalReportDocument } from "@/features/reports/report-document";
@@ -544,11 +542,9 @@ export function ReportReview({
     ["Report Title", displayReportTitle],
     ["Organization", facilityName],
     ["Customer / Client", getReportInfoValue(currentReport, session, "customer_client") || session.customer_name],
-    ["Subject", getReportInfoValue(currentReport, session, "subject_name")],
     ["Asset / Equipment", getReportInfoValue(currentReport, session, "asset_equipment") || session.asset_label],
     ["Location", getReportInfoValue(currentReport, session, "location") || facilityLocation],
     ["Report ID", session.display_id],
-    ["Reference / File Note", getReportInfoValue(currentReport, session, "reference_number")],
     ["Report Date", formatDateTime(currentReport?.updated_at ?? session.updated_at ?? session.created_at, timeZone)],
   ]
     .map(([label, value]) => [label, stripConfidenceText(String(value ?? "")).trim()])
@@ -640,7 +636,7 @@ export function ReportReview({
             <div>
               <h3>Report Details</h3>
               <p className="muted">
-                Edit the report title, customer, subject, asset, location, and optional reference or file note. The Report ID is generated separately for archive search and sorting.
+                Edit the report title, customer, subject, asset, and location. The Report ID is generated separately for archive search and sorting.
               </p>
             </div>
           </summary>
@@ -653,7 +649,7 @@ export function ReportReview({
               <input className="input" name="report_title" maxLength={180} defaultValue={displayReportTitle} />
             </label>
             <div className="report-field-grid">
-              {SESSION_METADATA_FIELDS.map((field) => {
+              {SESSION_METADATA_FIELDS.filter((field) => field.name !== "reference_number").map((field) => {
                 const metadata = normalizeSessionMetadata(
                   session.session_metadata,
                   session,
@@ -756,18 +752,6 @@ export function ReportReview({
                     currentReport,
                     session,
                     "location",
-                  )}
-                />
-              </label>
-              <label className="field-stack">
-                <span className="label">Reference / File Note</span>
-                <input
-                  className="input"
-                  name="reference_number"
-                  defaultValue={getReportInfoValue(
-                    currentReport,
-                    session,
-                    "reference_number",
                   )}
                 />
               </label>
@@ -1204,46 +1188,20 @@ function DocumentedObservations({
       <div className="report-section-title-row">
         <div>
           <h3>Documented Observations</h3>
-          <p className="muted">
-            Technician notes are the source of truth. Photos and documents are shown once as supporting proof for the observation they support.
-          </p>
         </div>
         <span className="status-pill neutral compact">
           {includedEvidenceCount} included
         </span>
       </div>
       <div className="evidence-first-list">
-        {entries.map((entry, index) => {
+        {entries.map((entry) => {
           const item = evidenceById.get(entry.group.capture_id);
-          const renderedText: string[] = [];
           const technicianNote = stripConfidenceText(
             entry.capture.technician_note?.trim() ||
               entry.capture.transcript?.trim() ||
               item?.note ||
               "Technician note retained with supporting proof.",
           );
-          renderedText.push(technicianNote);
-          const recommendations = entry.group.recommendations
-            .flatMap(splitRecommendationText)
-            .filter((recommendation) => {
-              const visible = shouldRenderDetail(
-                "Recommendation",
-                recommendation,
-                renderedText,
-              );
-              if (visible) renderedText.push(recommendation);
-              return visible;
-            });
-          const supportingDetails = entry.group.details.filter((detail) => {
-            if (/^technician note$/i.test(detail.label)) return false;
-            const visible = shouldRenderDetail(
-              detail.label,
-              detail.value,
-              renderedText,
-            );
-            if (visible) renderedText.push(detail.value);
-            return visible;
-          });
           const isPhoto = item?.kind === "photo";
           const isDocument = item?.kind === "document" || item?.kind === "file";
           return (
@@ -1267,41 +1225,13 @@ function DocumentedObservations({
               </div>
               <div className="evidence-first-body">
                 <div className="finding-card-header">
-                  <div>
-                    <p className="eyebrow">Observation {index + 1}</p>
-                    <h4>{item?.title ?? getEvidenceTitle(entry.capture)}</h4>
-                  </div>
+                  <h4>{item?.title ?? getEvidenceTitle(entry.capture)}</h4>
                   <span className="severity-badge">{getObservationCategoryLabel(entry)}</span>
                 </div>
                 <div>
                   <strong>Technician Note</strong>
                   <p>{technicianNote}</p>
                 </div>
-                {isPhoto ? (
-                  <p className="muted"><strong>Supporting Photos:</strong> {item?.title ?? "Photo evidence attached."}</p>
-                ) : null}
-                {isDocument ? (
-                  <p className="muted"><strong>Supporting Documents:</strong> {item?.title ?? "Document attached."}</p>
-                ) : null}
-                {supportingDetails.length > 0 ? (
-                  <div>
-                    {supportingDetails.map((detail, detailIndex) => (
-                      <p key={`${detail.label}-${detailIndex}`} className="muted">
-                        <strong>{detail.label}:</strong> {stripConfidenceText(detail.value)}
-                      </p>
-                    ))}
-                  </div>
-                ) : null}
-                {recommendations.length > 0 ? (
-                  <div>
-                    <strong>Recommended Action</strong>
-                    <ul>
-                      {recommendations.map((recommendation, recommendationIndex) => (
-                        <li key={`recommendation-${recommendationIndex}`}>{stripConfidenceText(recommendation)}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
               </div>
             </article>
           );

@@ -4720,10 +4720,10 @@ a:focus-visible {
 
 .evidence-download-overlay {
   align-items: center;
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  border: 1px solid var(--border);
+  background: #fff;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   border-radius: 999px;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.22);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.16);
   color: var(--text);
   display: inline-flex;
   font-size: 0.95rem;
