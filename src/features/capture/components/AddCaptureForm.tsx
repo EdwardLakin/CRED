@@ -834,9 +834,7 @@ export function AddCaptureForm({
     }
   }
 
-  useEffect(() => {
-    autoSaveSelectedMediaRef.current = autoSaveSelectedMedia;
-  }, [autoSaveSelectedMedia]);
+  autoSaveSelectedMediaRef.current = autoSaveSelectedMedia;
 
   useEffect(() => {
     let cancelled = false;
