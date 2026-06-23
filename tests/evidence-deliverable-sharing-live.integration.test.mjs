@@ -130,6 +130,39 @@ test('supersession, revocation, rotation, expiration, and billing limits', async
   summary.set('revocation and rotation', 'passed'); summary.set('expiration', 'passed'); summary.set('supersession', 'passed'); summary.set('billing limits', 'passed')
 })
 
+
+
+test('usage events are scoped, append-only, and anonymous-blocked', async (t) => {
+  if (!requireFixture(t)) return
+  const anon = createAnonClient()
+  expectDeniedRead(await anon.from('organization_usage_events').select('*').limit(1))
+  expectDeniedMutation(await anon.from('organization_usage_events').insert({ organization_id: fx.a.organization.id, event_type: 'share_link_created', quantity: 1, metadata: { runId: fx.runId } }).select('id'))
+
+  const valid = await must('authenticated record usage', fx.a.client.from('organization_usage_events').insert({ organization_id: fx.a.organization.id, event_type: 'share_link_created', quantity: 1, metadata: { runId: fx.runId, source: 'rls-valid' }, created_by: fx.a.profile.id }).select('*').single())
+  made.usage.push(valid.id)
+  assert.equal(valid.organization_id, fx.a.organization.id)
+  assert.equal(valid.created_by, fx.a.profile.id)
+
+  const ownRows = await must('org a reads own usage', fx.a.client.from('organization_usage_events').select('id, organization_id').eq('organization_id', fx.a.organization.id))
+  assert.ok(ownRows.some((row) => row.id === valid.id))
+  const crossRows = await must('org b cannot read org a usage', fx.b.client.from('organization_usage_events').select('id').eq('id', valid.id))
+  assert.equal(crossRows.length, 0)
+
+  expectDeniedMutation(await fx.a.client.from('organization_usage_events').insert({ organization_id: fx.b.organization.id, event_type: 'share_link_created', quantity: 1, metadata: { runId: fx.runId }, created_by: fx.a.profile.id }).select('id'))
+  expectDeniedMutation(await fx.a.client.from('organization_usage_events').insert({ organization_id: fx.a.organization.id, event_type: 'share_link_created', quantity: 1, metadata: { runId: fx.runId }, created_by: fx.b.profile.id }).select('id'))
+  expectDeniedMutation(await fx.a.client.from('organization_usage_events').insert({ organization_id: fx.a.organization.id, event_type: 'not_canonical', quantity: 1, metadata: { runId: fx.runId }, created_by: fx.a.profile.id }).select('id'))
+  expectDeniedMutation(await fx.a.client.from('organization_usage_events').insert({ organization_id: fx.a.organization.id, event_type: 'share_link_created', quantity: -1, metadata: { runId: fx.runId }, created_by: fx.a.profile.id }).select('id'))
+
+  expectDeniedMutation(await fx.a.client.from('organization_usage_events').update({ quantity: 99 }).eq('id', valid.id).select('*'))
+  const afterUpdate = await must('usage unchanged after denied update', fx.service.from('organization_usage_events').select('*').eq('id', valid.id).single())
+  assert.equal(afterUpdate.quantity, valid.quantity)
+  assert.equal(afterUpdate.event_type, valid.event_type)
+  expectDeniedMutation(await fx.a.client.from('organization_usage_events').delete().eq('id', valid.id).select('*'))
+  const afterDelete = await must('usage remains after denied delete', fx.service.from('organization_usage_events').select('id').eq('id', valid.id).single())
+  assert.equal(afterDelete.id, valid.id)
+  summary.set('usage event RLS', 'passed')
+})
+
 test('RLS blocks anonymous table access and cross-org share reads', async (t) => {
   if (!requireFixture(t)) return
   const anon = createAnonClient()
