@@ -7,3 +7,6 @@ tsconfig.tsbuildinfo
 npm-debug.log*
 .env.local
 supabase/.temp
+
+playwright-report/
+test-results/

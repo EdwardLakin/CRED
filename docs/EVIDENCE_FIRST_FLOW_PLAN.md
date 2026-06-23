@@ -637,11 +637,11 @@ Resolved by PR 11:
 - Active evidence relationships now have a database-level partial unique index that includes `organization_id`, `documentation_session_id`, endpoint type/id pairs, and `relationship_type`, while permitting a relationship to be recreated after the prior active row is soft-deleted.
 - The migration soft-deletes later active duplicates before creating the index and preserves provenance/audit fields on all duplicate rows.
 - Relationship creation paths now map PostgreSQL unique violation `23505` to a friendly duplicate message instead of exposing raw database errors.
-- A live Supabase RLS integration test foundation and production safety guard document the required two-organization seed model and isolation assertions.
-- Critical browser smoke specifications were added for the Evidence Workspace and the existing Capture → Review → Generate report → Edit → Approve → Export workflow.
+- A live Supabase RLS integration suite now creates the required two-organization seed model, runs authenticated anon-client tenancy assertions, and tears down records and auth users after execution.
+- Critical Chromium Playwright smoke specifications now execute login, Evidence Workspace navigation/mutations, deliverable print checks, and the existing Capture → Review → Generate report → Edit → Approve → Export workflow against an explicitly configured non-production deployment.
 
 Remaining risks:
 
-- Live RLS assertions require dedicated Supabase test credentials and seeded authenticated users before CI can claim real tenancy verification.
+- Live RLS assertions require dedicated Supabase test credentials before CI can claim real tenancy verification; the suite seeds authenticated users and organizations itself.
 - Playwright smoke tests require a configured E2E environment and installed browser/runtime dependencies.
-- The browser smoke tests intentionally use stable `data-testid` hooks expected from the test environment; the product UI was not changed to add new hooks in this PR.
+- Browser smoke tests still require deterministic non-production seeded data for suggestion-review branches and must not call the AI provider.
