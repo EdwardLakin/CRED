@@ -79,6 +79,22 @@ Warnings:
 - Never manually create missing tables only in the test project; the repository migration chain must remain the source of truth.
 - Schema-only metadata may be compared when production access is explicitly available, but rows, auth users, organizations, sessions, evidence, customer records, storage objects, and secrets must not be copied.
 
+
+## Duplicate migration-version collision repair
+
+A later clean bootstrap found a second migration-chain blocker after `20260616120000_capture_queue_retry_status.sql` applied successfully. The next file, `20260616120000_final_notes.sql`, used the same leading timestamp version, so Supabase attempted to insert the same migration identity into `supabase_migrations.schema_migrations` twice and rejected the second file with the primary-key error:
+
+```text
+duplicate key value violates unique constraint "schema_migrations_pkey"
+Key (version)=(20260616120000) already exists
+```
+
+Supabase derives migration identity from the leading timestamp in each migration filename, not from the full filename. The SQL in the final-notes migration was already guarded with additive `if not exists` logic, so the repair is a filename-only migration identity fix: `20260616120000_final_notes.sql` was renamed to `20260616121000_final_notes.sql` so it still runs immediately after `20260616120000_capture_queue_retry_status.sql` and before `20260616130000_form_intelligence_engine.sql`.
+
+The migration history table must not be manually edited to bypass this class of collision. Do not delete rows, insert rows, mark the second migration as applied, or otherwise mutate `supabase_migrations.schema_migrations` to work around duplicate versions. The repository migration filenames are the source of truth, and every migration file must have a unique leading timestamp.
+
+The automated migration-chain test now scans every SQL file in `supabase/migrations`, validates deterministic timestamped filenames, fails on duplicate leading versions, and asserts that `20260616121000_final_notes.sql` follows `20260616120000_capture_queue_retry_status.sql`.
+
 ## Automated validation
 
 The static dependency guard is part of the normal test suite:

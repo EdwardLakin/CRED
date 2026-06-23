@@ -28,6 +28,30 @@ test('migrations are sorted deterministically by timestamped filename', () => {
   assert.ok(migrations.indexOf('20260609032000_auth_onboarding_foundation.sql') < migrations.indexOf('20260609180000_core_schema_foundation.sql'))
 })
 
+
+test('migration versions are unique and filenames sort deterministically', () => {
+  const sortedByFilename = [...migrations].sort((a, b) => a.localeCompare(b, 'en-US'))
+  assert.deepEqual(migrations, sortedByFilename)
+
+  const seenVersions = new Map()
+  for (const file of migrations) {
+    const match = /^(\d{14})_[a-z0-9_]+\.sql$/.exec(file)
+    assert.ok(match, `${file} must start with a 14-digit migration version and use a deterministic lowercase SQL filename`)
+
+    const previous = seenVersions.get(match[1])
+    assert.equal(previous, undefined, `${file} reuses migration version ${match[1]} from ${previous}`)
+    seenVersions.set(match[1], file)
+  }
+})
+
+test('final notes migration follows capture queue retry status migration', () => {
+  assert.ok(
+    migrations.indexOf('20260616120000_capture_queue_retry_status.sql') <
+      migrations.indexOf('20260616121000_final_notes.sql'),
+    'final notes must run after capture queue retry status',
+  )
+})
+
 test('known foundational objects are created before dependent migrations', () => {
   for (const [objectName, creator, dependent] of expectedOrder) {
     assert.equal(createdByMigration.get(objectName), creator, `${objectName} should be created by ${creator}`)
