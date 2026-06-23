@@ -6,6 +6,8 @@ const migration = readFileSync('supabase/migrations/20260623160000_deliverable_v
 const data = readFileSync('src/features/evidence/deliverables/data.ts', 'utf8')
 const actions = readFileSync('src/features/evidence/deliverables/actions.ts', 'utf8')
 const workspace = readFileSync('src/features/evidence/deliverables/components/DeliverablesWorkspace.tsx', 'utf8')
+const assemblyPanel = readFileSync('src/features/evidence/deliverables/components/DeliverableAssemblyPanel.tsx', 'utf8')
+const card = readFileSync('src/features/evidence/deliverables/components/DeliverableCard.tsx', 'utf8')
 const detail = readFileSync('src/features/evidence/deliverables/components/DeliverableDetail.tsx', 'utf8')
 const print = readFileSync('src/features/evidence/deliverables/components/DeliverablePrintView.tsx', 'utf8')
 
@@ -47,8 +49,8 @@ test('workspace groups versions, hides archived drafts by default, and keeps his
   assert.match(workspace, /deliverable\.status !== 'archived'/)
   assert.match(workspace, /Current final version/)
   assert.match(workspace, /Generate new version/)
-  assert.match(workspace, /finalizeEvidenceDeliverable/)
-  assert.match(workspace, /archiveEvidenceDeliverable/)
+  assert.match(workspace, /finalizeEvidenceDeliverableFormAction/)
+  assert.match(workspace, /archiveEvidenceDeliverableFormAction/)
   assert.match(workspace, /dashboard\/sessions\/\$\{sessionId\}\/deliverables\/\$\{deliverable\.id\}\/print/)
 })
 
@@ -64,4 +66,28 @@ test('print UI displays version and lifecycle metadata', () => {
   assert.match(print, /formatDeliverableStatus\(deliverable\.status\)/)
   assert.match(print, /deliverable\.finalized_at/)
   assert.match(print, /Source-controlled deliverable/)
+})
+
+test('React forms use void-returning deliverable action wrappers', () => {
+  for (const source of [assemblyPanel, card, workspace]) {
+    assert.match(source, /generateEvidenceDeliverableFormAction\.bind\(null,/)
+    assert.doesNotMatch(source, /action=\{generateEvidenceDeliverable\.bind/)
+  }
+  assert.match(workspace, /finalizeEvidenceDeliverableFormAction\.bind\(null, sessionId, deliverable\.id\)/)
+  assert.match(workspace, /archiveEvidenceDeliverableFormAction\.bind\(null, sessionId, deliverable\.id\)/)
+  assert.match(workspace, /restoreArchivedDeliverableFormAction\.bind\(null, sessionId, deliverable\.id\)/)
+  assert.doesNotMatch(workspace, /action=\{(?:finalizeEvidenceDeliverable|archiveEvidenceDeliverable|restoreArchivedDeliverable)\.bind/)
+})
+
+test('deliverable action wrappers preserve ActionResult-returning actions', () => {
+  const wrappers = [
+    ['generateEvidenceDeliverable', 'generateEvidenceDeliverableFormAction'],
+    ['finalizeEvidenceDeliverable', 'finalizeEvidenceDeliverableFormAction'],
+    ['archiveEvidenceDeliverable', 'archiveEvidenceDeliverableFormAction'],
+    ['restoreArchivedDeliverable', 'restoreArchivedDeliverableFormAction'],
+  ]
+  for (const [actionName, wrapperName] of wrappers) {
+    assert.match(actions, new RegExp(`export async function ${actionName}\\([\\s\\S]*?\\): Promise<ActionResult>`))
+    assert.match(actions, new RegExp(`export async function ${wrapperName}\\([\\s\\S]*?\\): Promise<void> \\{\\n  await ${actionName}\\(`))
+  }
 })
