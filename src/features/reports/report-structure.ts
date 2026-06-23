@@ -1463,7 +1463,6 @@ export function buildNonDuplicatedReviewDocument<TCapture extends CaptureLike>({
 }): ReviewDocument<TCapture> {
   const groups = buildEvidenceGroups(captures, draftSections, measurements, findings)
   const groupsById = new Map(groups.map((group) => [group.capture_id, group]))
-  const formSourceIds = getFormSourceCaptureIds(null, sections)
   const rendered = new Set<string>()
   const result: ReviewDocument<TCapture> = { sections, findings: [], concerns: [], recommendedActionEvidence: [], referenceDocuments: [], additionalNotes: [], supportingEvidence: [], renderedCaptureIds: [], unattachedDetails: buildUnattachedStructuredDetails(captures, measurements, findings) }
   for (const section of draftSections) {
@@ -1482,11 +1481,6 @@ export function buildNonDuplicatedReviewDocument<TCapture extends CaptureLike>({
   }
   for (const capture of captures) {
     if (rendered.has(capture.id)) continue
-    if (formSourceIds.has(capture.id)) {
-      rendered.add(capture.id)
-      result.renderedCaptureIds.push(capture.id)
-      continue
-    }
     const baseGroup = groupsById.get(capture.id) ?? { capture_id: capture.id, details: [], findings: [], recommendations: [] }
     const group = applyDeterministicFindingGroup(capture, baseGroup)
     const category = normalizeEvidenceCategory(capture.evidence_category)

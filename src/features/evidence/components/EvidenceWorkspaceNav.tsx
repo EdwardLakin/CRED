@@ -13,16 +13,18 @@ export type EvidenceWorkspaceCounts = {
 }
 
 const cards = [
-  { label: EVIDENCE_WORKSPACE_LABELS.library, key: 'evidenceItems', href: 'evidence', description: 'Review source items and choose what to include in outputs.' },
-  { label: 'Review Queue', key: null, href: 'evidence/review', description: 'Process unresolved evidence and AI suggestions without opening detail pages.' },
-  { label: EVIDENCE_WORKSPACE_LABELS.timeline, key: 'timelineEvents', href: 'timeline', description: 'Organize dated events and linked evidence.' },
-  { label: EVIDENCE_WORKSPACE_LABELS.entities, key: 'entities', href: 'entities', description: 'Review people, places, assets, and organizations.' },
-  { label: EVIDENCE_WORKSPACE_LABELS.assertions, key: 'factualObservations', href: 'assertions', description: 'Review factual observations and supporting links.' },
-  { label: EVIDENCE_WORKSPACE_LABELS.relationships, key: 'relationships', href: 'relationships', description: 'Explore how evidence, events, entities, and observations connect.' },
-  { label: EVIDENCE_WORKSPACE_LABELS.suggestions, key: null, href: 'suggestions', description: 'Review AI-proposed events, entities, observations, and relationships before accepting anything.' },
-  { label: EVIDENCE_WORKSPACE_LABELS.deliverables, key: null, href: 'deliverables', description: 'Generate preview-only chronology, evidence index, and observation summary outputs.' },
-  { label: EVIDENCE_WORKSPACE_LABELS.report, key: null, href: 'report', description: 'Open the existing report review workspace.' },
+  { label: 'Review Queue', shortLabel: 'Review', key: null, href: 'evidence/review', current: 'review', description: 'Process unresolved evidence and AI suggestions without opening detail pages.' },
+  { label: EVIDENCE_WORKSPACE_LABELS.library, shortLabel: 'Evidence', key: 'evidenceItems', href: 'evidence', current: 'library', description: 'Review source items and choose what to include in outputs.' },
+  { label: EVIDENCE_WORKSPACE_LABELS.report, shortLabel: 'Report', key: null, href: 'report', current: 'report', description: 'Open the existing report review workspace.' },
+  { label: EVIDENCE_WORKSPACE_LABELS.timeline, shortLabel: 'Timeline', key: 'timelineEvents', href: 'timeline', current: 'timeline', description: 'Organize dated events and linked evidence.' },
+  { label: EVIDENCE_WORKSPACE_LABELS.entities, shortLabel: 'Entities', key: 'entities', href: 'entities', current: 'entities', description: 'Review people, places, assets, and organizations.' },
+  { label: EVIDENCE_WORKSPACE_LABELS.assertions, shortLabel: 'Observations', key: 'factualObservations', href: 'assertions', current: 'assertions', description: 'Review factual observations and supporting links.' },
+  { label: EVIDENCE_WORKSPACE_LABELS.relationships, shortLabel: 'Relationships', key: 'relationships', href: 'relationships', current: 'relationships', description: 'Explore how evidence, events, entities, and observations connect.' },
+  { label: EVIDENCE_WORKSPACE_LABELS.suggestions, shortLabel: 'Suggestions', key: null, href: 'suggestions', current: 'suggestions', description: 'Review AI-proposed events, entities, observations, and relationships before accepting anything.' },
+  { label: EVIDENCE_WORKSPACE_LABELS.deliverables, shortLabel: 'Deliverables', key: null, href: 'deliverables', current: 'deliverables', description: 'Generate preview-only chronology, evidence index, and observation summary outputs.' },
 ] as const
+
+type EvidenceWorkspaceCurrent = typeof cards[number]['current']
 
 export function EvidenceWorkspaceNav({ sessionId, counts }: { sessionId: string; counts: EvidenceWorkspaceCounts }) {
   return (
@@ -40,12 +42,25 @@ export function EvidenceWorkspaceNav({ sessionId, counts }: { sessionId: string;
         <div><dt>Relationships</dt><dd>{counts.relationships}</dd></div>
       </div>
       <div className="workspace-card-grid">
-        {cards.map((card) => <Link key={card.label} href={`/dashboard/sessions/${sessionId}/${card.href}`} className="card detail-card touch-target"><strong>{card.label}</strong><span className="muted">{card.key ? counts[card.key] : 'Open'}</span><p className="muted">{card.description}</p></Link>)}
+        {cards.map((card) => <Link key={card.label} href={`/dashboard/sessions/${sessionId}/${card.href}`} className="workspace-destination-card touch-target"><strong>{card.label}</strong><span className="muted">{card.key ? counts[card.key] : 'Open'}</span><p className="muted">{card.description}</p></Link>)}
       </div>
     </section>
   )
 }
 
-export function EvidenceWorkspaceBacklinks({ sessionId, current }: { sessionId: string; current: 'library' | 'review' | 'timeline' | 'entities' | 'assertions' | 'relationships' | 'suggestions' | 'deliverables' | 'report' }) {
-  return <nav className="form-actions" aria-label="Evidence Workspace navigation">{cards.filter((card) => card.href !== (current === 'library' ? 'evidence' : current === 'review' ? 'evidence/review' : current)).map((card) => <Link key={card.label} href={`/dashboard/sessions/${sessionId}/${card.href}`} className="secondary-link touch-target">{card.label}</Link>)}</nav>
+export function EvidenceWorkspaceNavBar({ sessionId, current }: { sessionId: string; current: EvidenceWorkspaceCurrent }) {
+  return (
+    <nav className="evidence-workspace-nav" aria-label="Evidence Workspace navigation">
+      <div className="evidence-workspace-nav-scroll">
+        {cards.map((card) => (
+          <Link key={card.label} href={`/dashboard/sessions/${sessionId}/${card.href}`} className={`evidence-workspace-nav-link touch-target${card.current === current ? ' active' : ''}`} aria-current={card.current === current ? 'page' : undefined}>
+            <span className="evidence-workspace-nav-priority">{card.shortLabel ?? card.label}</span>
+            <span className="evidence-workspace-nav-full">{card.label}</span>
+          </Link>
+        ))}
+      </div>
+    </nav>
+  )
 }
+
+export const EvidenceWorkspaceBacklinks = EvidenceWorkspaceNavBar

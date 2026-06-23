@@ -1,4 +1,9 @@
-import { clearEvidenceDuplicate, markEvidenceDuplicate, updateEvidenceOutputInclusion, updateEvidenceReviewStatus, updateEvidenceSourceDates, updateEvidenceSourceMetadata } from '@/features/evidence/library/actions'
+'use client'
+
+import { useActionState, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+
+import { clearEvidenceDuplicate, markEvidenceDuplicate, updateEvidenceOutputInclusion, updateEvidenceReviewStatus, updateEvidenceSourceDates, updateEvidenceSourceMetadata, type EvidenceMutationResult } from '@/features/evidence/library/actions'
 import { EVIDENCE_REVIEW_STATUSES, EVENT_DATE_PRECISIONS, EVIDENCE_WORKSPACE_LABELS, formatEvidenceReviewStatus } from '@/features/evidence/constants'
 import type { EvidenceLibraryItem } from '@/features/evidence/library/data'
 
@@ -7,22 +12,36 @@ function inputDate(value: string | null) {
 }
 
 export function EvidenceReviewForm({ item }: { item: EvidenceLibraryItem }) {
+  const router = useRouter()
+  const [selectedStatus, setSelectedStatus] = useState(item.evidence_review_status)
+  const [state, formAction, pending] = useActionState<EvidenceMutationResult, FormData>(updateEvidenceReviewStatus.bind(null, item.id), { ok: false, message: '' })
+  useEffect(() => {
+    if (state.ok) router.refresh()
+  }, [router, state.ok])
   return (
-    <form action={updateEvidenceReviewStatus.bind(null, item.id)} className="inline-form">
+    <form action={formAction} className="evidence-compact-control-form" aria-label="Save review status">
       <label className="label" htmlFor={`review-${item.id}`}>Review status</label>
-      <select id={`review-${item.id}`} name="evidence_review_status" className="select" defaultValue={item.evidence_review_status}>
+      <select id={`review-${item.id}`} name="evidence_review_status" className="select evidence-compact-select" value={selectedStatus} onChange={(event) => setSelectedStatus(event.target.value as EvidenceLibraryItem['evidence_review_status'])}>
         {EVIDENCE_REVIEW_STATUSES.map((status) => <option key={status} value={status}>{formatEvidenceReviewStatus(status)}</option>)}
       </select>
-      <button className="button button-secondary">Save</button>
+      <button className="button button-secondary evidence-control-save" disabled={pending}>{pending ? 'Saving…' : 'Save review'}</button>
+      {state.message ? <p className={state.ok ? 'success evidence-control-message' : 'error evidence-control-message'}>{state.message}</p> : null}
     </form>
   )
 }
 
 export function EvidenceInclusionForm({ item }: { item: EvidenceLibraryItem }) {
+  const router = useRouter()
+  const [included, setIncluded] = useState(Boolean(item.include_in_report))
+  const [state, formAction, pending] = useActionState<EvidenceMutationResult, FormData>(updateEvidenceOutputInclusion.bind(null, item.id), { ok: false, message: '' })
+  useEffect(() => {
+    if (state.ok) router.refresh()
+  }, [router, state.ok])
   return (
-    <form action={updateEvidenceOutputInclusion.bind(null, item.id)} className="inline-form">
-      <label className="checkbox-row"><input type="checkbox" name="include_in_report" defaultChecked={item.include_in_report} /> {EVIDENCE_WORKSPACE_LABELS.includeInOutputs}</label>
-      <button className="button button-secondary">Save</button>
+    <form action={formAction} className="evidence-compact-control-form evidence-inclusion-control-form" aria-label="Save output preference">
+      <label className="checkbox-row evidence-compact-checkbox"><input type="checkbox" name="include_in_report" checked={included} onChange={(event) => setIncluded(event.target.checked)} /> {EVIDENCE_WORKSPACE_LABELS.includeInOutputs}</label>
+      <button className="button button-secondary evidence-control-save" disabled={pending}>{pending ? 'Saving…' : 'Save output'}</button>
+      {state.message ? <p className={state.ok ? 'success evidence-control-message' : 'error evidence-control-message'}>{state.message}</p> : null}
     </form>
   )
 }

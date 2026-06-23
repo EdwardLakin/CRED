@@ -5192,12 +5192,107 @@ a:focus-visible {
   margin: 4px 0 0;
 }
 
+.workspace-card-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr;
+}
+
+.workspace-destination-card {
+  align-content: start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  color: inherit;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 18px;
+  text-decoration: none;
+  width: 100%;
+}
+
+.workspace-destination-card:hover,
+.workspace-destination-card:focus-visible {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow);
+}
+
+.evidence-workspace-nav {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.evidence-workspace-nav-scroll {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding: 2px 2px 10px;
+  scrollbar-width: thin;
+}
+
+.evidence-workspace-nav-link {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--foreground);
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-weight: 800;
+  justify-content: center;
+  min-height: 46px;
+  padding: 10px 14px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.evidence-workspace-nav-link.active,
+.evidence-workspace-nav-link[aria-current="page"] {
+  background: var(--foreground);
+  border-color: var(--foreground);
+  color: var(--surface);
+}
+
+.evidence-workspace-nav-full {
+  display: none;
+}
+
 .inline-form,
 .checkbox-row {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.evidence-compact-control-form {
+  align-items: end;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  width: 100%;
+}
+
+.evidence-compact-control-form .label,
+.evidence-compact-checkbox,
+.evidence-control-message {
+  grid-column: 1 / -1;
+}
+
+.evidence-compact-select {
+  min-height: 46px;
+}
+
+.evidence-control-save {
+  min-height: 46px;
+  white-space: nowrap;
+}
+
+.evidence-control-message {
+  margin: 0;
+  padding: 8px 10px;
 }
 
 .text-block {
@@ -5212,5 +5307,23 @@ a:focus-visible {
   .evidence-card,
   .two-columns {
     grid-template-columns: minmax(180px, 240px) 1fr;
+  }
+
+  .workspace-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .evidence-workspace-nav-full {
+    display: inline;
+  }
+
+  .evidence-workspace-nav-priority {
+    display: none;
+  }
+}
+
+@media (min-width: 1024px) {
+  .workspace-card-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
