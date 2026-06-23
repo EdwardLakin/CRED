@@ -1,4 +1,3 @@
-import Link from 'next/link'
 import { bulkReviewEvidence, bulkReviewSuggestions, quickReviewEvidence, quickReviewSuggestion } from '@/features/evidence/review/actions'
 import type { ReviewQueueData } from '@/features/evidence/review/data'
 

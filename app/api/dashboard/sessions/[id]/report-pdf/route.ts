@@ -15,7 +15,6 @@ import { buildUniversalReportDocument } from "@/features/reports/report-document
 import {
   buildCustomerAssetRows,
   buildNormalizedReportModel,
-  classifyReferenceDocumentTitle,
   dedupeEvidenceDetails,
   deriveFormSectionsFromCaptures,
   getFormStructureSummary,
@@ -281,19 +280,6 @@ function buildReportCoverHtml(params: {
     params.allowCoverImage,
   );
   return `<section class="report-cover item${coverImageHtml ? "" : " report-cover-no-image"}"><div class="cover-copy"><div class="cover-kicker"><span>Documentation Report</span><span>${escapeHtml(params.reportType)}</span></div><h1>${escapeHtml(params.reportTitle)}</h1><p class="cover-trust">Report identity and approved customer-facing documentation.</p>${renderDefinitionRows(rows)}</div>${coverImageHtml}</section>`;
-}
-
-function getCaptionChips(captures: ReportCapture[]) {
-  const captions = captures
-    .map((capture) =>
-      (
-        capture.technician_note?.trim() ||
-        capture.transcript?.trim() ||
-        ""
-      ).replace(/\s+/g, " "),
-    )
-    .filter(Boolean);
-  return Array.from(new Set(captions)).slice(0, 12);
 }
 
 function buildReportOverviewHtml(params: {
@@ -692,34 +678,6 @@ function getProfessionalRows(rows: Array<{ label: string; value: string }>) {
   return captured.length > 0 ? captured : visibleRows.slice(0, 4);
 }
 
-function renderReportInformationHtml(
-  _draft: ReportDraft | null | undefined,
-  session: ReportSession,
-  timeZone?: string | null,
-) {
-  const rows = [
-    {
-      label: "Last Updated",
-      value: formatDateTimeInTimeZone(
-        session.updated_at ?? session.created_at,
-        timeZone,
-      ),
-    },
-    {
-      label: "Report ID",
-      value: session.display_id ?? "",
-    },
-    {
-      label: "Reference / File Note",
-      value: getReportInfoValue(_draft, session, "reference_number"),
-    },
-  ];
-  const html = renderDefinitionRows(rows);
-  return html
-    ? `<section class="item service-section"><h2>Report Details</h2>${html}</section>`
-    : "";
-}
-
 function buildStructuredFormDataHtml(reportStructure: Json | null) {
   const structure = isRecord(reportStructure) ? reportStructure : {};
   const blueprint = isRecord(structure.form_blueprint)
@@ -731,14 +689,6 @@ function buildStructuredFormDataHtml(reportStructure: Json | null) {
   const mappings = Array.isArray(structure.evidence_field_mappings)
     ? structure.evidence_field_mappings
     : [];
-  const confidence =
-    typeof blueprint.confidence === "number" ? blueprint.confidence : null;
-  const classification =
-    typeof blueprint.classification === "string" &&
-    confidence !== null &&
-    confidence >= 0.7
-      ? blueprint.classification.replace(/_/g, " ")
-      : "Optional layout reference";
   const sectionRows = sections.slice(0, 12).flatMap((section) => {
     if (!isRecord(section)) return [];
     const sectionId = typeof section.id === "string" ? section.id : "";
@@ -845,22 +795,6 @@ function buildInspectorFacilityHtml(
   return rowsHtml
     ? `<section class="item service-section org-section signoff-section"><h2>Inspector / Organization</h2>${rowsHtml}</section>`
     : "";
-}
-
-function getEvidenceTitle(capture: ReportCapture) {
-  const referenceTitle = classifyReferenceDocumentTitle(capture);
-  if (
-    referenceTitle !== "Reference Document" ||
-    capture.media_kind === "document"
-  )
-    return referenceTitle;
-  if (capture.type === "text_note" || capture.media_kind === "note")
-    return "Technician Note";
-  if (capture.media_kind === "audio" || capture.type === "voice_note")
-    return "Voice Note";
-  if (capture.media_kind === "image" || capture.type === "photo")
-    return "Evidence Photo";
-  return "Supporting Evidence";
 }
 
 function renderTextList(
@@ -1247,24 +1181,6 @@ function buildEvidenceSectionHtml(
 ) {
   if (items.length === 0) return "";
   return `<section class="item service-section"><h2>${escapeHtml(title)}</h2><div class="evidence-children">${buildEvidenceItemsHtml(items, imageAssets)}</div></section>`;
-}
-
-function buildEvidenceIndexHtml(
-  captures: ReportCapture[],
-  timeZone: string | null,
-) {
-  if (captures.length === 0)
-    return '<section class="item service-section evidence-index-section"><h2>Evidence Index</h2><p class="muted">No included evidence selected for this report.</p></section>';
-  const reportDocument = buildUniversalReportDocument({ captures, timeZone });
-  const evidenceByCaptureId = new Map(
-    reportDocument.evidenceItems.map((item) => [item.sourceCaptureId, item]),
-  );
-  return `<section class="item service-section evidence-index-section"><h2>Evidence Index</h2><p class="muted">Index of supporting records referenced by this report. Images are not repeated where they already appear with findings.</p><table class="evidence-index"><thead><tr><th>Evidence ID</th><th>Caption / Title</th><th>Captured</th><th>Type</th></tr></thead><tbody>${captures
-    .map((capture) => {
-      const evidenceMeta = evidenceByCaptureId.get(capture.id);
-      return `<tr><td>${escapeHtml(evidenceMeta?.evidenceId ?? "Evidence")}</td><td>${escapeHtml(getPrimaryEvidenceLabel(capture))}</td><td>${escapeHtml(evidenceMeta?.capturedAtLabel ?? formatDateTimeInTimeZone(capture.captured_at, timeZone))}</td><td>${escapeHtml(evidenceMeta?.evidenceType ?? getEvidenceKind(capture))}</td></tr>`;
-    })
-    .join("")}</tbody></table></section>`;
 }
 
 function buildEvidenceAppendixHtml(
