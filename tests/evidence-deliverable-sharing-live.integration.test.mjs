@@ -84,7 +84,9 @@ test('creation is scoped, eligible, expiring, unique, and non-sequential', async
 
 test('public resolution returns exact stored version and tracks views atomically', async (t) => {
   if (!requireFixture(t)) return
-  const token = (await activeTokenRows(fx.finalA.id))[0]
+  let token = (await activeTokenRows(fx.finalA.id))[0]
+  if (!token) token = await createToken(fx.a, fx.sessions.a1, fx.finalA)
+  assert.ok(token?.token, 'expected an active token for public resolution test')
   const first = await resolve(token.token)
   assert.equal(first.shareToken.id, token.id); assert.equal(first.session.id, fx.sessions.a1.id); assert.equal(first.deliverable.id, fx.finalA.id); assert.deepEqual(first.deliverable.content, fx.finalA.content); assert.equal(first.deliverable.version_number, fx.finalA.version_number); assert.equal(first.deliverable.finalized_at, fx.finalA.finalized_at)
   await must('change unrelated evidence', fx.service.from('evidence_assertions').insert({ documentation_session_id: fx.sessions.a1.id, organization_id: fx.a.organization.id, assertion_type: 'factual_observation', statement: randomUUID(), suggestion_source: 'user', review_status: 'accepted' }))
