@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { archiveDeliverableDraft, createDeliverableRecord, finalizeDeliverableVersion, restoreDeliverableDraft } from './data'
+import { createDeliverableShareLink } from './share'
 import { parseDeliverableSourceSelection, parseDeliverableType } from './validation'
 
 type QueryBuilder = { select: (columns: string) => QueryBuilder; eq: (column: string, value: string) => QueryBuilder; is: (column: string, value: null) => QueryBuilder; single: () => Promise<{ data: unknown; error: unknown }> }
@@ -81,6 +82,37 @@ export async function restoreArchivedDeliverable(sessionId: string, deliverableI
   }
 }
 
+export async function createEvidenceDeliverableShareLink(sessionId: string, deliverableId: string, formData?: FormData): Promise<ActionResult> {
+  try {
+    const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+    const supabase = rawSupabase as unknown as SupabaseLike
+    await assertSession(supabase, sessionId, profile.organization_id)
+    await createDeliverableShareLink({ supabase: rawSupabase as never, profile: profile as never, sessionId, deliverableId, expiresAt: formData?.get('expires_at')?.toString() || null })
+    revalidateDeliverableRoutes(sessionId, deliverableId)
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, error: userSafeError(error) }
+  }
+}
+
+export async function revokeEvidenceDeliverableShareLink(sessionId: string, deliverableId: string, tokenId: string): Promise<ActionResult> {
+  try {
+    const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+    const { error } = await (rawSupabase as any).from('report_share_tokens').update({ disabled_at: new Date().toISOString() }).eq('id', tokenId).eq('organization_id', profile.organization_id).eq('documentation_session_id', sessionId).eq('deliverable_id', deliverableId).eq('link_kind', 'deliverable')
+    if (error) throw new Error(error.message)
+    revalidateDeliverableRoutes(sessionId, deliverableId)
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, error: userSafeError(error) }
+  }
+}
+
+export async function rotateEvidenceDeliverableShareLink(sessionId: string, deliverableId: string, tokenId: string, formData?: FormData): Promise<ActionResult> {
+  const revoked = await revokeEvidenceDeliverableShareLink(sessionId, deliverableId, tokenId)
+  if (!revoked.ok) return revoked
+  return createEvidenceDeliverableShareLink(sessionId, deliverableId, formData)
+}
+
 export async function generateEvidenceDeliverableFormAction(sessionId: string, formData: FormData): Promise<void> {
   await generateEvidenceDeliverable(sessionId, formData)
 }
@@ -95,4 +127,17 @@ export async function archiveEvidenceDeliverableFormAction(sessionId: string, de
 
 export async function restoreArchivedDeliverableFormAction(sessionId: string, deliverableId: string): Promise<void> {
   await restoreArchivedDeliverable(sessionId, deliverableId)
+}
+
+
+export async function createEvidenceDeliverableShareLinkFormAction(sessionId: string, deliverableId: string, formData: FormData): Promise<void> {
+  await createEvidenceDeliverableShareLink(sessionId, deliverableId, formData)
+}
+
+export async function revokeEvidenceDeliverableShareLinkFormAction(sessionId: string, deliverableId: string, tokenId: string): Promise<void> {
+  await revokeEvidenceDeliverableShareLink(sessionId, deliverableId, tokenId)
+}
+
+export async function rotateEvidenceDeliverableShareLinkFormAction(sessionId: string, deliverableId: string, tokenId: string, formData: FormData): Promise<void> {
+  await rotateEvidenceDeliverableShareLink(sessionId, deliverableId, tokenId, formData)
 }
