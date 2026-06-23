@@ -83,6 +83,9 @@ export default async function SessionDetailPage({
           <Link href={`/dashboard/sessions/${session.id}/evidence`} className="button button-secondary touch-target">
             Evidence Library
           </Link>
+          <Link href={`/dashboard/sessions/${session.id}/evidence/import`} className="button button-secondary touch-target">
+            Import evidence
+          </Link>
           <Link href={`/dashboard/sessions/${session.id}/timeline`} className="button button-secondary touch-target">
             Timeline
           </Link>
