@@ -141,7 +141,10 @@ test('supersession, revocation, rotation, expiration, and billing limits', async
   assert.ok(revoked.disabled_at); await expectUnavailable(link2.token)
   const rotated = await createToken(fx.a, fx.sessions.a2, v2)
   assert.notEqual(rotated.token, link2.token); assert.equal((await resolve(rotated.token)).deliverable.id, v2.id); await expectUnavailable(link2.token); assert.equal((await activeTokenRows(v2.id)).length, 1)
-  const explicit = futureIso(3); const expLinkDeliverable = await finalize(fx.a.client, (await insertDeliverable(fx.a, fx.sessions.a1, 'chronology')).id); const expLink = await createToken(fx.a, fx.sessions.a1, expLinkDeliverable, { expires_at: explicit }); assert.equal(expLink.expires_at, explicit)
+  const explicit = futureIso(3); const expLinkDeliverable = await finalize(fx.a.client, (await insertDeliverable(fx.a, fx.sessions.a1, 'chronology')).id); const expLink = await createToken(fx.a, fx.sessions.a1, expLinkDeliverable, { expires_at: explicit }); assert.equal(
+  new Date(expLink.expires_at).getTime(),
+  new Date(explicit).getTime(),
+)
   assert.ok(new Date(rotated.expires_at) > new Date(Date.now() + 29 * 86400000))
   const usageBefore = await must('usage before revoke', fx.service.from('organization_usage_events').select('id').eq('organization_id', fx.a.organization.id).eq('event_type', 'share_link_created'))
   await must('revoke explicit', fx.a.client.from('report_share_tokens').update({ disabled_at: nowIso() }).eq('id', expLink.id))
