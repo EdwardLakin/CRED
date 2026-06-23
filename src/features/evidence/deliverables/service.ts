@@ -51,7 +51,8 @@ export function generateChronology(data: DeliverableSourceData): GeneratedDelive
 }
 
 export function generateEvidenceIndex(data: DeliverableSourceData): GeneratedDeliverable {
-  const items = data.evidenceItems.map((item) => ({
+  const sortedEvidenceItems = sortEvidenceItems(data.evidenceItems)
+  const items = sortedEvidenceItems.map((item) => ({
     evidence_item_id: item.id,
     identifier: item.id,
     title: item.original_filename ?? item.technician_note ?? item.ai_summary ?? item.type,
@@ -62,7 +63,7 @@ export function generateEvidenceIndex(data: DeliverableSourceData): GeneratedDel
     include_in_outputs: item.include_in_report,
     source_ids: { evidence_item_ids: [item.id] },
   }))
-  const sourceIds = { evidence_item_ids: data.evidenceItems.map((item) => item.id) }
+  const sourceIds = { evidence_item_ids: sortedEvidenceItems.map((item) => item.id) }
   return { title: 'Evidence Index', summary: `${items.length} evidence items indexed with source and review metadata.`, content: { type: 'evidence_index', items }, source_ids: sourceIds, provenance: deliverableProvenance('evidence_index', sourceIds) }
 }
 
@@ -81,7 +82,19 @@ export function generateObservationSummary(data: DeliverableSourceData): Generat
 }
 
 export function sortChronologyEvents(events: DeliverableTimelineEvent[]) {
-  return [...events].sort((a, b) => new Date(a.event_start_at ?? a.event_time ?? a.created_at).getTime() - new Date(b.event_start_at ?? b.event_time ?? b.created_at).getTime())
+  return [...events].sort((a, b) => {
+    const dateDiff = new Date(a.event_start_at ?? a.event_time ?? a.created_at).getTime() - new Date(b.event_start_at ?? b.event_time ?? b.created_at).getTime()
+    if (dateDiff !== 0) return dateDiff
+    return a.id.localeCompare(b.id)
+  })
+}
+
+export function sortEvidenceItems(items: DeliverableEvidenceItem[]) {
+  return [...items].sort((a, b) => {
+    const dateDiff = new Date(b.captured_at ?? b.created_at).getTime() - new Date(a.captured_at ?? a.created_at).getTime()
+    if (dateDiff !== 0) return dateDiff
+    return a.id.localeCompare(b.id)
+  })
 }
 
 function filterVerifiedRelationships(relationships: DeliverableRelationship[]) {
@@ -89,13 +102,17 @@ function filterVerifiedRelationships(relationships: DeliverableRelationship[]) {
 }
 
 function relatedIds(relationships: DeliverableRelationship[], sourceType: string, sourceId: string, targetType: string) {
-  return relationships.flatMap((relationship) => {
+  return uniqueSortedIds(relationships.flatMap((relationship) => {
     if (relationship.source_type === sourceType && relationship.source_id === sourceId && relationship.target_type === targetType) return [relationship.target_id]
     if (relationship.target_type === sourceType && relationship.target_id === sourceId && relationship.source_type === targetType) return [relationship.source_id]
     return []
-  })
+  }))
+}
+
+function uniqueSortedIds(ids: string[]) {
+  return [...new Set(ids)].sort((a, b) => a.localeCompare(b))
 }
 
 function collectSourceIds(data: DeliverableSourceData): Record<string, string[]> {
-  return { evidence_item_ids: data.evidenceItems.map((item) => item.id), timeline_event_ids: data.timelineEvents.map((event) => event.id), entity_ids: data.entities.map((entity) => entity.id), assertion_ids: data.assertions.map((assertion) => assertion.id), relationship_ids: data.relationships.map((relationship) => relationship.id) }
+  return { evidence_item_ids: uniqueSortedIds(data.evidenceItems.map((item) => item.id)), timeline_event_ids: uniqueSortedIds(data.timelineEvents.map((event) => event.id)), entity_ids: uniqueSortedIds(data.entities.map((entity) => entity.id)), assertion_ids: uniqueSortedIds(data.assertions.map((assertion) => assertion.id)), relationship_ids: uniqueSortedIds(data.relationships.map((relationship) => relationship.id)) }
 }
