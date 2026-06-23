@@ -9,10 +9,12 @@ export type EvidenceWorkspaceCounts = {
   factualObservations: number
   relationships: number
   suggestions?: number
+  reviewQueue?: number
 }
 
 const cards = [
   { label: EVIDENCE_WORKSPACE_LABELS.library, key: 'evidenceItems', href: 'evidence', description: 'Review source items and choose what to include in outputs.' },
+  { label: 'Review Queue', key: null, href: 'evidence/review', description: 'Process unresolved evidence and AI suggestions without opening detail pages.' },
   { label: EVIDENCE_WORKSPACE_LABELS.timeline, key: 'timelineEvents', href: 'timeline', description: 'Organize dated events and linked evidence.' },
   { label: EVIDENCE_WORKSPACE_LABELS.entities, key: 'entities', href: 'entities', description: 'Review people, places, assets, and organizations.' },
   { label: EVIDENCE_WORKSPACE_LABELS.assertions, key: 'factualObservations', href: 'assertions', description: 'Review factual observations and supporting links.' },
@@ -44,6 +46,6 @@ export function EvidenceWorkspaceNav({ sessionId, counts }: { sessionId: string;
   )
 }
 
-export function EvidenceWorkspaceBacklinks({ sessionId, current }: { sessionId: string; current: 'library' | 'timeline' | 'entities' | 'assertions' | 'relationships' | 'suggestions' | 'deliverables' | 'report' }) {
-  return <nav className="form-actions" aria-label="Evidence Workspace navigation">{cards.filter((card) => card.href !== (current === 'library' ? 'evidence' : current)).map((card) => <Link key={card.label} href={`/dashboard/sessions/${sessionId}/${card.href}`} className="secondary-link touch-target">{card.label}</Link>)}</nav>
+export function EvidenceWorkspaceBacklinks({ sessionId, current }: { sessionId: string; current: 'library' | 'review' | 'timeline' | 'entities' | 'assertions' | 'relationships' | 'suggestions' | 'deliverables' | 'report' }) {
+  return <nav className="form-actions" aria-label="Evidence Workspace navigation">{cards.filter((card) => card.href !== (current === 'library' ? 'evidence' : current === 'review' ? 'evidence/review' : current)).map((card) => <Link key={card.label} href={`/dashboard/sessions/${sessionId}/${card.href}`} className="secondary-link touch-target">{card.label}</Link>)}</nav>
 }
