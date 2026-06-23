@@ -1,6 +1,6 @@
 import type { Database, Json } from '@/lib/supabase/database.types'
-import type { DeliverableType } from './validation'
-import { deliverableProvenance } from './validation'
+import type { DeliverableSourceSelection, DeliverableType } from './validation'
+import { assertAllowedReviewStatus, assertWorkspaceScope, defaultDeliverableSourceSelection, deliverableProvenance } from './validation'
 
 type Tables = Database['public']['Tables']
 export type DeliverableSession = Tables['documentation_sessions']['Row']
@@ -18,17 +18,19 @@ export type DeliverableSourceData = {
   entities: DeliverableEntity[]
   assertions: DeliverableAssertion[]
   relationships: DeliverableRelationship[]
+  importBatches?: Array<{ id: string; documentation_session_id: string; organization_id: string; deleted_at: string | null }>
 }
 
 export type GeneratedDeliverable = { title: string; summary: string; content: Json; source_ids: Json; provenance: Json }
 
-export function generateDeliverable(type: DeliverableType, data: DeliverableSourceData): GeneratedDeliverable {
-  if (type === 'chronology') return generateChronology(data)
-  if (type === 'evidence_index') return generateEvidenceIndex(data)
-  return generateObservationSummary(data)
+export function generateDeliverable(type: DeliverableType, data: DeliverableSourceData, sourceSelection: DeliverableSourceSelection = defaultDeliverableSourceSelection): GeneratedDeliverable {
+  const scopedData = applyDeliverableSourceSelection(data, sourceSelection)
+  if (type === 'chronology') return generateChronology(scopedData, sourceSelection)
+  if (type === 'evidence_index') return generateEvidenceIndex(scopedData, sourceSelection)
+  return generateObservationSummary(scopedData, sourceSelection)
 }
 
-export function generateChronology(data: DeliverableSourceData): GeneratedDeliverable {
+export function generateChronology(data: DeliverableSourceData, sourceSelection: DeliverableSourceSelection = defaultDeliverableSourceSelection): GeneratedDeliverable {
   const verifiedRelationships = filterVerifiedRelationships(data.relationships)
   const events = sortChronologyEvents(data.timelineEvents).map((event) => {
     const linkedEvidenceIds = relatedIds(verifiedRelationships, 'timeline_event', event.id, 'capture_item')
@@ -47,10 +49,10 @@ export function generateChronology(data: DeliverableSourceData): GeneratedDelive
     }
   })
   const sourceIds = collectSourceIds(data)
-  return { title: 'Chronology', summary: `${events.length} timeline events ordered by event date with verified evidence links.`, content: { type: 'chronology', events }, source_ids: sourceIds, provenance: deliverableProvenance('chronology', sourceIds) }
+  return { title: 'Chronology', summary: `${events.length} timeline events ordered by event date with verified evidence links.`, content: { type: 'chronology', events }, source_ids: sourceIds, provenance: deliverableProvenance('chronology', sourceIds, sourceSelection) }
 }
 
-export function generateEvidenceIndex(data: DeliverableSourceData): GeneratedDeliverable {
+export function generateEvidenceIndex(data: DeliverableSourceData, sourceSelection: DeliverableSourceSelection = defaultDeliverableSourceSelection): GeneratedDeliverable {
   const sortedEvidenceItems = sortEvidenceItems(data.evidenceItems)
   const items = sortedEvidenceItems.map((item) => ({
     evidence_item_id: item.id,
@@ -64,10 +66,10 @@ export function generateEvidenceIndex(data: DeliverableSourceData): GeneratedDel
     source_ids: { evidence_item_ids: [item.id] },
   }))
   const sourceIds = { evidence_item_ids: sortedEvidenceItems.map((item) => item.id) }
-  return { title: 'Evidence Index', summary: `${items.length} evidence items indexed with source and review metadata.`, content: { type: 'evidence_index', items }, source_ids: sourceIds, provenance: deliverableProvenance('evidence_index', sourceIds) }
+  return { title: 'Evidence Index', summary: `${items.length} evidence items indexed with source and review metadata.`, content: { type: 'evidence_index', items }, source_ids: sourceIds, provenance: deliverableProvenance('evidence_index', sourceIds, sourceSelection) }
 }
 
-export function generateObservationSummary(data: DeliverableSourceData): GeneratedDeliverable {
+export function generateObservationSummary(data: DeliverableSourceData, sourceSelection: DeliverableSourceSelection = defaultDeliverableSourceSelection): GeneratedDeliverable {
   const verifiedRelationships = filterVerifiedRelationships(data.relationships)
   const observations = data.assertions.map((assertion) => {
     const linkedEvidenceIds = relatedIds(verifiedRelationships, 'assertion', assertion.id, 'capture_item')
@@ -78,7 +80,62 @@ export function generateObservationSummary(data: DeliverableSourceData): Generat
     return { assertion_id: assertion.id, factual_observation: assertion.statement, linked_evidence_count: linkedEvidenceIds.length, supporting_evidence_count: supportingEvidenceIds.length, contradicting_evidence_count: contradictingEvidenceIds.length, linked_entities: data.entities.filter((entity) => linkedEntityIds.includes(entity.id)).map((entity) => ({ id: entity.id, display_name: entity.display_name })), linked_timeline_events: data.timelineEvents.filter((event) => linkedEventIds.includes(event.id)).map((event) => ({ id: event.id, title: event.title })), source_ids: { assertion_ids: [assertion.id], evidence_item_ids: linkedEvidenceIds, entity_ids: linkedEntityIds, timeline_event_ids: linkedEventIds } }
   })
   const sourceIds = collectSourceIds(data)
-  return { title: 'Observation Summary', summary: `${observations.length} factual observations summarized with supporting and contradicting evidence counts.`, content: { type: 'observation_summary', observations }, source_ids: sourceIds, provenance: deliverableProvenance('observation_summary', sourceIds) }
+  return { title: 'Observation Summary', summary: `${observations.length} factual observations summarized with supporting and contradicting evidence counts.`, content: { type: 'observation_summary', observations }, source_ids: sourceIds, provenance: deliverableProvenance('observation_summary', sourceIds, sourceSelection) }
+}
+
+export function applyDeliverableSourceSelection(data: DeliverableSourceData, sourceSelection: DeliverableSourceSelection = defaultDeliverableSourceSelection): DeliverableSourceData {
+  const selection = { ...defaultDeliverableSourceSelection, ...sourceSelection }
+  const selectedImportBatchIds = new Set(selection.selectedImportBatchIds)
+  const selectedCaptureItemIds = new Set(selection.selectedCaptureItemIds)
+  const selectedTimelineEventIds = new Set(selection.selectedTimelineEventIds)
+  const selectedEntityIds = new Set(selection.selectedEntityIds)
+  const selectedAssertionIds = new Set(selection.selectedAssertionIds)
+
+  for (const batch of data.importBatches ?? []) assertWorkspaceScope(batch, data.sessionId, data.organizationId)
+  ensureSelectedIdsExist(selection.selectedImportBatchIds, data.importBatches ?? [], 'Selected import batches')
+  ensureSelectedIdsExist(selection.selectedCaptureItemIds, data.evidenceItems, 'Selected evidence items')
+  ensureSelectedIdsExist(selection.selectedTimelineEventIds, data.timelineEvents, 'Selected timeline events')
+  ensureSelectedIdsExist(selection.selectedEntityIds, data.entities, 'Selected entities')
+  ensureSelectedIdsExist(selection.selectedAssertionIds, data.assertions, 'Selected factual observations')
+
+  const evidenceItems = data.evidenceItems.filter((item) => {
+    assertWorkspaceScope(item, data.sessionId, data.organizationId)
+    if (selectedCaptureItemIds.size > 0 && !selectedCaptureItemIds.has(item.id)) return false
+    if (selectedImportBatchIds.size > 0 && (!item.import_batch_id || !selectedImportBatchIds.has(item.import_batch_id))) return false
+    if (item.evidence_review_status === 'needs_followup' && !selection.includeNeedsFollowUpEvidence) return false
+    if (!['reviewed', 'needs_followup'].includes(item.evidence_review_status)) return false
+    if (!item.include_in_report && !(selection.includeOutputExcludedEvidence && selectedCaptureItemIds.has(item.id))) return false
+    return true
+  })
+
+  const filterReviewed = <T extends { id: string; review_status: string; documentation_session_id: string; organization_id: string; deleted_at: string | null }>(rows: T[], selectedIds: Set<string>) => rows.filter((row) => {
+    assertWorkspaceScope(row, data.sessionId, data.organizationId)
+    const explicitlySelected = selectedIds.has(row.id)
+    if (selectedIds.size > 0 && !explicitlySelected) return false
+    if (explicitlySelected) assertAllowedReviewStatus(row, selection.includeAcceptedSuggestions, selection.includeEditedSuggestions)
+    if (row.review_status === 'accepted') return selection.includeAcceptedSuggestions
+    if (row.review_status === 'edited') return selection.includeEditedSuggestions
+    return false
+  })
+
+  const timelineEvents = filterReviewed(data.timelineEvents, selectedTimelineEventIds)
+  const entities = filterReviewed(data.entities, selectedEntityIds)
+  const assertions = filterReviewed(data.assertions, selectedAssertionIds)
+  const sourceIdsByType = {
+    capture_item: new Set(evidenceItems.map((item) => item.id)),
+    timeline_event: new Set(timelineEvents.map((event) => event.id)),
+    entity: new Set(entities.map((entity) => entity.id)),
+    assertion: new Set(assertions.map((assertion) => assertion.id)),
+  } as Record<string, Set<string>>
+  const relationships = data.relationships.filter((relationship) => {
+    assertWorkspaceScope(relationship, data.sessionId, data.organizationId)
+    if (relationship.review_status === 'accepted' && !selection.includeAcceptedSuggestions) return false
+    if (relationship.review_status === 'edited' && !selection.includeEditedSuggestions) return false
+    if (!['accepted', 'edited'].includes(relationship.review_status)) return false
+    return Boolean(sourceIdsByType[relationship.source_type]?.has(relationship.source_id) && sourceIdsByType[relationship.target_type]?.has(relationship.target_id))
+  })
+
+  return { ...data, evidenceItems, timelineEvents, entities, assertions, relationships }
 }
 
 export function sortChronologyEvents(events: DeliverableTimelineEvent[]) {
@@ -95,6 +152,12 @@ export function sortEvidenceItems(items: DeliverableEvidenceItem[]) {
     if (dateDiff !== 0) return dateDiff
     return a.id.localeCompare(b.id)
   })
+}
+
+function ensureSelectedIdsExist(selectedIds: string[], rows: Array<{ id: string }>, label: string) {
+  const availableIds = new Set(rows.map((row) => row.id))
+  const missingIds = selectedIds.filter((id) => !availableIds.has(id))
+  if (missingIds.length > 0) throw new Error(`${label} include records outside this session, organization, or active source set`)
 }
 
 function filterVerifiedRelationships(relationships: DeliverableRelationship[]) {
