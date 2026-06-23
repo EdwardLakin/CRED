@@ -26,6 +26,24 @@ async function insertDeliverable(owner, session, type = 'chronology', extra = {}
   made.deliverables.push(row.id)
   return row
 }
+async function createSession(owner, suffix) {
+  return must(
+    'create dedicated session',
+    fx.service
+      .from('documentation_sessions')
+      .insert({
+        organization_id: owner.organization.id,
+        created_by: owner.profile.id,
+        title: `${fx.runId} ${suffix} ${randomUUID()}`,
+        session_type: 'inspection',
+        session_metadata: { runId: fx.runId, purpose: suffix },
+        status: 'draft',
+        display_id: `${suffix}-${randomUUID().slice(0, 8)}`,
+      })
+      .select('*')
+      .single(),
+  )
+}
 async function finalize(client, id) { return must('finalize deliverable', client.rpc('finalize_evidence_deliverable', { p_deliverable_id: id })) }
 async function createToken(owner, session, deliverable, extra = {}) {
   const token = extra.token ?? randomBytes(32).toString('base64url')
@@ -72,8 +90,11 @@ test('creation is scoped, eligible, expiring, unique, and non-sequential', async
     made.tokens.push(invalid.id)
     await expectUnavailable(invalid.token)
   }
-  const deletedSession = await must('soft delete session', fx.service.from('documentation_sessions').update({ deleted_at: nowIso() }).eq('id', fx.sessions.a2.id).select('*').single())
-  const deletedSessionToken = await must('deleted session token', fx.service.from('report_share_tokens').insert({ documentation_session_id: deletedSession.id, organization_id: fx.a.organization.id, deliverable_id: fx.failed.id, link_kind: 'deliverable', token: randomBytes(32).toString('base64url'), expires_at: futureIso(), created_by: fx.a.profile.id }).select('*').single())
+  const deletedSession = await createSession(fx.a, 'deleted-share-session')
+  const deletedSessionDeliverable = await insertDeliverable(fx.a, deletedSession, 'chronology')
+  const finalizedDeletedSessionDeliverable = await finalize(fx.a.client, deletedSessionDeliverable.id)
+  await must('soft delete dedicated session', fx.service.from('documentation_sessions').update({ deleted_at: nowIso() }).eq('id', deletedSession.id).select('*').single())
+  const deletedSessionToken = await must('deleted session token', fx.service.from('report_share_tokens').insert({ documentation_session_id: deletedSession.id, organization_id: fx.a.organization.id, deliverable_id: finalizedDeletedSessionDeliverable.id, link_kind: 'deliverable', token: randomBytes(32).toString('base64url'), expires_at: futureIso(), created_by: fx.a.profile.id }).select('*').single())
   made.tokens.push(deletedSessionToken.id)
   await expectUnavailable(deletedSessionToken.token)
   expectDeniedMutation(await fx.b.client.from('report_share_tokens').update({ disabled_at: nowIso() }).eq('id', first.id).select('id'))
