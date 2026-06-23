@@ -6,7 +6,8 @@ import { revalidatePath } from 'next/cache'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { queueCaptureAnalysisJobs } from '@/lib/capture-processing/queue'
 import type { Json } from '@/lib/supabase/database.types'
-import { BULK_EVIDENCE_BUCKET, BULK_EVIDENCE_SOURCE_KIND, getBulkEvidenceCaptureType, getBulkEvidenceMediaKind, sanitizeEvidenceFilename, validateBulkEvidenceFile } from './validation'
+import { generateEvidenceSuggestionsForCaptures } from '@/features/evidence/suggestions/service'
+import { BULK_EVIDENCE_BUCKET, BULK_EVIDENCE_SOURCE_KIND, getBulkEvidenceCaptureType, getBulkEvidenceMediaKind, parseBatchEventDate, parseBatchEventDatePrecision, parseBatchEvidenceReviewStatus, parseBatchOutputInclusion, parseSelectedCaptureItemIds, sanitizeEvidenceFilename, validateBulkEvidenceFile } from './validation'
 
 export type BulkEvidenceImportResult = {
   ok: boolean
@@ -115,3 +116,44 @@ export async function importBulkEvidence(sessionId: string, formData: FormData):
   revalidatePath(`/dashboard/sessions/${session.id}/evidence/import`)
   return { ok: failedCount === 0, batchId: batch.id, message: `Imported ${processedCount} of ${files.length} files.`, files: results }
 }
+
+
+type ImportMutationBuilder = { select: (columns: string) => ImportMutationBuilder; eq: (column: string, value: string | boolean) => ImportMutationBuilder; in: (column: string, values: string[]) => ImportMutationBuilder; is: (column: string, value: null) => ImportMutationBuilder; single: () => Promise<{ data: unknown; error: unknown }>; update: (values: Record<string, unknown>) => ImportMutationBuilder; insert: (values: Record<string, unknown> | Record<string, unknown>[]) => Promise<{ error: unknown }>; then: Promise<{ data?: unknown; error: unknown }>['then'] }
+type ImportSupabaseLike = { from: (table: string) => ImportMutationBuilder }
+type BatchCaptureRow = { id: string; documentation_session_id: string; organization_id: string; import_batch_id: string | null; deleted_at?: string | null; evidence_review_status: string; include_in_report: boolean; technician_note: string | null; original_filename: string | null; captured_at: string | null; ai_summary?: string | null; ocr_text?: string | null; extracted_text?: string | null }
+
+async function loadBatchForMutation(supabase: ImportSupabaseLike, sessionId: string, batchId: string, organizationId: string) {
+  const { data, error } = await supabase.from('evidence_import_batches').select('id, documentation_session_id, organization_id').eq('id', batchId).eq('documentation_session_id', sessionId).eq('organization_id', organizationId).is('deleted_at', null).single()
+  if (error || !data) throw new Error('Import batch not found')
+}
+
+async function loadBatchCaptureItems(supabase: ImportSupabaseLike, sessionId: string, batchId: string, organizationId: string, ids?: string[]) {
+  await loadBatchForMutation(supabase, sessionId, batchId, organizationId)
+  let query = supabase.from('capture_items').select('*').eq('documentation_session_id', sessionId).eq('organization_id', organizationId).eq('import_batch_id', batchId)
+  if (ids) query = query.in('id', ids)
+  const { data, error } = await query.is('deleted_at', null)
+  if (error) throw new Error('Unable to load batch evidence')
+  const rows = (data ?? []) as BatchCaptureRow[]
+  if (ids && rows.length !== new Set(ids).size) throw new Error('Selected evidence must belong to this batch, session, and organization, and cannot be deleted')
+  return rows
+}
+
+async function updateBatchCaptures(sessionId: string, batchId: string, ids: string[], patch: Record<string, unknown>) {
+  const { supabase: rawSupabase, profile } = await requireSessionWorkspace(); const supabase = rawSupabase as unknown as ImportSupabaseLike
+  const uniqueIds = [...new Set(ids)]
+  if (!uniqueIds.length) throw new Error('Select at least one evidence item')
+  await loadBatchCaptureItems(supabase, sessionId, batchId, profile.organization_id, uniqueIds)
+  const { error } = await supabase.from('capture_items').update({ ...patch, updated_at: new Date().toISOString() }).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).eq('import_batch_id', batchId).in('id', uniqueIds).is('deleted_at', null)
+  if (error) throw new Error('Unable to update batch evidence')
+  revalidatePath(`/dashboard/sessions/${sessionId}/evidence/import/${batchId}`); revalidatePath(`/dashboard/sessions/${sessionId}/evidence`)
+}
+
+export async function updateBatchEvidenceReviewStatus(sessionId: string, batchId: string, captureItemId: string, formData: FormData) { const status = parseBatchEvidenceReviewStatus(formData.get('evidence_review_status')); if (!status) throw new Error('Invalid review status'); await updateBatchCaptures(sessionId, batchId, [captureItemId], { evidence_review_status: status }) }
+export async function updateBatchEvidenceOutputInclusion(sessionId: string, batchId: string, captureItemId: string, formData: FormData) { const include = parseBatchOutputInclusion(formData.get('include_in_report')); if (include === null) throw new Error('Invalid output inclusion'); await updateBatchCaptures(sessionId, batchId, [captureItemId], { include_in_report: include }) }
+export async function updateBatchEvidenceEventDate(sessionId: string, batchId: string, captureItemId: string, formData: FormData) { const precision = parseBatchEventDatePrecision(formData.get('event_date_precision')); if (formData.get('event_date_precision') && !precision) throw new Error('Invalid event date precision'); await updateBatchCaptures(sessionId, batchId, [captureItemId], { event_date: parseBatchEventDate(formData.get('event_date')), event_date_precision: precision }) }
+export async function bulkUpdateBatchEvidenceReviewStatus(sessionId: string, batchId: string, formData: FormData) { const status = parseBatchEvidenceReviewStatus(formData.get('evidence_review_status')); if (!status) throw new Error('Invalid review status'); let ids = parseSelectedCaptureItemIds(formData); if (!ids.length && formData.get('scope') === 'all_unreviewed') { const { supabase: rawSupabase, profile } = await requireSessionWorkspace(); ids = (await loadBatchCaptureItems(rawSupabase as unknown as ImportSupabaseLike, sessionId, batchId, profile.organization_id)).filter((item) => item.evidence_review_status === 'unreviewed').map((item) => item.id) } await updateBatchCaptures(sessionId, batchId, ids, { evidence_review_status: status }) }
+export async function bulkUpdateBatchEvidenceOutputInclusion(sessionId: string, batchId: string, formData: FormData) { const include = parseBatchOutputInclusion(formData.get('include_in_report')); if (include === null) throw new Error('Invalid output inclusion'); await updateBatchCaptures(sessionId, batchId, parseSelectedCaptureItemIds(formData), { include_in_report: include }) }
+
+async function generateBatchSuggestions(sessionId: string, batchId: string, ids?: string[]) { const { supabase: rawSupabase, profile } = await requireSessionWorkspace(); const supabase = rawSupabase as unknown as ImportSupabaseLike; const captures = (await loadBatchCaptureItems(supabase, sessionId, batchId, profile.organization_id, ids)).filter((item) => item.evidence_review_status !== 'excluded' && item.include_in_report && (ids || item.evidence_review_status === 'unreviewed')); const suggestions = await generateEvidenceSuggestionsForCaptures(sessionId, captures, { organizationId: profile.organization_id, userId: profile.id ?? null, timezone: profile.timezone ?? null }); for (const [table, rows] of Object.entries(suggestions)) if (rows.length) { const { error } = await supabase.from(table).insert(rows); if (error) throw new Error('Unable to create batch suggestions') } revalidatePath(`/dashboard/sessions/${sessionId}/suggestions`); revalidatePath(`/dashboard/sessions/${sessionId}/evidence/import/${batchId}`); return { created: Object.values(suggestions).reduce((sum, rows) => sum + rows.length, 0), unsupported: ['Entity suggestions', 'Relationship suggestions'] } }
+export async function generateSuggestionsForImportBatch(sessionId: string, batchId: string) { return generateBatchSuggestions(sessionId, batchId) }
+export async function generateSuggestionsForSelectedBatchEvidence(sessionId: string, batchId: string, formData: FormData) { const ids = parseSelectedCaptureItemIds(formData); if (!ids.length) throw new Error('Select at least one evidence item'); return generateBatchSuggestions(sessionId, batchId, ids) }
