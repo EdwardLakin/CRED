@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { EmptyState, SessionCard } from '@/features/sessions'
 import { createQuickCaptureSession } from '@/features/sessions/actions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import { loadCurrentReportDraftsBySession } from '@/features/sessions/report-title-data'
 
 function getCaptureCounts(captures: Array<{ documentation_session_id: string }> | null) {
   const captureCountBySession = new Map<string, number>()
@@ -69,6 +70,7 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
         .is('deleted_at', null)
     : { data: null }
   const captureCountBySession = getCaptureCounts(captures)
+  const reportDraftBySession = await loadCurrentReportDraftsBySession(supabase, profile.organization_id, sessionIds)
 
   return (
     <main className="page-shell dashboard-shell">
@@ -119,6 +121,7 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
               showArchiveAction
               showManagementActions
               timeZone={profile.timezone}
+              currentReport={reportDraftBySession.get(session.id)}
             />
           ))}
         </div>

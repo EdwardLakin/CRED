@@ -5,7 +5,7 @@ import { formatDateTime } from '../utils'
 import { archiveDocumentationSession, deleteDocumentationSession, restoreDocumentationSession } from '../actions'
 import { SessionStatusBadge } from './SessionStatusBadge'
 import { getSessionOperationalAction, getSessionWorkflowStatus } from '../status'
-import { getSessionPrimaryTitle, getSessionSecondarySummary } from '../display'
+import { getSessionPrimaryTitle, getSessionSecondarySummary, type SessionCardTitleDraft } from '../display'
 import { ConfirmSubmitButton } from './ConfirmSubmitButton'
 
 function canArchiveFromCard(session: DocumentationSession) {
@@ -19,6 +19,7 @@ export function SessionCard({
   showArchiveAction = false,
   showManagementActions = false,
   timeZone,
+  currentReport,
 }: {
   session: DocumentationSession
   evidenceCount?: number
@@ -26,6 +27,7 @@ export function SessionCard({
   showArchiveAction?: boolean
   showManagementActions?: boolean
   timeZone?: string | null
+  currentReport?: SessionCardTitleDraft
 }) {
   const action = showOperationalAction ? getSessionOperationalAction(session) : null
   const href = action?.href ?? `/dashboard/sessions/${session.id}`
@@ -36,7 +38,7 @@ export function SessionCard({
   const archiveAction = archiveDocumentationSession.bind(null, session.id)
   const restoreAction = restoreDocumentationSession.bind(null, session.id)
   const deleteAction = deleteDocumentationSession.bind(null, session.id)
-  const primaryTitle = getSessionPrimaryTitle(session)
+  const primaryTitle = getSessionPrimaryTitle(session, currentReport)
   const secondarySummary = getSessionSecondarySummary(session, evidenceCount, timeZone)
   const renderArchiveAction = showArchiveAction && (isArchived || canArchiveFromCard(session))
 

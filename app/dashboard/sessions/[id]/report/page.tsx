@@ -45,6 +45,7 @@ import {
 import { AutoPrepareReport } from "@/features/reports/components/AutoPrepareReport";
 import { FinalNotesEditor } from "@/features/reports/components/FinalNotesEditor";
 import { EvidenceWorkspaceBacklinks } from "@/features/evidence/components/EvidenceWorkspaceNav";
+import { getIncludedCaptureReviewSummary, isCaptureIncludedInOutput } from "@/features/reports/capture-inclusion";
 
 type Tables = Database["public"]["Tables"];
 type CaptureItem = Tables["capture_items"]["Row"];
@@ -78,10 +79,6 @@ function getDisplayEntries(value: unknown) {
         ),
     )
     .slice(0, 16);
-}
-
-function isHiddenFromReport(metadata: unknown) {
-  return isRecord(metadata) && metadata.hidden_from_report === true;
 }
 
 function isPhotoCapture(capture: CaptureItem) {
@@ -278,9 +275,8 @@ export default async function SessionReportPreviewPage({
     template?.required_evidence ?? null,
   );
   const allCaptures = sanitizeCapturesForImageAiAssist(captures ?? [], true);
-  const visibleCaptures = allCaptures.filter(
-    (capture) => capture.include_in_report,
-  );
+  const visibleCaptures = allCaptures.filter(isCaptureIncludedInOutput);
+  const includedReviewSummary = getIncludedCaptureReviewSummary(visibleCaptures);
   const signedEvidenceUrls: Record<string, string> = {};
   const originalEvidenceUrls: Record<string, string> = {};
   await Promise.all(
@@ -504,6 +500,7 @@ export default async function SessionReportPreviewPage({
             photoEvidence={photoEvidence}
             reviewDocument={reviewDocument}
             supportingEvidence={supportingEvidence}
+            includedReviewSummary={includedReviewSummary}
             session={session}
             saveReportEditsAction={saveReportEditsAction}
             sourceFieldEntries={sourceFieldEntries}
