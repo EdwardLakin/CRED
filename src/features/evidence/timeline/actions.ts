@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { acceptedUserRelationshipDefaults, softDeleteUpdate } from '@/features/evidence/validation'
+import { throwFriendlyRelationshipMutationError } from '@/features/evidence/relationship-errors'
 import { assertSameWorkspace, parseEvidenceRelationshipType, parseTimelineEventForm } from '@/features/evidence/timeline/validation'
 
 type MutationBuilder = {
@@ -79,7 +80,7 @@ export async function linkEvidenceToTimelineEvent(sessionId: string, eventId: st
   assertSameWorkspace(event, capture)
   const now = new Date().toISOString()
   const { error } = await supabase.from('evidence_relationships').insert({ documentation_session_id: sessionId, organization_id: profile.organization_id, source_type: 'capture_item', source_id: captureId, target_type: 'timeline_event', target_id: eventId, relationship_type: relationshipType, ...acceptedUserRelationshipDefaults('timeline_workspace', profile.id, now) })
-  if (error) throw new Error('Unable to link evidence')
+  if (error) throwFriendlyRelationshipMutationError(error, 'Unable to link evidence')
   revalidatePath(`/dashboard/sessions/${sessionId}/timeline`)
 }
 

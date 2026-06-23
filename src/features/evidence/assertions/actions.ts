@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { acceptedUserRelationshipDefaults, softDeleteUpdate } from '@/features/evidence/validation'
+import { throwFriendlyRelationshipMutationError } from '@/features/evidence/relationship-errors'
 import { assertSameWorkspace, parseAssertionForm, parseAssertionRelationshipType } from '@/features/evidence/assertions/validation'
 
 type MutationBuilder = { select: (columns: string) => MutationBuilder; eq: (column: string, value: string) => MutationBuilder; is: (column: string, value: null) => MutationBuilder; single: () => Promise<{ data: unknown; error: unknown }>; insert: (values: Record<string, unknown>) => Promise<{ error: unknown }>; update: (values: Record<string, unknown>) => MutationBuilder; then: Promise<{ error: unknown }>['then'] }
@@ -72,7 +73,7 @@ export async function linkAssertionRelationship(sessionId: string, assertionId: 
   assertSameWorkspace(assertion, source)
   const now = new Date().toISOString()
   const { error } = await supabase.from('evidence_relationships').insert({ documentation_session_id: sessionId, organization_id: profile.organization_id, source_type: sourceType, source_id: sourceId, target_type: 'assertion', target_id: assertionId, relationship_type: relationshipType, ...acceptedUserRelationshipDefaults('assertions_workspace', profile.id, now) })
-  if (error) throw new Error('Unable to link factual observation')
+  if (error) throwFriendlyRelationshipMutationError(error, 'Unable to link factual observation')
   revalidatePath(`/dashboard/sessions/${sessionId}/assertions`)
 }
 
