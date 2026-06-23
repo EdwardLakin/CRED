@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { assertSameEvidenceWorkspace } from '@/features/evidence/validation'
+import { throwFriendlyRelationshipMutationError } from '@/features/evidence/relationship-errors'
 import { generateEvidenceSuggestions } from '@/features/evidence/suggestions/service'
 import { parseEditedSuggestion, parseSuggestionCategory, parseSuggestionDecision, type SuggestionCategory } from '@/features/evidence/suggestions/validation'
 
@@ -42,7 +43,7 @@ async function assertRelationshipSuggestionEndpoints(supabase: SupabaseLike, rel
 export async function generateAiEvidenceSuggestions(sessionId: string) {
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace(); const supabase = rawSupabase as unknown as SupabaseLike; await loadSession(supabase, sessionId, profile.organization_id)
   const suggestions = await generateEvidenceSuggestions(sessionId, { supabase, organizationId: profile.organization_id, userId: profile.id ?? null, timezone: profile.timezone ?? null })
-  for (const [table, rows] of Object.entries(suggestions)) if (rows.length) { const { error } = await supabase.from(table).insert(rows); if (error) throw new Error('Unable to create AI suggestions') }
+  for (const [table, rows] of Object.entries(suggestions)) if (rows.length) { const { error } = await supabase.from(table).insert(rows); if (error) throwFriendlyRelationshipMutationError(error, 'Unable to create AI suggestions') }
   revalidatePath(`/dashboard/sessions/${sessionId}/suggestions`)
 }
 
@@ -53,6 +54,6 @@ export async function reviewEvidenceSuggestion(sessionId: string, suggestionId: 
   if (category === 'relationship') await assertRelationshipSuggestionEndpoints(supabase, suggestion as RelationshipSuggestionRow, sessionId, profile.organization_id)
   const now = new Date().toISOString(); const edits = decision === 'edited' ? parseEditedSuggestion(category, formData) : {}
   const { error } = await supabase.from(TABLES[category]).update({ ...edits, review_status: decision, reviewed_at: decision === 'rejected' ? null : now, reviewed_by: decision === 'rejected' ? null : profile.id ?? null, updated_at: now }).eq('id', suggestionId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).eq('review_status', 'suggested').is('deleted_at', null)
-  if (error) throw new Error('Unable to review suggestion')
+  if (error) throwFriendlyRelationshipMutationError(error, 'Unable to review suggestion')
   revalidatePath(`/dashboard/sessions/${sessionId}/suggestions`)
 }

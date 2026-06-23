@@ -629,3 +629,19 @@ See [Background Capture Processing](./BACKGROUND_CAPTURE_PROCESSING.md) for the 
 - Current plan, subscription status, usage, storage, AI actions, email sends, and billing controls moved to Billing.
 - Dashboard start buttons are context shortcuts for Inspection, Service Report, and General Documentation; they are not separate workflows or products.
 - The new session page can preselect the requested session type from a query parameter while preserving optional Form Profiles and evidence-first copy.
+
+## PR 11 Evidence Workspace security update (June 23, 2026)
+
+Resolved by PR 11:
+
+- Active evidence relationships now have a database-level partial unique index that includes `organization_id`, `documentation_session_id`, endpoint type/id pairs, and `relationship_type`, while permitting a relationship to be recreated after the prior active row is soft-deleted.
+- The migration soft-deletes later active duplicates before creating the index and preserves provenance/audit fields on all duplicate rows.
+- Relationship creation paths now map PostgreSQL unique violation `23505` to a friendly duplicate message instead of exposing raw database errors.
+- A live Supabase RLS integration test foundation and production safety guard document the required two-organization seed model and isolation assertions.
+- Critical browser smoke specifications were added for the Evidence Workspace and the existing Capture → Review → Generate report → Edit → Approve → Export workflow.
+
+Remaining risks:
+
+- Live RLS assertions require dedicated Supabase test credentials and seeded authenticated users before CI can claim real tenancy verification.
+- Playwright smoke tests require a configured E2E environment and installed browser/runtime dependencies.
+- The browser smoke tests intentionally use stable `data-testid` hooks expected from the test environment; the product UI was not changed to add new hooks in this PR.
