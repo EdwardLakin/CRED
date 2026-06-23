@@ -9,6 +9,15 @@ export type DeliverableTimelineEvent = Tables['timeline_events']['Row']
 export type DeliverableEntity = Tables['evidence_entities']['Row']
 export type DeliverableAssertion = Tables['evidence_assertions']['Row']
 export type DeliverableRelationship = Tables['evidence_relationships']['Row']
+export type DeliverableAssemblyBatch = {
+  id: string
+  documentation_session_id: string
+  organization_id: string
+  source_kind: string
+  status: string
+  file_count: number
+  deleted_at: string | null
+}
 
 export type DeliverableSourceData = {
   sessionId: string
@@ -18,7 +27,7 @@ export type DeliverableSourceData = {
   entities: DeliverableEntity[]
   assertions: DeliverableAssertion[]
   relationships: DeliverableRelationship[]
-  importBatches?: Array<{ id: string; documentation_session_id: string; organization_id: string; deleted_at: string | null }>
+  importBatches?: DeliverableAssemblyBatch[]
 }
 
 export type GeneratedDeliverable = { title: string; summary: string; content: Json; source_ids: Json; provenance: Json }
