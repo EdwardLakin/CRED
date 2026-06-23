@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { createDeliverableRecord } from './data'
-import { parseDeliverableType } from './validation'
+import { parseDeliverableSourceSelection, parseDeliverableType } from './validation'
 
 type QueryBuilder = { select: (columns: string) => QueryBuilder; eq: (column: string, value: string) => QueryBuilder; is: (column: string, value: null) => QueryBuilder; single: () => Promise<{ data: unknown; error: unknown }> }
 type SupabaseLike = { from: (table: string) => QueryBuilder }
@@ -15,9 +15,10 @@ async function assertSession(supabase: SupabaseLike, sessionId: string, organiza
 
 export async function generateEvidenceDeliverable(sessionId: string, formData: FormData) {
   const type = parseDeliverableType(formData.get('deliverable_type'))
+  const sourceSelection = parseDeliverableSourceSelection(formData)
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
   const supabase = rawSupabase as unknown as SupabaseLike
   await assertSession(supabase, sessionId, profile.organization_id)
-  await createDeliverableRecord(rawSupabase as never, sessionId, profile.organization_id, profile.id, type)
+  await createDeliverableRecord(rawSupabase as never, sessionId, profile.organization_id, profile.id, type, sourceSelection)
   revalidatePath(`/dashboard/sessions/${sessionId}/deliverables`)
 }
