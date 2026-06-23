@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const migration = readFileSync('supabase/migrations/20260623190000_deliverable_share_links.sql', 'utf8')
+const hardeningMigration = readFileSync('supabase/migrations/20260623201000_harden_deliverable_share_links.sql', 'utf8')
 const share = readFileSync('src/features/evidence/deliverables/share.ts', 'utf8')
 const actions = readFileSync('src/features/evidence/deliverables/actions.ts', 'utf8')
 const workspace = readFileSync('src/features/evidence/deliverables/components/DeliverablesWorkspace.tsx', 'utf8')
@@ -16,6 +17,9 @@ test('existing report share token table is extended for exact deliverable target
   assert.match(migration, /link_kind in \('report', 'deliverable'\)/i)
   assert.match(migration, /report_share_tokens_active_deliverable_idx/i)
   assert.doesNotMatch(migration, /grant\s+.*\s+to\s+anon/i)
+  assert.match(hardeningMigration, /report_share_tokens_one_open_deliverable_idx/i)
+  assert.match(hardeningMigration, /where link_kind = 'deliverable'[\s\S]*disabled_at is null/i)
+  assert.doesNotMatch(hardeningMigration, /grant\s+.*\s+to\s+anon/i)
 })
 
 test('only final non-deleted in-scope deliverables can be shared', () => {
@@ -33,6 +37,8 @@ test('tokens are unguessable, unique, expiring, revocable, and billing limited',
   assert.match(share, /recordUsageEvent\([\s\S]*eventType: 'share_link_created'/)
   assert.match(share, /disabled_at/)
   assert.match(share, /expires_at/)
+  assert.match(share, /validateDeliverableShareExpiration/)
+  assert.match(share, /Share-link expiration must be a valid future date\./)
   assert.match(actions, /revokeEvidenceDeliverableShareLink/)
   assert.match(actions, /rotateEvidenceDeliverableShareLink/)
 })
@@ -45,6 +51,7 @@ test('public resolution rejects expired revoked deleted and superseded deliverab
   assert.match(share, /deliverable\.deleted_at/)
   assert.match(share, /session\.deleted_at/)
   assert.match(share, /notFound\(\)/)
+  assert.match(share, /increment_deliverable_share_token_view/)
 })
 
 test('workspace and detail UI expose share controls only for current final version', () => {
