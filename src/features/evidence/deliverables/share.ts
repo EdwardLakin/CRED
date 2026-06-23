@@ -23,6 +23,21 @@ export function isActiveShareToken(token: Pick<DeliverableShareToken, 'disabled_
   return !token.disabled_at && (!token.expires_at || new Date(token.expires_at) > now)
 }
 
+export function validateDeliverableShareExpiration(expiresAt?: string | null) {
+  if (!expiresAt) {
+    const expiry = new Date()
+    expiry.setDate(expiry.getDate() + DELIVERABLE_SHARE_EXPIRATION_DAYS)
+    return expiry.toISOString()
+  }
+
+  const expiry = new Date(expiresAt)
+  if (!Number.isFinite(expiry.getTime()) || expiry <= new Date()) {
+    throw new Error('Share-link expiration must be a valid future date.')
+  }
+
+  return expiry.toISOString()
+}
+
 export function deliverableShareStatus(token?: Pick<DeliverableShareToken, 'disabled_at' | 'expires_at'> | null) {
   if (!token) return 'Not shared'
   if (token.disabled_at) return 'Revoked'
@@ -54,9 +69,13 @@ export async function createDeliverableShareLink({ supabase, profile, sessionId,
   if (!billingAccess.ok) throw new Error(billingAccess.message)
   const allowance = await requireUsageAllowance({ supabase, organizationId: profile.organization_id, plan: billingAccess.access.plan, eventType: 'share_link_created' })
   if (!allowance.ok) throw new Error(allowance.message)
-  const expiry = expiresAt || (() => { const d = new Date(); d.setDate(d.getDate() + DELIVERABLE_SHARE_EXPIRATION_DAYS); return d.toISOString() })()
+  const expiry = validateDeliverableShareExpiration(expiresAt)
   const { data, error } = await supabase.from('report_share_tokens').insert({ documentation_session_id: sessionId, organization_id: profile.organization_id, deliverable_id: deliverableId, link_kind: 'deliverable', token: randomBytes(32).toString('base64url'), expires_at: expiry, created_by: profile.id }).select('*').single()
-  if (error || !data) throw new Error(error?.message ?? 'Could not create secure share link.')
+  if (error || !data) {
+    const racedExisting = await getActiveDeliverableShareToken(supabase, profile.organization_id, sessionId, deliverableId)
+    if (racedExisting) return racedExisting
+    throw new Error('Could not create secure share link.')
+  }
   await recordUsageEvent({ supabase, organizationId: profile.organization_id, eventType: 'share_link_created', metadata: { session_id: sessionId, deliverable_id: deliverableId, delivery: 'deliverable_share_link' }, createdBy: profile.id })
   return data
 }
@@ -66,6 +85,7 @@ export async function resolveDeliverableShareToken(supabase: Supabase, token: st
   const session = Array.isArray(shareToken?.documentation_sessions) ? shareToken?.documentation_sessions[0] : shareToken?.documentation_sessions
   const deliverable = Array.isArray(shareToken?.evidence_deliverables) ? shareToken?.evidence_deliverables[0] : shareToken?.evidence_deliverables
   if (error || !shareToken || !session || !deliverable || !isActiveShareToken(shareToken) || session.organization_id !== shareToken.organization_id || deliverable.organization_id !== shareToken.organization_id || deliverable.documentation_session_id !== session.id || deliverable.id !== shareToken.deliverable_id || deliverable.status !== 'final' || deliverable.deleted_at || session.deleted_at) notFound()
-  await supabase.from('report_share_tokens').update({ view_count: (shareToken.view_count ?? 0) + 1, last_viewed_at: new Date().toISOString() }).eq('id', shareToken.id)
-  return { shareToken, session, deliverable: deliverable as EvidenceDeliverable }
+  const { data: viewedToken, error: viewError } = await supabase.rpc('increment_deliverable_share_token_view', { p_token_id: shareToken.id })
+  if (viewError || !viewedToken) notFound()
+  return { shareToken: viewedToken, session, deliverable: deliverable as EvidenceDeliverable }
 }

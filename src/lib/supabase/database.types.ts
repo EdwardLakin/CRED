@@ -1379,6 +1379,12 @@ export interface Database {
         }
         Returns: Json
       }
+      increment_deliverable_share_token_view: {
+        Args: {
+          p_token_id: string
+        }
+        Returns: Database['public']['Tables']['report_share_tokens']['Row']
+      }
       create_onboarding_workspace: {
         Args: {
           p_full_name: string
