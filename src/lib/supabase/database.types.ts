@@ -883,6 +883,10 @@ export interface Database {
           deliverable_type: string
           title: string
           status: string
+          version_number: number
+          finalized_at: string | null
+          finalized_by: string | null
+          supersedes_deliverable_id: string | null
           summary: string | null
           content: Json
           source_ids: Json
@@ -900,6 +904,10 @@ export interface Database {
           deliverable_type: string
           title: string
           status?: string
+          version_number?: number
+          finalized_at?: string | null
+          finalized_by?: string | null
+          supersedes_deliverable_id?: string | null
           summary?: string | null
           content?: Json
           source_ids?: Json
@@ -917,6 +925,10 @@ export interface Database {
           deliverable_type?: string
           title?: string
           status?: string
+          version_number?: number
+          finalized_at?: string | null
+          finalized_by?: string | null
+          supersedes_deliverable_id?: string | null
           summary?: string | null
           content?: Json
           source_ids?: Json

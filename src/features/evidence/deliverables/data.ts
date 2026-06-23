@@ -9,7 +9,7 @@ type Tables = Database['public']['Tables']
 export type EvidenceDeliverable = Tables['evidence_deliverables']['Row']
 type QueryBuilder = { select: (columns: string, options?: { count?: 'exact'; head?: boolean }) => QueryBuilder; eq: (column: string, value: string) => QueryBuilder; is: (column: string, value: null) => QueryBuilder; order: (column: string, options?: { ascending?: boolean; nullsFirst?: boolean }) => QueryBuilder; single: () => Promise<{ data: unknown; error: unknown }>; insert: (values: Record<string, unknown>) => { select: (columns: string) => { single: () => Promise<{ data: unknown; error: unknown }> } }; update: (values: Record<string, unknown>) => QueryBuilder; then: Promise<{ data: unknown; error: unknown; count?: number | null }>['then'] }
 export type DeliverableImportBatch = DeliverableAssemblyBatch
-type SupabaseLike = { from: (table: string) => QueryBuilder }
+type SupabaseLike = { from: (table: string) => QueryBuilder; rpc?: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string } | null }> }
 export type DeliverablesWorkspace = { supabase: unknown; profile: { id?: string | null; organization_id: string; timezone?: string | null } }
 
 export const deliverableTypeCards = [
@@ -26,7 +26,7 @@ export async function getDeliverablesData(sessionId: string, workspace?: Deliver
   if (error || !session) notFound()
 
   const [{ data: deliverables }, sourceData] = await Promise.all([
-    supabase.from('evidence_deliverables').select('*').eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).is('deleted_at', null).order('generated_at', { ascending: false }),
+    supabase.from('evidence_deliverables').select('*').eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).is('deleted_at', null).order('version_number', { ascending: false }),
     loadDeliverableSourceData(supabase, sessionId, profile.organization_id),
   ])
 
@@ -49,13 +49,27 @@ export async function createDeliverableRecord(supabase: SupabaseLike, sessionId:
   const sourceData = await loadDeliverableSourceData(supabase, sessionId, organizationId)
   const generated = generateDeliverable(type, sourceData, sourceSelection)
   const now = new Date().toISOString()
-  const { data, error } = await supabase.from('evidence_deliverables').insert({ documentation_session_id: sessionId, organization_id: organizationId, deliverable_type: type, title: generated.title, status: 'generated', summary: generated.summary, content: generated.content, source_ids: generated.source_ids, provenance: generated.provenance, generated_by: createdBy ?? null, generated_at: now, created_at: now, updated_at: now }).select('*').single()
+  const { data, error } = await supabase.from('evidence_deliverables').insert({ documentation_session_id: sessionId, organization_id: organizationId, deliverable_type: type, title: generated.title, status: 'draft', summary: generated.summary, content: generated.content, source_ids: generated.source_ids, provenance: generated.provenance, generated_by: createdBy ?? null, generated_at: now, created_at: now, updated_at: now }).select('*').single()
   if (error || !data) throw new Error('Unable to generate deliverable')
   return data as EvidenceDeliverable
 }
 
 export function getDeliverableSourceCounts(sourceData: DeliverableSourceData) {
   return { evidenceItems: sourceData.evidenceItems.length, importBatches: new Set(sourceData.evidenceItems.map((item) => item.import_batch_id).filter(Boolean)).size, timelineEvents: sourceData.timelineEvents.length, entities: sourceData.entities.length, factualObservations: sourceData.assertions.length, relationships: sourceData.relationships.length }
+}
+
+export function formatDeliverableStatus(status: string) {
+  if (status === 'draft') return 'Draft'
+  if (status === 'final') return 'Final'
+  if (status === 'superseded') return 'Superseded'
+  if (status === 'archived') return 'Archived'
+  return status
+}
+
+export function getDeliverableSourceSummary(deliverable: EvidenceDeliverable) {
+  const sourceIds = deliverable.source_ids && typeof deliverable.source_ids === 'object' && !Array.isArray(deliverable.source_ids) ? deliverable.source_ids as Record<string, unknown> : {}
+  const count = (key: string) => Array.isArray(sourceIds[key]) ? (sourceIds[key] as unknown[]).length : 0
+  return `${count('evidence_item_ids')} evidence · ${count('assertion_ids')} observations · ${count('timeline_event_ids')} timeline events · ${count('entity_ids')} entities`
 }
 
 export function summarizeDeliverableContent(content: Json) {
@@ -95,4 +109,36 @@ export function summarizeDeliverableProvenance(provenance: Json, sourceIds: Json
   const counts = Object.entries(ids).filter(([, value]) => Array.isArray(value)).map(([key, value]) => `${(value as unknown[]).length} ${key.replace(/_/g, ' ')}`)
   const generatedFrom = provenance && typeof provenance === 'object' && !Array.isArray(provenance) ? String((provenance as Record<string, unknown>).generated_from ?? 'evidence workspace') : 'evidence workspace'
   return `${generatedFrom.replace(/_/g, ' ')} snapshot${counts.length ? ` · ${counts.join(' · ')}` : ''}`
+}
+
+
+export async function finalizeDeliverableVersion(supabase: SupabaseLike, sessionId: string, organizationId: string, profileId: string | null | undefined, deliverableId: string) {
+  const { data: deliverable, error } = await supabase.from('evidence_deliverables').select('*').eq('id', deliverableId).eq('documentation_session_id', sessionId).eq('organization_id', organizationId).is('deleted_at', null).single()
+  if (error || !deliverable) throw new Error('Deliverable not found')
+  const row = deliverable as EvidenceDeliverable
+  if (row.status !== 'draft') throw new Error('Only draft deliverables can be finalized')
+  if (supabase.rpc) {
+    const result = await supabase.rpc('finalize_evidence_deliverable', { p_deliverable_id: deliverableId, p_actor_profile_id: profileId ?? null })
+    if (result.error || !result.data) throw new Error('Unable to finalize deliverable')
+    return result.data as EvidenceDeliverable
+  }
+  throw new Error('Unable to finalize deliverable')
+}
+
+export async function archiveDeliverableDraft(supabase: SupabaseLike, sessionId: string, organizationId: string, deliverableId: string) {
+  const { data: deliverable, error } = await supabase.from('evidence_deliverables').select('*').eq('id', deliverableId).eq('documentation_session_id', sessionId).eq('organization_id', organizationId).is('deleted_at', null).single()
+  if (error || !deliverable) throw new Error('Deliverable not found')
+  if ((deliverable as EvidenceDeliverable).status !== 'draft') throw new Error('Only draft deliverables can be archived')
+  const { data, error: updateError } = await supabase.from('evidence_deliverables').update({ status: 'archived' }).eq('id', deliverableId).eq('documentation_session_id', sessionId).eq('organization_id', organizationId).is('deleted_at', null).select('*').single()
+  if (updateError || !data) throw new Error('Unable to archive deliverable')
+  return data as EvidenceDeliverable
+}
+
+export async function restoreDeliverableDraft(supabase: SupabaseLike, sessionId: string, organizationId: string, deliverableId: string) {
+  const { data: deliverable, error } = await supabase.from('evidence_deliverables').select('*').eq('id', deliverableId).eq('documentation_session_id', sessionId).eq('organization_id', organizationId).is('deleted_at', null).single()
+  if (error || !deliverable) throw new Error('Deliverable not found')
+  if ((deliverable as EvidenceDeliverable).status !== 'archived') throw new Error('Only archived drafts can be restored')
+  const { data, error: updateError } = await supabase.from('evidence_deliverables').update({ status: 'draft' }).eq('id', deliverableId).eq('documentation_session_id', sessionId).eq('organization_id', organizationId).is('deleted_at', null).select('*').single()
+  if (updateError || !data) throw new Error('Unable to restore deliverable')
+  return data as EvidenceDeliverable
 }
