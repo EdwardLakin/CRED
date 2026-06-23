@@ -1,0 +1,67 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import test from 'node:test'
+
+const migration = readFileSync('supabase/migrations/20260623160000_deliverable_version_lifecycle.sql', 'utf8')
+const data = readFileSync('src/features/evidence/deliverables/data.ts', 'utf8')
+const actions = readFileSync('src/features/evidence/deliverables/actions.ts', 'utf8')
+const workspace = readFileSync('src/features/evidence/deliverables/components/DeliverablesWorkspace.tsx', 'utf8')
+const detail = readFileSync('src/features/evidence/deliverables/components/DeliverableDetail.tsx', 'utf8')
+const print = readFileSync('src/features/evidence/deliverables/components/DeliverablePrintView.tsx', 'utf8')
+
+test('deliverable versions are assigned server-side and scoped by org session and type', () => {
+  assert.match(migration, /version_number integer/)
+  assert.match(migration, /pg_advisory_xact_lock/)
+  assert.match(migration, /partition by organization_id, documentation_session_id, deliverable_type/i)
+  assert.match(migration, /where organization_id = new\.organization_id and documentation_session_id = new\.documentation_session_id and deliverable_type = new\.deliverable_type/i)
+  assert.match(migration, /evidence_deliverables_version_unique_idx.*organization_id, documentation_session_id, deliverable_type, version_number/is)
+})
+
+test('lifecycle status and one-final enforcement are in the database', () => {
+  assert.match(migration, /status in \('draft', 'final', 'superseded', 'archived', 'failed'\)/)
+  assert.match(migration, /evidence_deliverables_one_final_idx.*where status = 'final' and deleted_at is null/is)
+  assert.match(migration, /finalize_evidence_deliverable/)
+  assert.match(migration, /status = 'superseded'/)
+  assert.match(migration, /status = 'final', finalized_at = now\(\), finalized_by = p_actor_profile_id/)
+})
+
+test('server actions authenticate scope and reject unsafe lifecycle changes', () => {
+  assert.match(actions, /requireSessionWorkspace\(\)/)
+  assert.match(actions, /assertSession\(supabase, sessionId, profile\.organization_id\)/)
+  assert.match(data, /eq\('id', deliverableId\).*eq\('documentation_session_id', sessionId\).*eq\('organization_id', organizationId\).*is\('deleted_at', null\)/s)
+  assert.match(data, /row\.status !== 'draft'/)
+  assert.match(data, /Only draft deliverables can be finalized/)
+  assert.match(data, /Only draft deliverables can be archived/)
+})
+
+test('immutable generated snapshots are preserved after finalization and regeneration inserts', () => {
+  assert.match(data, /insert\(\{[\s\S]*status: 'draft'[\s\S]*content: generated\.content[\s\S]*provenance: generated\.provenance/s)
+  assert.match(migration, /protect_evidence_deliverable_snapshot/)
+  assert.match(migration, /old\.status in \('final', 'superseded'\).*new\.content is distinct from old\.content/s)
+  assert.doesNotMatch(data, /update\(\{[\s\S]*(content|provenance)[\s\S]*\}/)
+})
+
+test('workspace groups versions, hides archived drafts by default, and keeps history readable', () => {
+  assert.match(workspace, /Version history/)
+  assert.match(workspace, /Show archived versions/)
+  assert.match(workspace, /deliverable\.status !== 'archived'/)
+  assert.match(workspace, /Current final version/)
+  assert.match(workspace, /Generate new version/)
+  assert.match(workspace, /finalizeEvidenceDeliverable/)
+  assert.match(workspace, /archiveEvidenceDeliverable/)
+  assert.match(workspace, /dashboard\/sessions\/\$\{sessionId\}\/deliverables\/\$\{deliverable\.id\}\/print/)
+})
+
+test('detail UI displays stored source-selection provenance', () => {
+  assert.match(detail, /Source provenance/)
+  assert.match(detail, /immutable provenance stored on this deliverable version/)
+  for (const key of ['selectedImportBatchIds', 'selectedCaptureItemIds', 'selectedAssertionIds', 'selectedTimelineEventIds', 'selectedEntityIds', 'includeNeedsFollowUpEvidence', 'includeOutputExcludedEvidence', 'includeAcceptedSuggestions', 'includeEditedSuggestions']) assert.match(detail, new RegExp(key))
+  assert.match(detail, /Raw provenance JSON for debugging/)
+})
+
+test('print UI displays version and lifecycle metadata', () => {
+  assert.match(print, /Version \{deliverable\.version_number\}/)
+  assert.match(print, /formatDeliverableStatus\(deliverable\.status\)/)
+  assert.match(print, /deliverable\.finalized_at/)
+  assert.match(print, /Source-controlled deliverable/)
+})
