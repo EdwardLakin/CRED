@@ -26,10 +26,24 @@ export async function createLiveRlsFixture() {
   const a1 = await session(a,'A1'), a2 = await session(a,'A2'), b1 = await session(b,'B1')
   async function seed(owner, sess, suffix, extra={}) { const capture = await insertOne(service,'capture_items',{ documentation_session_id:sess.id, organization_id:owner.organization.id, type:'photo', storage_path:`tests/${runId}/${suffix}.jpg`, original_filename:`${suffix}.jpg`, media_kind:'image', technician_note:`${suffix} note` }); const timeline = await insertOne(service,'timeline_events',{ documentation_session_id:sess.id, organization_id:owner.organization.id, capture_item_id:capture.id, title:`${suffix} timeline`, event_type:'manual', event_start_at:new Date().toISOString(), source_kind:'user', review_status:'accepted', created_by:owner.profile.id }); const entity = await insertOne(service,'evidence_entities',{ documentation_session_id:sess.id, organization_id:owner.organization.id, entity_type:'asset', display_name:`${suffix} asset`, suggestion_source:'user', review_status:'accepted', created_by:owner.profile.id }); const assertion = await insertOne(service,'evidence_assertions',{ documentation_session_id:sess.id, organization_id:owner.organization.id, assertion_type:'factual_observation', statement:`${suffix} observation`, normalized_statement:`${suffix} observation`, suggestion_source:'user', review_status:'accepted', created_by:owner.profile.id }); const relationship = await insertOne(service,'evidence_relationships',{ documentation_session_id:sess.id, organization_id:owner.organization.id, source_type:'capture_item', source_id:capture.id, target_type:'entity', target_id:entity.id, relationship_type:'documents', suggestion_source:'user', review_status:'accepted', created_by:owner.profile.id }); const suggestion = await insertOne(service,'evidence_relationships',{ documentation_session_id:sess.id, organization_id:owner.organization.id, source_type:'capture_item', source_id:capture.id, target_type:'assertion', target_id:assertion.id, relationship_type:'supports', suggestion_source:'ai', confidence:0.8, provenance:{ runId }, created_by:owner.profile.id }); const deliverable = await insertOne(service,'evidence_deliverables',{ documentation_session_id:sess.id, organization_id:owner.organization.id, deliverable_type:'chronology', title:`${suffix} deliverable`, summary:'seeded', content:{ runId }, source_ids:{ capture_items:[capture.id] }, generated_by:owner.profile.id }); return { capture, timeline, entity, assertion, relationship, suggestion, deliverable, ...extra } }
   const a1Seed = await seed(a,a1,'a1'); const a2Seed = await seed(a,a2,'a2'); const b1Seed = await seed(b,b1,'b1')
-  const deletedEndpoint = await insertOne(service,'evidence_entities',{ documentation_session_id:a1.id, organization_id:a.organization.id, entity_type:'asset', display_name:'deleted endpoint', deleted_at:new Date().toISOString() })
+  const deletedEndpoint = await insertOne(service,'evidence_entities',{ documentation_session_id:a1.id, organization_id:a.organization.id, entity_type:'asset', display_name:'deleted endpoint' })
   const softDeletedRelationship = await insertOne(service,'evidence_relationships',{ documentation_session_id:a1.id, organization_id:a.organization.id, source_type:'entity', source_id:a1Seed.entity.id, target_type:'entity', target_id:deletedEndpoint.id, relationship_type:'related_to', deleted_at:new Date().toISOString() })
+  await must('soft delete endpoint', service.from('evidence_entities').update({ deleted_at:new Date().toISOString() }).eq('id', deletedEndpoint.id))
   return { runId, service, cleanup, a, b, sessions:{ a1, a2, b1 }, seed:{ a1:a1Seed, a2:a2Seed, b1:b1Seed, deletedEndpoint, softDeletedRelationship } }
 }
 export function expectDeniedRead(result) { if (result.error) return; if (Array.isArray(result.data)) { if (result.data.length !== 0) throw new Error('expected denied read to return no rows'); return } if (result.data != null) throw new Error('expected denied read to return null') }
-export function expectDeniedWrite(result) { if (!result.error) throw new Error('expected RLS denied write to return an error') }
+export function expectDeniedInsert(result) { if (!result.error) throw new Error('expected RLS denied insert to return an error') }
+export function expectDeniedMutation(result) {
+  if (result.error) return
+  const rows = Array.isArray(result.data) ? result.data : (result.data == null ? [] : [result.data])
+  if (rows.length !== 0) throw new Error(`expected denied mutation to affect zero rows; received ${rows.length}`)
+}
+export function expectSingleMutationRow(result, expectedId) {
+  if (result.error) throw new Error(`expected mutation to succeed: ${result.error.message}`)
+  const rows = Array.isArray(result.data) ? result.data : (result.data == null ? [] : [result.data])
+  if (rows.length !== 1) throw new Error(`expected mutation to affect exactly one row; received ${rows.length}`)
+  if (expectedId && rows[0]?.id !== expectedId) throw new Error(`expected mutation row ${expectedId}; received ${rows[0]?.id}`)
+  return rows[0]
+}
+export const expectDeniedWrite = expectDeniedInsert
 export function duplicateRelationshipMessage(error) { return error?.code === '23505' ? 'This relationship already exists.' : error?.message ?? 'Unable to create relationship' }
