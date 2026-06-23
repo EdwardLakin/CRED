@@ -3,12 +3,12 @@ import { notFound } from 'next/navigation'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import type { Database, Json } from '@/lib/supabase/database.types'
 import type { DeliverableSourceSelection, DeliverableType } from './validation'
-import { applyDeliverableSourceSelection, generateDeliverable, type DeliverableSourceData } from './service'
+import { applyDeliverableSourceSelection, generateDeliverable, type DeliverableAssemblyBatch, type DeliverableSourceData } from './service'
 
 type Tables = Database['public']['Tables']
 export type EvidenceDeliverable = Tables['evidence_deliverables']['Row']
 type QueryBuilder = { select: (columns: string, options?: { count?: 'exact'; head?: boolean }) => QueryBuilder; eq: (column: string, value: string) => QueryBuilder; is: (column: string, value: null) => QueryBuilder; order: (column: string, options?: { ascending?: boolean; nullsFirst?: boolean }) => QueryBuilder; single: () => Promise<{ data: unknown; error: unknown }>; insert: (values: Record<string, unknown>) => { select: (columns: string) => { single: () => Promise<{ data: unknown; error: unknown }> } }; update: (values: Record<string, unknown>) => QueryBuilder; then: Promise<{ data: unknown; error: unknown; count?: number | null }>['then'] }
-export type DeliverableImportBatch = Tables['evidence_import_batches']['Row']
+export type DeliverableImportBatch = DeliverableAssemblyBatch
 type SupabaseLike = { from: (table: string) => QueryBuilder }
 export type DeliverablesWorkspace = { supabase: unknown; profile: { id?: string | null; organization_id: string; timezone?: string | null } }
 
@@ -36,7 +36,7 @@ export async function getDeliverablesData(sessionId: string, workspace?: Deliver
 export async function loadDeliverableSourceData(supabase: SupabaseLike, sessionId: string, organizationId: string): Promise<DeliverableSourceData> {
   const [{ data: evidenceItems }, { data: importBatches }, { data: timelineEvents }, { data: entities }, { data: assertions }, { data: relationships }] = await Promise.all([
     supabase.from('capture_items').select('*').eq('documentation_session_id', sessionId).eq('organization_id', organizationId).is('deleted_at', null).order('captured_at', { ascending: false }),
-    supabase.from('evidence_import_batches').select('*').eq('documentation_session_id', sessionId).eq('organization_id', organizationId).is('deleted_at', null).order('created_at', { ascending: false }),
+    supabase.from('evidence_import_batches').select('id, documentation_session_id, organization_id, source_kind, status, file_count, deleted_at').eq('documentation_session_id', sessionId).eq('organization_id', organizationId).is('deleted_at', null).order('created_at', { ascending: false }),
     supabase.from('timeline_events').select('*').eq('documentation_session_id', sessionId).eq('organization_id', organizationId).is('deleted_at', null).order('event_start_at', { ascending: true, nullsFirst: false }).order('event_time', { ascending: true }).order('created_at', { ascending: true }),
     supabase.from('evidence_entities').select('*').eq('documentation_session_id', sessionId).eq('organization_id', organizationId).is('deleted_at', null).order('display_name', { ascending: true }),
     supabase.from('evidence_assertions').select('*').eq('documentation_session_id', sessionId).eq('organization_id', organizationId).is('deleted_at', null).order('created_at', { ascending: true }),
