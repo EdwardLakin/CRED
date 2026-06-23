@@ -112,13 +112,13 @@ export function summarizeDeliverableProvenance(provenance: Json, sourceIds: Json
 }
 
 
-export async function finalizeDeliverableVersion(supabase: SupabaseLike, sessionId: string, organizationId: string, profileId: string | null | undefined, deliverableId: string) {
+export async function finalizeDeliverableVersion(supabase: SupabaseLike, sessionId: string, organizationId: string, deliverableId: string) {
   const { data: deliverable, error } = await supabase.from('evidence_deliverables').select('*').eq('id', deliverableId).eq('documentation_session_id', sessionId).eq('organization_id', organizationId).is('deleted_at', null).single()
   if (error || !deliverable) throw new Error('Deliverable not found')
   const row = deliverable as EvidenceDeliverable
   if (row.status !== 'draft') throw new Error('Only draft deliverables can be finalized')
   if (supabase.rpc) {
-    const result = await supabase.rpc('finalize_evidence_deliverable', { p_deliverable_id: deliverableId, p_actor_profile_id: profileId ?? null })
+    const result = await supabase.rpc('finalize_evidence_deliverable', { p_deliverable_id: deliverableId })
     if (result.error || !result.data) throw new Error('Unable to finalize deliverable')
     return result.data as EvidenceDeliverable
   }
