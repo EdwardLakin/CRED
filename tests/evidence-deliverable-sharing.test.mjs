@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs'
 const migration = readFileSync('supabase/migrations/20260623190000_deliverable_share_links.sql', 'utf8')
 const hardeningMigration = readFileSync('supabase/migrations/20260623201000_harden_deliverable_share_links.sql', 'utf8')
 const accessMigration = readFileSync('supabase/migrations/20260623202000_restore_scoped_report_share_token_access.sql', 'utf8')
+const usageAccessMigration = readFileSync('supabase/migrations/20260623203000_restore_scoped_usage_event_access.sql', 'utf8')
 const share = readFileSync('src/features/evidence/deliverables/share.ts', 'utf8')
 const actions = readFileSync('src/features/evidence/deliverables/actions.ts', 'utf8')
 const workspace = readFileSync('src/features/evidence/deliverables/components/DeliverablesWorkspace.tsx', 'utf8')
@@ -98,4 +99,23 @@ test('shared route is read-only and hides dashboard internals and raw provenance
   assert.match(route, /Finalized deliverable/)
   assert.match(route, /Source-controlled deliverable/)
   assert.doesNotMatch(route, /dashboard-shell|DashboardNavigation|Raw provenance JSON|source-selection debug|prompt/i)
+})
+
+
+test('usage event access is scoped append-only authenticated table access', () => {
+  assert.match(usageAccessMigration, /alter table public\.organization_usage_events enable row level security/i)
+  assert.match(usageAccessMigration, /revoke all on table public\.organization_usage_events from anon/i)
+  assert.match(usageAccessMigration, /revoke all on table public\.organization_usage_events from authenticated/i)
+  assert.match(usageAccessMigration, /grant select, insert on table public\.organization_usage_events to authenticated/i)
+  assert.doesNotMatch(usageAccessMigration, /grant\s+(?:all|update|delete)[\s\S]*on table public\.organization_usage_events[\s\S]*to authenticated/i)
+  assert.doesNotMatch(usageAccessMigration, /grant\s+[\s\S]*on table public\.organization_usage_events[\s\S]*to anon/i)
+  assert.match(usageAccessMigration, /create policy "Organization members can read usage events"[\s\S]*for select[\s\S]*to authenticated[\s\S]*auth\.uid\(\) is not null[\s\S]*profiles\.organization_id = organization_usage_events\.organization_id[\s\S]*profiles\.user_id = auth\.uid\(\)/i)
+  assert.match(usageAccessMigration, /create policy "Organization members can create org usage events"[\s\S]*for insert[\s\S]*to authenticated[\s\S]*quantity >= 0[\s\S]*event_type in[\s\S]*'share_link_created'[\s\S]*profiles\.organization_id = organization_usage_events\.organization_id[\s\S]*created_by is null[\s\S]*profiles\.id = organization_usage_events\.created_by/i)
+  assert.doesNotMatch(usageAccessMigration, /using\s*\(\s*true\s*\)|with check\s*\(\s*true\s*\)/i)
+})
+
+test('recordUsageEvent continues to use canonical direct authenticated ledger insert', () => {
+  const limits = readFileSync('src/features/usage/limits.ts', 'utf8')
+  assert.match(limits, /supabase\.from\('organization_usage_events'\)\.insert\(\{[\s\S]*organization_id: organizationId[\s\S]*event_type: eventType[\s\S]*created_by: createdBy/i)
+  assert.doesNotMatch(limits, /service[_-]?role|createAdminClient|rpc\('record_usage/i)
 })
