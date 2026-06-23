@@ -1,0 +1,42 @@
+import assert from 'node:assert/strict'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import test from 'node:test'
+
+const migrationsDir = join(process.cwd(), 'supabase', 'migrations')
+const migrations = readdirSync(migrationsDir).filter((file) => file.endsWith('.sql')).sort()
+
+const createdByMigration = new Map()
+for (const file of migrations) {
+  const sql = readFileSync(join(migrationsDir, file), 'utf8')
+  for (const match of sql.matchAll(/create\s+table\s+(?:if\s+not\s+exists\s+)?public\.([a-z_][a-z0-9_]*)/gi)) {
+    if (!createdByMigration.has(match[1])) createdByMigration.set(match[1], file)
+  }
+  for (const match of sql.matchAll(/create\s+(?:or\s+replace\s+)?function\s+public\.([a-z_][a-z0-9_]*)\s*\(/gi)) {
+    if (!createdByMigration.has(`${match[1]}()`)) createdByMigration.set(`${match[1]}()`, file)
+  }
+}
+
+const expectedOrder = [
+  ['documentation_sessions', '20260609180000_core_schema_foundation.sql', '20260609190000_session_capture_intake.sql'],
+  ['is_org_member()', '20260609180000_core_schema_foundation.sql', '20260622150000_evidence_deliverables_foundation.sql'],
+  ['touch_updated_at()', '20260612090000_ai_report_drafts.sql', '20260622120000_evidence_engine_schema_foundation.sql'],
+]
+
+test('migrations are sorted deterministically by timestamped filename', () => {
+  assert.deepEqual(migrations, [...migrations].sort())
+  assert.ok(migrations.indexOf('20260609032000_auth_onboarding_foundation.sql') < migrations.indexOf('20260609180000_core_schema_foundation.sql'))
+})
+
+test('known foundational objects are created before dependent migrations', () => {
+  for (const [objectName, creator, dependent] of expectedOrder) {
+    assert.equal(createdByMigration.get(objectName), creator, `${objectName} should be created by ${creator}`)
+    assert.ok(migrations.indexOf(creator) < migrations.indexOf(dependent), `${objectName} must be created before ${dependent}`)
+  }
+})
+
+test('documentation_sessions exists before session_capture_intake references it', () => {
+  const sessionCaptureSql = readFileSync(join(migrationsDir, '20260609190000_session_capture_intake.sql'), 'utf8')
+  assert.match(sessionCaptureSql, /references\s+public\.documentation_sessions\(id\)/i)
+  assert.ok(migrations.indexOf('20260609180000_core_schema_foundation.sql') < migrations.indexOf('20260609190000_session_capture_intake.sql'))
+})
