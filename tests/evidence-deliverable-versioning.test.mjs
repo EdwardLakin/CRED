@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 const migration = readFileSync('supabase/migrations/20260623160000_deliverable_version_lifecycle.sql', 'utf8')
+const hardeningMigration = readFileSync('supabase/migrations/20260623170000_harden_deliverable_finalization.sql', 'utf8')
 const data = readFileSync('src/features/evidence/deliverables/data.ts', 'utf8')
 const actions = readFileSync('src/features/evidence/deliverables/actions.ts', 'utf8')
 const workspace = readFileSync('src/features/evidence/deliverables/components/DeliverablesWorkspace.tsx', 'utf8')
@@ -24,7 +25,12 @@ test('lifecycle status and one-final enforcement are in the database', () => {
   assert.match(migration, /evidence_deliverables_one_final_idx.*where status = 'final' and deleted_at is null/is)
   assert.match(migration, /finalize_evidence_deliverable/)
   assert.match(migration, /status = 'superseded'/)
-  assert.match(migration, /status = 'final', finalized_at = now\(\), finalized_by = p_actor_profile_id/)
+  assert.match(hardeningMigration, /finalize_evidence_deliverable\(p_deliverable_id uuid\)/)
+  assert.match(hardeningMigration, /auth\.uid\(\) is null/)
+  assert.match(hardeningMigration, /p\.user_id = auth\.uid\(\)[\s\S]*p\.organization_id = selected\.organization_id/)
+  assert.match(hardeningMigration, /finalized_by = actor_profile_id/)
+  assert.match(hardeningMigration, /revoke all on function public\.finalize_evidence_deliverable\(uuid, uuid\) from authenticated/i)
+  assert.doesNotMatch(hardeningMigration, /grant execute on function public\.finalize_evidence_deliverable\(uuid\) to anon/i)
 })
 
 test('server actions authenticate scope and reject unsafe lifecycle changes', () => {
@@ -33,6 +39,8 @@ test('server actions authenticate scope and reject unsafe lifecycle changes', ()
   assert.match(data, /eq\('id', deliverableId\).*eq\('documentation_session_id', sessionId\).*eq\('organization_id', organizationId\).*is\('deleted_at', null\)/s)
   assert.match(data, /row\.status !== 'draft'/)
   assert.match(data, /Only draft deliverables can be finalized/)
+  assert.match(data, /rpc\('finalize_evidence_deliverable', \{ p_deliverable_id: deliverableId \}\)/)
+  assert.doesNotMatch(data, /p_actor_profile_id/)
   assert.match(data, /Only draft deliverables can be archived/)
 })
 

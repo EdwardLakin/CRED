@@ -47,7 +47,7 @@ export async function finalizeEvidenceDeliverable(sessionId: string, deliverable
     const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
     const supabase = rawSupabase as unknown as SupabaseLike
     await assertSession(supabase, sessionId, profile.organization_id)
-    await finalizeDeliverableVersion(rawSupabase as never, sessionId, profile.organization_id, profile.id, deliverableId)
+    await finalizeDeliverableVersion(rawSupabase as never, sessionId, profile.organization_id, deliverableId)
     revalidateDeliverableRoutes(sessionId, deliverableId)
     return { ok: true }
   } catch (error) {

@@ -1367,6 +1367,12 @@ export interface Database {
     }
     Views: Record<string, never>
     Functions: {
+      finalize_evidence_deliverable: {
+        Args: {
+          p_deliverable_id: string
+        }
+        Returns: Json
+      }
       create_onboarding_workspace: {
         Args: {
           p_full_name: string
