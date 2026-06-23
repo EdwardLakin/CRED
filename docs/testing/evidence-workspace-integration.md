@@ -14,6 +14,10 @@ npm run test:e2e
 
 `npm run test` continues to run only non-secret-dependent Node tests. `npm run test:integration` and `npm run test:e2e` fail clearly when required environment variables are missing; they do not silently skip explicit runs.
 
+## Reproducible migration bootstrap
+
+The dedicated Supabase test project should be built from the repository migration chain, not from manual table creation or production data copies. See `docs/testing/database-bootstrap.md` for the repaired bootstrap procedure. For an empty CRED Test project, apply the committed migrations with `npx supabase db push` and confirm the chain proceeds through the latest migration before running live RLS or browser smoke tests. Never run destructive reset commands against production.
+
 ## Dedicated Supabase test project setup
 
 1. Create a Supabase project used only for automated RLS testing.
