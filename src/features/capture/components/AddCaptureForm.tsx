@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -386,9 +387,6 @@ export function AddCaptureForm({
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const voiceNoteTimeoutRef = useRef<number | null>(null);
   const selectedFilesRef = useRef<SelectedEvidenceFile[]>([]);
-  const autoSaveSelectedMediaRef = useRef<
-    (files: SelectedEvidenceFile[]) => Promise<void>
-  >(async () => {});
   const isSavingRef = useRef(false);
   const uploadStartedFileIdsRef = useRef(new Set<string>());
   const noteAutosaveTimeoutsRef = useRef(new Map<string, number>());
@@ -834,7 +832,11 @@ export function AddCaptureForm({
     }
   }
 
-  autoSaveSelectedMediaRef.current = autoSaveSelectedMedia;
+  const resumeQueuedMediaUpload = useEffectEvent(
+    async (files: SelectedEvidenceFile[]) => {
+      await autoSaveSelectedMedia(files);
+    },
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -859,7 +861,7 @@ export function AddCaptureForm({
           setSaveMessage(
             `Resuming ${resumableFiles.length} pending upload${resumableFiles.length === 1 ? "" : "s"}…`,
           );
-          void autoSaveSelectedMediaRef.current(resumableFiles);
+          void resumeQueuedMediaUpload(resumableFiles);
         }
       })
       .catch((error: unknown) => {
