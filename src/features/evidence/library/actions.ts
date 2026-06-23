@@ -5,39 +5,90 @@ import { revalidatePath } from 'next/cache'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { parseEventDatePrecision, parseEvidenceReviewStatus, normalizeOptionalIsoDateTime, parseMetadataJson } from '@/features/evidence/library/validation'
 
-async function updateEvidenceCapture(captureId: string, patch: Record<string, unknown>) {
-  const { supabase, profile } = await requireSessionWorkspace()
-  const { data: capture, error: captureError } = await supabase
-    .from('capture_items')
-    .select('id, documentation_session_id')
-    .eq('id', captureId)
-    .eq('organization_id', profile.organization_id)
-    .is('deleted_at', null)
-    .single()
+type EvidencePatch = Record<string, unknown>
+type UpdatedEvidenceRow = {
+  id: string
+  documentation_session_id: string
+  evidence_review_status: string | null
+  include_in_report: boolean | null
+  event_date: string | null
+  event_date_precision: string | null
+  source_created_at: string | null
+  source_sent_at: string | null
+  source_received_at: string | null
+  source_uri: string | null
+  source_metadata: unknown
+  duplicate_status: string | null
+  duplicate_of_capture_item_id: string | null
+}
 
-  if (captureError || !capture) throw new Error('Evidence item not found')
+const UPDATED_EVIDENCE_SELECT = 'id, documentation_session_id, evidence_review_status, include_in_report, event_date, event_date_precision, source_created_at, source_sent_at, source_received_at, source_uri, source_metadata, duplicate_status, duplicate_of_capture_item_id'
 
-  const { error } = await supabase
-    .from('capture_items')
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq('id', captureId)
-    .eq('organization_id', profile.organization_id)
-    .is('deleted_at', null)
+function valuesMatch(requested: unknown, stored: unknown) {
+  if (requested === undefined) return true
+  if (requested === stored) return true
+  if (requested == null || stored == null) return requested == null && stored == null
+  if (requested instanceof Date) return requested.toISOString() === stored
+  if (typeof requested === 'object' || typeof stored === 'object') return JSON.stringify(requested) === JSON.stringify(stored)
+  return String(requested) === String(stored)
+}
 
-  if (error) throw new Error('Unable to update evidence item')
-  const sessionId = capture.documentation_session_id
+function logEvidenceMutationFailure(operation: string, captureId: string, organizationId: string, errorCode?: string) {
+  console.error('Evidence mutation failed', { operation, captureId, organizationId, errorCode })
+}
+
+function revalidateEvidenceMutationRoutes(sessionId: string, captureId: string) {
+  revalidatePath('/dashboard')
+  revalidatePath('/dashboard/sessions')
+  revalidatePath(`/dashboard/sessions/${sessionId}`)
   revalidatePath(`/dashboard/sessions/${sessionId}/evidence`)
   revalidatePath(`/dashboard/sessions/${sessionId}/evidence/${captureId}`)
+  revalidatePath(`/dashboard/sessions/${sessionId}/evidence/review`)
+  revalidatePath(`/dashboard/sessions/${sessionId}/report`)
+  revalidatePath(`/dashboard/sessions/${sessionId}/deliverables`)
+}
+
+async function updateEvidenceCapture(captureId: string, patch: EvidencePatch, operation = 'updateEvidenceCapture') {
+  const { supabase, profile } = await requireSessionWorkspace()
+  const updatePatch = { ...patch, updated_at: new Date().toISOString() }
+  const { data, error } = await supabase
+    .from('capture_items')
+    .update(updatePatch)
+    .eq('id', captureId)
+    .eq('organization_id', profile.organization_id)
+    .is('deleted_at', null)
+    .select(UPDATED_EVIDENCE_SELECT)
+    .maybeSingle()
+
+  if (error) {
+    logEvidenceMutationFailure(operation, captureId, profile.organization_id, error.code)
+    throw new Error('Unable to update evidence item. Please refresh and try again.')
+  }
+  if (!data) {
+    logEvidenceMutationFailure(operation, captureId, profile.organization_id, 'NO_ROWS_UPDATED')
+    throw new Error('Evidence item was not updated. It may have been deleted or you may not have access.')
+  }
+
+  const row = data as UpdatedEvidenceRow
+  for (const [key, value] of Object.entries(patch)) {
+    if (!valuesMatch(value, row[key as keyof UpdatedEvidenceRow])) {
+      logEvidenceMutationFailure(operation, captureId, profile.organization_id, `MISMATCH_${key}`)
+      throw new Error('Evidence item update could not be verified. Please refresh and try again.')
+    }
+  }
+
+  revalidateEvidenceMutationRoutes(row.documentation_session_id, captureId)
+  return row
 }
 
 export async function updateEvidenceReviewStatus(captureId: string, formData: FormData) {
   const status = parseEvidenceReviewStatus(formData.get('evidence_review_status'))
   if (!status) throw new Error('Invalid review status')
-  await updateEvidenceCapture(captureId, { evidence_review_status: status })
+  await updateEvidenceCapture(captureId, { evidence_review_status: status }, 'updateEvidenceReviewStatus')
 }
 
 export async function updateEvidenceOutputInclusion(captureId: string, formData: FormData) {
-  await updateEvidenceCapture(captureId, { include_in_report: formData.get('include_in_report') === 'on' })
+  await updateEvidenceCapture(captureId, { include_in_report: formData.get('include_in_report') === 'on' }, 'updateEvidenceOutputInclusion')
 }
 
 export async function updateEvidenceSourceDates(captureId: string, formData: FormData) {
@@ -51,14 +102,14 @@ export async function updateEvidenceSourceDates(captureId: string, formData: For
     source_created_at: normalizeOptionalIsoDateTime(formData.get('source_created_at')),
     source_sent_at: normalizeOptionalIsoDateTime(formData.get('source_sent_at')),
     source_received_at: normalizeOptionalIsoDateTime(formData.get('source_received_at')),
-  })
+  }, 'updateEvidenceSourceDates')
 }
 
 export async function updateEvidenceSourceMetadata(captureId: string, formData: FormData) {
   await updateEvidenceCapture(captureId, {
     source_uri: typeof formData.get('source_uri') === 'string' ? String(formData.get('source_uri')).trim() || null : null,
     source_metadata: parseMetadataJson(formData.get('source_metadata')),
-  })
+  }, 'updateEvidenceSourceMetadata')
 }
 
 export async function markEvidenceDuplicate(captureId: string, formData: FormData) {
@@ -66,9 +117,9 @@ export async function markEvidenceDuplicate(captureId: string, formData: FormDat
   await updateEvidenceCapture(captureId, {
     duplicate_status: 'duplicate',
     duplicate_of_capture_item_id: typeof duplicateOf === 'string' && duplicateOf.trim() ? duplicateOf.trim() : null,
-  })
+  }, 'markEvidenceDuplicate')
 }
 
 export async function clearEvidenceDuplicate(captureId: string) {
-  await updateEvidenceCapture(captureId, { duplicate_status: 'unique', duplicate_of_capture_item_id: null })
+  await updateEvidenceCapture(captureId, { duplicate_status: 'unique', duplicate_of_capture_item_id: null }, 'clearEvidenceDuplicate')
 }

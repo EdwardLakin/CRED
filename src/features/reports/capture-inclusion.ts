@@ -22,7 +22,7 @@ export function isHiddenFromReport(metadata: unknown) {
 
 export function isAiDerivedCapture(capture: CaptureOutputLike) {
   const source = `${capture.source_kind ?? capture.suggestion_source ?? ''}`.toLowerCase()
-  return source === 'ai' || source === 'suggested' || source === 'system_suggested'
+  return source === 'ai' || source === 'system' || source === 'suggested' || source === 'system_suggested'
 }
 
 export function getCaptureReviewStatus(capture: CaptureOutputLike) {
@@ -30,16 +30,16 @@ export function getCaptureReviewStatus(capture: CaptureOutputLike) {
 }
 
 export function isReviewedForOutput(status: string | null) {
-  return status === 'accepted' || status === 'edited' || status === 'reviewed' || status === 'needs_followup'
+  return status === 'reviewed' || status === 'needs_followup'
 }
 
 export function isCaptureIncludedInOutput(capture: CaptureOutputLike) {
   const reviewStatus = getCaptureReviewStatus(capture)
   if (capture.deleted_at != null) return false
   if (isHiddenFromReport(capture.extracted_data) || isHiddenFromReport(capture.capture_ai_analysis)) return false
-  if (reviewStatus === 'rejected') return false
   if (capture.include_in_report === false) return false
-  if (isAiDerivedCapture(capture) && !isReviewedForOutput(reviewStatus)) return false
+  if (reviewStatus === 'excluded') return false
+  if (isAiDerivedCapture(capture)) return reviewStatus === 'reviewed'
   return true
 }
 
