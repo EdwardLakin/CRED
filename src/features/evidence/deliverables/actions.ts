@@ -8,6 +8,17 @@ import { parseDeliverableSourceSelection, parseDeliverableType } from './validat
 
 type QueryBuilder = { select: (columns: string) => QueryBuilder; eq: (column: string, value: string) => QueryBuilder; is: (column: string, value: null) => QueryBuilder; single: () => Promise<{ data: unknown; error: unknown }> }
 type SupabaseLike = { from: (table: string) => QueryBuilder }
+type ShareTokenMutationResult = { data: { id: string } | null; error: { message: string } | null }
+type ShareTokenUpdateBuilder = {
+  eq: (column: string, value: string) => ShareTokenUpdateBuilder
+  select: (columns: 'id') => ShareTokenUpdateBuilder
+  maybeSingle: () => Promise<ShareTokenMutationResult>
+}
+type ShareTokenMutationClient = {
+  from: (table: 'report_share_tokens') => {
+    update: (values: { disabled_at: string }) => ShareTokenUpdateBuilder
+  }
+}
 
 type ActionResult = { ok: true } | { ok: false; error: string }
 
@@ -98,8 +109,19 @@ export async function createEvidenceDeliverableShareLink(sessionId: string, deli
 export async function revokeEvidenceDeliverableShareLink(sessionId: string, deliverableId: string, tokenId: string): Promise<ActionResult> {
   try {
     const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
-    const { error } = await (rawSupabase as any).from('report_share_tokens').update({ disabled_at: new Date().toISOString() }).eq('id', tokenId).eq('organization_id', profile.organization_id).eq('documentation_session_id', sessionId).eq('deliverable_id', deliverableId).eq('link_kind', 'deliverable')
+    const shareTokenSupabase = rawSupabase as unknown as ShareTokenMutationClient
+    const { data, error } = await shareTokenSupabase
+      .from('report_share_tokens')
+      .update({ disabled_at: new Date().toISOString() })
+      .eq('id', tokenId)
+      .eq('organization_id', profile.organization_id)
+      .eq('documentation_session_id', sessionId)
+      .eq('deliverable_id', deliverableId)
+      .eq('link_kind', 'deliverable')
+      .select('id')
+      .maybeSingle()
     if (error) throw new Error(error.message)
+    if (!data) throw new Error('Share link not found')
     revalidateDeliverableRoutes(sessionId, deliverableId)
     return { ok: true }
   } catch (error) {
