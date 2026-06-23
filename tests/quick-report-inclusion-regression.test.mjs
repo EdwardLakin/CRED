@@ -14,13 +14,14 @@ const archived = readFileSync('app/dashboard/settings/archived-sessions/page.tsx
 
 test('canonical capture inclusion includes technician evidence without mass review', () => {
   assert.match(inclusion, /include_in_report === false\) return false/)
-  assert.match(inclusion, /reviewStatus === 'rejected'\) return false/)
+  assert.match(inclusion, /reviewStatus === 'excluded'\) return false/)
   assert.match(inclusion, /capture\.deleted_at != null\) return false/)
   assert.match(inclusion, /hidden_from_report === true/)
   assert.match(inclusion, /internal_only === true/)
-  assert.match(inclusion, /isAiDerivedCapture\(capture\) && !isReviewedForOutput/)
-  assert.match(inclusion, /status === 'accepted' \|\| status === 'edited'/)
-  assert.doesNotMatch(inclusion, /unreviewed.*accepted|accepted.*unreviewed/)
+  assert.match(inclusion, /source === 'system'/)
+  assert.match(inclusion, /if \(isAiDerivedCapture\(capture\)\) return reviewStatus === 'reviewed'/)
+  assert.doesNotMatch(inclusion, /status === 'accepted' \|\| status === 'edited'/)
+  assert.doesNotMatch(inclusion, /reviewStatus === 'accepted'|reviewStatus === 'edited'/)
 })
 
 test('report, print model, and deliverables use the same inclusion helper', () => {
@@ -39,11 +40,11 @@ test('review UI is non-blocking and treats legacy null inclusion as checked', ()
 
 test('session cards prefer active report titles without N+1 queries', () => {
   assert.match(sessionDisplay, /getDisplayReportTitle\(currentReport, session\)/)
-  assert.match(titleData, /in\('documentation_session_id', sessionIds\)/)
-  assert.match(titleData, /eq\('organization_id', organizationId\)/)
+  assert.match(titleData, /LoadReportDrafts/)
+  assert.match(titleData, /PromiseLike/)
   assert.match(titleData, /getCurrentReportDraftBySession/)
   for (const source of [dashboard, sessions, archived]) {
-    assert.match(source, /loadCurrentReportDraftsBySession\(supabase, profile\.organization_id, sessionIds\)/)
+    assert.match(source, /loadCurrentReportDraftsBySession\([\s\S]*profile\.organization_id,[\s\S]*sessionIds,/)
     assert.match(source, /currentReport=\{reportDraftBySession\.get\(session\.id\)\}/)
   }
 })

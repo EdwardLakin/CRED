@@ -112,8 +112,7 @@ export function applyDeliverableSourceSelection(data: DeliverableSourceData, sou
     assertWorkspaceScope(item, data.sessionId, data.organizationId)
     if (selectedCaptureItemIds.size > 0 && !selectedCaptureItemIds.has(item.id)) return false
     if (selectedImportBatchIds.size > 0 && (!item.import_batch_id || !selectedImportBatchIds.has(item.import_batch_id))) return false
-    if (item.evidence_review_status === 'needs_followup' && !selection.includeNeedsFollowUpEvidence) return false
-    if (selection.includeOutputExcludedEvidence && selectedCaptureItemIds.has(item.id)) return item.deleted_at == null && item.evidence_review_status !== 'rejected'
+    if (selection.includeOutputExcludedEvidence && selectedCaptureItemIds.has(item.id)) return item.deleted_at == null && item.include_in_report !== false && item.evidence_review_status !== 'excluded'
     return isCaptureIncludedInOutput(item)
   })
 
