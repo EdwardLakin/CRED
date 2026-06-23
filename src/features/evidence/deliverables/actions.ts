@@ -80,3 +80,19 @@ export async function restoreArchivedDeliverable(sessionId: string, deliverableI
     return { ok: false, error: userSafeError(error) }
   }
 }
+
+export async function generateEvidenceDeliverableFormAction(sessionId: string, formData: FormData): Promise<void> {
+  await generateEvidenceDeliverable(sessionId, formData)
+}
+
+export async function finalizeEvidenceDeliverableFormAction(sessionId: string, deliverableId: string): Promise<void> {
+  await finalizeEvidenceDeliverable(sessionId, deliverableId)
+}
+
+export async function archiveEvidenceDeliverableFormAction(sessionId: string, deliverableId: string): Promise<void> {
+  await archiveEvidenceDeliverable(sessionId, deliverableId)
+}
+
+export async function restoreArchivedDeliverableFormAction(sessionId: string, deliverableId: string): Promise<void> {
+  await restoreArchivedDeliverable(sessionId, deliverableId)
+}
