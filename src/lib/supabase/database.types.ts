@@ -1180,6 +1180,8 @@ export interface Database {
           documentation_session_id: string
           organization_id: string
           token: string
+          link_kind: string
+          deliverable_id: string | null
           expires_at: string | null
           disabled_at: string | null
           view_count: number
@@ -1197,6 +1199,8 @@ export interface Database {
           documentation_session_id: string
           organization_id: string
           token: string
+          link_kind?: string
+          deliverable_id?: string | null
           expires_at?: string | null
           disabled_at?: string | null
           view_count?: number
@@ -1209,6 +1213,8 @@ export interface Database {
           documentation_session_id?: string
           organization_id?: string
           token?: string
+          link_kind?: string
+          deliverable_id?: string | null
           expires_at?: string | null
           disabled_at?: string | null
           view_count?: number

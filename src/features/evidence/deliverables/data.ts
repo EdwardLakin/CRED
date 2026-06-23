@@ -7,6 +7,7 @@ import { applyDeliverableSourceSelection, generateDeliverable, type DeliverableA
 
 type Tables = Database['public']['Tables']
 export type EvidenceDeliverable = Tables['evidence_deliverables']['Row']
+export type DeliverableShareToken = Tables['report_share_tokens']['Row']
 type QueryBuilder = { select: (columns: string, options?: { count?: 'exact'; head?: boolean }) => QueryBuilder; eq: (column: string, value: string) => QueryBuilder; is: (column: string, value: null) => QueryBuilder; order: (column: string, options?: { ascending?: boolean; nullsFirst?: boolean }) => QueryBuilder; single: () => Promise<{ data: unknown; error: unknown }>; insert: (values: Record<string, unknown>) => { select: (columns: string) => { single: () => Promise<{ data: unknown; error: unknown }> } }; update: (values: Record<string, unknown>) => QueryBuilder; then: Promise<{ data: unknown; error: unknown; count?: number | null }>['then'] }
 export type DeliverableImportBatch = DeliverableAssemblyBatch
 type SupabaseLike = { from: (table: string) => QueryBuilder; rpc?: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string } | null }> }
@@ -25,12 +26,13 @@ export async function getDeliverablesData(sessionId: string, workspace?: Deliver
   const { data: session, error } = await supabase.from('documentation_sessions').select('*').eq('id', sessionId).eq('organization_id', profile.organization_id).is('deleted_at', null).single()
   if (error || !session) notFound()
 
-  const [{ data: deliverables }, sourceData] = await Promise.all([
+  const [{ data: deliverables }, { data: shareTokens }, sourceData] = await Promise.all([
     supabase.from('evidence_deliverables').select('*').eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).is('deleted_at', null).order('version_number', { ascending: false }),
+    supabase.from('report_share_tokens').select('*').eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).eq('link_kind', 'deliverable').order('created_at', { ascending: false }),
     loadDeliverableSourceData(supabase, sessionId, profile.organization_id),
   ])
 
-  return { session: session as Tables['documentation_sessions']['Row'], deliverables: (deliverables ?? []) as EvidenceDeliverable[], availableTypes: deliverableTypeCards, previewSources: applyDeliverableSourceSelection(sourceData), assemblySources: sourceData, sourceCounts: getDeliverableSourceCounts(applyDeliverableSourceSelection(sourceData)), timeZone: profile.timezone ?? null }
+  return { session: session as Tables['documentation_sessions']['Row'], deliverables: (deliverables ?? []) as EvidenceDeliverable[], shareTokens: (shareTokens ?? []) as DeliverableShareToken[], availableTypes: deliverableTypeCards, previewSources: applyDeliverableSourceSelection(sourceData), assemblySources: sourceData, sourceCounts: getDeliverableSourceCounts(applyDeliverableSourceSelection(sourceData)), timeZone: profile.timezone ?? null }
 }
 
 export async function loadDeliverableSourceData(supabase: SupabaseLike, sessionId: string, organizationId: string): Promise<DeliverableSourceData> {
@@ -84,6 +86,7 @@ export function summarizeDeliverableContent(content: Json) {
 export type DeliverableDetailData = {
   session: Tables['documentation_sessions']['Row']
   deliverable: EvidenceDeliverable
+  shareTokens: DeliverableShareToken[]
   timeZone: string | null
 }
 
@@ -97,7 +100,8 @@ export async function validateDeliverableAccess(sessionId: string, deliverableId
   const { data: deliverable, error: deliverableError } = await supabase.from('evidence_deliverables').select('*').eq('id', deliverableId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).is('deleted_at', null).single()
   if (deliverableError || !deliverable) notFound()
 
-  return { session: session as Tables['documentation_sessions']['Row'], deliverable: deliverable as EvidenceDeliverable, timeZone: profile.timezone ?? null }
+  const { data: shareTokens } = await supabase.from('report_share_tokens').select('*').eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).eq('deliverable_id', deliverableId).eq('link_kind', 'deliverable').order('created_at', { ascending: false })
+  return { session: session as Tables['documentation_sessions']['Row'], deliverable: deliverable as EvidenceDeliverable, shareTokens: (shareTokens ?? []) as DeliverableShareToken[], timeZone: profile.timezone ?? null }
 }
 
 export async function getDeliverableDetail(sessionId: string, deliverableId: string, workspace?: DeliverablesWorkspace) {
