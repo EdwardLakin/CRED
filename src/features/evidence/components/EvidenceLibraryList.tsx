@@ -34,12 +34,12 @@ export function EvidenceLibraryList({ sessionId, items, importBatches, signedUrl
   )
 }
 
-export function EvidenceImportBatchSummary({ importBatches, timeZone }: { importBatches: EvidenceLibraryBatch[]; timeZone: string | null }) {
+export function EvidenceImportBatchSummary({ sessionId, importBatches, timeZone }: { sessionId: string; importBatches: EvidenceLibraryBatch[]; timeZone: string | null }) {
   return (
     <section className="card detail-card form-stack">
       <div><p className="eyebrow">Import batches</p><h2>Related imports</h2></div>
       {importBatches.length === 0 ? <p className="muted">No import batches for this session.</p> : (
-        <div className="metadata-list">{importBatches.map((batch) => <div key={batch.id}><dt>{batch.source_kind} · {batch.status}</dt><dd>{batch.processed_count}/{batch.file_count} processed · {batch.failed_count} failed · {fmt(batch.created_at, timeZone)}</dd></div>)}</div>
+        <div className="metadata-list">{importBatches.map((batch) => <div key={batch.id}><dt>{batch.source_kind} · {batch.status}</dt><dd>{batch.processed_count}/{batch.file_count} processed · {batch.failed_count} failed · {fmt(batch.created_at, timeZone)} · <Link href={`/dashboard/sessions/${sessionId}/evidence/import/${batch.id}`}>Review batch</Link></dd></div>)}</div>
       )}
     </section>
   )

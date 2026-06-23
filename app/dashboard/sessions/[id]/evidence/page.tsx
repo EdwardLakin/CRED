@@ -14,12 +14,13 @@ export default async function EvidenceLibraryPage({ params }: { params: Promise<
         <div>
           <Link href={`/dashboard/sessions/${session.id}`} className="secondary-link touch-target">← Session</Link>
           <h1>Evidence Library</h1>
+          <Link href={`/dashboard/sessions/${session.id}/evidence/import`} className="button button-primary touch-target">Import evidence</Link>
           <p className="muted">{session.title} · {evidenceItems.length} items</p>
         </div>
       </div>
       <EvidenceWorkspaceBacklinks sessionId={session.id} current="library" />
       <EvidenceLibraryList sessionId={session.id} items={evidenceItems} importBatches={importBatches} signedUrls={signedUrls} timeZone={timeZone} />
-      <EvidenceImportBatchSummary importBatches={importBatches} timeZone={timeZone} />
+      <EvidenceImportBatchSummary sessionId={session.id} importBatches={importBatches} timeZone={timeZone} />
     </main>
   )
 }
