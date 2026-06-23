@@ -60,3 +60,33 @@ export function summarizeDeliverableContent(content: Json) {
   if (Array.isArray(record.observations)) return `${record.observations.length} observation rows`
   return 'Generated preview'
 }
+
+export type DeliverableDetailData = {
+  session: Tables['documentation_sessions']['Row']
+  deliverable: EvidenceDeliverable
+  timeZone: string | null
+}
+
+export async function validateDeliverableAccess(sessionId: string, deliverableId: string, workspace?: DeliverablesWorkspace): Promise<DeliverableDetailData> {
+  const rawWorkspace = workspace ?? (await requireSessionWorkspace())
+  const supabase = rawWorkspace.supabase as SupabaseLike
+  const { profile } = rawWorkspace
+  const { data: session, error: sessionError } = await supabase.from('documentation_sessions').select('*').eq('id', sessionId).eq('organization_id', profile.organization_id).is('deleted_at', null).single()
+  if (sessionError || !session) notFound()
+
+  const { data: deliverable, error: deliverableError } = await supabase.from('evidence_deliverables').select('*').eq('id', deliverableId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).is('deleted_at', null).single()
+  if (deliverableError || !deliverable) notFound()
+
+  return { session: session as Tables['documentation_sessions']['Row'], deliverable: deliverable as EvidenceDeliverable, timeZone: profile.timezone ?? null }
+}
+
+export async function getDeliverableDetail(sessionId: string, deliverableId: string, workspace?: DeliverablesWorkspace) {
+  return validateDeliverableAccess(sessionId, deliverableId, workspace)
+}
+
+export function summarizeDeliverableProvenance(provenance: Json, sourceIds: Json) {
+  const ids = sourceIds && typeof sourceIds === 'object' && !Array.isArray(sourceIds) ? sourceIds as Record<string, unknown> : {}
+  const counts = Object.entries(ids).filter(([, value]) => Array.isArray(value)).map(([key, value]) => `${(value as unknown[]).length} ${key.replace(/_/g, ' ')}`)
+  const generatedFrom = provenance && typeof provenance === 'object' && !Array.isArray(provenance) ? String((provenance as Record<string, unknown>).generated_from ?? 'evidence workspace') : 'evidence workspace'
+  return `${generatedFrom.replace(/_/g, ' ')} snapshot${counts.length ? ` · ${counts.join(' · ')}` : ''}`
+}
