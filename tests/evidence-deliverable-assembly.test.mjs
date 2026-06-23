@@ -31,9 +31,9 @@ test('source counts are shown deterministically before generation', () => {
   assert.match(data, /new Set\(sourceData\.evidenceItems/)
 })
 
-test('default source set is reviewed output-included accepted-edited non-deleted material', () => {
-  assert.match(service, /'reviewed', 'needs_followup'/)
-  assert.match(service, /!item\.include_in_report/)
+test('default source set uses canonical output-included technician evidence and accepted-edited graph material', () => {
+  assert.match(service, /isCaptureIncludedInOutput\(item\)/)
+  assert.match(service, /item\.evidence_review_status === 'needs_followup'/)
   assert.match(validation, /review_status === 'rejected'/)
   assert.match(validation, /review_status === 'suggested'/)
   assert.match(validation, /'accepted', 'edited'/)

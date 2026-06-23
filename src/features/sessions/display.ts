@@ -1,6 +1,7 @@
 import type { Json } from '@/lib/supabase/database.types'
 
 import type { DocumentationSession } from './types'
+import { getDisplayReportTitle } from '@/features/reports/report-title'
 import { getSessionTypeLabel } from './types'
 import { formatDateTime } from './utils'
 
@@ -18,13 +19,16 @@ export function getSessionReportField(session: DocumentationSession, field: stri
   return getStringFromJson(details?.[field]) ?? getStringFromJson(suggested?.[field])
 }
 
-export function getSessionPrimaryTitle(session: DocumentationSession) {
+export type SessionCardTitleDraft = { title?: string | null; header_fields?: unknown } | null | undefined
+
+export function getSessionPrimaryTitle(session: DocumentationSession, currentReport?: SessionCardTitleDraft) {
+  if (currentReport) return getDisplayReportTitle(currentReport, session)
   return (
+    getSessionReportField(session, 'report_title') ||
+    session.title?.trim() ||
     session.customer_name?.trim() ||
     getSessionReportField(session, 'customer_client') ||
     getSessionReportField(session, 'subject') ||
-    getSessionReportField(session, 'report_title') ||
-    session.title?.trim() ||
     'Untitled session'
   )
 }

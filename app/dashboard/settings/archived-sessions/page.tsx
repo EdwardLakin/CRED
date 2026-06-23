@@ -2,6 +2,7 @@ import Link from 'next/link'
 
 import { EmptyState, SessionCard } from '@/features/sessions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import { loadCurrentReportDraftsBySession } from '@/features/sessions/report-title-data'
 
 function getCaptureCounts(captures: Array<{ documentation_session_id: string }> | null) {
   const captureCountBySession = new Map<string, number>()
@@ -51,6 +52,7 @@ export default async function ArchivedSessionsPage({ searchParams }: { searchPar
         .is('deleted_at', null)
     : { data: null }
   const captureCountBySession = getCaptureCounts(captures)
+  const reportDraftBySession = await loadCurrentReportDraftsBySession(supabase, profile.organization_id, sessionIds)
 
   return (
     <main className="page-shell dashboard-shell">
@@ -82,6 +84,7 @@ export default async function ArchivedSessionsPage({ searchParams }: { searchPar
               showArchiveAction
               showManagementActions
               timeZone={profile.timezone}
+              currentReport={reportDraftBySession.get(session.id)}
             />
           ))}
         </div>

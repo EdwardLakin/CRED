@@ -18,6 +18,7 @@ import {
   stripConfidenceText,
 } from "@/features/reports/report-structure";
 import { buildUniversalReportDocument } from "@/features/reports/report-document";
+import { isCaptureIncludedInOutput } from "@/features/reports/capture-inclusion";
 import { getReportInfoValue } from "@/features/reports/report-title";
 import { disableReportShareLink } from "@/features/reports/actions";
 import { formatDateTime } from "@/features/sessions";
@@ -486,6 +487,7 @@ export function ReportReview({
   photoEvidence,
   reviewDocument,
   supportingEvidence,
+  includedReviewSummary,
   session,
   saveReportEditsAction,
   sourceFieldEntries,
@@ -507,6 +509,7 @@ export function ReportReview({
   photoEvidence: SupportingEvidenceItem[];
   reviewDocument: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>;
   supportingEvidence: SupportingEvidenceItem[];
+  includedReviewSummary: { included: number; reviewed: number; unreviewed: number };
   session: Pick<
     DocumentationSession,
     | "id"
@@ -535,7 +538,7 @@ export function ReportReview({
     ...photoEvidence,
     ...noteEvidence,
     ...otherEvidence,
-  ].filter((item) => item.capture.include_in_report).length;
+  ].filter((item) => isCaptureIncludedInOutput(item.capture)).length;
   const coverDetails = [
     ["Report Title", displayReportTitle],
     ["Organization", facilityName],
@@ -932,6 +935,7 @@ export function ReportReview({
             reviewDocument={reviewDocument}
             supportingEvidence={supportingEvidence}
             includedEvidenceCount={includedEvidenceCount}
+            includedReviewSummary={includedReviewSummary}
           />
         </>
       ) : null}
@@ -1247,10 +1251,12 @@ function DocumentedObservations({
   reviewDocument,
   supportingEvidence,
   includedEvidenceCount,
+  includedReviewSummary,
 }: {
   reviewDocument: ReturnType<typeof buildNormalizedReportModel<CaptureItem>>;
   supportingEvidence: SupportingEvidenceItem[];
   includedEvidenceCount: number;
+  includedReviewSummary: { included: number; reviewed: number; unreviewed: number };
 }) {
   const evidenceById = new Map(
     supportingEvidence.map((item) => [item.capture.id, item]),
@@ -1283,6 +1289,11 @@ function DocumentedObservations({
           {includedEvidenceCount} included
         </span>
       </div>
+      {includedReviewSummary.unreviewed > 0 ? (
+        <p className="muted compact-review-summary">
+          {includedReviewSummary.included} included · {includedReviewSummary.reviewed} reviewed · {includedReviewSummary.unreviewed} not individually reviewed
+        </p>
+      ) : null}
       <div className="evidence-first-list">
         {entries.map((entry) => {
           const groupKey = getObservationGroupKey(entry.capture);
@@ -1435,7 +1446,7 @@ function EvidenceGallery({
                   <input
                     type="checkbox"
                     name={`capture_include_${item.capture.id}`}
-                    defaultChecked={item.capture.include_in_report}
+                    defaultChecked={item.capture.include_in_report !== false}
                   />
                   <span>Include in report</span>
                 </label>

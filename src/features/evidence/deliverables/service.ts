@@ -1,6 +1,7 @@
 import type { Database, Json } from '@/lib/supabase/database.types'
 import type { DeliverableSourceSelection, DeliverableType } from './validation'
 import { assertAllowedReviewStatus, assertWorkspaceScope, defaultDeliverableSourceSelection, deliverableProvenance } from './validation'
+import { isCaptureIncludedInOutput } from '@/features/reports/capture-inclusion'
 
 type Tables = Database['public']['Tables']
 export type DeliverableSession = Tables['documentation_sessions']['Row']
@@ -112,9 +113,8 @@ export function applyDeliverableSourceSelection(data: DeliverableSourceData, sou
     if (selectedCaptureItemIds.size > 0 && !selectedCaptureItemIds.has(item.id)) return false
     if (selectedImportBatchIds.size > 0 && (!item.import_batch_id || !selectedImportBatchIds.has(item.import_batch_id))) return false
     if (item.evidence_review_status === 'needs_followup' && !selection.includeNeedsFollowUpEvidence) return false
-    if (!['reviewed', 'needs_followup'].includes(item.evidence_review_status)) return false
-    if (!item.include_in_report && !(selection.includeOutputExcludedEvidence && selectedCaptureItemIds.has(item.id))) return false
-    return true
+    if (selection.includeOutputExcludedEvidence && selectedCaptureItemIds.has(item.id)) return item.deleted_at == null && item.evidence_review_status !== 'rejected'
+    return isCaptureIncludedInOutput(item)
   })
 
   const filterReviewed = <T extends { id: string; review_status: string; documentation_session_id: string; organization_id: string; deleted_at: string | null }>(rows: T[], selectedIds: Set<string>) => rows.filter((row) => {

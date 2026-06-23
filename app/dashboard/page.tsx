@@ -6,6 +6,7 @@ import { SessionCard } from '@/features/sessions'
 import { getSessionWorkflowState } from '@/features/sessions/status'
 import { createQuickCaptureSession } from '@/features/sessions/actions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import { loadCurrentReportDraftsBySession } from '@/features/sessions/report-title-data'
 
 interface DashboardPageProps {
   searchParams: Promise<{ billing?: string; checkout?: string; error?: string; notice?: string }>
@@ -65,6 +66,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     : { data: null }
 
   const captureCountBySession = getCaptureCounts(captures)
+  const reportDraftBySession = await loadCurrentReportDraftsBySession(supabase, profile.organization_id, sessionIds)
 
   return (
     <main className="page-shell dashboard-shell">
@@ -115,6 +117,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 showArchiveAction
                 showManagementActions
                 timeZone={profile.timezone}
+                currentReport={reportDraftBySession.get(session.id)}
               />
             ))}
           </div>
