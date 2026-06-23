@@ -20,13 +20,15 @@ test('evidence data loader scopes session and capture items to organization and 
 
 test('review status action validates against evidence review statuses before update', () => {
   assert.match(validationSource, /EVIDENCE_REVIEW_STATUSES\.includes/)
-  assert.match(actionSource, /if \(!status\) throw new Error\('Invalid review status'\)/)
+  assert.match(actionSource, /if \(!status\) return \{ ok: false, message: EVIDENCE_MUTATION_ERROR \}/)
   assert.match(actionSource, /evidence_review_status: status/)
+  assert.match(actionSource, /Review status saved\./)
 })
 
 test('include and exclude action preserves include_in_report behavior', () => {
   assert.match(actionSource, /updateEvidenceOutputInclusion/)
-  assert.match(actionSource, /include_in_report: formData\.get\('include_in_report'\) === 'on'/)
+  assert.match(actionSource, /include_in_report: submitted\.get\('include_in_report'\) === 'on'/)
+  assert.match(actionSource, /Output preference saved\./)
   assert.doesNotMatch(actionSource, /evidence_review_status: 'excluded'/)
 })
 

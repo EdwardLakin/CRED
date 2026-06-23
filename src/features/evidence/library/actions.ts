@@ -6,6 +6,11 @@ import { requireSessionWorkspace } from '@/features/sessions/data'
 import { parseEventDatePrecision, parseEvidenceReviewStatus, normalizeOptionalIsoDateTime, parseMetadataJson } from '@/features/evidence/library/validation'
 
 type EvidencePatch = Record<string, unknown>
+export type EvidenceMutationResult =
+  | { ok: true; message: string }
+  | { ok: false; message: string }
+
+const EVIDENCE_MUTATION_ERROR = 'This evidence item could not be updated. Refresh and try again.'
 type UpdatedEvidenceRow = {
   id: string
   documentation_session_id: string
@@ -81,14 +86,40 @@ async function updateEvidenceCapture(captureId: string, patch: EvidencePatch, op
   return row
 }
 
-export async function updateEvidenceReviewStatus(captureId: string, formData: FormData) {
-  const status = parseEvidenceReviewStatus(formData.get('evidence_review_status'))
-  if (!status) throw new Error('Invalid review status')
-  await updateEvidenceCapture(captureId, { evidence_review_status: status }, 'updateEvidenceReviewStatus')
+function mutationError(operation: string, captureId: string, error: unknown): EvidenceMutationResult {
+  console.error('Evidence mutation action failed', {
+    operation,
+    captureId,
+    errorCode: error instanceof Error ? error.name : 'UNKNOWN',
+  })
+  return { ok: false, message: EVIDENCE_MUTATION_ERROR }
 }
 
-export async function updateEvidenceOutputInclusion(captureId: string, formData: FormData) {
-  await updateEvidenceCapture(captureId, { include_in_report: formData.get('include_in_report') === 'on' }, 'updateEvidenceOutputInclusion')
+function formDataFromActionArgs(previousStateOrFormData: EvidenceMutationResult | FormData, formData?: FormData) {
+  return formData ?? (previousStateOrFormData instanceof FormData ? previousStateOrFormData : null)
+}
+
+export async function updateEvidenceReviewStatus(captureId: string, previousStateOrFormData: EvidenceMutationResult | FormData, formData?: FormData): Promise<EvidenceMutationResult> {
+  try {
+    const submitted = formDataFromActionArgs(previousStateOrFormData, formData)
+    const status = parseEvidenceReviewStatus(submitted?.get('evidence_review_status') ?? null)
+    if (!status) return { ok: false, message: EVIDENCE_MUTATION_ERROR }
+    await updateEvidenceCapture(captureId, { evidence_review_status: status }, 'updateEvidenceReviewStatus')
+    return { ok: true, message: 'Review status saved.' }
+  } catch (error) {
+    return mutationError('updateEvidenceReviewStatus', captureId, error)
+  }
+}
+
+export async function updateEvidenceOutputInclusion(captureId: string, previousStateOrFormData: EvidenceMutationResult | FormData, formData?: FormData): Promise<EvidenceMutationResult> {
+  try {
+    const submitted = formDataFromActionArgs(previousStateOrFormData, formData)
+    if (!submitted) return { ok: false, message: EVIDENCE_MUTATION_ERROR }
+    await updateEvidenceCapture(captureId, { include_in_report: submitted.get('include_in_report') === 'on' }, 'updateEvidenceOutputInclusion')
+    return { ok: true, message: 'Output preference saved.' }
+  } catch (error) {
+    return mutationError('updateEvidenceOutputInclusion', captureId, error)
+  }
 }
 
 export async function updateEvidenceSourceDates(captureId: string, formData: FormData) {

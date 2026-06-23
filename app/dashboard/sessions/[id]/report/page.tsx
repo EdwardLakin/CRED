@@ -353,8 +353,16 @@ export default async function SessionReportPreviewPage({
     timeZone: profile.timezone,
   });
   const formSourceCaptureIds = getFormSourceCaptureIds(sanitizedReportStructure, documentSections);
+  const renderedCaptureIds = new Set(reviewDocument.renderedCaptureIds);
+  const missingIncludedCaptures = visibleCaptures.filter(
+    (capture) => !renderedCaptureIds.has(capture.id),
+  );
+  const fallbackSupportingEvidence = supportingEvidence.filter((item) =>
+    missingIncludedCaptures.some((capture) => capture.id === item.capture.id),
+  );
   const renderedSupportingEvidence = supportingEvidence.filter(
-    (item) => !formSourceCaptureIds.has(item.capture.id),
+    (item, index, items) =>
+      items.findIndex((candidate) => candidate.capture.id === item.capture.id) === index,
   );
   const photoEvidence = renderedSupportingEvidence.filter(
     (item) => item.kind === "photo",
@@ -366,6 +374,19 @@ export default async function SessionReportPreviewPage({
   const otherEvidence = renderedSupportingEvidence.filter(
     (item) => item.kind !== "photo" && !noteEvidence.includes(item),
   );
+  if (process.env.NODE_ENV !== "production") {
+    console.info("[report-evidence]", {
+      sessionId: session.id,
+      queried: allCaptures.length,
+      included: visibleCaptures.length,
+      formSources: formSourceCaptureIds.size,
+      rendered: renderedCaptureIds.size,
+      fallback: fallbackSupportingEvidence.length,
+      finalPhotoCount: photoEvidence.length,
+      finalNoteCount: noteEvidence.length,
+      finalOtherCount: otherEvidence.length,
+    });
+  }
   const hasPendingEvidence = visibleCaptures.some((capture) => {
     const captureStatus = getCaptureProcessingStatus(capture);
     return (
