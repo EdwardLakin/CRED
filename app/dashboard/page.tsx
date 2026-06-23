@@ -66,7 +66,17 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     : { data: null }
 
   const captureCountBySession = getCaptureCounts(captures)
-  const reportDraftBySession = await loadCurrentReportDraftsBySession(supabase, profile.organization_id, sessionIds)
+  const reportDraftBySession = await loadCurrentReportDraftsBySession(
+    (organizationId, ids) =>
+      supabase
+        .from('ai_report_drafts')
+        .select('id, documentation_session_id, title, header_fields, generated_at, created_at')
+        .eq('organization_id', organizationId)
+        .in('documentation_session_id', ids)
+        .order('generated_at', { ascending: false }),
+    profile.organization_id,
+    sessionIds,
+  )
 
   return (
     <main className="page-shell dashboard-shell">

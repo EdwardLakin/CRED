@@ -19,6 +19,7 @@ import {
   sanitizeCapturesForImageAiAssist,
 } from "@/features/reports/report-structure";
 import { buildUniversalReportDocument } from "@/features/reports/report-document";
+import { isHiddenFromReport } from "@/features/reports/capture-inclusion";
 import { getDisplayReportTitle } from "@/features/reports/report-title";
 import {
   createReportShareLink,
