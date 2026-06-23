@@ -386,6 +386,9 @@ export function AddCaptureForm({
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const voiceNoteTimeoutRef = useRef<number | null>(null);
   const selectedFilesRef = useRef<SelectedEvidenceFile[]>([]);
+  const autoSaveSelectedMediaRef = useRef<
+    (files: SelectedEvidenceFile[]) => Promise<void>
+  >(async () => {});
   const isSavingRef = useRef(false);
   const uploadStartedFileIdsRef = useRef(new Set<string>());
   const noteAutosaveTimeoutsRef = useRef(new Map<string, number>());
@@ -832,6 +835,10 @@ export function AddCaptureForm({
   }
 
   useEffect(() => {
+    autoSaveSelectedMediaRef.current = autoSaveSelectedMedia;
+  }, [autoSaveSelectedMedia]);
+
+  useEffect(() => {
     let cancelled = false;
 
     readUploadQueueRecords(sessionId)
@@ -854,7 +861,7 @@ export function AddCaptureForm({
           setSaveMessage(
             `Resuming ${resumableFiles.length} pending upload${resumableFiles.length === 1 ? "" : "s"}…`,
           );
-          void autoSaveSelectedMedia(resumableFiles);
+          void autoSaveSelectedMediaRef.current(resumableFiles);
         }
       })
       .catch((error: unknown) => {

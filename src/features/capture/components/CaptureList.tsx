@@ -75,10 +75,6 @@ function getConfidencePercent(value: Json | undefined) {
     : null
 }
 
-function formatConfidence(value: Json | undefined) {
-  const percent = getConfidencePercent(value)
-  return percent === null ? null : `${percent}%`
-}
 
 function getConfidenceVariant(percent: number | null) {
   if (percent === null) return 'pending'
