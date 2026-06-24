@@ -11,9 +11,9 @@ const timelineComponent = readFileSync('src/features/evidence/components/Timelin
 
 test('timeline route and session navigation are present', () => {
   assert.ok(existsSync('app/dashboard/sessions/[id]/timeline/page.tsx'))
-  assert.match(timelinePage, /getTimelineData\(id\)/)
-  assert.match(sessionPage, /\/timeline`}/)
-  assert.match(sessionPage, /Timeline/)
+  assert.match(timelinePage, /getTimelineData\(id, workspace\)/)
+  assert.match(sessionPage, /feature\.hrefSegment/)
+  assert.match(sessionPage, /feature\.label/)
 })
 
 test('timeline loader scopes session, events, evidence, and relationships to organization and session', () => {

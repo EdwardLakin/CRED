@@ -52,6 +52,6 @@ test('relationship detail displays review status and provenance consistently', (
 
 test('workspace navigation links to relationship explorer', () => {
   assert.match(navSource, /relationships/)
-  assert.match(navSource, /Relationship Explorer/)
-  assert.match(sessionSource, /\/relationships/)
+  assert.match(navSource, /EVIDENCE_WORKSPACE_LABELS\.relationships/)
+  assert.match(sessionSource, /feature\.hrefSegment/)
 })

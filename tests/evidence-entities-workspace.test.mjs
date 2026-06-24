@@ -11,9 +11,9 @@ const entitiesPage = readFileSync('app/dashboard/sessions/[id]/entities/page.tsx
 
 test('entities route and session navigation are present', () => {
   assert.ok(existsSync('app/dashboard/sessions/[id]/entities/page.tsx'))
-  assert.match(entitiesPage, /getEntitiesData\(id\)/)
-  assert.match(sessionPage, /\/entities`}/)
-  assert.match(sessionPage, /Entities/)
+  assert.match(entitiesPage, /getEntitiesData\(id, workspace\)/)
+  assert.match(sessionPage, /feature\.hrefSegment/)
+  assert.match(sessionPage, /feature\.label/)
 })
 
 test('entities loader scopes session, entities, evidence, timeline events, and relationships', () => {

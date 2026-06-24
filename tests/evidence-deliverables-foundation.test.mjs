@@ -13,7 +13,7 @@ const nav = readFileSync('src/features/evidence/components/EvidenceWorkspaceNav.
 const sessionPage = readFileSync('app/dashboard/sessions/[id]/page.tsx', 'utf8')
 
 test('deliverables route and table foundation are present', () => {
-  assert.match(route, /getDeliverablesData\(id\)/)
+  assert.match(route, /getDeliverablesData\(id, workspace\)/)
   assert.match(route, /DeliverablesWorkspace/)
   assert.match(migration, /create table if not exists public\.evidence_deliverables/)
   assert.match(types, /evidence_deliverables:/)
@@ -53,7 +53,8 @@ test('deliverables preserve provenance and source identifiers', () => {
 
 test('navigation links include deliverables outside capture workflow', () => {
   assert.match(nav, /deliverables/)
-  assert.match(sessionPage, /dashboard\/sessions\/\$\{session\.id\}\/deliverables/)
+  assert.match(sessionPage, /getVisibleWorkspaceFeatures\(profile\)/)
+  assert.match(sessionPage, /feature\.hrefSegment/)
   const capturePage = readFileSync('app/dashboard/sessions/[id]/capture/page.tsx', 'utf8')
   assert.doesNotMatch(capturePage, /deliverables/i)
 })
