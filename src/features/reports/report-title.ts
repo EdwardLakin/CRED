@@ -76,6 +76,26 @@ export function getDisplayReportTitle(draft: ReportTitleDraft, session: ReportTi
   return 'Professional Evidence Report'
 }
 
+function isGenericGeneratedReportTitle(value: string) {
+  const title = stripConfidenceText(value).replace(/\s+/g, ' ').trim()
+
+  return /^(?:general |professional )?(?:evidence|documentation|inspection|condition|defects?) report$|^(?:rental |property |vehicle |equipment )?(?:house |home )?(?:defects?|condition|inspection|evidence) report$/i.test(
+    title,
+  )
+}
+
+function appendReportIdentity(title: string, identity: string) {
+  const cleanTitle = stripConfidenceText(title).replace(/\s+/g, ' ').trim()
+  const cleanIdentity = stripConfidenceText(identity).replace(/\s+/g, ' ').trim()
+
+  if (!cleanTitle || !cleanIdentity) return cleanTitle
+  if (cleanTitle.toLowerCase().includes(cleanIdentity.toLowerCase())) {
+    return cleanTitle
+  }
+
+  return `${cleanTitle} — ${cleanIdentity}`
+}
+
 export function buildSafeReportTitle(args: {
   draftTitle: string | null | undefined
   sessionTitle: string | null | undefined
@@ -87,11 +107,53 @@ export function buildSafeReportTitle(args: {
   vin: string | null | undefined
 }) {
   const cleanedDraftTitle = stripConfidenceText(args.draftTitle ?? '').trim()
-  if (cleanedDraftTitle && !isPlaceholderReportTitle(cleanedDraftTitle) && !/automotive|vehicle inspection/i.test(cleanedDraftTitle)) return cleanedDraftTitle
-  if (args.structureSource && args.structureSource !== 'generic_fallback' && args.sourceDocumentName) return stripConfidenceText(args.sourceDocumentName).trim()
-  const identity = [args.customerName, args.assetLabel, args.unitNumber, args.vin].map((value) => stripConfidenceText(value ?? '').trim()).filter(Boolean).slice(0, 2).join(' — ')
-  if (identity) return buildSubjectReportTitle(identity) ?? 'General Evidence Report'
   const sessionTitle = stripConfidenceText(args.sessionTitle ?? '').trim()
-  if (sessionTitle && !isPlaceholderReportTitle(sessionTitle)) return sessionTitle
+  const identity = [
+    args.customerName,
+    args.assetLabel,
+    args.unitNumber,
+    args.vin,
+  ]
+    .map((value) => stripConfidenceText(value ?? '').trim())
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(' — ')
+
+  // Preserve a specific user-facing session title instead of replacing it
+  // with a more generic AI-generated report type.
+  if (
+    sessionTitle &&
+    !isPlaceholderReportTitle(sessionTitle) &&
+    !isGenericGeneratedReportTitle(sessionTitle)
+  ) {
+    return sessionTitle
+  }
+
+  if (
+    cleanedDraftTitle &&
+    !isPlaceholderReportTitle(cleanedDraftTitle) &&
+    !/automotive|vehicle inspection/i.test(cleanedDraftTitle)
+  ) {
+    return identity && isGenericGeneratedReportTitle(cleanedDraftTitle)
+      ? appendReportIdentity(cleanedDraftTitle, identity)
+      : cleanedDraftTitle
+  }
+
+  if (
+    args.structureSource &&
+    args.structureSource !== 'generic_fallback' &&
+    args.sourceDocumentName
+  ) {
+    return stripConfidenceText(args.sourceDocumentName).trim()
+  }
+
+  if (identity) {
+    return buildSubjectReportTitle(identity) ?? 'General Evidence Report'
+  }
+
+  if (sessionTitle && !isPlaceholderReportTitle(sessionTitle)) {
+    return sessionTitle
+  }
+
   return 'General Evidence Report'
 }

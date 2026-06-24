@@ -59,6 +59,6 @@ test("summary guard runs on successful and fallback report generation", () => {
 test("report prompt version changes when summary rules change", () => {
   assert.match(
     generator,
-    /AI_REPORT_DRAFT_PROMPT_VERSION = 'form-evidence-report-v4'/,
+    /AI_REPORT_DRAFT_PROMPT_VERSION = 'form-evidence-report-v5'/,
   );
 });

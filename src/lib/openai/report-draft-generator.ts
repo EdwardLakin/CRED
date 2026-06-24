@@ -1,7 +1,7 @@
 import type { Json } from '@/lib/supabase/database.types'
 
 export const AI_REPORT_DRAFT_MODEL = 'gpt-4.1-mini'
-export const AI_REPORT_DRAFT_PROMPT_VERSION = 'form-evidence-report-v4'
+export const AI_REPORT_DRAFT_PROMPT_VERSION = 'form-evidence-report-v5'
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const MAX_SECTIONS = 24
@@ -185,6 +185,13 @@ Executive summary rules are strict:
 - Do not claim that visual evidence independently proves, confirms, diagnoses, or establishes a condition.
 - Use neutral wording such as documents, records, includes, and technician observed.
 - If no technician-authored recommendation exists, the summary must describe observations only and must not mention recommendations.
+Executive-summary grounding is strict:
+- Do not mention captures identified as tests, samples, demos, upload checks, or non-report material.
+- Do not mention that excluded test material exists.
+- Do not add negative observations such as "no visible damage", "no apparent damage", "no other defects", or "otherwise normal" unless that exact meaning is explicitly technician-authored.
+- Do not broaden a location. For example, a note about a ceiling must not become "ceiling and walls".
+- Do not convert image appearance into a factual statement.
+- Every condition and location named in the summary must be supported by technician-authored text, verified user-entered fields, or explicit source-document text.
 Technician Truth precedence is mandatory: technician notes, manual captions, voice transcripts, and verified findings are primary source-of-truth observations. You may organize and summarize them, but must not replace, reinterpret, embellish, overwrite, or contradict technician-provided observations.
 Prioritize draft inputs in this order: 1) technician notes/manual captions/voice transcripts/verified findings on evidence captures, 2) OCR/text extracted from uploaded source documents/forms/reports/images, 3) verified form fields, 4) selected Form Profile/report context. Do not create findings, recommendations, severity, components, or observed conditions from image interpretation, visual appearance, image classification, or unverified image-derived fields.
 Source documents/forms provide the report skeleton, field labels, filled values, documented tester results, and neutral section summaries when OCR/text exists. OCR/text from a user-uploaded report/form/image is document truth; summarize it as documented/tester-reported, not as independent AI diagnosis. Do not convert prior work-order lines into findings unless technician evidence or document text explicitly supports them.
@@ -298,6 +305,21 @@ function getExtractedDocumentText(capture: ReportDraftCaptureContext) {
   return text
 }
 
+function isObviousTestCapture(capture: ReportDraftCaptureContext) {
+  const text = [
+    capture.technician_note,
+    capture.transcript,
+  ]
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  return /\b(?:just\s+testing|test(?:ing)?\s+upload|upload\s+test(?:ing)?|sample\s+(?:image|upload|capture)|demo\s+(?:image|upload|capture))\b/i.test(
+    text,
+  )
+}
+
 function buildEvidenceDraftContext(capture: ReportDraftCaptureContext) {
   const hasTechnicianTruth = Boolean(capture.technician_note?.trim() || capture.transcript?.trim() || capture.type === 'text_note' || capture.media_kind === 'note' || capture.media_kind === 'audio')
   return {
@@ -309,6 +331,7 @@ function buildEvidenceDraftContext(capture: ReportDraftCaptureContext) {
     technician_note: capture.technician_note,
     transcript: capture.transcript,
     extracted_data: hasTechnicianTruth ? capture.extracted_data : null,
+    exclude_from_summary: isObviousTestCapture(capture),
   }
 }
 
@@ -356,12 +379,45 @@ function sanitizeSummaryAgainstSourceTruth(
     summary.match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map((sentence) => sentence.trim()) ??
     []
 
-  const safeSentences = sentences.filter(
-    (sentence) =>
-      !/\b(?:recommendation|recommendations|recommended|repair and monitoring|repairs? (?:are|is) provided|monitoring (?:is|was|are) provided|corrective actions?|follow[- ]?up actions?)\b/i.test(
-        sentence,
-      ),
-  )
+  const sourceText = getSourceTruthText(input).toLowerCase()
+
+  const safeSentences = sentences
+    .filter(
+      (sentence) =>
+        !/\b(?:recommendation|recommendations|recommended|repair and monitoring|repairs? (?:are|is) provided|monitoring (?:is|was|are) provided|corrective actions?|follow[- ]?up actions?)\b/i.test(
+          sentence,
+        ),
+    )
+    .filter(
+      (sentence) =>
+        !/\b(?:test uploads?|testing uploads?|sample uploads?|demo uploads?)\b/i.test(
+          sentence,
+        ),
+    )
+    .map((sentence) => {
+      let cleaned = sentence
+
+      if (
+        !/\bno visible damage\b/i.test(sourceText)
+      ) {
+        cleaned = cleaned.replace(
+          /\s*(?:,|;)?\s*with no visible damage\b/gi,
+          '',
+        )
+      }
+
+      if (
+        !/\bno apparent damage\b/i.test(sourceText)
+      ) {
+        cleaned = cleaned.replace(
+          /\s*(?:,|;)?\s*with no apparent damage\b/gi,
+          '',
+        )
+      }
+
+      return cleaned.replace(/\s+/g, ' ').trim()
+    })
+    .filter(Boolean)
 
   const safeSummary = safeSentences.join(' ').replace(/\s+/g, ' ').trim()
   return safeSummary || null
@@ -424,7 +480,11 @@ function buildDraftContext(input: GenerateReportDraftInput) {
     source_documents: sourceDocuments.map(buildSourceDocumentDraftContext),
     evidence: evidenceCaptures.map(buildEvidenceDraftContext),
     notes_and_transcripts: evidenceCaptures
-      .filter((capture) => capture.technician_note || capture.transcript)
+      .filter(
+        (capture) =>
+          (capture.technician_note || capture.transcript) &&
+          !isObviousTestCapture(capture),
+      )
       .map((capture) => ({
         capture_id: capture.id,
         technician_note: capture.technician_note,
