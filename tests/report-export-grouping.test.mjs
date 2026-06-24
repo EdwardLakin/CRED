@@ -92,14 +92,8 @@ test("export markup supports one primary and two supporting images without dupli
     routeSource,
     /const supportingImageAssets = groupImageAssets\.filter\([\s\S]*groupCapture\.id !== primaryImageCapture\.id/,
   );
-  assert.match(
-    routeSource,
-    /Supporting Images:<\/strong> \$\{supportingImageAssets\.length\}/,
-  );
-  assert.match(
-    routeSource,
-    /\$\{supportingImageAssets\.length\} additional image/,
-  );
+  assert.match(routeSource, /Additional supporting photos/);
+  assert.match(routeSource, /\$\{supportingImageAssets\.length\} photo/);
   assert.doesNotMatch(
     routeSource,
     /Supporting Images:<\/strong> \$\{groupImageAssets\.length\}/,
@@ -148,4 +142,46 @@ test("export html contains self-contained lightbox hooks and print hiding", () =
   assert.match(routeSource, /data-lightbox-next/);
   assert.match(routeSource, /\.export-lightbox img\{[^}]*object-fit:contain/);
   assert.match(routeSource, /@media print[\s\S]*\.export-lightbox/);
+});
+
+test("printable report uses compact cards, safe titles, trusted proof, and print controls", () => {
+  const routeSource = readFileSync(
+    "app/api/dashboard/sessions/[id]/report-pdf/route.ts",
+    "utf8",
+  );
+
+  assert.match(routeSource, /function getCustomerFacingEvidenceTitle/);
+  assert.match(routeSource, /conciseHeadingFromNote/);
+  assert.match(routeSource, /Documented condition \$\{/);
+  assert.doesNotMatch(
+    routeSource,
+    /classification.*getCustomerFacingEvidenceTitle/s,
+  );
+  assert.match(routeSource, /function shouldRenderTrustedProofDetail/);
+  assert.match(routeSource, /captureHasTrustedStructuredDetails/);
+  assert.match(routeSource, /user_provided === true/);
+  assert.match(routeSource, /reviewed === true/);
+  assert.match(routeSource, /accepted === true/);
+  assert.match(
+    routeSource,
+    /\.observation-main\{[^}]*grid-template-columns:minmax\(190px,38%\) minmax\(0,1fr\)/,
+  );
+  assert.doesNotMatch(
+    routeSource,
+    /observation-content[^}]*min-height:\s*[3-9]\d\dpx/,
+  );
+  assert.match(
+    routeSource,
+    /\.media img\{[^}]*max-height:300px[^}]*object-fit:contain/,
+  );
+  assert.match(routeSource, /@media print[\s\S]*\.toolbar,\.print-help/);
+  assert.match(routeSource, /\.print-page-footer\{[^}]*position:fixed/);
+  assert.match(
+    routeSource,
+    /\.observation-card\{break-inside:avoid;page-break-inside:avoid\}/,
+  );
+  assert.match(
+    routeSource,
+    /\.approval-section\{break-inside:avoid;page-break-inside:avoid\}/,
+  );
 });

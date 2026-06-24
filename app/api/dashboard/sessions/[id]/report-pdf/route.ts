@@ -282,6 +282,15 @@ function buildReportCoverHtml(params: {
   return `<section class="report-cover item${coverImageHtml ? "" : " report-cover-no-image"}"><div class="cover-copy"><div class="cover-kicker"><span>Documentation Report</span><span>${escapeHtml(params.reportType)}</span></div><h1>${escapeHtml(params.reportTitle)}</h1><p class="cover-trust">Report identity and approved customer-facing documentation.</p>${renderDefinitionRows(rows)}</div>${coverImageHtml}</section>`;
 }
 
+function buildPrintFooterHtml(params: {
+  organizationName: string;
+  reportId?: string | null;
+  generatedAt: string;
+}) {
+  const reportId = params.reportId?.trim() || "Report";
+  return `<footer class="print-page-footer" aria-hidden="true"><span>${escapeHtml(params.organizationName)}</span><span>${escapeHtml(reportId)}</span><span>Generated ${escapeHtml(params.generatedAt)}</span></footer>`;
+}
+
 function buildReportOverviewHtml(params: {
   summary?: string | null;
   reportTitle?: string;
@@ -313,7 +322,7 @@ function buildEvidenceGalleryHtml(
     .map((capture) => {
       const meta = evidenceByCaptureId.get(capture.id);
       const evidenceId = meta?.evidenceId ?? "Evidence";
-      const label = getPrimaryEvidenceLabel(capture);
+      const label = getCustomerFacingEvidenceTitle(capture, 0);
       const captured =
         meta?.capturedAtLabel ??
         formatDateTimeInTimeZone(capture.captured_at, timeZone);
@@ -416,6 +425,122 @@ function getUserEvidenceText(capture: ReportCapture) {
   const userText =
     capture.technician_note?.trim() || capture.transcript?.trim();
   return userText && !looksLikeRawUploadFilename(userText) ? userText : "";
+}
+
+function getCaptureStringField(capture: ReportCapture, field: string) {
+  const value = (capture as unknown as Record<string, unknown>)[field];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function getTrustedCaption(capture: ReportCapture) {
+  const data = isRecord(capture.extracted_data) ? capture.extracted_data : {};
+  for (const key of [
+    "approved_caption",
+    "verified_caption",
+    "reviewed_caption",
+    "caption",
+  ]) {
+    const value = data[key];
+    if (
+      typeof value === "string" &&
+      value.trim() &&
+      !looksLikeRawUploadFilename(value)
+    )
+      return value.trim();
+  }
+  const metadata = isRecord(data.metadata) ? data.metadata : {};
+  for (const key of [
+    "approved_caption",
+    "verified_caption",
+    "reviewed_caption",
+    "caption",
+  ]) {
+    const value = metadata[key];
+    if (
+      typeof value === "string" &&
+      value.trim() &&
+      !looksLikeRawUploadFilename(value)
+    )
+      return value.trim();
+  }
+  return "";
+}
+
+function conciseHeadingFromNote(note: string) {
+  return (
+    stripConfidenceText(note)
+      .replace(/^technician note:?\s*/i, "")
+      .split(/[.;\n]/)[0]
+      ?.trim()
+      .slice(0, 90) ?? ""
+  );
+}
+
+function getCustomerFacingEvidenceTitle(capture: ReportCapture, index: number) {
+  const explicitTitle =
+    getCaptureStringField(capture, "title") ||
+    getCaptureStringField(capture, "display_title");
+  if (explicitTitle && !looksLikeRawUploadFilename(explicitTitle))
+    return stripConfidenceText(explicitTitle);
+  const noteHeading = conciseHeadingFromNote(
+    capture.technician_note?.trim() || capture.transcript?.trim() || "",
+  );
+  if (noteHeading && !looksLikeRawUploadFilename(noteHeading))
+    return noteHeading;
+  const trustedCaption = getTrustedCaption(capture);
+  if (trustedCaption) return stripConfidenceText(trustedCaption);
+  const category = normalizeEvidenceCategory(capture.evidence_category);
+  if (category && category !== "supporting_evidence")
+    return category
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+  return `Documented condition ${String(index + 1).padStart(2, "0")}`;
+}
+
+function captureHasTrustedStructuredDetails(capture: ReportCapture) {
+  const data = isRecord(capture.extracted_data) ? capture.extracted_data : {};
+  const metadata = isRecord(data.metadata) ? data.metadata : {};
+  const trustValues = [
+    data.source,
+    data.source_type,
+    data.report_structure_source,
+    data.review_status,
+    data.suggestion_source,
+    metadata.source,
+    metadata.source_type,
+    metadata.review_status,
+    metadata.suggestion_source,
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.toLowerCase());
+  return (
+    data.user_provided === true ||
+    data.reviewed === true ||
+    data.accepted === true ||
+    data.trusted === true ||
+    metadata.user_provided === true ||
+    metadata.reviewed === true ||
+    metadata.accepted === true ||
+    metadata.trusted === true ||
+    trustValues.some((value) =>
+      /user|uploaded_form|form|accepted|approved|verified|reviewed/.test(value),
+    )
+  );
+}
+
+function shouldRenderTrustedProofDetail(
+  capture: ReportCapture,
+  detail: { label: string; value: string },
+) {
+  if (/^technician note$/i.test(detail.label)) return false;
+  if (!isMeaningfulCustomerReportText(detail.value)) return false;
+  if (
+    /^(measurement|observed condition|recommendation|component|severity)$/i.test(
+      detail.label,
+    )
+  )
+    return true;
+  return captureHasTrustedStructuredDetails(capture);
 }
 
 function getPrimaryEvidenceLabel(capture: ReportCapture) {
@@ -1006,7 +1131,6 @@ function getObservationCategoryLabel(
   return "Observation";
 }
 
-
 function buildFormStructuredReportHtml(
   sections: ReturnType<typeof normalizeFormBlueprintSections>,
   reportStructure: Json | null,
@@ -1016,20 +1140,26 @@ function buildFormStructuredReportHtml(
   if (sections.length === 0) return "";
   const structure = isRecord(reportStructure) ? reportStructure : {};
   const mappings = Array.isArray(structure.evidence_field_mappings)
-    ? structure.evidence_field_mappings.flatMap((mapping): Record<string, unknown>[] =>
-        isRecord(mapping) ? [mapping] : [],
+    ? structure.evidence_field_mappings.flatMap(
+        (mapping): Record<string, unknown>[] =>
+          isRecord(mapping) ? [mapping] : [],
       )
     : [];
-  const capturesById = new Map(captureItems.map((capture) => [capture.id, capture]));
+  const capturesById = new Map(
+    captureItems.map((capture) => [capture.id, capture]),
+  );
   const renderedEvidence = new Set<string>();
   const evidenceFor = (sectionKey: string, fieldKey: string | null) => {
     const candidates = mappings.filter((mapping) => {
-      const sectionId = typeof mapping.section_id === "string" ? mapping.section_id : "";
-      const fieldId = typeof mapping.field_id === "string" ? mapping.field_id : null;
+      const sectionId =
+        typeof mapping.section_id === "string" ? mapping.section_id : "";
+      const fieldId =
+        typeof mapping.field_id === "string" ? mapping.field_id : null;
       return sectionId === sectionKey && (!fieldKey || fieldId === fieldKey);
     });
     const images = candidates.flatMap((mapping) => {
-      const captureId = typeof mapping.capture_id === "string" ? mapping.capture_id : "";
+      const captureId =
+        typeof mapping.capture_id === "string" ? mapping.capture_id : "";
       if (!captureId || renderedEvidence.has(captureId)) return [];
       const capture = capturesById.get(captureId);
       const asset = imageAssets[captureId];
@@ -1041,16 +1171,26 @@ function buildFormStructuredReportHtml(
     const group = `form-${sectionKey}-${fieldKey ?? "section"}`;
     return `<div class="supporting-evidence-panel"><div class="supporting-evidence-heading"><strong>Evidence</strong><span>${images.length} item${images.length === 1 ? "" : "s"}</span></div><div class="supporting-export-grid">${images.map(({ capture, asset }, index) => `<div class="supporting-export-item">${renderExportImage(asset, getPrimaryEvidenceLabel(capture), "Preview unavailable in printable export. Original evidence retained.", { group, index, total: images.length })}</div>`).join("")}</div></div>`;
   };
-  return `<section class="item service-section"><h2>Captured Form Structure</h2><p class="muted">Organized from the captured document structure and technician-approved edits.</p></section>${sections.map((section) => {
-    const rows = section.fields.map((field) => {
-      const valueParts = [field.value || "Not captured", field.unit ?? ""].filter(Boolean).join(" ");
-      const choices = field.status_choices?.length ? `<br><span class="muted">Choices: ${escapeHtml(field.status_choices.join(", "))}</span>` : "";
-      const notes = field.notes ? `<br><span class="muted">${escapeHtml(stripConfidenceText(field.notes))}</span>` : "";
-      return `<tr><th>${escapeHtml(field.label)}</th><td>${escapeHtml(stripConfidenceText(valueParts) || "Not captured")}${choices}${notes}${evidenceFor(section.key, field.key)}</td></tr>`;
-    }).join("");
-    const sectionEvidence = evidenceFor(section.key, null);
-    return `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2>${section.body ? `<p>${escapeHtml(stripConfidenceText(section.body))}</p>` : ""}${rows ? `<table class="checklist-table"><tbody>${rows}</tbody></table>` : `<p class="muted">No captured fields in this section.</p>`}${sectionEvidence}</section>`;
-  }).join("")}`;
+  return `<section class="item service-section"><h2>Captured Form Structure</h2><p class="muted">Organized from the captured document structure and technician-approved edits.</p></section>${sections
+    .map((section) => {
+      const rows = section.fields
+        .map((field) => {
+          const valueParts = [field.value || "Not captured", field.unit ?? ""]
+            .filter(Boolean)
+            .join(" ");
+          const choices = field.status_choices?.length
+            ? `<br><span class="muted">Choices: ${escapeHtml(field.status_choices.join(", "))}</span>`
+            : "";
+          const notes = field.notes
+            ? `<br><span class="muted">${escapeHtml(stripConfidenceText(field.notes))}</span>`
+            : "";
+          return `<tr><th>${escapeHtml(field.label)}</th><td>${escapeHtml(stripConfidenceText(valueParts) || "Not captured")}${choices}${notes}${evidenceFor(section.key, field.key)}</td></tr>`;
+        })
+        .join("");
+      const sectionEvidence = evidenceFor(section.key, null);
+      return `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2>${section.body ? `<p>${escapeHtml(stripConfidenceText(section.body))}</p>` : ""}${rows ? `<table class="checklist-table"><tbody>${rows}</tbody></table>` : `<p class="muted">No captured fields in this section.</p>`}${sectionEvidence}</section>`;
+    })
+    .join("")}`;
 }
 
 function buildDocumentedObservationsHtml(
@@ -1124,7 +1264,7 @@ function buildDocumentedObservationsHtml(
           ? `<p class="original-link"><a href="${escapeHtmlAttributeRaw(imageAsset.originalMediaUrl)}">Open supporting ${isDocument ? "document" : "file"}</a></p>`
           : "";
       const supportingImagesHtml = supportingImageAssets.length
-        ? `<div class="supporting-evidence-panel"><div class="supporting-evidence-heading"><strong>Supporting evidence</strong><span>${supportingImageAssets.length} additional image${supportingImageAssets.length === 1 ? "" : "s"}</span></div><div class="supporting-export-grid">${supportingImageAssets.map(({ capture: groupCapture, asset }) => `<div class="supporting-export-item">${renderExportImage(asset, getPrimaryEvidenceLabel(groupCapture), "Preview unavailable in printable export. Original evidence retained.", getLightboxOptions(groupCapture.id))}</div>`).join("")}</div></div>`
+        ? `<div class="supporting-evidence-panel"><div class="supporting-evidence-heading"><strong>Additional supporting photos</strong><span>${supportingImageAssets.length} photo${supportingImageAssets.length === 1 ? "" : "s"}</span></div><div class="supporting-export-grid">${supportingImageAssets.map(({ capture: groupCapture, asset }) => `<div class="supporting-export-item">${renderExportImage(asset, getPrimaryEvidenceLabel(groupCapture), "Preview unavailable in printable export. Original evidence retained.", getLightboxOptions(groupCapture.id))}</div>`).join("")}</div></div>`
         : "";
       const renderedText: string[] = [];
       const technicianNote = stripConfidenceText(
@@ -1133,7 +1273,7 @@ function buildDocumentedObservationsHtml(
       if (technicianNote) renderedText.push(technicianNote);
       const details = dedupeEvidenceDetails(entry.group.details).filter(
         (detail) => {
-          if (/^technician note$/i.test(detail.label)) return false;
+          if (!shouldRenderTrustedProofDetail(capture, detail)) return false;
           const visible = shouldRenderDetail(
             detail.label,
             detail.value,
@@ -1154,13 +1294,11 @@ function buildDocumentedObservationsHtml(
           if (visible) renderedText.push(value);
           return visible;
         });
-      const heading = getUserEvidenceText(capture)
-        ? getPrimaryEvidenceLabel(capture)
-        : "Observation";
+      const heading = getCustomerFacingEvidenceTitle(capture, index);
       const technicianNoteHtml = technicianNote
         ? `<div class="technician-note-block"><h4>Technician Note</h4><p>${escapeHtml(technicianNote)}</p></div>`
         : "";
-      return `<article class="finding-card observation-card"><div class="observation-main">${mediaHtml}<div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">${String(index + 1).padStart(2, "0")}</span><span class="observation-kind">${escapeHtml(getObservationCategoryLabel(entry))}</span></div><h3>${escapeHtml(heading)}</h3>${technicianNoteHtml}${supportingImageAssets.length ? `<p class="proof-line"><strong>Supporting Images:</strong> ${supportingImageAssets.length}</p>` : ""}${isDocument ? `<p class="proof-line"><strong>Supporting Document:</strong> ${escapeHtml(getPrimaryEvidenceLabel(capture))}</p>` : ""}${details.length ? `<div class="proof-block"><h4>Supporting Proof</h4>${renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value })))}</div>` : ""}${recommendations.length ? `<div class="proof-block"><h4>Recommended Action</h4><ul>${recommendations.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul></div>` : ""}</div></div>${supportingImagesHtml}</article>`;
+      return `<article class="finding-card observation-card"><div class="observation-main">${mediaHtml}<div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">${String(index + 1).padStart(2, "0")}</span><span class="observation-kind">${escapeHtml(getObservationCategoryLabel(entry))}</span></div><h3>${escapeHtml(heading)}</h3>${technicianNoteHtml}${isDocument ? `<p class="proof-line"><strong>Supporting document:</strong> ${escapeHtml(getCustomerFacingEvidenceTitle(capture, index))}</p>` : ""}${details.length ? `<div class="proof-block"><h4>Verified details</h4>${renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value })))}</div>` : ""}${recommendations.length ? `<div class="proof-block"><h4>Recommended Action</h4><ul>${recommendations.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul></div>` : ""}</div></div>${supportingImagesHtml}</article>`;
     })
     .join("");
   const actionsHtml = actionCards
@@ -1369,7 +1507,7 @@ function buildDiagnosticProcedureReportHtml(params: {
     },
     { label: "Date", value: formatDateInTimeZone(new Date(), params.timeZone) },
   ];
-  return `<!doctype html><html><head><meta charset="utf-8" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(info?.title ?? params.session.title)} diagnostic procedure documentation</title><style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}<header class="header"><p class="eyebrow">Diagnostic Procedure Workspace</p><h1>${escapeHtml(info?.title ?? params.session.title)}</h1><p class="notice info"><strong>Documentation support only.</strong> Follow OEM procedure. Technician owns all conclusions and recommendations.</p>${info?.signedOff ? `<p class="notice info"><strong>Signed off by ${escapeHtml(info.signOffName ?? "technician")}</strong>${info.signedOffAt ? ` at ${escapeHtml(formatDateInTimeZone(new Date(info.signedOffAt), params.timeZone))}` : ""}. ${escapeHtml(info.signOffStatement ?? "")}</p>` : '<p class="notice warning"><strong>Technician sign-off pending.</strong></p>'}${renderDefinitionRows(details)}</header>${`<section class="item service-section"><h2>Documentation completeness summary</h2>${renderDefinitionRows(
+  return `<!doctype html><html><head><meta charset="utf-8" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(info?.title ?? params.session.title)} diagnostic procedure documentation</title><style>${REPORT_STYLES}</style></head><body><main class="report" data-generated-at="${escapeHtmlAttributeRaw(formatDateTimeInTimeZone(new Date().toISOString(), params.timeZone))}">${toolbarHtml}<header class="header"><p class="eyebrow">Diagnostic Procedure Workspace</p><h1>${escapeHtml(info?.title ?? params.session.title)}</h1><p class="notice info"><strong>Documentation support only.</strong> Follow OEM procedure. Technician owns all conclusions and recommendations.</p>${info?.signedOff ? `<p class="notice info"><strong>Signed off by ${escapeHtml(info.signOffName ?? "technician")}</strong>${info.signedOffAt ? ` at ${escapeHtml(formatDateInTimeZone(new Date(info.signedOffAt), params.timeZone))}` : ""}. ${escapeHtml(info.signOffStatement ?? "")}</p>` : '<p class="notice warning"><strong>Technician sign-off pending.</strong></p>'}${renderDefinitionRows(details)}</header>${`<section class="item service-section"><h2>Documentation completeness summary</h2>${renderDefinitionRows(
     [
       { label: "Percent complete", value: `${progress.percentComplete}%` },
       { label: "Visible steps", value: String(progress.totalVisibleSteps) },
@@ -1385,7 +1523,7 @@ function buildDiagnosticProcedureReportHtml(params: {
         value: progress.reportReady ? "Yes" : "No",
       },
     ],
-  )}</section>`}${stepHtml || '<section class="item"><h2>No visible procedure steps documented.</h2><p class="notice warning">All extracted steps may be hidden or unavailable.</p></section>'}${appendixHtml}</main>${EXPORT_LIGHTBOX_HTML}</body></html>`;
+  )}</section>`}${stepHtml || '<section class="item"><h2>No visible procedure steps documented.</h2><p class="notice warning">All extracted steps may be hidden or unavailable.</p></section>'}${appendixHtml}${buildPrintFooterHtml({ organizationName: params.organizationName, reportId: params.session.display_id, generatedAt: formatDateTimeInTimeZone(new Date().toISOString(), params.timeZone) })}</main>${EXPORT_LIGHTBOX_HTML}</body></html>`;
 }
 
 function buildFieldServiceReportHtml({
@@ -1550,11 +1688,11 @@ function buildFieldServiceReportHtml({
     : "";
 
   return `<!doctype html><html><head><meta charset="utf-8" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable field service report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, captures: captureItems, imageAssets: signedUrls, timeZone, allowCoverImage: fieldUseGalleryMode })}${summaryHtml}<section class="item service-section"><h2>Report Details</h2>${renderDefinitionRows(headerRows)}</section>${renderFieldServiceSection(details, "equipment")}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work Performed / Resolution</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Supporting Record</h2><p class="muted">Photos, documents, and technician notes support the work summary and findings above.</p></section>${buildFinalNotesHtml(session)}${evidenceHtml}${fieldUseGalleryMode ? buildEvidenceGalleryHtml(captureItems, signedUrls, timeZone) : ""}${appendixHtml}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges Summary</h2>${renderDefinitionRows(chargeRows)}</section>${buildInspectorFacilityHtml(null, null)}${buildApprovalHtml({ profile: null, signatures, signatureUrls, draft: reportDraft, session, timeZone })}</main>${EXPORT_LIGHTBOX_HTML}</body></html>`;
+  <style>${REPORT_STYLES}</style></head><body><main class="report" data-generated-at="${escapeHtmlAttributeRaw(formatDateTimeInTimeZone(new Date().toISOString(), timeZone))}">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, captures: captureItems, imageAssets: signedUrls, timeZone, allowCoverImage: fieldUseGalleryMode })}${summaryHtml}<section class="item service-section"><h2>Report Details</h2>${renderDefinitionRows(headerRows)}</section>${renderFieldServiceSection(details, "equipment")}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work Performed / Resolution</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Supporting Record</h2><p class="muted">Photos, documents, and technician notes support the work summary and findings above.</p></section>${buildFinalNotesHtml(session)}${evidenceHtml}${fieldUseGalleryMode ? buildEvidenceGalleryHtml(captureItems, signedUrls, timeZone) : ""}${appendixHtml}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges Summary</h2>${renderDefinitionRows(chargeRows)}</section>${buildInspectorFacilityHtml(null, null)}${buildApprovalHtml({ profile: null, signatures, signatureUrls, draft: reportDraft, session, timeZone })}${buildPrintFooterHtml({ organizationName, reportId: session.display_id, generatedAt: formatDateTimeInTimeZone(new Date().toISOString(), timeZone) })}</main>${EXPORT_LIGHTBOX_HTML}</body></html>`;
 }
 
 const REPORT_STYLES = `
-    :root{color-scheme:light}*{box-sizing:border-box}html{background:#eef2f7}body{font-family:Inter,Arial,Helvetica,sans-serif;background:#eef2f7;color:#18243a;margin:0;padding:36px;line-height:1.45}.report{max-width:1040px;margin:0 auto}.toolbar{align-items:center;background:#13213a;border-radius:16px;color:white;display:flex;justify-content:space-between;margin:0 0 18px;padding:14px 16px}.toolbar button{background:white;border:0;border-radius:999px;color:#13213a;cursor:pointer;font-weight:800;padding:10px 16px}.print-help{color:#dbe7ff;font-size:13px;margin:0}.header,.item{background:white;border:1px solid #d9e2ee;border-radius:18px;box-shadow:0 10px 28px rgba(24,36,58,.055);margin-bottom:12px;padding:18px}.report-cover{display:grid;gap:0;grid-template-columns:minmax(0,1.18fr) minmax(240px,.58fr);overflow:hidden;padding:0;min-height:430px}.report-cover-no-image{display:block}.cover-copy{display:flex;flex-direction:column;justify-content:space-between;padding:34px}.cover-copy h1{font-size:40px;letter-spacing:-.045em;line-height:1.02;margin:34px 0 14px;max-width:13ch}.cover-trust{border-left:4px solid #155dfc;color:#4c5d75;font-size:15px;margin:0 0 22px;padding-left:14px}.cover-image{background:#f7f9fc;overflow:hidden}.cover-image img{display:block;height:100%;max-height:430px;object-fit:cover;width:100%}.eyebrow{color:#155dfc;font-size:11px;font-weight:900;letter-spacing:.16em;text-transform:uppercase}.cover-kicker{align-items:center;color:#155dfc;display:flex;font-size:11px;font-weight:900;gap:8px;justify-content:space-between;letter-spacing:.14em;text-transform:uppercase}.section-heading{margin-bottom:10px}.section-heading .eyebrow{margin:0 0 4px}.summary-panel{background:linear-gradient(180deg,#f8fbff,#fff);border:1px solid #e0e8f4;border-radius:14px;padding:14px 16px}.section-intro{font-size:13px;margin:-2px 0 10px}.observation-card{background:linear-gradient(180deg,#fff,#fbfdff);display:block;padding:10px}.observation-main{align-items:start;display:grid;gap:12px;grid-template-columns:minmax(220px,.42fr) minmax(0,1fr)}.observation-main>.media{align-self:start}.observation-content h3{font-size:18px;letter-spacing:-.015em;line-height:1.2;margin:6px 0 10px}.observation-content h4{color:#3d4f67;font-size:11px;letter-spacing:.1em;margin:0 0 5px;text-transform:uppercase}.observation-content p{margin:0 0 8px}.observation-heading{align-items:center;display:flex;gap:8px}.observation-number{background:#13213a;border-radius:999px;color:white;font-size:11px;font-weight:900;letter-spacing:.08em;padding:5px 8px}.observation-kind{background:#eef4ff;border:1px solid #cfddf4;border-radius:999px;color:#14315f;font-size:11px;font-weight:900;letter-spacing:.08em;padding:4px 8px;text-transform:uppercase}.technician-note-block{border-left:3px solid #155dfc;margin:8px 0 8px;padding-left:10px}.proof-line{background:#f8fafc;border:1px solid #e2e9f2;border-radius:9px;color:#62728a;font-size:12px;padding:7px 9px}.proof-block{margin-top:8px}.supporting-evidence-panel{background:#f8fafc;border:1px solid #e2e9f2;border-radius:12px;break-inside:avoid;margin-top:12px;max-width:100%;overflow:hidden;padding:10px;page-break-inside:avoid}.supporting-evidence-heading{align-items:center;display:flex;gap:8px;justify-content:space-between;margin:0 0 8px}.supporting-evidence-heading strong{color:#3d4f67;font-size:11px;letter-spacing:.1em;text-transform:uppercase}.supporting-evidence-heading span{color:#62728a;font-size:12px;font-weight:800}.supporting-export-grid{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));max-width:100%;overflow:hidden}.supporting-export-item{break-inside:avoid;min-width:0;page-break-inside:avoid}.supporting-export-grid img{background:white;border:1px solid #d8e2ef;border-radius:10px;break-inside:avoid;display:block;height:140px;max-height:140px;max-width:100%;object-fit:contain;overflow:hidden;page-break-inside:avoid;width:100%}.supporting-export-grid .media-fallback{break-inside:avoid;min-height:120px;page-break-inside:avoid}.approval-grid{align-items:end;display:grid;gap:14px;grid-template-columns:minmax(0,1fr) auto}.signature-label{color:#5a6a81;font-size:10px;font-weight:900;letter-spacing:.12em;margin:0 0 6px;text-transform:uppercase}.meta,.muted{color:#62728a}.service-section h2{border-bottom:1px solid #e3eaf3;font-size:21px;letter-spacing:-.025em;line-height:1.15;margin:0;padding-bottom:9px}dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:9px 0 0}dl div{background:#f8fafc;border:1px solid #e2e9f2;border-radius:9px;padding:7px 9px}dt{color:#5a6a81;font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}dd{font-weight:750;margin:4px 0 0;overflow-wrap:anywhere}a,a:visited{color:#18243a;text-decoration:none}.original-link{font-size:12px;margin-top:8px;opacity:.55}.original-link a{text-decoration:underline;text-underline-offset:2px}.media{position:relative;border-radius:14px;overflow:hidden;background:#f8fafc;border:1px solid #d8e2ef}.media img{display:block;width:100%;max-height:370px;object-fit:contain;background:white}.export-image-expand{background:transparent;border:0;color:inherit;cursor:zoom-in;display:block;font:inherit;margin:0;padding:0;position:relative;width:100%}.export-image-expand img{pointer-events:none}.expand-affordance{align-items:center;background:rgba(19,33,58,.82);border-radius:999px;color:white;display:flex;font-size:13px;font-weight:900;height:28px;justify-content:center;position:absolute;right:8px;top:8px;width:28px}.export-lightbox[hidden]{display:none}.export-lightbox{align-items:center;background:rgba(10,18,32,.92);bottom:0;display:flex;flex-direction:column;gap:12px;justify-content:center;left:0;padding:22px;position:fixed;right:0;top:0;z-index:9999}.export-lightbox img{max-height:82vh;max-width:92vw;object-fit:contain}.export-lightbox-close,.export-lightbox-prev,.export-lightbox-next{background:rgba(255,255,255,.95);border:0;border-radius:999px;color:#13213a;cursor:pointer;font-weight:900;padding:10px 14px}.export-lightbox-close{position:absolute;right:18px;top:18px}.export-lightbox-prev,.export-lightbox-next{position:absolute;top:50%;transform:translateY(-50%)}.export-lightbox-prev{left:18px}.export-lightbox-next{right:18px}.export-lightbox-counter{color:white;font-size:13px;font-weight:900}.media-fallback{align-items:center;aspect-ratio:4/3;background:#f8fafc;border:1px dashed #cbd6e5;color:#697890;display:flex;font-size:14px;font-weight:800;justify-content:center;padding:18px;text-align:center}.video-still{align-items:center;aspect-ratio:16/9;background:#eef4ff;color:#13213a;display:flex;font-size:18px;font-weight:800;justify-content:center;padding:16px;text-align:center}.finding{margin-top:10px}.finding-card,.reference-card{border:1px solid #d8e2ef;border-radius:14px;margin:8px 0;padding:10px}.finding-image{align-self:start;background:#f8fafc;border:1px solid #d8e2ef;border-radius:12px;overflow:hidden}.finding-image img{display:block;width:100%;max-height:250px;object-fit:contain}.gallery-grid{display:grid;gap:10px;grid-template-columns:repeat(2,minmax(0,1fr))}.gallery-card{background:#fff;border:1px solid #d8e2ef;border-radius:16px;break-inside:avoid;overflow:hidden}.gallery-thumb{background:#f8fafc}.gallery-thumb img{display:block;height:210px;object-fit:cover;width:100%}.gallery-caption{padding:12px 14px}.gallery-caption h3{font-size:17px;margin:2px 0 0}.gallery-caption p{color:#62728a;font-size:13px;margin:4px 0 0}.gallery-evidence-id{color:#155dfc!important;font-size:11px!important;font-weight:900;letter-spacing:.12em;margin:0!important;text-transform:uppercase}.summary-lead{color:#26364d;font-size:16px;line-height:1.55;margin:0 0 10px}.summary-trust{border-top:1px solid #e3eaf3;color:#62728a;font-size:12px;font-weight:800;margin:12px 0 0;padding-top:10px}.summary-chip-row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 14px}.summary-chip-row span{background:#eef4ff;border:1px solid #cfe0ff;border-radius:999px;color:#14315f;font-size:12px;font-weight:800;padding:6px 10px}.evidence-grid{display:grid;gap:10px;grid-template-columns:1fr}.evidence-card{align-items:start;border:1px solid #d8e2ef;border-radius:16px;display:grid;gap:14px;grid-template-columns:220px minmax(0,1fr);padding:14px;break-inside:avoid;page-break-inside:avoid}.evidence-card h3{font-size:17px;margin:0 0 8px}.evidence-card p{margin:0 0 10px}.evidence-media img{height:170px;max-height:170px;object-fit:contain}.evidence-copy dl{grid-template-columns:repeat(3,minmax(0,1fr))}.evidence-copy dl div{padding:8px}.severity,.evidence-pill{background:#f8fafc;border:1px solid #d8e2ef;border-radius:999px;display:inline-block;font-size:11px;font-weight:900;padding:6px 9px}.evidence-pill-row{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}.signature-block{background:#f8fafc;border:1px solid #d8e2ef;border-radius:12px;margin-top:0;padding:10px}.signoff-section{box-shadow:0 6px 18px rgba(24,36,58,.04);padding:18px}.signoff-section dl{grid-template-columns:repeat(2,minmax(0,1fr))}.signoff-section dl div{padding:8px 10px}.signature-image{background:white;border:1px solid #d8e2ef;border-radius:8px;display:block;max-height:82px;max-width:260px;object-fit:contain;padding:6px}.approval-signature{display:inline-block;min-width:260px}.signature-empty{color:#62728a;font-weight:800}table{border-collapse:collapse;width:100%}td,th{border:1px solid #d8e2ef;padding:6px 8px;text-align:left;vertical-align:top;overflow-wrap:anywhere}th{background:#f1f5fb}.evidence-appendix,.evidence-index{font-size:11px}.appendix-thumb{width:70px}.appendix-thumb img{display:block;height:44px;max-width:60px;object-fit:cover;border-radius:5px}.appendix-thumb .media-fallback{aspect-ratio:auto;min-height:44px;padding:4px;font-size:9px}.appendix-kind{color:#62728a;font-size:11px;font-weight:800}@media (max-width:800px){body{padding:14px}.report-cover,.evidence-card,.observation-main,.approval-grid{grid-template-columns:1fr}.cover-copy{padding:22px}.cover-copy h1{font-size:30px}dl,.gallery-grid,.evidence-copy dl{grid-template-columns:1fr}.header,.item{border-radius:16px;padding:18px}.toolbar{align-items:flex-start;flex-direction:column;gap:8px}.gallery-thumb img{height:230px}}@media print{@page{margin:12mm}html,body{background:white}body{padding:0}.report{max-width:none}.toolbar,.original-link,.expand-affordance,.export-lightbox,.export-image-expand:after{display:none!important}.header,.item,.finding-card,.reference-card,.evidence-card,.gallery-card{box-shadow:none}.finding-card,.reference-card,.evidence-card,.gallery-card{break-inside:avoid;page-break-inside:avoid}.signoff-section{break-inside:avoid;page-break-inside:avoid}.report-cover{break-before:auto}.gallery-section,.org-section,.approval-section,.evidence-appendix-section{break-before:auto;page-break-before:auto}.service-section h2,.section-heading{break-after:avoid;page-break-after:avoid}.observation-card{break-inside:avoid;page-break-inside:avoid}.approval-section{break-inside:avoid;page-break-inside:avoid}.media img,.export-image-expand img,.evidence-media img,.signature-image,.finding-image img,.gallery-thumb img,.supporting-export-grid img{break-inside:avoid;page-break-inside:avoid;visibility:visible}.note{position:static;background:#14213d}a,a:visited{color:#18243a!important;text-decoration:none!important}.report{color:#18243a;-webkit-text-size-adjust:100%;print-color-adjust:exact;-webkit-print-color-adjust:exact}}
+    :root{color-scheme:light}*{box-sizing:border-box}html{background:#eef2f7}body{font-family:Inter,Arial,Helvetica,sans-serif;background:#eef2f7;color:#18243a;margin:0;padding:36px;line-height:1.45}.report{max-width:1040px;margin:0 auto}.toolbar{align-items:center;background:#13213a;border-radius:16px;color:white;display:flex;justify-content:space-between;margin:0 0 18px;padding:14px 16px}.toolbar button{background:white;border:0;border-radius:999px;color:#13213a;cursor:pointer;font-weight:800;padding:10px 16px}.print-help{color:#dbe7ff;font-size:13px;margin:0}.header,.item{background:white;border:1px solid #d9e2ee;border-radius:18px;box-shadow:0 10px 28px rgba(24,36,58,.055);margin-bottom:12px;padding:18px}.report-cover{display:grid;gap:0;grid-template-columns:minmax(0,1.5fr) minmax(220px,.55fr);overflow:hidden;padding:0;min-height:0}.report-cover-no-image{display:block}.cover-copy{display:flex;flex-direction:column;justify-content:flex-start;padding:26px 30px}.cover-copy h1{font-size:clamp(30px,5vw,44px);letter-spacing:-.045em;line-height:1.04;margin:24px 0 12px;max-width:24ch;text-wrap:balance;overflow-wrap:anywhere}.cover-trust{border-left:4px solid #155dfc;color:#4c5d75;font-size:15px;margin:0 0 22px;padding-left:14px}.cover-image{background:#f7f9fc;overflow:hidden}.cover-image img{display:block;height:100%;max-height:360px;object-fit:contain;width:100%}.eyebrow{color:#155dfc;font-size:11px;font-weight:900;letter-spacing:.16em;text-transform:uppercase}.cover-kicker{align-items:center;color:#155dfc;display:flex;font-size:11px;font-weight:900;gap:8px;justify-content:space-between;letter-spacing:.14em;text-transform:uppercase}.section-heading{margin-bottom:10px}.section-heading .eyebrow{margin:0 0 4px}.summary-panel{background:linear-gradient(180deg,#f8fbff,#fff);border:1px solid #e0e8f4;border-radius:14px;padding:12px 14px}.section-intro{font-size:13px;margin:-2px 0 10px}.observation-card{background:linear-gradient(180deg,#fff,#fbfdff);display:block;padding:10px}.observation-main{align-items:start;display:grid;gap:12px;grid-template-columns:minmax(190px,38%) minmax(0,1fr)}.observation-main>.media{align-self:start}.observation-content h3{font-size:18px;letter-spacing:-.015em;line-height:1.2;margin:6px 0 10px}.observation-content h4{color:#3d4f67;font-size:11px;letter-spacing:.1em;margin:0 0 5px;text-transform:uppercase}.observation-content p{margin:0 0 8px}.observation-heading{align-items:center;display:flex;gap:8px}.observation-number{background:#13213a;border-radius:999px;color:white;font-size:11px;font-weight:900;letter-spacing:.08em;padding:5px 8px}.observation-kind{background:#eef4ff;border:1px solid #cfddf4;border-radius:999px;color:#14315f;font-size:11px;font-weight:900;letter-spacing:.08em;padding:4px 8px;text-transform:uppercase}.technician-note-block{border-left:3px solid #155dfc;margin:8px 0 8px;padding-left:10px}.proof-line{background:#f8fafc;border:1px solid #e2e9f2;border-radius:9px;color:#62728a;font-size:12px;padding:7px 9px}.proof-block{margin-top:8px}.supporting-evidence-panel{background:#f8fafc;border:1px solid #e2e9f2;border-radius:12px;break-inside:avoid;margin-top:12px;max-width:100%;overflow:hidden;padding:10px;page-break-inside:avoid}.supporting-evidence-heading{align-items:center;display:flex;gap:8px;justify-content:space-between;margin:0 0 8px}.supporting-evidence-heading strong{color:#3d4f67;font-size:11px;letter-spacing:.1em;text-transform:uppercase}.supporting-evidence-heading span{color:#62728a;font-size:12px;font-weight:800}.supporting-export-grid{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));max-width:100%;overflow:hidden}.supporting-export-item{break-inside:avoid;min-width:0;page-break-inside:avoid}.supporting-export-grid img{background:white;border:1px solid #d8e2ef;border-radius:10px;break-inside:avoid;display:block;height:140px;max-height:140px;max-width:100%;object-fit:contain;overflow:hidden;page-break-inside:avoid;width:100%}.supporting-export-grid .media-fallback{break-inside:avoid;min-height:120px;page-break-inside:avoid}.approval-grid{align-items:end;display:grid;gap:14px;grid-template-columns:minmax(0,1fr) auto}.signature-label{color:#5a6a81;font-size:10px;font-weight:900;letter-spacing:.12em;margin:0 0 6px;text-transform:uppercase}.meta,.muted{color:#62728a}.service-section h2{border-bottom:1px solid #e3eaf3;font-size:21px;letter-spacing:-.025em;line-height:1.15;margin:0;padding-bottom:9px}dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:9px 0 0}dl div{background:#f8fafc;border:1px solid #e2e9f2;border-radius:9px;padding:7px 9px}dt{color:#5a6a81;font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}dd{font-weight:750;margin:4px 0 0;overflow-wrap:anywhere}a,a:visited{color:#18243a;text-decoration:none}.original-link{font-size:12px;margin-top:8px;opacity:.55}.original-link a{text-decoration:underline;text-underline-offset:2px}.media{position:relative;border-radius:14px;overflow:hidden;background:#f8fafc;border:1px solid #d8e2ef}.media img{display:block;width:100%;max-height:300px;object-fit:contain;background:white}.export-image-expand{background:transparent;border:0;color:inherit;cursor:zoom-in;display:block;font:inherit;margin:0;padding:0;position:relative;width:100%}.export-image-expand img{pointer-events:none}.expand-affordance{align-items:center;background:rgba(19,33,58,.82);border-radius:999px;color:white;display:flex;font-size:13px;font-weight:900;height:28px;justify-content:center;position:absolute;right:8px;top:8px;width:28px}.export-lightbox[hidden]{display:none}.export-lightbox{align-items:center;background:rgba(10,18,32,.92);bottom:0;display:flex;flex-direction:column;gap:12px;justify-content:center;left:0;padding:22px;position:fixed;right:0;top:0;z-index:9999}.export-lightbox img{max-height:82vh;max-width:92vw;object-fit:contain}.export-lightbox-close,.export-lightbox-prev,.export-lightbox-next{background:rgba(255,255,255,.95);border:0;border-radius:999px;color:#13213a;cursor:pointer;font-weight:900;padding:10px 14px}.export-lightbox-close{position:absolute;right:18px;top:18px}.export-lightbox-prev,.export-lightbox-next{position:absolute;top:50%;transform:translateY(-50%)}.export-lightbox-prev{left:18px}.export-lightbox-next{right:18px}.export-lightbox-counter{color:white;font-size:13px;font-weight:900}.media-fallback{align-items:center;aspect-ratio:4/3;background:#f8fafc;border:1px dashed #cbd6e5;color:#697890;display:flex;font-size:14px;font-weight:800;justify-content:center;padding:18px;text-align:center}.video-still{align-items:center;aspect-ratio:16/9;background:#eef4ff;color:#13213a;display:flex;font-size:18px;font-weight:800;justify-content:center;padding:16px;text-align:center}.finding{margin-top:10px}.finding-card,.reference-card{border:1px solid #d8e2ef;border-radius:14px;margin:8px 0;padding:10px}.finding-image{align-self:start;background:#f8fafc;border:1px solid #d8e2ef;border-radius:12px;overflow:hidden}.finding-image img{display:block;width:100%;max-height:250px;object-fit:contain}.gallery-grid{display:grid;gap:10px;grid-template-columns:repeat(2,minmax(0,1fr))}.gallery-card{background:#fff;border:1px solid #d8e2ef;border-radius:16px;break-inside:avoid;overflow:hidden}.gallery-thumb{background:#f8fafc}.gallery-thumb img{display:block;height:210px;object-fit:cover;width:100%}.gallery-caption{padding:12px 14px}.gallery-caption h3{font-size:17px;margin:2px 0 0}.gallery-caption p{color:#62728a;font-size:13px;margin:4px 0 0}.gallery-evidence-id{color:#155dfc!important;font-size:11px!important;font-weight:900;letter-spacing:.12em;margin:0!important;text-transform:uppercase}.summary-lead{color:#26364d;font-size:16px;line-height:1.55;margin:0 0 10px}.summary-trust{border-top:1px solid #e3eaf3;color:#62728a;font-size:12px;font-weight:800;margin:12px 0 0;padding-top:10px}.summary-chip-row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 14px}.summary-chip-row span{background:#eef4ff;border:1px solid #cfe0ff;border-radius:999px;color:#14315f;font-size:12px;font-weight:800;padding:6px 10px}.evidence-grid{display:grid;gap:10px;grid-template-columns:1fr}.evidence-card{align-items:start;border:1px solid #d8e2ef;border-radius:16px;display:grid;gap:14px;grid-template-columns:220px minmax(0,1fr);padding:14px;break-inside:avoid;page-break-inside:avoid}.evidence-card h3{font-size:17px;margin:0 0 8px}.evidence-card p{margin:0 0 10px}.evidence-media img{height:170px;max-height:170px;object-fit:contain}.evidence-copy dl{grid-template-columns:repeat(3,minmax(0,1fr))}.evidence-copy dl div{padding:8px}.severity,.evidence-pill{background:#f8fafc;border:1px solid #d8e2ef;border-radius:999px;display:inline-block;font-size:11px;font-weight:900;padding:6px 9px}.evidence-pill-row{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}.signature-block{background:#f8fafc;border:1px solid #d8e2ef;border-radius:12px;margin-top:0;padding:10px}.signoff-section{box-shadow:0 6px 18px rgba(24,36,58,.04);padding:18px}.signoff-section dl{grid-template-columns:repeat(2,minmax(0,1fr))}.signoff-section dl div{padding:8px 10px}.signature-image{background:white;border:1px solid #d8e2ef;border-radius:8px;display:block;max-height:82px;max-width:260px;object-fit:contain;padding:6px}.approval-signature{display:inline-block;min-width:260px}.signature-empty{color:#62728a;font-weight:800}table{border-collapse:collapse;width:100%}td,th{border:1px solid #d8e2ef;padding:6px 8px;text-align:left;vertical-align:top;overflow-wrap:anywhere}th{background:#f1f5fb}.evidence-appendix,.evidence-index{font-size:11px}.appendix-thumb{width:70px}.appendix-thumb img{display:block;height:44px;max-width:60px;object-fit:cover;border-radius:5px}.appendix-thumb .media-fallback{aspect-ratio:auto;min-height:44px;padding:4px;font-size:9px}.appendix-kind{color:#62728a;font-size:11px;font-weight:800}.print-page-footer{display:none}@media (max-width:800px){body{padding:14px}.report-cover,.evidence-card,.observation-main,.approval-grid{grid-template-columns:1fr}.cover-copy{padding:22px}.cover-copy h1{font-size:30px}dl,.gallery-grid,.evidence-copy dl{grid-template-columns:1fr}.header,.item{border-radius:16px;padding:18px}.toolbar{align-items:flex-start;flex-direction:column;gap:8px}.gallery-thumb img{height:230px}}@media print{@page{margin:13mm 12mm;@bottom-center{content:counter(page);font-size:9px;color:#62728a}}html,body{background:white}body{padding:0}.report{max-width:none}.toolbar,.print-help,.original-link,.expand-affordance,.export-lightbox,.export-image-expand:after{display:none!important}.header,.item,.finding-card,.reference-card,.evidence-card,.gallery-card{box-shadow:none}.finding-card,.reference-card,.evidence-card,.gallery-card{break-inside:avoid;page-break-inside:avoid}.signoff-section{break-inside:avoid;page-break-inside:avoid}.report-cover{break-before:auto}.gallery-section,.org-section,.approval-section,.evidence-appendix-section{break-before:auto;page-break-before:auto}.service-section h2,.section-heading{break-after:avoid;page-break-after:avoid}.observation-card{break-inside:avoid;page-break-inside:avoid}.approval-section{break-inside:avoid;page-break-inside:avoid}.media img,.export-image-expand img,.evidence-media img,.signature-image,.finding-image img,.gallery-thumb img,.supporting-export-grid img{break-inside:avoid;page-break-inside:avoid;visibility:visible}.note{position:static;background:#14213d}a,a:visited{color:#18243a!important;text-decoration:none!important}.report{color:#18243a;-webkit-text-size-adjust:100%;print-color-adjust:exact;-webkit-print-color-adjust:exact}.overview-section,.summary-panel,.report-cover dl,.supporting-evidence-panel,.approval-grid{break-inside:avoid;page-break-inside:avoid}.observation-main{grid-template-columns:minmax(170px,36%) minmax(0,1fr)}.media img{max-height:260px}.supporting-export-grid img{height:115px;max-height:115px}.print-page-footer{align-items:center;border-top:1px solid #d8e2ef;bottom:0;color:#62728a;display:flex;font-size:9px;gap:8px;justify-content:space-between;left:0;position:fixed;right:0}}}
   `;
 
 export async function GET(_request: Request, { params }: RouteContext) {
@@ -1801,7 +1939,9 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const formSections =
     blueprintSections.length > 0
       ? blueprintSections
-      : documentSections.length > 0 ? documentSections : derivedFormSections;
+      : documentSections.length > 0
+        ? documentSections
+        : derivedFormSections;
   const isGenericEvidenceReport =
     getFormStructureSummary(reportDraft?.report_structure ?? null, formSections)
       .source === "generic_fallback";
@@ -1886,18 +2026,18 @@ export async function GET(_request: Request, { params }: RouteContext) {
       "[report-evidence-check] Included captures have no draft references; Evidence Appendix will render all included captures.",
       { session_id: session.id, included_capture_count: captureItems.length },
     );
-  const formStructuredHtml = blueprintSections.length > 0
-    ? buildFormStructuredReportHtml(
-        blueprintSections,
-        reportDraft?.report_structure ?? null,
-        captureItems,
-        imageAssets,
-      )
-    : "";
-  const observationsHtml = formStructuredHtml || buildDocumentedObservationsHtml(
-    reviewDocument,
-    imageAssets,
-  );
+  const formStructuredHtml =
+    blueprintSections.length > 0
+      ? buildFormStructuredReportHtml(
+          blueprintSections,
+          reportDraft?.report_structure ?? null,
+          captureItems,
+          imageAssets,
+        )
+      : "";
+  const observationsHtml =
+    formStructuredHtml ||
+    buildDocumentedObservationsHtml(reviewDocument, imageAssets);
   const approvalHtml = buildApprovalHtml({
     profile: reportProfile,
     signatures: reportSignatures,
@@ -1911,7 +2051,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     ? ""
     : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>';
   const html = `<!doctype html><html><head><meta charset="utf-8" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}</style></head><body><main class="report">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, companyProfile: reportCompanyProfile, captures: appendixCaptureItems, imageAssets: imageAssets, timeZone, allowCoverImage: useGalleryMode })}${summaryHtml}${observationsHtml}${unattachedHtml}${appendixHtml}${approvalHtml}</main>${EXPORT_LIGHTBOX_HTML}</body></html>`;
+  <style>${REPORT_STYLES}</style></head><body><main class="report" data-generated-at="${escapeHtmlAttributeRaw(formatDateTimeInTimeZone(new Date().toISOString(), timeZone))}">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, companyProfile: reportCompanyProfile, captures: appendixCaptureItems, imageAssets: imageAssets, timeZone, allowCoverImage: useGalleryMode })}${summaryHtml}${observationsHtml}${unattachedHtml}${appendixHtml}${approvalHtml}${buildPrintFooterHtml({ organizationName, reportId: session.display_id, generatedAt: formatDateTimeInTimeZone(new Date().toISOString(), timeZone) })}</main>${EXPORT_LIGHTBOX_HTML}</body></html>`;
 
   return new Response(html, {
     headers: { "Content-Type": "text/html; charset=utf-8" },
