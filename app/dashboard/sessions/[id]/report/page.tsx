@@ -471,7 +471,7 @@ export default async function SessionReportPreviewPage({
         </div>
       </div>
 
-      <EvidenceWorkspaceBacklinks sessionId={session.id} current="report" />
+      <EvidenceWorkspaceBacklinks accessSubject={profile} sessionId={session.id} current="report" />
 
       {shouldAutoPrepareReport ? (
         <AutoPrepareReport

@@ -1,6 +1,6 @@
 import { Card } from '@/components/ui'
 import { BILLING_PLANS, getOrganizationBillingAccess, getPlanDisplayName, parseBillingPlan } from '@/features/billing'
-import { PLAN_SEAT_LIMITS } from '@/features/team'
+import { getEffectiveSeatLimit } from '@/features/team'
 import { BillingCheckoutButton } from '@/features/billing/components/BillingCheckoutButton'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { UsageSummaryCard } from '@/features/usage'
@@ -83,7 +83,7 @@ export default async function BillingPage({ searchParams }: BillingPageProps) {
         </div>
       </Card>
 
-      <Card className="dashboard-card workspace-card"><strong>Seat limits</strong><p className="muted">Individual: 1 user · Team: 5 users · Shop: 15 users. Additional users can be added as paid seat expansions.</p></Card>
+      <Card className="dashboard-card workspace-card"><strong>Seat limits</strong><p className="muted">Essentials: 3 users · Professional: 10 users · Investigation: 20 users. Additional users can be added as paid seat expansions.</p></Card>
 
       <UsageSummaryCard organizationId={profile.organization_id} plan={billingPlan} supabase={supabase} />
 
@@ -98,7 +98,7 @@ export default async function BillingPage({ searchParams }: BillingPageProps) {
               <p className="eyebrow">{plan === billingPlan ? 'Current selection' : 'Available plan'}</p>
               <h2>{details.name}</h2>
               <p className="plan-price">{details.price}</p>
-              <p className="muted">{PLAN_SEAT_LIMITS[plan as keyof typeof PLAN_SEAT_LIMITS]} user{PLAN_SEAT_LIMITS[plan as keyof typeof PLAN_SEAT_LIMITS] === 1 ? '' : 's'} included. Additional users can be added as paid seat expansions.</p>
+              <p className="muted">{getEffectiveSeatLimit(plan)} users included. Additional users can be added as paid seat expansions.</p>
             </div>
             {subscriptionStatus === 'active' && plan === billingPlan ? (
               <button type="button" className="button button-secondary touch-target" disabled>

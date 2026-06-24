@@ -5,6 +5,7 @@ import { SessionStatusBadge, formatDateTime } from '@/features/sessions'
 import { archiveDocumentationSession, restoreDocumentationSession } from '@/features/sessions/actions'
 import { getSessionWorkflowStatus } from '@/features/sessions/status'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import { getVisibleWorkspaceFeatures } from '@/features/billing/feature-gates'
 import { EvidenceWorkspaceNav } from '@/features/evidence/components/EvidenceWorkspaceNav'
 
 export default async function SessionDetailPage({
@@ -43,6 +44,8 @@ export default async function SessionDetailPage({
     supabase.from('evidence_relationships').select('id', { count: 'exact', head: true }).eq('documentation_session_id', session.id).eq('organization_id', profile.organization_id).is('deleted_at', null),
   ])
 
+  // Tiered navigation still includes the Factual Observations route as `/assertions`} for Professional+ workspaces.
+  const visibleWorkspaceFeatures = getVisibleWorkspaceFeatures(profile).filter((feature) => feature.key !== 'report_export')
   const isArchived = Boolean(session.archived_at)
   const archiveAction = archiveDocumentationSession.bind(null, session.id)
   const restoreAction = restoreDocumentationSession.bind(null, session.id)
@@ -65,7 +68,7 @@ export default async function SessionDetailPage({
       {error ? <p className="error">{error}</p> : null}
       {saved ? <p className="success">Saved.</p> : null}
 
-      <EvidenceWorkspaceNav sessionId={session.id} counts={{ evidenceItems: evidenceCount ?? 0, timelineEvents: timelineEventsCount ?? 0, entities: entitiesCount ?? 0, factualObservations: factualObservationsCount ?? 0, relationships: relationshipsCount ?? 0 }} />
+      <EvidenceWorkspaceNav accessSubject={profile} sessionId={session.id} counts={{ evidenceItems: evidenceCount ?? 0, timelineEvents: timelineEventsCount ?? 0, entities: entitiesCount ?? 0, factualObservations: factualObservationsCount ?? 0, relationships: relationshipsCount ?? 0 }} />
 
       <section className="card detail-card form-stack">
         <div>
@@ -74,37 +77,18 @@ export default async function SessionDetailPage({
           <p className="muted">Capture evidence, review the report CRED generated, or export when approved.</p>
         </div>
         <div className="form-actions">
-          <Link href={`/dashboard/sessions/${session.id}/capture`} className="button button-primary touch-target">
-            Capture
-          </Link>
-          <Link href={`/dashboard/sessions/${session.id}/report`} className="button button-primary touch-target">
-            Review
-          </Link>
-          <Link href={`/dashboard/sessions/${session.id}/evidence`} className="button button-secondary touch-target">
-            Evidence Library
-          </Link>
-          <Link href={`/dashboard/sessions/${session.id}/evidence/import`} className="button button-secondary touch-target">
-            Import evidence
-          </Link>
-          <Link href={`/dashboard/sessions/${session.id}/timeline`} className="button button-secondary touch-target">
-            Timeline
-          </Link>
-          <Link href={`/dashboard/sessions/${session.id}/entities`} className="button button-secondary touch-target">
-            Entities
-          </Link>
-          <Link href={`/dashboard/sessions/${session.id}/assertions`} className="button button-secondary touch-target">
-            Factual Observations
-          </Link>
-          <Link href={`/dashboard/sessions/${session.id}/relationships`} className="button button-secondary touch-target">
-            Relationship Explorer
-          </Link>
-          <Link href={`/dashboard/sessions/${session.id}/deliverables`} className="button button-secondary touch-target">
-            Deliverables
-          </Link>
+          {visibleWorkspaceFeatures.map((feature) => (
+            <Link key={feature.key} href={`/dashboard/sessions/${session.id}/${feature.hrefSegment}`} className={`button ${feature.key === 'capture' || feature.key === 'existing_report' ? 'button-primary' : 'button-secondary'} touch-target`}>
+              {feature.label}
+            </Link>
+          ))}
         </div>
         <details className="session-card-manage">
           <summary className="secondary-link touch-target">More session tools</summary>
           <div className="form-actions">
+            <Link href={`/dashboard/sessions/${session.id}/evidence/import`} className="button button-secondary touch-target">
+              Import evidence
+            </Link>
             <Link href={`/dashboard/sessions/${session.id}/diagnostic-procedure`} className="button button-secondary touch-target">
               Procedure notes
             </Link>

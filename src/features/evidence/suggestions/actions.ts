@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { canUseFeature } from '@/features/billing/feature-gates'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { assertSameEvidenceWorkspace } from '@/features/evidence/validation'
 import { throwFriendlyRelationshipMutationError } from '@/features/evidence/relationship-errors'
@@ -9,6 +10,10 @@ import { parseEditedSuggestion, parseSuggestionCategory, parseSuggestionDecision
 
 type MutationBuilder = { select: (columns: string) => MutationBuilder; eq: (column: string, value: string) => MutationBuilder; is: (column: string, value: null) => MutationBuilder; single: () => Promise<{ data: unknown; error: unknown }>; order: (column: string, options?: { ascending?: boolean }) => MutationBuilder; insert: (values: Record<string, unknown> | Record<string, unknown>[]) => Promise<{ error: unknown }>; update: (values: Record<string, unknown>) => MutationBuilder; then: Promise<{ error: unknown }>['then'] }
 type SupabaseLike = { from: (table: string) => MutationBuilder }
+
+function assertFeatureAccess(profile: { organization: { plan?: string | null } }) {
+  if (!canUseFeature(profile, 'suggestions')) throw new Error('This feature is not available on your current CRED tier.')
+}
 type WorkspaceRow = { id: string; documentation_session_id: string; organization_id: string }
 type RelationshipSuggestionRow = WorkspaceRow & { source_type: string; source_id: string; target_type: string; target_id: string; review_status: string }
 const TABLES = { timeline: 'timeline_events', entity: 'evidence_entities', observation: 'evidence_assertions', relationship: 'evidence_relationships' } as const
@@ -41,7 +46,8 @@ async function assertRelationshipSuggestionEndpoints(supabase: SupabaseLike, rel
 }
 
 export async function generateAiEvidenceSuggestions(sessionId: string) {
-  const { supabase: rawSupabase, profile } = await requireSessionWorkspace(); const supabase = rawSupabase as unknown as SupabaseLike; await loadSession(supabase, sessionId, profile.organization_id)
+  const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+  assertFeatureAccess(profile); const supabase = rawSupabase as unknown as SupabaseLike; await loadSession(supabase, sessionId, profile.organization_id)
   const suggestions = await generateEvidenceSuggestions(sessionId, { supabase, organizationId: profile.organization_id, userId: profile.id ?? null, timezone: profile.timezone ?? null })
   for (const [table, rows] of Object.entries(suggestions)) if (rows.length) { const { error } = await supabase.from(table).insert(rows); if (error) throwFriendlyRelationshipMutationError(error, 'Unable to create AI suggestions') }
   revalidatePath(`/dashboard/sessions/${sessionId}/suggestions`)
@@ -49,7 +55,8 @@ export async function generateAiEvidenceSuggestions(sessionId: string) {
 
 export async function reviewEvidenceSuggestion(sessionId: string, suggestionId: string, formData: FormData) {
   const category = parseSuggestionCategory(formData.get('category')); const decision = parseSuggestionDecision(formData.get('decision'))
-  const { supabase: rawSupabase, profile } = await requireSessionWorkspace(); const supabase = rawSupabase as unknown as SupabaseLike; await loadSession(supabase, sessionId, profile.organization_id)
+  const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+  assertFeatureAccess(profile); const supabase = rawSupabase as unknown as SupabaseLike; await loadSession(supabase, sessionId, profile.organization_id)
   const suggestion = await loadSuggestionForReview(supabase, category, suggestionId, sessionId, profile.organization_id)
   if (category === 'relationship') await assertRelationshipSuggestionEndpoints(supabase, suggestion as RelationshipSuggestionRow, sessionId, profile.organization_id)
   const now = new Date().toISOString(); const edits = decision === 'edited' ? parseEditedSuggestion(category, formData) : {}

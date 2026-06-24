@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { canUseFeature } from '@/features/billing/feature-gates'
 
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { acceptedUserRelationshipDefaults, softDeleteUpdate } from '@/features/evidence/validation'
@@ -9,6 +10,10 @@ import { assertSameWorkspace, parseAssertionForm, parseAssertionRelationshipType
 
 type MutationBuilder = { select: (columns: string) => MutationBuilder; eq: (column: string, value: string) => MutationBuilder; is: (column: string, value: null) => MutationBuilder; single: () => Promise<{ data: unknown; error: unknown }>; insert: (values: Record<string, unknown>) => Promise<{ error: unknown }>; update: (values: Record<string, unknown>) => MutationBuilder; then: Promise<{ error: unknown }>['then'] }
 type SupabaseLike = { from: (table: string) => MutationBuilder }
+
+function assertFeatureAccess(profile: { organization: { plan?: string | null } }) {
+  if (!canUseFeature(profile, 'factual_observations')) throw new Error('This feature is not available on your current CRED tier.')
+}
 type WorkspaceRow = { id: string; documentation_session_id: string; organization_id: string }
 
 async function loadSession(supabase: SupabaseLike, sessionId: string, organizationId: string) {
@@ -30,6 +35,7 @@ async function loadSource(supabase: SupabaseLike, sourceType: string, sourceId: 
 
 export async function createEvidenceAssertion(sessionId: string, formData: FormData) {
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+  assertFeatureAccess(profile)
   const supabase = rawSupabase as unknown as SupabaseLike
   await loadSession(supabase, sessionId, profile.organization_id)
   const values = parseAssertionForm(formData)
@@ -41,6 +47,7 @@ export async function createEvidenceAssertion(sessionId: string, formData: FormD
 
 export async function updateEvidenceAssertion(sessionId: string, assertionId: string, formData: FormData) {
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+  assertFeatureAccess(profile)
   const supabase = rawSupabase as unknown as SupabaseLike
   await loadAssertion(supabase, assertionId, sessionId, profile.organization_id)
   const values = parseAssertionForm(formData)
@@ -52,6 +59,7 @@ export async function updateEvidenceAssertion(sessionId: string, assertionId: st
 
 export async function deleteEvidenceAssertion(sessionId: string, assertionId: string) {
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+  assertFeatureAccess(profile)
   const supabase = rawSupabase as unknown as SupabaseLike
   await loadAssertion(supabase, assertionId, sessionId, profile.organization_id)
   const { error } = await supabase.from('evidence_assertions').update(softDeleteUpdate()).eq('id', assertionId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).is('deleted_at', null)
@@ -67,6 +75,7 @@ export async function linkAssertionRelationship(sessionId: string, assertionId: 
   const relationshipType = parseAssertionRelationshipType(formData.get('relationship_type'), sourceType)
   if (!relationshipType) throw new Error('Invalid factual observation relationship type')
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+  assertFeatureAccess(profile)
   const supabase = rawSupabase as unknown as SupabaseLike
   const assertion = await loadAssertion(supabase, assertionId, sessionId, profile.organization_id)
   const source = await loadSource(supabase, sourceType, sourceId, sessionId, profile.organization_id)
@@ -79,6 +88,7 @@ export async function linkAssertionRelationship(sessionId: string, assertionId: 
 
 export async function unlinkAssertionRelationship(sessionId: string, relationshipId: string) {
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+  assertFeatureAccess(profile)
   const supabase = rawSupabase as unknown as SupabaseLike
   const { error } = await supabase.from('evidence_relationships').update(softDeleteUpdate()).eq('id', relationshipId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).eq('target_type', 'assertion').is('deleted_at', null)
   if (error) throw new Error('Unable to unlink factual observation')

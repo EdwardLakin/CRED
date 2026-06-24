@@ -1,4 +1,6 @@
 import Link from 'next/link'
+import { requireWorkspaceFeatureOrRedirect } from '@/features/billing/feature-gates'
+import { requireSessionWorkspace } from '@/features/sessions/data'
 import { EvidenceWorkspaceBacklinks } from '@/features/evidence/components/EvidenceWorkspaceNav'
 
 import { TimelineWorkspace } from '@/features/evidence/components/TimelineWorkspace'
@@ -6,7 +8,9 @@ import { getTimelineData } from '@/features/evidence/timeline/data'
 
 export default async function TimelinePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const data = await getTimelineData(id)
+  const workspace = await requireSessionWorkspace()
+  requireWorkspaceFeatureOrRedirect(workspace.profile, 'timeline', id)
+  const data = await getTimelineData(id, workspace)
 
   return (
     <main className="page-shell dashboard-shell">
@@ -17,7 +21,7 @@ export default async function TimelinePage({ params }: { params: Promise<{ id: s
           <p className="muted">{data.session.title} · {data.events.length} events</p>
         </div>
       </div>
-      <EvidenceWorkspaceBacklinks sessionId={data.session.id} current="timeline" />
+      <EvidenceWorkspaceBacklinks accessSubject={workspace.profile} sessionId={data.session.id} current="timeline" />
       <TimelineWorkspace {...data} />
     </main>
   )
