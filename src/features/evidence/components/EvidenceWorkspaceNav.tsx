@@ -77,9 +77,23 @@ export function EvidenceWorkspaceNav({ sessionId, counts, accessSubject }: { ses
   )
 }
 
-export function EvidenceWorkspaceNavBar({ sessionId, current, accessSubject }: { sessionId: string; current: EvidenceWorkspaceCurrent; accessSubject?: FeatureAccessSubject }) {
+export function EvidenceWorkspaceNavBar({
+  sessionId,
+  current,
+  accessSubject,
+  hideReport = false,
+}: {
+  sessionId: string
+  current: EvidenceWorkspaceCurrent
+  accessSubject?: FeatureAccessSubject
+  hideReport?: boolean
+}) {
   const subject = accessSubject ?? 'shop'
-  const visibleCards = cards.filter((card) => canUseFeature(subject, card.feature))
+  const visibleCards = cards.filter(
+    (card) =>
+      canUseFeature(subject, card.feature) &&
+      (!hideReport || card.current !== 'report'),
+  )
   return (
     <nav className="evidence-workspace-nav" aria-label="Evidence Workspace navigation">
       <div className="evidence-workspace-nav-scroll">

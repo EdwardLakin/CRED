@@ -5573,3 +5573,22 @@ a:focus-visible {
   }
 
 }
+
+.evidence-library-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+}
+
+@media (max-width: 680px) {
+  .evidence-library-header-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .evidence-library-header-actions .button {
+    justify-content: center;
+    width: 100%;
+  }
+}
