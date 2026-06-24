@@ -5084,11 +5084,17 @@ a:focus-visible {
   display: grid;
   gap: 8px;
   min-width: 180px;
+  max-width: min(280px, calc(100vw - 32px));
   padding: 10px;
   position: absolute;
   right: 0;
   top: calc(100% + 6px);
-  z-index: 5;
+  z-index: 20;
+}
+
+.observation-more-menu-panel > * {
+  min-width: 0;
+  width: 100%;
 }
 
 .recent-observation-card .recent-capture-thumb {
@@ -5108,6 +5114,20 @@ a:focus-visible {
     align-items: center;
     display: grid;
     grid-template-columns: minmax(0, 1fr) 74px;
+  }
+
+  .observation-more-menu-panel {
+    bottom: calc(96px + env(safe-area-inset-bottom));
+    left: 16px;
+    max-height: min(40vh, 280px);
+    max-width: none;
+    min-width: 0;
+    overflow-y: auto;
+    position: fixed;
+    right: 16px;
+    top: auto;
+    width: auto;
+    z-index: 100;
   }
 }
 

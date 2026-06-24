@@ -23,6 +23,24 @@ export function AutoPrepareReport({
         router.refresh();
       })
       .catch((error: unknown) => {
+        const redirectDigest =
+          typeof error === "object" &&
+          error !== null &&
+          "digest" in error &&
+          typeof error.digest === "string"
+            ? error.digest
+            : "";
+
+        const isRedirect =
+          redirectDigest.startsWith("NEXT_REDIRECT") ||
+          (error instanceof Error && error.message === "NEXT_REDIRECT");
+
+        if (isRedirect) {
+          router.replace(`/dashboard/sessions/${sessionId}/report`);
+          router.refresh();
+          return;
+        }
+
         const message =
           error instanceof Error && error.message
             ? error.message
