@@ -106,9 +106,9 @@ export async function inviteTeamMember(formData: FormData) {
   requireTeamManager(profile.role)
   const email = getString(formData, 'email')?.toLowerCase()
   if (!email) redirect(`/dashboard/settings?error=${encodeURIComponent('Enter an email address to invite.')}`)
-  const { getCurrentSeatCount, getAllowedSeatCount } = await import('@/features/team')
+  const { canAddUser, getCurrentSeatCount } = await import('@/features/team')
   const currentSeats = await getCurrentSeatCount(supabase, profile.organization_id)
-  if (currentSeats >= getAllowedSeatCount(profile.organization.plan)) {
+  if (!canAddUser(currentSeats, profile.organization)) {
     redirect(`/dashboard/settings?error=${encodeURIComponent('No seats remain on the current plan.')}`)
   }
   const { error } = await supabase.from('organization_invitations').upsert({ organization_id: profile.organization_id, email, role: getInviteRole(formData), status: 'pending_invite', invited_by: profile.id, last_sent_at: new Date().toISOString() }, { onConflict: 'organization_id,email' })

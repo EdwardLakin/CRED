@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { canUseFeature } from '@/features/billing/feature-gates'
 
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { acceptedUserRelationshipDefaults, softDeleteUpdate } from '@/features/evidence/validation'
@@ -9,6 +10,10 @@ import { assertSameWorkspace, parseEntityForm, parseEntityRelationshipType } fro
 
 type MutationBuilder = { select: (columns: string) => MutationBuilder; eq: (column: string, value: string) => MutationBuilder; is: (column: string, value: null) => MutationBuilder; single: () => Promise<{ data: unknown; error: unknown }>; insert: (values: Record<string, unknown>) => Promise<{ error: unknown }>; update: (values: Record<string, unknown>) => MutationBuilder; then: Promise<{ error: unknown }>['then'] }
 type SupabaseLike = { from: (table: string) => MutationBuilder }
+
+function assertFeatureAccess(profile: { organization: { plan?: string | null } }) {
+  if (!canUseFeature(profile, 'entities')) throw new Error('This feature is not available on your current CRED tier.')
+}
 type WorkspaceRow = { id: string; documentation_session_id: string; organization_id: string }
 
 async function loadSession(supabase: SupabaseLike, sessionId: string, organizationId: string) {
@@ -30,6 +35,7 @@ async function loadSource(supabase: SupabaseLike, sourceType: string, sourceId: 
 
 export async function createEvidenceEntity(sessionId: string, formData: FormData) {
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+  assertFeatureAccess(profile)
   const supabase = rawSupabase as unknown as SupabaseLike
   await loadSession(supabase, sessionId, profile.organization_id)
   const values = parseEntityForm(formData)
@@ -41,6 +47,7 @@ export async function createEvidenceEntity(sessionId: string, formData: FormData
 
 export async function updateEvidenceEntity(sessionId: string, entityId: string, formData: FormData) {
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+  assertFeatureAccess(profile)
   const supabase = rawSupabase as unknown as SupabaseLike
   await loadEntity(supabase, entityId, sessionId, profile.organization_id)
   const values = parseEntityForm(formData)
@@ -52,6 +59,7 @@ export async function updateEvidenceEntity(sessionId: string, entityId: string, 
 
 export async function deleteEvidenceEntity(sessionId: string, entityId: string) {
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+  assertFeatureAccess(profile)
   const supabase = rawSupabase as unknown as SupabaseLike
   await loadEntity(supabase, entityId, sessionId, profile.organization_id)
   const { error } = await supabase.from('evidence_entities').update(softDeleteUpdate()).eq('id', entityId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).is('deleted_at', null)
@@ -67,6 +75,7 @@ export async function linkEntityRelationship(sessionId: string, entityId: string
   const relationshipType = parseEntityRelationshipType(formData.get('relationship_type'), sourceType)
   if (!relationshipType) throw new Error('Invalid entity relationship type')
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+  assertFeatureAccess(profile)
   const supabase = rawSupabase as unknown as SupabaseLike
   const entity = await loadEntity(supabase, entityId, sessionId, profile.organization_id)
   const source = await loadSource(supabase, sourceType, sourceId, sessionId, profile.organization_id)
@@ -79,6 +88,7 @@ export async function linkEntityRelationship(sessionId: string, entityId: string
 
 export async function unlinkEntityRelationship(sessionId: string, relationshipId: string) {
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+  assertFeatureAccess(profile)
   const supabase = rawSupabase as unknown as SupabaseLike
   const { error } = await supabase.from('evidence_relationships').update(softDeleteUpdate()).eq('id', relationshipId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).eq('target_type', 'entity').is('deleted_at', null)
   if (error) throw new Error('Unable to unlink entity')

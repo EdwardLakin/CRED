@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { canUseFeature } from '@/features/billing/feature-gates'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { archiveDeliverableDraft, createDeliverableRecord, finalizeDeliverableVersion, restoreDeliverableDraft } from './data'
 import { createDeliverableShareLink } from './share'
@@ -8,6 +9,10 @@ import { parseDeliverableSourceSelection, parseDeliverableType } from './validat
 
 type QueryBuilder = { select: (columns: string) => QueryBuilder; eq: (column: string, value: string) => QueryBuilder; is: (column: string, value: null) => QueryBuilder; single: () => Promise<{ data: unknown; error: unknown }> }
 type SupabaseLike = { from: (table: string) => QueryBuilder }
+
+function assertFeatureAccess(profile: { organization: { plan?: string | null } }) {
+  if (!canUseFeature(profile, 'deliverables')) throw new Error('This feature is not available on your current CRED tier.')
+}
 type ShareTokenMutationResult = { data: { id: string } | null; error: { message: string } | null }
 type ShareTokenUpdateBuilder = {
   eq: (column: string, value: string) => ShareTokenUpdateBuilder
@@ -44,6 +49,7 @@ export async function generateEvidenceDeliverable(sessionId: string, formData: F
     const type = parseDeliverableType(formData.get('deliverable_type'))
     const sourceSelection = parseDeliverableSourceSelection(formData)
     const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+  assertFeatureAccess(profile)
     const supabase = rawSupabase as unknown as SupabaseLike
     await assertSession(supabase, sessionId, profile.organization_id)
     await createDeliverableRecord(rawSupabase as never, sessionId, profile.organization_id, profile.id, type, sourceSelection)
@@ -57,6 +63,7 @@ export async function generateEvidenceDeliverable(sessionId: string, formData: F
 export async function finalizeEvidenceDeliverable(sessionId: string, deliverableId: string): Promise<ActionResult> {
   try {
     const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+  assertFeatureAccess(profile)
     const supabase = rawSupabase as unknown as SupabaseLike
     await assertSession(supabase, sessionId, profile.organization_id)
     await finalizeDeliverableVersion(rawSupabase as never, sessionId, profile.organization_id, deliverableId)
@@ -70,6 +77,7 @@ export async function finalizeEvidenceDeliverable(sessionId: string, deliverable
 export async function archiveEvidenceDeliverable(sessionId: string, deliverableId: string): Promise<ActionResult> {
   try {
     const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+  assertFeatureAccess(profile)
     const supabase = rawSupabase as unknown as SupabaseLike
     await assertSession(supabase, sessionId, profile.organization_id)
     await archiveDeliverableDraft(rawSupabase as never, sessionId, profile.organization_id, deliverableId)
@@ -83,6 +91,7 @@ export async function archiveEvidenceDeliverable(sessionId: string, deliverableI
 export async function restoreArchivedDeliverable(sessionId: string, deliverableId: string): Promise<ActionResult> {
   try {
     const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+  assertFeatureAccess(profile)
     const supabase = rawSupabase as unknown as SupabaseLike
     await assertSession(supabase, sessionId, profile.organization_id)
     await restoreDeliverableDraft(rawSupabase as never, sessionId, profile.organization_id, deliverableId)
@@ -96,6 +105,7 @@ export async function restoreArchivedDeliverable(sessionId: string, deliverableI
 export async function createEvidenceDeliverableShareLink(sessionId: string, deliverableId: string, formData?: FormData): Promise<ActionResult> {
   try {
     const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+  assertFeatureAccess(profile)
     const supabase = rawSupabase as unknown as SupabaseLike
     await assertSession(supabase, sessionId, profile.organization_id)
     await createDeliverableShareLink({ supabase: rawSupabase as never, profile: profile as never, sessionId, deliverableId, expiresAt: formData?.get('expires_at')?.toString() || null })
@@ -109,6 +119,7 @@ export async function createEvidenceDeliverableShareLink(sessionId: string, deli
 export async function revokeEvidenceDeliverableShareLink(sessionId: string, deliverableId: string, tokenId: string): Promise<ActionResult> {
   try {
     const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+  assertFeatureAccess(profile)
     const shareTokenSupabase = rawSupabase as unknown as ShareTokenMutationClient
     const { data, error } = await shareTokenSupabase
       .from('report_share_tokens')

@@ -5,7 +5,7 @@ import { ThemeToggle } from '@/components/theme'
 import { Button, Card } from '@/components/ui'
 import { BrowserTimeZoneInput, SignaturePad } from '@/components/ui/SignaturePad'
 import { clearDefaultSignature, inviteTeamMember, removeTeamMember, resendTeamInvite, saveDefaultSignature, saveInspectorFacilitySettings } from '@/features/settings/actions'
-import { getAllowedSeatCount, getCurrentSeatCount, getRemainingSeatCount, TEAM_ROLE_LABELS, TEAM_STATUS_LABELS, type TeamRole } from '@/features/team'
+import { getCurrentSeatCount, getEffectiveSeatLimit, getRemainingSeats, TEAM_ROLE_LABELS, TEAM_STATUS_LABELS, type TeamRole } from '@/features/team'
 import { canUseWorkspaceAdmin } from '@/features/navigation-dashboard'
 import { hasInternalAdminAccess, requireSessionWorkspace } from '@/features/sessions/data'
 
@@ -16,10 +16,10 @@ export default async function SettingsPage() {
   const canManageInternalTools = hasInternalAdminAccess(profile)
   const canManageWorkspace = canUseWorkspaceAdmin(profile)
   const settingsSaved = false
-  const showTeamMembers = canManageWorkspace && (organization.plan === 'team' || organization.plan === 'shop')
-  const allowedSeats = getAllowedSeatCount(organization.plan)
+  const showTeamMembers = canManageWorkspace
+  const allowedSeats = getEffectiveSeatLimit(organization)
   const currentSeats = showTeamMembers ? await getCurrentSeatCount(supabase, profile.organization_id) : 1
-  const remainingSeats = getRemainingSeatCount(currentSeats, organization.plan)
+  const remainingSeats = getRemainingSeats(currentSeats, organization)
   const { data: activeMembers } = showTeamMembers ? await supabase.from('profiles').select('id, full_name, role').eq('organization_id', profile.organization_id).order('created_at', { ascending: true }) : { data: [] }
   const { data: pendingInvites } = showTeamMembers ? await supabase.from('organization_invitations').select('id, email, role, status').eq('organization_id', profile.organization_id).eq('status', 'pending_invite').order('invited_at', { ascending: false }) : { data: [] }
   const { data: defaultSignatureUrl } = profile.default_signature_path ? await supabase.storage.from('documentation-signatures').createSignedUrl(profile.default_signature_path, 60 * 10) : { data: null }

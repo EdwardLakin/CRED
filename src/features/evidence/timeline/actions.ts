@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { canUseFeature } from '@/features/billing/feature-gates'
 
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { acceptedUserRelationshipDefaults, softDeleteUpdate } from '@/features/evidence/validation'
@@ -18,6 +19,10 @@ type MutationBuilder = {
 }
 
 type TimelineActionSupabase = { from: (table: string) => MutationBuilder }
+
+function assertFeatureAccess(profile: { organization: { plan?: string | null } }) {
+  if (!canUseFeature(profile, 'timeline')) throw new Error('This feature is not available on your current CRED tier.')
+}
 
 async function loadSession(supabase: TimelineActionSupabase, sessionId: string, organizationId: string) {
   const { data: session, error } = await supabase.from('documentation_sessions').select('id, organization_id').eq('id', sessionId).eq('organization_id', organizationId).is('deleted_at', null).single()
@@ -39,6 +44,7 @@ async function loadCaptureItem(supabase: TimelineActionSupabase, captureId: stri
 
 export async function createTimelineEvent(sessionId: string, formData: FormData) {
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+  assertFeatureAccess(profile)
   const supabase = rawSupabase as unknown as TimelineActionSupabase
   await loadSession(supabase, sessionId, profile.organization_id)
   const values = parseTimelineEventForm(formData)
@@ -51,6 +57,7 @@ export async function createTimelineEvent(sessionId: string, formData: FormData)
 
 export async function updateTimelineEvent(sessionId: string, eventId: string, formData: FormData) {
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+  assertFeatureAccess(profile)
   const supabase = rawSupabase as unknown as TimelineActionSupabase
   await loadTimelineEvent(supabase, eventId, sessionId, profile.organization_id)
   const values = parseTimelineEventForm(formData)
@@ -61,6 +68,7 @@ export async function updateTimelineEvent(sessionId: string, eventId: string, fo
 
 export async function deleteTimelineEvent(sessionId: string, eventId: string) {
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+  assertFeatureAccess(profile)
   const supabase = rawSupabase as unknown as TimelineActionSupabase
   await loadTimelineEvent(supabase, eventId, sessionId, profile.organization_id)
   const { error } = await supabase.from('timeline_events').update(softDeleteUpdate()).eq('id', eventId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).is('deleted_at', null)
@@ -74,6 +82,7 @@ export async function linkEvidenceToTimelineEvent(sessionId: string, eventId: st
   if (!captureId) throw new Error('Select an evidence item')
   if (!relationshipType) throw new Error('Invalid relationship type')
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+  assertFeatureAccess(profile)
   const supabase = rawSupabase as unknown as TimelineActionSupabase
   const event = await loadTimelineEvent(supabase, eventId, sessionId, profile.organization_id)
   const capture = await loadCaptureItem(supabase, captureId, sessionId, profile.organization_id)
@@ -86,6 +95,7 @@ export async function linkEvidenceToTimelineEvent(sessionId: string, eventId: st
 
 export async function unlinkEvidenceRelationship(sessionId: string, relationshipId: string) {
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
+  assertFeatureAccess(profile)
   const supabase = rawSupabase as unknown as TimelineActionSupabase
   const { error } = await supabase.from('evidence_relationships').update(softDeleteUpdate()).eq('id', relationshipId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).eq('source_type', 'capture_item').eq('target_type', 'timeline_event').is('deleted_at', null)
   if (error) throw new Error('Unable to unlink evidence')
