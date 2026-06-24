@@ -29,7 +29,8 @@ export function getIncludedSeats(input: SeatEntitlementInput | OrganizationPlan 
     return positiveInteger(input.included_seats)
   }
 
-  return INCLUDED_SEATS_BY_TIER[getCredTier(typeof input === 'object' ? input.plan : input)]
+  const plan = typeof input === 'object' && input ? input.plan : input
+  return INCLUDED_SEATS_BY_TIER[getCredTier(plan)]
 }
 
 export function getEffectiveSeatLimit(input: SeatEntitlementInput | OrganizationPlan | string | null | undefined) {
