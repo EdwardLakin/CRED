@@ -215,6 +215,48 @@ test("mobile observation evidence stays compact while retaining lightbox access"
   assert.match(routeSource, /data-export-lightbox/);
 });
 
+test("observations heading stays with the first printed observation and fallback titles remain grammatical", () => {
+  const routeSource = readFileSync(
+    "app/api/dashboard/sessions/[id]/report-pdf/route.ts",
+    "utf8",
+  );
+
+  assert.match(
+    routeSource,
+    /class="documented-observations-lead"[\s\S]*?\$\{firstObservationHtml\}/,
+  );
+
+  assert.match(
+    routeSource,
+    /\.documented-observations-lead\s*\{[^}]*break-inside\s*:\s*avoid[^}]*page-break-inside\s*:\s*avoid/,
+  );
+
+  assert.match(
+    routeSource,
+    /\.documented-observations\s*\{[^}]*break-inside\s*:\s*auto[^}]*page-break-inside\s*:\s*auto/,
+  );
+
+  assert.match(
+    routeSource,
+    /remainingObservationHtml\.join\(""\)/,
+  );
+
+  assert.match(
+    routeSource,
+    /\/report\$\/i\.test\(reportTitle\)/,
+  );
+
+  assert.match(
+    routeSource,
+    /\? reportTitle\s*:\s*`\$\{reportTitle\} report`/,
+  );
+
+  assert.doesNotMatch(
+    routeSource,
+    /`\s*This \$\{params\.reportTitle \? `\$\{params\.reportTitle\} ` : ""\}report documents/,
+  );
+});
+
 test("printed report uses compact cover, observations, and supporting photos", () => {
   const routeSource = readFileSync(
     "app/api/dashboard/sessions/[id]/report-pdf/route.ts",

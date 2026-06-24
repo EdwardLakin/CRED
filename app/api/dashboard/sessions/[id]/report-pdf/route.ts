@@ -296,9 +296,15 @@ function buildReportOverviewHtml(params: {
   reportTitle?: string;
 }) {
   const summary = stripConfidenceText(params.summary ?? "").trim();
+  const reportTitle = params.reportTitle?.trim();
+  const reportSubject = reportTitle
+    ? /report$/i.test(reportTitle)
+      ? reportTitle
+      : `${reportTitle} report`
+    : "report";
   const summaryText =
     summary ||
-    `This ${params.reportTitle ? `${params.reportTitle} ` : ""}report documents technician observations, key concerns, supporting proof, and recommended next actions.`;
+    `This ${reportSubject} documents technician observations, key concerns, supporting proof, and recommended next actions.`;
   const paragraphs = summaryText
     .split(/\n{2,}/)
     .map((paragraph) => paragraph.trim())
@@ -1219,8 +1225,7 @@ function buildDocumentedObservationsHtml(
   );
   if (entries.length === 0 && actionCards.length === 0)
     return '<section class="item service-section"><h2>Documented Observations</h2><p class="muted">No documented observations added yet.</p></section>';
-  const entryHtml = entries
-    .map((entry, index) => {
+  const entryCards = entries.map((entry, index) => {
       const capture = entry.capture;
       const groupCaptures = getOrderedObservationGroupCaptures(
         capture,
@@ -1301,15 +1306,15 @@ function buildDocumentedObservationsHtml(
         ? `<div class="technician-note-block"><h4>Technician Note</h4><p>${escapeHtml(technicianNote)}</p></div>`
         : "";
       return `<article class="finding-card observation-card"><div class="observation-main">${mediaHtml}<div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">${String(index + 1).padStart(2, "0")}</span><span class="observation-kind">${escapeHtml(getObservationCategoryLabel(entry))}</span></div><h3>${escapeHtml(heading)}</h3>${technicianNoteHtml}${isDocument ? `<p class="proof-line"><strong>Supporting document:</strong> ${escapeHtml(getCustomerFacingEvidenceTitle(capture, index))}</p>` : ""}${details.length ? `<div class="proof-block"><h4>Verified details</h4>${renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value })))}</div>` : ""}${recommendations.length ? `<div class="proof-block"><h4>Recommended Action</h4><ul>${recommendations.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul></div>` : ""}</div></div>${supportingImagesHtml}</article>`;
-    })
-    .join("");
-  const actionsHtml = actionCards
-    .map(
-      (action, index) =>
-        `<article class="finding-card observation-card"><div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">${String(entries.length + index + 1).padStart(2, "0")}</span><span class="observation-kind">Recommended Action</span></div><h3>Recommended Action</h3><div class="technician-note-block"><h4>Technician Note</h4><p>${escapeHtml(stripConfidenceText(action.action))}</p></div></div></article>`,
-    )
-    .join("");
-  return `<section class="item service-section findings-section documented-observations"><div class="section-heading"><p class="eyebrow">Technician says this. Here’s the proof.</p><h2>Documented Observations</h2></div><p class="muted section-intro">Technician notes are the source of truth. Each supporting photo or document appears once with the observation it supports.</p>${entryHtml}${actionsHtml}</section>`;
+    });
+  const actionEntryCards = actionCards.map(
+    (action, index) =>
+      `<article class="finding-card observation-card"><div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">${String(entries.length + index + 1).padStart(2, "0")}</span><span class="observation-kind">Recommended Action</span></div><h3>Recommended Action</h3><div class="technician-note-block"><h4>Technician Note</h4><p>${escapeHtml(stripConfidenceText(action.action))}</p></div></div></article>`,
+  );
+  const observationCards = [...entryCards, ...actionEntryCards];
+  const [firstObservationHtml = "", ...remainingObservationHtml] =
+    observationCards;
+  return `<section class="item service-section findings-section documented-observations"><div class="documented-observations-lead"><div class="section-heading"><p class="eyebrow">Technician says this. Here’s the proof.</p><h2>Documented Observations</h2></div><p class="muted section-intro">Technician notes are the source of truth. Each supporting photo or document appears once with the observation it supports.</p>${firstObservationHtml}</div>${remainingObservationHtml.join("")}</section>`;
 }
 
 function buildEvidenceSectionHtml(
@@ -2125,6 +2130,20 @@ const REPORT_STYLES = `
 
   .supporting-export-grid[data-count="1"] img{
     max-height:180px;
+  }
+}
+
+
+/* Keep the observations heading with its first card in print. */
+@media print {
+  .documented-observations-lead {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .documented-observations {
+    break-inside: auto;
+    page-break-inside: auto;
   }
 }
 `;
