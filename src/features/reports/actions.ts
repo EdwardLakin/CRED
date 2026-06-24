@@ -1,6 +1,6 @@
 'use server'
 
-import { randomBytes } from 'crypto'
+import { createHash, randomBytes } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
@@ -13,6 +13,15 @@ import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import { ReportEmailError, sendReportEmail, validateReportEmailRecipients } from '@/lib/email/reports'
 import { FINAL_NOTES_MODEL, FINAL_NOTES_PROMPT_VERSION, generateFinalNotes } from '@/lib/openai/final-notes-generator'
 import { AI_REPORT_DRAFT_MODEL, AI_REPORT_DRAFT_PROMPT_VERSION, generateReportDraft } from '@/lib/openai/report-draft-generator'
+import {
+  generateObservationTitles,
+  OBSERVATION_TITLE_MODEL,
+  OBSERVATION_TITLE_PROMPT_VERSION,
+} from '@/lib/openai/observation-title-generator'
+import {
+  getObservationReportTitleState,
+  mergeSuggestedObservationTitle,
+} from '@/features/reports/observation-titles'
 import type { OrganizationPlan } from '@/lib/stripe'
 import { buildEvidenceGroups, buildEvidencePackages,
   sanitizeReportStructureForSession, buildNormalizedReportFields, deriveFormSectionsFromCaptures, extractFormBlueprint, mapEvidenceToFormBlueprint, scoreFormReferenceCapture, selectPrimaryFormCaptures, stripConfidenceText, GENERIC_REPORT_SECTION_TITLES, getReportStructureSourceMetadata, sanitizeCapturesForImageAiAssist, getFormStructureReliability } from '@/features/reports/report-structure'
@@ -726,6 +735,92 @@ export async function generateAiReportDraft(sessionId: string) {
     redirect(getReportRedirectPath(session.id, { error: capturesError.message }))
   }
 
+  let observationTitleSuggestionCount = 0
+
+  try {
+    const titleCandidates = (captures ?? []).flatMap((capture) => {
+      const note =
+        capture.technician_note?.trim() ||
+        capture.transcript?.trim() ||
+        ''
+
+      if (!note) return []
+
+      const noteHash = createHash('sha256').update(note).digest('hex')
+      const titleState = getObservationReportTitleState(capture.extracted_data)
+
+      if (titleState.approved) return []
+      if (
+        titleState.suggested &&
+        titleState.sourceNoteHash === noteHash
+      ) {
+        return []
+      }
+
+      return [{
+        captureId: capture.id,
+        note,
+        noteHash,
+      }]
+    })
+
+    const suggestions = await generateObservationTitles(
+      titleCandidates.map(({ captureId, note }) => ({
+        captureId,
+        note,
+      })),
+    )
+
+    const candidatesById = new Map(
+      titleCandidates.map((candidate) => [candidate.captureId, candidate]),
+    )
+    const generatedAt = new Date().toISOString()
+
+    for (const suggestion of suggestions) {
+      const capture = (captures ?? []).find(
+        (item) => item.id === suggestion.captureId,
+      )
+      const candidate = candidatesById.get(suggestion.captureId)
+
+      if (!capture || !candidate) continue
+
+      const nextExtractedData = mergeSuggestedObservationTitle({
+        extractedData: capture.extracted_data,
+        suggested: suggestion.title,
+        sourceNoteHash: candidate.noteHash,
+        model: OBSERVATION_TITLE_MODEL,
+        promptVersion: OBSERVATION_TITLE_PROMPT_VERSION,
+        generatedAt,
+      })
+
+      const { error: titleUpdateError } = await supabase
+        .from('capture_items')
+        .update({
+          extracted_data: nextExtractedData,
+          updated_at: generatedAt,
+        })
+        .eq('id', capture.id)
+        .eq('documentation_session_id', session.id)
+        .eq('organization_id', profile.organization_id)
+
+      if (titleUpdateError) {
+        console.warn('[observation-title] Could not persist suggestion', {
+          capture_id: capture.id,
+          error: titleUpdateError.message,
+        })
+        continue
+      }
+
+      capture.extracted_data = nextExtractedData
+      observationTitleSuggestionCount += 1
+    }
+  } catch (error) {
+    console.warn('[observation-title] Suggestions unavailable; using deterministic titles.', {
+      session_id: session.id,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+
   const { data: signatures } = await supabase
     .from('signature_captures')
     .select('id, signature_type, signer_name, signed_at')
@@ -944,7 +1039,16 @@ export async function generateAiReportDraft(sessionId: string) {
     supabase,
     organizationId: profile.organization_id,
     eventType: 'ai_report_draft_generation',
-    metadata: { session_id: session.id, draft_id: draft.id, model: AI_REPORT_DRAFT_MODEL, prompt_version: AI_REPORT_DRAFT_PROMPT_VERSION },
+    metadata: {
+      session_id: session.id,
+      draft_id: draft.id,
+      operation: 'report_draft_generation',
+      model: AI_REPORT_DRAFT_MODEL,
+      prompt_version: AI_REPORT_DRAFT_PROMPT_VERSION,
+      observation_title_suggestions: observationTitleSuggestionCount,
+      observation_title_model: OBSERVATION_TITLE_MODEL,
+      observation_title_prompt_version: OBSERVATION_TITLE_PROMPT_VERSION,
+    },
     createdBy: profile.id,
   })
 

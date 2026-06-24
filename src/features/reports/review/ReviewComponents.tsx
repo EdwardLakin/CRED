@@ -20,6 +20,7 @@ import {
 import { buildUniversalReportDocument } from "@/features/reports/report-document";
 import { isCaptureIncludedInOutput } from "@/features/reports/capture-inclusion";
 import { getReportInfoValue } from "@/features/reports/report-title";
+import { getObservationReportTitleState } from "@/features/reports/observation-titles";
 import { disableReportShareLink } from "@/features/reports/actions";
 import { formatDateTime } from "@/features/sessions";
 import { requireSessionWorkspace } from "@/features/sessions/data";
@@ -85,6 +86,10 @@ function getShortTechnicianTitle(item: CaptureItem) {
 }
 
 function getEvidenceTitle(item: CaptureItem) {
+  const storedTitle = getObservationReportTitleState(item.extracted_data);
+  if (storedTitle.approved) return storedTitle.approved;
+  if (storedTitle.suggested) return storedTitle.suggested;
+
   const technicianTitle = getShortTechnicianTitle(item);
   if (
     technicianTitle &&

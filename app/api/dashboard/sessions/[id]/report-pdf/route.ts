@@ -33,6 +33,9 @@ import {
   getReportInfoValue,
 } from "@/features/reports/report-title";
 import {
+  getObservationReportTitleState,
+} from "@/features/reports/observation-titles";
+import {
   getObservationGroupKey,
   getOrderedObservationGroupCaptures,
 } from "@/features/reports/export-grouping";
@@ -483,11 +486,18 @@ function conciseHeadingFromNote(note: string) {
 }
 
 function getCustomerFacingEvidenceTitle(capture: ReportCapture, index: number) {
+  const storedTitle = getObservationReportTitleState(capture.extracted_data);
+  if (storedTitle.approved) return stripConfidenceText(storedTitle.approved);
+
   const explicitTitle =
     getCaptureStringField(capture, "title") ||
     getCaptureStringField(capture, "display_title");
   if (explicitTitle && !looksLikeRawUploadFilename(explicitTitle))
     return stripConfidenceText(explicitTitle);
+
+  if (storedTitle.suggested)
+    return stripConfidenceText(storedTitle.suggested);
+
   const noteHeading = conciseHeadingFromNote(
     capture.technician_note?.trim() || capture.transcript?.trim() || "",
   );
