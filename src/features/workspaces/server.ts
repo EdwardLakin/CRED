@@ -8,11 +8,12 @@ import type { Database } from '@/lib/supabase/database.types'
 import type { WorkspaceRole } from './types'
 
 const ACTIVE_WORKSPACE_COOKIE = 'cred_active_workspace_id'
+const ACTIVE_WORKSPACE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 90
 
 type OrganizationRow = Database['public']['Tables']['organizations']['Row']
 type WorkspaceMembershipRow = Database['public']['Tables']['workspace_memberships']['Row']
 
-export type AccessibleWorkspace = Pick<
+type WorkspaceOrganizationProjection = Pick<
   OrganizationRow,
   | 'id'
   | 'name'
@@ -25,7 +26,16 @@ export type AccessibleWorkspace = Pick<
   | 'seat_packs'
   | 'billing_account_id'
   | 'archived_at'
+>
+
+type WorkspaceMembershipQueryRow = Pick<
+  WorkspaceMembershipRow,
+  'id' | 'workspace_id' | 'role' | 'status' | 'joined_at'
 > & {
+  organizations: WorkspaceOrganizationProjection | WorkspaceOrganizationProjection[] | null
+}
+
+export type AccessibleWorkspace = WorkspaceOrganizationProjection & {
   membership: Pick<WorkspaceMembershipRow, 'id' | 'role' | 'status' | 'joined_at'>
 }
 
@@ -33,6 +43,36 @@ function mapMembershipRole(role: string): WorkspaceRole {
   if (role === 'owner' || role === 'admin' || role === 'manager' || role === 'member' || role === 'viewer') return role
   if (role === 'reviewer') return 'viewer'
   return 'member'
+}
+
+function normalizeWorkspaceOrganization(
+  organizations: WorkspaceMembershipQueryRow['organizations'],
+): WorkspaceOrganizationProjection | null {
+  if (Array.isArray(organizations)) return organizations[0] ?? null
+  return organizations
+}
+
+function normalizeAccessibleWorkspace(membership: WorkspaceMembershipQueryRow): AccessibleWorkspace | null {
+  const organization = normalizeWorkspaceOrganization(membership.organizations)
+  if (!organization || organization.archived_at !== null || organization.id !== membership.workspace_id) return null
+
+  return {
+    ...organization,
+    membership: {
+      id: membership.id,
+      role: mapMembershipRole(membership.role),
+      status: membership.status,
+      joined_at: membership.joined_at,
+    },
+  }
+}
+
+function normalizeAccessibleWorkspaces(memberships: WorkspaceMembershipQueryRow[] | null): AccessibleWorkspace[] {
+  return (memberships ?? []).reduce<AccessibleWorkspace[]>((workspaces, membership) => {
+    const workspace = normalizeAccessibleWorkspace(membership)
+    if (workspace) workspaces.push(workspace)
+    return workspaces
+  }, [])
 }
 
 export async function listAccessibleWorkspaces(): Promise<AccessibleWorkspace[]> {
@@ -46,20 +86,11 @@ export async function listAccessibleWorkspaces(): Promise<AccessibleWorkspace[]>
     .eq('status', 'active')
     .is('organizations.archived_at', null)
     .order('created_at', { ascending: true })
+    .returns<WorkspaceMembershipQueryRow[]>()
 
   if (error) throw new Error(error.message)
 
-  return ((memberships ?? []) as Array<any>)
-    .filter((membership: any) => membership.organizations)
-    .map((membership: any) => ({
-      ...membership.organizations,
-      membership: {
-        id: membership.id,
-        role: mapMembershipRole(membership.role),
-        status: membership.status,
-        joined_at: membership.joined_at,
-      },
-    })) as AccessibleWorkspace[]
+  return normalizeAccessibleWorkspaces(memberships)
 }
 
 async function getRequestedWorkspaceId() {
@@ -67,12 +98,24 @@ async function getRequestedWorkspaceId() {
   return cookieStore.get(ACTIVE_WORKSPACE_COOKIE)?.value ?? null
 }
 
+async function clearActiveWorkspaceCookie() {
+  const cookieStore = await cookies()
+  cookieStore.delete(ACTIVE_WORKSPACE_COOKIE)
+}
+
 export async function getCurrentWorkspace(): Promise<AccessibleWorkspace | null> {
   const workspaces = await listAccessibleWorkspaces()
-  if (workspaces.length === 0) return null
+  if (workspaces.length === 0) {
+    await clearActiveWorkspaceCookie()
+    return null
+  }
 
   const requestedWorkspaceId = await getRequestedWorkspaceId()
-  return workspaces.find((workspace) => workspace.id === requestedWorkspaceId) ?? workspaces[0]
+  const workspace = workspaces.find((candidate) => candidate.id === requestedWorkspaceId) ?? workspaces[0]
+
+  if (requestedWorkspaceId && workspace.id !== requestedWorkspaceId) await clearActiveWorkspaceCookie()
+
+  return workspace
 }
 
 export async function setActiveWorkspace(workspaceId: string) {
@@ -84,22 +127,27 @@ export async function setActiveWorkspace(workspaceId: string) {
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
     path: '/',
+    maxAge: ACTIVE_WORKSPACE_COOKIE_MAX_AGE_SECONDS,
   })
 
   return workspace
 }
 
 export async function requireWorkspaceMembership(workspaceId?: string | null) {
+  const explicitWorkspaceRequested = workspaceId != null
   const requestedWorkspaceId = workspaceId ?? (await getRequestedWorkspaceId())
   const workspaces = await listAccessibleWorkspaces()
-  const workspace = requestedWorkspaceId
+  const requestedWorkspace = requestedWorkspaceId
     ? workspaces.find((candidate) => candidate.id === requestedWorkspaceId)
-    : workspaces[0]
+    : null
+  const workspace = requestedWorkspace ?? (explicitWorkspaceRequested ? null : workspaces[0])
 
   if (!workspace) {
+    await clearActiveWorkspaceCookie()
     redirect('/onboarding')
-    throw new Error('Redirecting to onboarding')
   }
+
+  if (requestedWorkspaceId && workspace.id !== requestedWorkspaceId) await clearActiveWorkspaceCookie()
 
   return workspace
 }
