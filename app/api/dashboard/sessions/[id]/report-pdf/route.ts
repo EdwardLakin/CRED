@@ -304,7 +304,7 @@ function buildReportOverviewHtml(params: {
     .map((paragraph) => paragraph.trim())
     .filter(Boolean)
     .slice(0, 3);
-  return `<section class="item service-section overview-section"><div class="section-heading"><p class="eyebrow">Executive-facing overview</p><h2>Executive Summary</h2></div><div class="summary-panel">${paragraphs.map((paragraph) => `<p class="summary-lead">${escapeHtml(paragraph)}</p>`).join("")}<p class="summary-trust">Technician-approved summary. Supporting proof is organized under Documented Observations.</p></div></section>`;
+  return `<section class="item service-section overview-section"><div class="section-heading"><p class="eyebrow">Report Overview</p><h2>Executive Summary</h2></div><div class="summary-panel">${paragraphs.map((paragraph) => `<p class="summary-lead">${escapeHtml(paragraph)}</p>`).join("")}<p class="summary-trust">Technician-approved summary. Supporting proof is organized under Documented Observations.</p></div></section>`;
 }
 
 function buildEvidenceGalleryHtml(
@@ -798,7 +798,7 @@ function getDetailValue(details: Record<string, unknown>, fieldName: string) {
 function getProfessionalRows(rows: Array<{ label: string; value: string }>) {
   const visibleRows = rows.filter((row) => row.value.trim());
   const captured = visibleRows.filter(
-    (row) => !/^(not captured|pending|unknown)$/i.test(row.value.trim()),
+    (row) => !/^(not captured|pending|unknown|none|n\/a|not applicable)$/i.test(row.value.trim()),
   );
   return captured.length > 0 ? captured : visibleRows.slice(0, 4);
 }
@@ -1123,11 +1123,10 @@ function getObservationCategoryLabel(
   if (category === "recommended_action") return "Recommended Action";
   if (entry.purpose === "concern") return "Concern";
   if (entry.purpose === "recommended_action") return "Recommended Action";
-  if (
-    entry.purpose === "supporting_evidence" ||
-    entry.purpose === "reference_document"
-  )
-    return "Supporting Evidence";
+  if (entry.purpose === "reference_document")
+    return "Reference Document";
+  if (entry.purpose === "supporting_evidence")
+    return getUserEvidenceText(entry.capture) ? "Observation" : "Photo Evidence";
   return "Observation";
 }
 
@@ -1169,7 +1168,7 @@ function buildFormStructuredReportHtml(
     });
     if (images.length === 0) return "";
     const group = `form-${sectionKey}-${fieldKey ?? "section"}`;
-    return `<div class="supporting-evidence-panel"><div class="supporting-evidence-heading"><strong>Evidence</strong><span>${images.length} item${images.length === 1 ? "" : "s"}</span></div><div class="supporting-export-grid">${images.map(({ capture, asset }, index) => `<div class="supporting-export-item">${renderExportImage(asset, getPrimaryEvidenceLabel(capture), "Preview unavailable in printable export. Original evidence retained.", { group, index, total: images.length })}</div>`).join("")}</div></div>`;
+    return `<div class="supporting-evidence-panel"><div class="supporting-evidence-heading"><strong>Evidence</strong><span>${images.length} item${images.length === 1 ? "" : "s"}</span></div><div class="supporting-export-grid" data-count="${images.length}">${images.map(({ capture, asset }, index) => `<div class="supporting-export-item">${renderExportImage(asset, getPrimaryEvidenceLabel(capture), "Preview unavailable in printable export. Original evidence retained.", { group, index, total: images.length })}</div>`).join("")}</div></div>`;
   };
   return `<section class="item service-section"><h2>Captured Form Structure</h2><p class="muted">Organized from the captured document structure and technician-approved edits.</p></section>${sections
     .map((section) => {
@@ -1264,7 +1263,7 @@ function buildDocumentedObservationsHtml(
           ? `<p class="original-link"><a href="${escapeHtmlAttributeRaw(imageAsset.originalMediaUrl)}">Open supporting ${isDocument ? "document" : "file"}</a></p>`
           : "";
       const supportingImagesHtml = supportingImageAssets.length
-        ? `<div class="supporting-evidence-panel"><div class="supporting-evidence-heading"><strong>Additional supporting photos</strong><span>${supportingImageAssets.length} photo${supportingImageAssets.length === 1 ? "" : "s"}</span></div><div class="supporting-export-grid">${supportingImageAssets.map(({ capture: groupCapture, asset }) => `<div class="supporting-export-item">${renderExportImage(asset, getPrimaryEvidenceLabel(groupCapture), "Preview unavailable in printable export. Original evidence retained.", getLightboxOptions(groupCapture.id))}</div>`).join("")}</div></div>`
+        ? `<div class="supporting-evidence-panel"><div class="supporting-evidence-heading"><strong>Additional supporting photos</strong><span>${supportingImageAssets.length} photo${supportingImageAssets.length === 1 ? "" : "s"}</span></div><div class="supporting-export-grid" data-count="${supportingImageAssets.length}">${supportingImageAssets.map(({ capture: groupCapture, asset }) => `<div class="supporting-export-item">${renderExportImage(asset, getPrimaryEvidenceLabel(groupCapture), "Preview unavailable in printable export. Original evidence retained.", getLightboxOptions(groupCapture.id))}</div>`).join("")}</div></div>`
         : "";
       const renderedText: string[] = [];
       const technicianNote = stripConfidenceText(
@@ -1507,7 +1506,7 @@ function buildDiagnosticProcedureReportHtml(params: {
     },
     { label: "Date", value: formatDateInTimeZone(new Date(), params.timeZone) },
   ];
-  return `<!doctype html><html><head><meta charset="utf-8" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(info?.title ?? params.session.title)} diagnostic procedure documentation</title><style>${REPORT_STYLES}</style></head><body><main class="report" data-generated-at="${escapeHtmlAttributeRaw(formatDateTimeInTimeZone(new Date().toISOString(), params.timeZone))}">${toolbarHtml}<header class="header"><p class="eyebrow">Diagnostic Procedure Workspace</p><h1>${escapeHtml(info?.title ?? params.session.title)}</h1><p class="notice info"><strong>Documentation support only.</strong> Follow OEM procedure. Technician owns all conclusions and recommendations.</p>${info?.signedOff ? `<p class="notice info"><strong>Signed off by ${escapeHtml(info.signOffName ?? "technician")}</strong>${info.signedOffAt ? ` at ${escapeHtml(formatDateInTimeZone(new Date(info.signedOffAt), params.timeZone))}` : ""}. ${escapeHtml(info.signOffStatement ?? "")}</p>` : '<p class="notice warning"><strong>Technician sign-off pending.</strong></p>'}${renderDefinitionRows(details)}</header>${`<section class="item service-section"><h2>Documentation completeness summary</h2>${renderDefinitionRows(
+  return `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(info?.title ?? params.session.title)} diagnostic procedure documentation</title><style>${REPORT_STYLES}</style></head><body><main class="report" data-generated-at="${escapeHtmlAttributeRaw(formatDateTimeInTimeZone(new Date().toISOString(), params.timeZone))}">${toolbarHtml}<header class="header"><p class="eyebrow">Diagnostic Procedure Workspace</p><h1>${escapeHtml(info?.title ?? params.session.title)}</h1><p class="notice info"><strong>Documentation support only.</strong> Follow OEM procedure. Technician owns all conclusions and recommendations.</p>${info?.signedOff ? `<p class="notice info"><strong>Signed off by ${escapeHtml(info.signOffName ?? "technician")}</strong>${info.signedOffAt ? ` at ${escapeHtml(formatDateInTimeZone(new Date(info.signedOffAt), params.timeZone))}` : ""}. ${escapeHtml(info.signOffStatement ?? "")}</p>` : '<p class="notice warning"><strong>Technician sign-off pending.</strong></p>'}${renderDefinitionRows(details)}</header>${`<section class="item service-section"><h2>Documentation completeness summary</h2>${renderDefinitionRows(
     [
       { label: "Percent complete", value: `${progress.percentComplete}%` },
       { label: "Visible steps", value: String(progress.totalVisibleSteps) },
@@ -1687,13 +1686,169 @@ function buildFieldServiceReportHtml({
     ? '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>'
     : "";
 
-  return `<!doctype html><html><head><meta charset="utf-8" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable field service report</title>
+  return `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable field service report</title>
   <style>${REPORT_STYLES}</style></head><body><main class="report" data-generated-at="${escapeHtmlAttributeRaw(formatDateTimeInTimeZone(new Date().toISOString(), timeZone))}">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, captures: captureItems, imageAssets: signedUrls, timeZone, allowCoverImage: fieldUseGalleryMode })}${summaryHtml}<section class="item service-section"><h2>Report Details</h2>${renderDefinitionRows(headerRows)}</section>${renderFieldServiceSection(details, "equipment")}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work Performed / Resolution</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Supporting Record</h2><p class="muted">Photos, documents, and technician notes support the work summary and findings above.</p></section>${buildFinalNotesHtml(session)}${evidenceHtml}${fieldUseGalleryMode ? buildEvidenceGalleryHtml(captureItems, signedUrls, timeZone) : ""}${appendixHtml}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges Summary</h2>${renderDefinitionRows(chargeRows)}</section>${buildInspectorFacilityHtml(null, null)}${buildApprovalHtml({ profile: null, signatures, signatureUrls, draft: reportDraft, session, timeZone })}${buildPrintFooterHtml({ organizationName, reportId: session.display_id, generatedAt: formatDateTimeInTimeZone(new Date().toISOString(), timeZone) })}</main>${EXPORT_LIGHTBOX_HTML}</body></html>`;
 }
 
 const REPORT_STYLES = `
     :root{color-scheme:light}*{box-sizing:border-box}html{background:#eef2f7}body{font-family:Inter,Arial,Helvetica,sans-serif;background:#eef2f7;color:#18243a;margin:0;padding:36px;line-height:1.45}.report{max-width:1040px;margin:0 auto}.toolbar{align-items:center;background:#13213a;border-radius:16px;color:white;display:flex;justify-content:space-between;margin:0 0 18px;padding:14px 16px}.toolbar button{background:white;border:0;border-radius:999px;color:#13213a;cursor:pointer;font-weight:800;padding:10px 16px}.print-help{color:#dbe7ff;font-size:13px;margin:0}.header,.item{background:white;border:1px solid #d9e2ee;border-radius:18px;box-shadow:0 10px 28px rgba(24,36,58,.055);margin-bottom:12px;padding:18px}.report-cover{display:grid;gap:0;grid-template-columns:minmax(0,1.5fr) minmax(220px,.55fr);overflow:hidden;padding:0;min-height:0}.report-cover-no-image{display:block}.cover-copy{display:flex;flex-direction:column;justify-content:flex-start;padding:26px 30px}.cover-copy h1{font-size:clamp(30px,5vw,44px);letter-spacing:-.045em;line-height:1.04;margin:24px 0 12px;max-width:24ch;text-wrap:balance;overflow-wrap:anywhere}.cover-trust{border-left:4px solid #155dfc;color:#4c5d75;font-size:15px;margin:0 0 22px;padding-left:14px}.cover-image{background:#f7f9fc;overflow:hidden}.cover-image img{display:block;height:100%;max-height:360px;object-fit:contain;width:100%}.eyebrow{color:#155dfc;font-size:11px;font-weight:900;letter-spacing:.16em;text-transform:uppercase}.cover-kicker{align-items:center;color:#155dfc;display:flex;font-size:11px;font-weight:900;gap:8px;justify-content:space-between;letter-spacing:.14em;text-transform:uppercase}.section-heading{margin-bottom:10px}.section-heading .eyebrow{margin:0 0 4px}.summary-panel{background:linear-gradient(180deg,#f8fbff,#fff);border:1px solid #e0e8f4;border-radius:14px;padding:12px 14px}.section-intro{font-size:13px;margin:-2px 0 10px}.observation-card{background:linear-gradient(180deg,#fff,#fbfdff);display:block;padding:10px}.observation-main{align-items:start;display:grid;gap:12px;grid-template-columns:minmax(190px,38%) minmax(0,1fr)}.observation-main>.media{align-self:start}.observation-content h3{font-size:18px;letter-spacing:-.015em;line-height:1.2;margin:6px 0 10px}.observation-content h4{color:#3d4f67;font-size:11px;letter-spacing:.1em;margin:0 0 5px;text-transform:uppercase}.observation-content p{margin:0 0 8px}.observation-heading{align-items:center;display:flex;gap:8px}.observation-number{background:#13213a;border-radius:999px;color:white;font-size:11px;font-weight:900;letter-spacing:.08em;padding:5px 8px}.observation-kind{background:#eef4ff;border:1px solid #cfddf4;border-radius:999px;color:#14315f;font-size:11px;font-weight:900;letter-spacing:.08em;padding:4px 8px;text-transform:uppercase}.technician-note-block{border-left:3px solid #155dfc;margin:8px 0 8px;padding-left:10px}.proof-line{background:#f8fafc;border:1px solid #e2e9f2;border-radius:9px;color:#62728a;font-size:12px;padding:7px 9px}.proof-block{margin-top:8px}.supporting-evidence-panel{background:#f8fafc;border:1px solid #e2e9f2;border-radius:12px;break-inside:avoid;margin-top:12px;max-width:100%;overflow:hidden;padding:10px;page-break-inside:avoid}.supporting-evidence-heading{align-items:center;display:flex;gap:8px;justify-content:space-between;margin:0 0 8px}.supporting-evidence-heading strong{color:#3d4f67;font-size:11px;letter-spacing:.1em;text-transform:uppercase}.supporting-evidence-heading span{color:#62728a;font-size:12px;font-weight:800}.supporting-export-grid{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));max-width:100%;overflow:hidden}.supporting-export-item{break-inside:avoid;min-width:0;page-break-inside:avoid}.supporting-export-grid img{background:white;border:1px solid #d8e2ef;border-radius:10px;break-inside:avoid;display:block;height:140px;max-height:140px;max-width:100%;object-fit:contain;overflow:hidden;page-break-inside:avoid;width:100%}.supporting-export-grid .media-fallback{break-inside:avoid;min-height:120px;page-break-inside:avoid}.approval-grid{align-items:end;display:grid;gap:14px;grid-template-columns:minmax(0,1fr) auto}.signature-label{color:#5a6a81;font-size:10px;font-weight:900;letter-spacing:.12em;margin:0 0 6px;text-transform:uppercase}.meta,.muted{color:#62728a}.service-section h2{border-bottom:1px solid #e3eaf3;font-size:21px;letter-spacing:-.025em;line-height:1.15;margin:0;padding-bottom:9px}dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:9px 0 0}dl div{background:#f8fafc;border:1px solid #e2e9f2;border-radius:9px;padding:7px 9px}dt{color:#5a6a81;font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}dd{font-weight:750;margin:4px 0 0;overflow-wrap:anywhere}a,a:visited{color:#18243a;text-decoration:none}.original-link{font-size:12px;margin-top:8px;opacity:.55}.original-link a{text-decoration:underline;text-underline-offset:2px}.media{position:relative;border-radius:14px;overflow:hidden;background:#f8fafc;border:1px solid #d8e2ef}.media img{display:block;width:100%;max-height:300px;object-fit:contain;background:white}.export-image-expand{background:transparent;border:0;color:inherit;cursor:zoom-in;display:block;font:inherit;margin:0;padding:0;position:relative;width:100%}.export-image-expand img{pointer-events:none}.expand-affordance{align-items:center;background:rgba(19,33,58,.82);border-radius:999px;color:white;display:flex;font-size:13px;font-weight:900;height:28px;justify-content:center;position:absolute;right:8px;top:8px;width:28px}.export-lightbox[hidden]{display:none}.export-lightbox{align-items:center;background:rgba(10,18,32,.92);bottom:0;display:flex;flex-direction:column;gap:12px;justify-content:center;left:0;padding:22px;position:fixed;right:0;top:0;z-index:9999}.export-lightbox img{max-height:82vh;max-width:92vw;object-fit:contain}.export-lightbox-close,.export-lightbox-prev,.export-lightbox-next{background:rgba(255,255,255,.95);border:0;border-radius:999px;color:#13213a;cursor:pointer;font-weight:900;padding:10px 14px}.export-lightbox-close{position:absolute;right:18px;top:18px}.export-lightbox-prev,.export-lightbox-next{position:absolute;top:50%;transform:translateY(-50%)}.export-lightbox-prev{left:18px}.export-lightbox-next{right:18px}.export-lightbox-counter{color:white;font-size:13px;font-weight:900}.media-fallback{align-items:center;aspect-ratio:4/3;background:#f8fafc;border:1px dashed #cbd6e5;color:#697890;display:flex;font-size:14px;font-weight:800;justify-content:center;padding:18px;text-align:center}.video-still{align-items:center;aspect-ratio:16/9;background:#eef4ff;color:#13213a;display:flex;font-size:18px;font-weight:800;justify-content:center;padding:16px;text-align:center}.finding{margin-top:10px}.finding-card,.reference-card{border:1px solid #d8e2ef;border-radius:14px;margin:8px 0;padding:10px}.finding-image{align-self:start;background:#f8fafc;border:1px solid #d8e2ef;border-radius:12px;overflow:hidden}.finding-image img{display:block;width:100%;max-height:250px;object-fit:contain}.gallery-grid{display:grid;gap:10px;grid-template-columns:repeat(2,minmax(0,1fr))}.gallery-card{background:#fff;border:1px solid #d8e2ef;border-radius:16px;break-inside:avoid;overflow:hidden}.gallery-thumb{background:#f8fafc}.gallery-thumb img{display:block;height:210px;object-fit:cover;width:100%}.gallery-caption{padding:12px 14px}.gallery-caption h3{font-size:17px;margin:2px 0 0}.gallery-caption p{color:#62728a;font-size:13px;margin:4px 0 0}.gallery-evidence-id{color:#155dfc!important;font-size:11px!important;font-weight:900;letter-spacing:.12em;margin:0!important;text-transform:uppercase}.summary-lead{color:#26364d;font-size:16px;line-height:1.55;margin:0 0 10px}.summary-trust{border-top:1px solid #e3eaf3;color:#62728a;font-size:12px;font-weight:800;margin:12px 0 0;padding-top:10px}.summary-chip-row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 14px}.summary-chip-row span{background:#eef4ff;border:1px solid #cfe0ff;border-radius:999px;color:#14315f;font-size:12px;font-weight:800;padding:6px 10px}.evidence-grid{display:grid;gap:10px;grid-template-columns:1fr}.evidence-card{align-items:start;border:1px solid #d8e2ef;border-radius:16px;display:grid;gap:14px;grid-template-columns:220px minmax(0,1fr);padding:14px;break-inside:avoid;page-break-inside:avoid}.evidence-card h3{font-size:17px;margin:0 0 8px}.evidence-card p{margin:0 0 10px}.evidence-media img{height:170px;max-height:170px;object-fit:contain}.evidence-copy dl{grid-template-columns:repeat(3,minmax(0,1fr))}.evidence-copy dl div{padding:8px}.severity,.evidence-pill{background:#f8fafc;border:1px solid #d8e2ef;border-radius:999px;display:inline-block;font-size:11px;font-weight:900;padding:6px 9px}.evidence-pill-row{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}.signature-block{background:#f8fafc;border:1px solid #d8e2ef;border-radius:12px;margin-top:0;padding:10px}.signoff-section{box-shadow:0 6px 18px rgba(24,36,58,.04);padding:18px}.signoff-section dl{grid-template-columns:repeat(2,minmax(0,1fr))}.signoff-section dl div{padding:8px 10px}.signature-image{background:white;border:1px solid #d8e2ef;border-radius:8px;display:block;max-height:82px;max-width:260px;object-fit:contain;padding:6px}.approval-signature{display:inline-block;min-width:260px}.signature-empty{color:#62728a;font-weight:800}table{border-collapse:collapse;width:100%}td,th{border:1px solid #d8e2ef;padding:6px 8px;text-align:left;vertical-align:top;overflow-wrap:anywhere}th{background:#f1f5fb}.evidence-appendix,.evidence-index{font-size:11px}.appendix-thumb{width:70px}.appendix-thumb img{display:block;height:44px;max-width:60px;object-fit:cover;border-radius:5px}.appendix-thumb .media-fallback{aspect-ratio:auto;min-height:44px;padding:4px;font-size:9px}.appendix-kind{color:#62728a;font-size:11px;font-weight:800}.print-page-footer{display:none}@media (max-width:800px){body{padding:14px}.report-cover,.evidence-card,.observation-main,.approval-grid{grid-template-columns:1fr}.cover-copy{padding:22px}.cover-copy h1{font-size:30px}dl,.gallery-grid,.evidence-copy dl{grid-template-columns:1fr}.header,.item{border-radius:16px;padding:18px}.toolbar{align-items:flex-start;flex-direction:column;gap:8px}.gallery-thumb img{height:230px}}@media print{@page{margin:13mm 12mm;@bottom-center{content:counter(page);font-size:9px;color:#62728a}}html,body{background:white}body{padding:0}.report{max-width:none}.toolbar,.print-help,.original-link,.expand-affordance,.export-lightbox,.export-image-expand:after{display:none!important}.header,.item,.finding-card,.reference-card,.evidence-card,.gallery-card{box-shadow:none}.finding-card,.reference-card,.evidence-card,.gallery-card{break-inside:avoid;page-break-inside:avoid}.signoff-section{break-inside:avoid;page-break-inside:avoid}.report-cover{break-before:auto}.gallery-section,.org-section,.approval-section,.evidence-appendix-section{break-before:auto;page-break-before:auto}.service-section h2,.section-heading{break-after:avoid;page-break-after:avoid}.observation-card{break-inside:avoid;page-break-inside:avoid}.approval-section{break-inside:avoid;page-break-inside:avoid}.media img,.export-image-expand img,.evidence-media img,.signature-image,.finding-image img,.gallery-thumb img,.supporting-export-grid img{break-inside:avoid;page-break-inside:avoid;visibility:visible}.note{position:static;background:#14213d}a,a:visited{color:#18243a!important;text-decoration:none!important}.report{color:#18243a;-webkit-text-size-adjust:100%;print-color-adjust:exact;-webkit-print-color-adjust:exact}.overview-section,.summary-panel,.report-cover dl,.supporting-evidence-panel,.approval-grid{break-inside:avoid;page-break-inside:avoid}.observation-main{grid-template-columns:minmax(170px,36%) minmax(0,1fr)}.media img{max-height:260px}.supporting-export-grid img{height:115px;max-height:115px}.print-page-footer{align-items:center;border-top:1px solid #d8e2ef;bottom:0;color:#62728a;display:flex;font-size:9px;gap:8px;justify-content:space-between;left:0;position:fixed;right:0}}}
-  `;
+  
+
+/* Browser-friendly mobile report layout. Print rules below remain authoritative. */
+@media screen and (max-width:680px){
+  body{
+    overflow-x:hidden;
+  }
+
+  .report{
+    margin:0 auto;
+    max-width:none;
+    padding:14px;
+    width:100%;
+  }
+
+  .toolbar{
+    align-items:stretch;
+    flex-direction:column;
+    gap:8px;
+    padding:12px;
+  }
+
+  .toolbar button{
+    min-height:44px;
+    width:100%;
+  }
+
+  .print-help{
+    font-size:12px;
+    line-height:1.4;
+    margin:0;
+    text-align:center;
+  }
+
+  .report-cover,
+  .service-section,
+  .item{
+    border-radius:16px;
+    padding:16px;
+  }
+
+  .report-cover h1{
+    font-size:clamp(30px,9vw,42px);
+    line-height:1.04;
+  }
+
+  .cover-kicker{
+    align-items:flex-start;
+    flex-direction:column;
+    gap:4px;
+  }
+
+  dl{
+    grid-template-columns:1fr;
+  }
+
+  .observation-main{
+    grid-template-columns:1fr;
+  }
+
+  .observation-content{
+    min-width:0;
+    padding-top:4px;
+  }
+
+  .media{
+    width:100%;
+  }
+
+  .media img,
+  .media .export-image-expand{
+    height:auto;
+    max-height:440px;
+    width:100%;
+  }
+
+  .media img{
+    object-fit:contain;
+  }
+
+  .supporting-evidence-panel{
+    padding:10px;
+  }
+
+  .supporting-evidence-heading{
+    align-items:flex-start;
+    flex-direction:column;
+    gap:2px;
+  }
+
+  .supporting-export-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    justify-content:start;
+  }
+
+  .supporting-export-grid[data-count="1"]{
+    display:flex;
+    justify-content:flex-start;
+  }
+
+  .supporting-export-grid[data-count="1"] .supporting-export-item{
+    flex:0 1 240px;
+    max-width:100%;
+    width:240px;
+  }
+
+  .supporting-export-grid img{
+    height:auto;
+    max-height:220px;
+    object-fit:contain;
+    width:100%;
+  }
+
+  .supporting-export-item,
+  .supporting-export-item .export-image-expand{
+    min-height:0;
+  }
+
+  .approval-grid{
+    grid-template-columns:1fr;
+  }
+
+  .approval-signature{
+    justify-self:stretch;
+    width:100%;
+  }
+
+  .signature-image{
+    max-width:220px;
+  }
+}
+
+@media screen and (max-width:420px){
+  .report{
+    padding:10px;
+  }
+
+  .report-cover,
+  .service-section,
+  .item{
+    padding:14px;
+  }
+
+  .supporting-export-grid{
+    grid-template-columns:1fr;
+  }
+
+  .supporting-export-grid[data-count="1"] .supporting-export-item{
+    width:100%;
+  }
+
+  .observation-heading{
+    align-items:flex-start;
+    flex-wrap:wrap;
+  }
+}
+`;
 
 export async function GET(_request: Request, { params }: RouteContext) {
   const { id } = await params;
@@ -2050,7 +2205,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const toolbarHtml = previewOnly
     ? ""
     : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>';
-  const html = `<!doctype html><html><head><meta charset="utf-8" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable report</title>
+  const html = `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable report</title>
   <style>${REPORT_STYLES}</style></head><body><main class="report" data-generated-at="${escapeHtmlAttributeRaw(formatDateTimeInTimeZone(new Date().toISOString(), timeZone))}">${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, companyProfile: reportCompanyProfile, captures: appendixCaptureItems, imageAssets: imageAssets, timeZone, allowCoverImage: useGalleryMode })}${summaryHtml}${observationsHtml}${unattachedHtml}${appendixHtml}${approvalHtml}${buildPrintFooterHtml({ organizationName, reportId: session.display_id, generatedAt: formatDateTimeInTimeZone(new Date().toISOString(), timeZone) })}</main>${EXPORT_LIGHTBOX_HTML}</body></html>`;
 
   return new Response(html, {

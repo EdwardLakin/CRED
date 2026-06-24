@@ -115,11 +115,19 @@ test("supporting panel and export styles keep grouped report images compact and 
   );
   assert.match(
     routeSource,
-    /\.supporting-export-grid\{[^}]*display:grid[^}]*grid-template-columns:repeat\(auto-fit,minmax\(120px,1fr\)\)/,
+    /class="supporting-export-grid" data-count="/,
   );
   assert.match(
     routeSource,
-    /\.supporting-export-grid img\{[^}]*height:140px[^}]*object-fit:contain[^}]*width:100%/,
+    /\.supporting-export-grid\[data-count="1"\]\{[^}]*display:flex[^}]*justify-content:flex-start/,
+  );
+  assert.match(
+    routeSource,
+    /\.supporting-export-grid\[data-count="1"\] \.supporting-export-item\{[^}]*max-width:100%[^}]*width:240px/,
+  );
+  assert.match(
+    routeSource,
+    /\.supporting-export-grid img\{[^}]*height:auto[^}]*max-height:220px[^}]*object-fit:contain[^}]*width:100%/,
   );
 });
 
@@ -142,6 +150,37 @@ test("export html contains self-contained lightbox hooks and print hiding", () =
   assert.match(routeSource, /data-lightbox-next/);
   assert.match(routeSource, /\.export-lightbox img\{[^}]*object-fit:contain/);
   assert.match(routeSource, /@media print[\s\S]*\.export-lightbox/);
+});
+
+test("browser-friendly export includes mobile viewport and responsive report layout", () => {
+  const routeSource = readFileSync(
+    "app/api/dashboard/sessions/[id]/report-pdf/route.ts",
+    "utf8",
+  );
+
+  const viewportMatches = routeSource.match(
+    /<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" \/>/g,
+  );
+
+  assert.ok(viewportMatches);
+  assert.ok(viewportMatches.length >= 3);
+  assert.match(
+    routeSource,
+    /@media screen and \(max-width:680px\)\{[\s\S]*?\.observation-main\{[^}]*grid-template-columns:1fr/,
+  );
+  assert.match(
+    routeSource,
+    /@media screen and \(max-width:680px\)\{[\s\S]*?\.approval-grid\{[^}]*grid-template-columns:1fr/,
+  );
+  assert.match(
+    routeSource,
+    /@media screen and \(max-width:680px\)\{[\s\S]*?dl\{[^}]*grid-template-columns:1fr/,
+  );
+  assert.match(
+    routeSource,
+    /\^\(not captured\|pending\|unknown\|none\|n\\\/a\|not applicable\)\$/,
+  );
+  assert.match(routeSource, /Report Overview/);
 });
 
 test("printable report uses compact cards, safe titles, trusted proof, and print controls", () => {
