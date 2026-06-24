@@ -24,6 +24,10 @@ export interface Database {
           included_seats: number | null
           additional_seats: number | null
           seat_packs: number | null
+          billing_account_id: string | null
+          workspace_type: 'team' | 'shop' | 'office' | 'location' | 'matter' | 'general'
+          archived_at: string | null
+          updated_at: string | null
           created_at: string | null
         }
         Insert: {
@@ -40,6 +44,10 @@ export interface Database {
           included_seats?: number | null
           additional_seats?: number | null
           seat_packs?: number | null
+          billing_account_id?: string | null
+          workspace_type?: 'team' | 'shop' | 'office' | 'location' | 'matter' | 'general'
+          archived_at?: string | null
+          updated_at?: string | null
           created_at?: string | null
         }
         Update: {
@@ -56,6 +64,10 @@ export interface Database {
           included_seats?: number | null
           additional_seats?: number | null
           seat_packs?: number | null
+          billing_account_id?: string | null
+          workspace_type?: 'team' | 'shop' | 'office' | 'location' | 'matter' | 'general'
+          archived_at?: string | null
+          updated_at?: string | null
           created_at?: string | null
         }
         Relationships: []
@@ -104,6 +116,66 @@ export interface Database {
             referencedColumns: ['id']
           },
         ]
+      }
+      billing_accounts: {
+        Row: {
+          id: string
+          owner_user_id: string
+          name: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          owner_user_id: string
+          name: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          owner_user_id?: string
+          name?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      workspace_memberships: {
+        Row: {
+          id: string
+          workspace_id: string
+          user_id: string
+          role: 'owner' | 'admin' | 'manager' | 'member' | 'viewer'
+          status: 'invited' | 'active' | 'removed' | 'archived'
+          invited_by: string | null
+          joined_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          workspace_id: string
+          user_id: string
+          role: 'owner' | 'admin' | 'manager' | 'member' | 'viewer'
+          status?: 'invited' | 'active' | 'removed' | 'archived'
+          invited_by?: string | null
+          joined_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          workspace_id?: string
+          user_id?: string
+          role?: 'owner' | 'admin' | 'manager' | 'member' | 'viewer'
+          status?: 'invited' | 'active' | 'removed' | 'archived'
+          invited_by?: string | null
+          joined_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       organization_invitations: {
         Row: { id: string; organization_id: string; email: string; role: 'admin' | 'inspector' | 'reviewer'; status: 'pending_invite' | 'accepted' | 'revoked' | 'expired'; invited_by: string | null; invited_at: string; last_sent_at: string | null; accepted_by: string | null; accepted_at: string | null; revoked_at: string | null }
