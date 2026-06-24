@@ -183,6 +183,38 @@ test("browser-friendly export includes mobile viewport and responsive report lay
   assert.match(routeSource, /Report Overview/);
 });
 
+test("printed report uses compact cover, observations, and supporting photos", () => {
+  const routeSource = readFileSync(
+    "app/api/dashboard/sessions/[id]/report-pdf/route.ts",
+    "utf8",
+  );
+
+  assert.match(
+    routeSource,
+    /@media\s+print[\s\S]*?\.report-cover\s+dl,[\s\S]*?grid-template-columns\s*:\s*repeat\(\s*2\s*,\s*minmax\(\s*0\s*,\s*1fr\s*\)\s*\)/,
+  );
+
+  assert.match(
+    routeSource,
+    /@media\s+print[\s\S]*?\.observation-main\s*\{[^}]*grid-template-columns\s*:\s*minmax\(\s*135px\s*,\s*30%\s*\)\s+minmax\(\s*0\s*,\s*1fr\s*\)/,
+  );
+
+  assert.match(
+    routeSource,
+    /@media\s+print[\s\S]*?\.supporting-export-grid\[data-count="1"\]\s+\.supporting-export-item\s*\{[^}]*max-width\s*:\s*160px[^}]*width\s*:\s*160px/,
+  );
+
+  assert.match(
+    routeSource,
+    /@media\s+print[\s\S]*?\.supporting-export-grid\s+img\s*\{[^}]*height\s*:\s*95px[^}]*max-height\s*:\s*95px/,
+  );
+
+  assert.match(
+    routeSource,
+    /getEvidenceKind\(\s*entry\.capture\s*\)\s*===\s*"document"/,
+  );
+});
+
 test("printable report uses compact cards, safe titles, trusted proof, and print controls", () => {
   const routeSource = readFileSync(
     "app/api/dashboard/sessions/[id]/report-pdf/route.ts",
@@ -213,7 +245,10 @@ test("printable report uses compact cards, safe titles, trusted proof, and print
     /\.media img\{[^}]*max-height:300px[^}]*object-fit:contain/,
   );
   assert.match(routeSource, /@media print[\s\S]*\.toolbar,\.print-help/);
-  assert.match(routeSource, /\.print-page-footer\{[^}]*position:fixed/);
+  assert.match(
+    routeSource,
+    /@media\s+print[\s\S]*?\.print-page-footer\s*\{[^}]*display\s*:\s*none\s*!important[^}]*position\s*:\s*static\s*!important/,
+  );
   assert.match(
     routeSource,
     /\.observation-card\{break-inside:avoid;page-break-inside:avoid\}/,
