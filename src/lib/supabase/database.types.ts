@@ -70,7 +70,15 @@ export interface Database {
           updated_at?: string | null
           created_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: 'organizations_billing_account_id_fkey'
+            columns: ['billing_account_id']
+            isOneToOne: false
+            referencedRelation: 'billing_accounts'
+            referencedColumns: ['id']
+          },
+        ]
       }
       organization_usage_events: {
         Row: {
@@ -139,7 +147,15 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: 'billing_accounts_owner_user_id_fkey'
+            columns: ['owner_user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
       }
       workspace_memberships: {
         Row: {
@@ -175,7 +191,29 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: 'workspace_memberships_workspace_id_fkey'
+            columns: ['workspace_id']
+            isOneToOne: false
+            referencedRelation: 'organizations'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'workspace_memberships_user_id_fkey'
+            columns: ['user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'workspace_memberships_invited_by_fkey'
+            columns: ['invited_by']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
       }
       organization_invitations: {
         Row: { id: string; organization_id: string; email: string; role: 'admin' | 'inspector' | 'reviewer'; status: 'pending_invite' | 'accepted' | 'revoked' | 'expired'; invited_by: string | null; invited_at: string; last_sent_at: string | null; accepted_by: string | null; accepted_at: string | null; revoked_at: string | null }
