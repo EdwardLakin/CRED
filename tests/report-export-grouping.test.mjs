@@ -153,10 +153,9 @@ test("printable report uses compact cards, safe titles, trusted proof, and print
   assert.match(routeSource, /function getCustomerFacingEvidenceTitle/);
   assert.match(routeSource, /conciseHeadingFromNote/);
   assert.match(routeSource, /Documented condition \$\{/);
-  assert.doesNotMatch(
-    routeSource,
-    /classification.*getCustomerFacingEvidenceTitle/s,
-  );
+  const titleHelper = routeSource.match(/function getCustomerFacingEvidenceTitle[\s\S]*?^}/m)?.[0] ?? "";
+  assert.ok(titleHelper, "missing customer-facing evidence title helper");
+  assert.doesNotMatch(titleHelper, /classification|detected_type|image_asset_type/);
   assert.match(routeSource, /function shouldRenderTrustedProofDetail/);
   assert.match(routeSource, /captureHasTrustedStructuredDetails/);
   assert.match(routeSource, /user_provided === true/);

@@ -42,8 +42,8 @@ test('source date action validates event date precision and normalizes date valu
 test('evidence routes and session navigation are present without changing capture or report routes', () => {
   assert.match(libraryPage, /Evidence Library/)
   assert.match(detailPage, /Evidence Details/)
-  assert.match(sessionPage, /\/evidence`}/)
-  assert.match(sessionPage, /Evidence Library/)
+  assert.match(sessionPage, /feature\.hrefSegment/)
+  assert.match(sessionPage, /feature\.label/)
 })
 
 test('library and details display requested evidence fields and import batch status', () => {
