@@ -183,6 +183,38 @@ test("browser-friendly export includes mobile viewport and responsive report lay
   assert.match(routeSource, /Report Overview/);
 });
 
+test("mobile observation evidence stays compact while retaining lightbox access", () => {
+  const routeSource = readFileSync(
+    "app/api/dashboard/sessions/[id]/report-pdf/route.ts",
+    "utf8",
+  );
+
+  assert.match(routeSource, /Mobile evidence density overrides/);
+
+  assert.match(
+    routeSource,
+    /@media\s+screen\s+and\s+\(max-width\s*:\s*680px\)[\s\S]*?\.observation-main>\.media\s+img,[\s\S]*?max-height\s*:\s*360px/,
+  );
+
+  assert.match(
+    routeSource,
+    /\.supporting-export-grid\[data-count="1"\]\s+\.supporting-export-item\s*\{[^}]*max-width\s*:\s*220px[^}]*width\s*:\s*min\(\s*220px\s*,\s*100%\s*\)/,
+  );
+
+  assert.match(
+    routeSource,
+    /\.supporting-export-grid\[data-count="1"\]\s+img\s*\{[^}]*max-height\s*:\s*200px[^}]*object-fit\s*:\s*contain/,
+  );
+
+  assert.match(
+    routeSource,
+    /@media\s+screen\s+and\s+\(max-width\s*:\s*420px\)[\s\S]*?max-height\s*:\s*180px/,
+  );
+
+  assert.match(routeSource, /data-lightbox-src/);
+  assert.match(routeSource, /data-export-lightbox/);
+});
+
 test("printed report uses compact cover, observations, and supporting photos", () => {
   const routeSource = readFileSync(
     "app/api/dashboard/sessions/[id]/report-pdf/route.ts",

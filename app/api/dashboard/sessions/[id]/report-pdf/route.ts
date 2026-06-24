@@ -2066,6 +2066,67 @@ const REPORT_STYLES = `
     position: static !important;
   }
 }
+
+
+/* Mobile evidence density overrides. */
+@media screen and (max-width:680px){
+  .observation-main>.media{
+    max-width:100%;
+  }
+
+  .observation-main>.media img,
+  .observation-main>.media .export-image-expand img{
+    height:auto;
+    max-height:360px;
+    object-fit:contain;
+    width:100%;
+  }
+
+  .supporting-evidence-panel{
+    min-height:0;
+  }
+
+  .supporting-export-grid[data-count="1"]{
+    align-items:flex-start;
+    display:flex;
+    justify-content:flex-start;
+  }
+
+  .supporting-export-grid[data-count="1"] .supporting-export-item{
+    flex:0 1 220px;
+    max-width:220px;
+    min-height:0;
+    width:min(220px,100%);
+  }
+
+  .supporting-export-grid[data-count="1"] .export-image-expand{
+    width:100%;
+  }
+
+  .supporting-export-grid[data-count="1"] img{
+    height:auto;
+    max-height:200px;
+    object-fit:contain;
+    width:100%;
+  }
+}
+
+@media screen and (max-width:420px){
+  .observation-main>.media img,
+  .observation-main>.media .export-image-expand img{
+    max-height:340px;
+  }
+
+  .supporting-export-grid[data-count="1"] .supporting-export-item{
+    flex-basis:200px;
+    max-width:200px;
+    width:min(200px,100%);
+  }
+
+  .supporting-export-grid[data-count="1"] img{
+    max-height:180px;
+  }
+}
 `;
 
 export async function GET(_request: Request, { params }: RouteContext) {
