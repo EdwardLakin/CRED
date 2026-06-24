@@ -5484,3 +5484,92 @@ a:focus-visible {
     display: grid;
   }
 }
+
+
+.evidence-detail-primary {
+
+  gap: 1.5rem;
+
+}
+
+.evidence-control-panel {
+
+  border-top: 1px solid var(--border-subtle);
+
+  padding-top: 1rem;
+
+  display: grid;
+
+  gap: 1rem;
+
+}
+
+.evidence-details-panel {
+
+  border-top: 1px solid var(--border-subtle);
+
+  padding-top: 0.75rem;
+
+}
+
+.evidence-details-panel summary {
+
+  cursor: pointer;
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: space-between;
+
+  gap: 1rem;
+
+  font-weight: 800;
+
+  list-style: none;
+
+}
+
+.evidence-details-panel summary::-webkit-details-marker {
+
+  display: none;
+
+}
+
+.evidence-details-panel summary::after {
+
+  content: "⌄";
+
+  font-weight: 900;
+
+}
+
+.evidence-details-panel[open] summary::after {
+
+  content: "⌃";
+
+}
+
+.evidence-details-panel .metadata-list {
+
+  margin-top: 1rem;
+
+}
+
+@media (max-width: 680px) {
+
+  .evidence-summary-list,
+
+  .evidence-details-panel .metadata-list {
+
+    grid-template-columns: 1fr;
+
+  }
+
+  .evidence-control-panel .form-actions {
+
+    align-items: stretch;
+
+  }
+
+}\n

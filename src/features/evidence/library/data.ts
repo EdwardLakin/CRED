@@ -73,6 +73,7 @@ export async function getEvidenceLibraryData(sessionId: string, workspace?: Evid
     importBatches: (importBatches ?? []) as EvidenceLibraryBatch[],
     signedUrls,
     timeZone: profile.timezone ?? null,
+    profile,
   }
 }
 

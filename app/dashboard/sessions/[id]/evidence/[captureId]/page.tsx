@@ -5,7 +5,7 @@ import { getEvidenceDetailData } from '@/features/evidence/library/data'
 
 export default async function EvidenceDetailsPage({ params }: { params: Promise<{ id: string; captureId: string }> }) {
   const { id, captureId } = await params
-  const { session, evidenceItem, evidenceItems, relatedImportBatch, signedUrls, timeZone } = await getEvidenceDetailData(id, captureId)
+  const { session, evidenceItem, evidenceItems, relatedImportBatch, signedUrls, timeZone, profile } = await getEvidenceDetailData(id, captureId)
 
   return (
     <main className="page-shell dashboard-shell">
@@ -16,7 +16,7 @@ export default async function EvidenceDetailsPage({ params }: { params: Promise<
           <p className="muted">{evidenceItem.original_filename || evidenceItem.technician_note || evidenceItem.id}</p>
         </div>
       </div>
-      <EvidenceDetail item={evidenceItem} allItems={evidenceItems} relatedImportBatch={relatedImportBatch} signedUrl={signedUrls[evidenceItem.id]} timeZone={timeZone} />
+      <EvidenceDetail item={evidenceItem} allItems={evidenceItems} relatedImportBatch={relatedImportBatch} signedUrl={signedUrls[evidenceItem.id]} timeZone={timeZone} accessSubject={profile as { plan?: string | null }} />
     </main>
   )
 }
