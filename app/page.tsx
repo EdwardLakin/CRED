@@ -112,7 +112,18 @@ export default async function HomePage() {
     <main className="landing-shell">
       <header className="landing-nav">
         <Link href="/" className="brand-mark" aria-label="CRED home"><span className="brand-icon">C</span><span><strong>CRED</strong><small>by ProFixIQ</small></span></Link>
-        <nav className="landing-nav-links" aria-label="Primary navigation"><a href="#workflow">Workflow</a><a href="#tiers">Plans</a><a href="#use-cases">Use cases</a><a href="#pricing">Pricing</a><ThemeToggle /></nav>
+        <nav className="landing-nav-links" aria-label="Primary navigation">
+          <a href="#workflow">Workflow</a>
+          <a href="#tiers">Plans</a>
+          <a href="#use-cases">Use cases</a>
+          <a href="#pricing">Pricing</a>
+          {isAuthenticated ? (
+            <Link href="/dashboard">Dashboard</Link>
+          ) : (
+            <Link href="/sign-in">Sign in</Link>
+          )}
+          <ThemeToggle />
+        </nav>
       </header>
 
       <section className="landing-hero">
@@ -151,7 +162,7 @@ export default async function HomePage() {
 
       <section className="landing-section final-cta-section"><div className="landing-card"><div className="section-kicker">Ready when you are</div><h2>Start with the simple documentation workflow.</h2><p>CRED Essentials gives your team Capture → Review → Approve → Export from day one. Professional and Investigation are ready when the evidence workflow needs more structure.</p><Link href={isAuthenticated ? '/dashboard?checkout=individual' : '/sign-up?plan=individual'} className="button button-primary">Start with Essentials</Link></div></section>
 
-      <footer className="landing-footer"><div><strong>CRED by ProFixIQ</strong><p>Capture → Review → Approve → Export</p></div><div className="footer-links"><a href="#pricing">Pricing</a><Link href="/sign-in">Sign in</Link><Link href="/sign-up?plan=individual">Start with Essentials</Link></div></footer>
+      <footer className="landing-footer"><div><strong>CRED by ProFixIQ</strong><p>Capture → Review → Approve → Export</p></div><div className="footer-links"><a href="#pricing">Pricing</a><Link href="/sign-up?plan=individual">Start with Essentials</Link></div></footer>
     </main>
   )
 }
