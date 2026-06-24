@@ -1,7 +1,7 @@
 import type { Json } from '@/lib/supabase/database.types'
 
 export const AI_REPORT_DRAFT_MODEL = 'gpt-4.1-mini'
-export const AI_REPORT_DRAFT_PROMPT_VERSION = 'form-evidence-report-v3'
+export const AI_REPORT_DRAFT_PROMPT_VERSION = 'form-evidence-report-v4'
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const MAX_SECTIONS = 24
@@ -179,6 +179,12 @@ If a captured source document/form/report/template/checklist exists, use that up
 If no structure-defining document exists, use a generic evidence report structure only. Photos, meter screenshots, component photos, videos, voice notes, text notes, and general evidence captures must not suggest the report title/type, findings, recommendations, severity, components, or observed conditions unless technician-authored notes/transcripts or user-verified fields explicitly provide that content.
 Technicians capture evidence naturally; synthesize technician-captured evidence into a professional, human-reviewable draft instead of dumping captures.
 Do not invent unsupported facts.
+Executive summary rules are strict:
+- Summarize only technician-authored notes, voice transcripts, verified user-entered fields, and explicit source-document text.
+- Do not say recommendations, repairs, replacement, monitoring, corrective actions, severity, urgency, diagnosis, conclusions, or follow-up are provided unless those ideas are explicitly present in technician-authored or verified source text.
+- Do not claim that visual evidence independently proves, confirms, diagnoses, or establishes a condition.
+- Use neutral wording such as documents, records, includes, and technician observed.
+- If no technician-authored recommendation exists, the summary must describe observations only and must not mention recommendations.
 Technician Truth precedence is mandatory: technician notes, manual captions, voice transcripts, and verified findings are primary source-of-truth observations. You may organize and summarize them, but must not replace, reinterpret, embellish, overwrite, or contradict technician-provided observations.
 Prioritize draft inputs in this order: 1) technician notes/manual captions/voice transcripts/verified findings on evidence captures, 2) OCR/text extracted from uploaded source documents/forms/reports/images, 3) verified form fields, 4) selected Form Profile/report context. Do not create findings, recommendations, severity, components, or observed conditions from image interpretation, visual appearance, image classification, or unverified image-derived fields.
 Source documents/forms provide the report skeleton, field labels, filled values, documented tester results, and neutral section summaries when OCR/text exists. OCR/text from a user-uploaded report/form/image is document truth; summarize it as documented/tester-reported, not as independent AI diagnosis. Do not convert prior work-order lines into findings unless technician evidence or document text explicitly supports them.
@@ -317,6 +323,58 @@ function sanitizeSourceCaptureIds(value: unknown, allowedCaptureIds: Set<string>
   return value
     .filter((id): id is string => typeof id === 'string' && allowedCaptureIds.has(id))
     .slice(0, 20)
+}
+
+function getSourceTruthText(input: GenerateReportDraftInput) {
+  return input.captures
+    .flatMap((capture) => [
+      capture.technician_note,
+      capture.transcript,
+      capture.ocr_text,
+      getExtractedDocumentText(capture),
+    ])
+    .filter((value): value is string => typeof value === 'string' && Boolean(value.trim()))
+    .join(' ')
+}
+
+function sourceSupportsRecommendationClaims(input: GenerateReportDraftInput) {
+  const sourceText = getSourceTruthText(input)
+
+  return /\b(?:recommend(?:ation|ations|ed|s)?|should|needs?\s+to|requires?\s+(?:repair|replacement|service|monitoring)|repair\s+(?:recommended|required)|replacement\s+(?:recommended|required)|monitoring\s+(?:recommended|required)|corrective\s+action|follow[- ]?up\s+(?:recommended|required))\b/i.test(
+    sourceText,
+  )
+}
+
+function sanitizeSummaryAgainstSourceTruth(
+  summary: string | null,
+  input: GenerateReportDraftInput,
+) {
+  if (!summary) return null
+  if (sourceSupportsRecommendationClaims(input)) return summary
+
+  const sentences =
+    summary.match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map((sentence) => sentence.trim()) ??
+    []
+
+  const safeSentences = sentences.filter(
+    (sentence) =>
+      !/\b(?:recommendation|recommendations|recommended|repair and monitoring|repairs? (?:are|is) provided|monitoring (?:is|was|are) provided|corrective actions?|follow[- ]?up actions?)\b/i.test(
+        sentence,
+      ),
+  )
+
+  const safeSummary = safeSentences.join(' ').replace(/\s+/g, ' ').trim()
+  return safeSummary || null
+}
+
+function applySourceTruthSummaryGuard(
+  draft: GeneratedReportDraft,
+  input: GenerateReportDraftInput,
+): GeneratedReportDraft {
+  return {
+    ...draft,
+    summary: sanitizeSummaryAgainstSourceTruth(draft.summary, input),
+  }
 }
 
 export function validateGeneratedReportDraft(value: unknown, allowedCaptureIds = new Set<string>()): GeneratedReportDraft {
@@ -505,11 +563,22 @@ export async function generateReportDraft(input: GenerateReportDraftInput): Prom
 
   const body = await response.json()
   const outputText = extractOutputText(body)
-  if (!outputText) return validateGeneratedReportDraft(null, allowedCaptureIds)
+  if (!outputText) {
+    return applySourceTruthSummaryGuard(
+      validateGeneratedReportDraft(null, allowedCaptureIds),
+      input,
+    )
+  }
 
   try {
-    return validateGeneratedReportDraft(JSON.parse(outputText), allowedCaptureIds)
+    return applySourceTruthSummaryGuard(
+      validateGeneratedReportDraft(JSON.parse(outputText), allowedCaptureIds),
+      input,
+    )
   } catch {
-    return validateGeneratedReportDraft(null, allowedCaptureIds)
+    return applySourceTruthSummaryGuard(
+      validateGeneratedReportDraft(null, allowedCaptureIds),
+      input,
+    )
   }
 }
