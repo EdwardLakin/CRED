@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { getPlanLimits, parseBillingPlan } from "@/features/billing";
 import { AddCaptureForm, RecentCapturesList } from "@/features/capture";
+import { CaptureSessionSnapshot } from "@/features/offline/CaptureSessionSnapshot";
 import { getDisplayReportTitle } from "@/features/reports/report-title";
 import { requireSessionWorkspace } from "@/features/sessions/data";
 
@@ -53,8 +54,32 @@ export default async function GuidedCapturePage({
 
   const planLimits = getPlanLimits(parseBillingPlan(profile.organization.plan));
   const displaySessionTitle = getDisplayReportTitle(null, session);
+  const captureReturnPath =
+    `/dashboard/sessions/${session.id}/capture#main-capture-card`;
+  const captureDonePath =
+    `/dashboard/sessions/${session.id}/report?prepare=1`;
+
   return (
     <main className="page-shell dashboard-shell focused-capture-shell">
+      <CaptureSessionSnapshot
+        sessionId={session.id}
+        organizationId={session.organization_id}
+        userId={profile.user_id}
+        title={displaySessionTitle}
+        sessionType={session.session_type}
+        data={{
+          captureTitle: addTo
+            ? "Add another image"
+            : "Observation Capture",
+          returnPath: captureReturnPath,
+          donePath: captureDonePath,
+          observationGroupId: addTo ?? null,
+          maxCaptureFileSizeBytes:
+            planLimits.maxCaptureFileSizeBytes,
+          maxVideoFileSizeBytes:
+            planLimits.maxVideoFileSizeBytes,
+        }}
+      />
       <div className="section-header page-header focused-capture-header">
         <div>
           <h1>{addTo ? "Add another image" : "Observation Capture"}</h1>
@@ -76,12 +101,12 @@ export default async function GuidedCapturePage({
           organizationId={session.organization_id}
           userId={profile.user_id}
           sessionType={session.session_type}
-          returnPath={`/dashboard/sessions/${session.id}/capture#main-capture-card`}
+          returnPath={captureReturnPath}
           captureButtonLabel="Camera"
           helperText="Capture photos or choose media from your gallery."
           commonCaptureText=""
           showSuggestedCaptureText={false}
-          stickyDoneHref={`/dashboard/sessions/${session.id}/report?prepare=1`}
+          stickyDoneHref={captureDonePath}
           maxCaptureFileSizeBytes={planLimits.maxCaptureFileSizeBytes}
           maxVideoFileSizeBytes={planLimits.maxVideoFileSizeBytes}
           observationGroupId={addTo ?? null}
