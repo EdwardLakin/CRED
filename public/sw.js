@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cred-offline-v3";
+const CACHE_VERSION = "cred-offline-v4";
 const APP_SHELL = [
   "/offline",
   "/offline/capture",
@@ -53,6 +53,47 @@ function getCaptureSessionId(pathname) {
   );
 
   return match?.[1] ?? null;
+}
+
+function fetchWithTimeout(request, timeoutMs) {
+  return Promise.race([
+    fetch(request),
+    new Promise((_, reject) => {
+      setTimeout(
+        () => reject(new Error("Network request timed out")),
+        timeoutMs,
+      );
+    }),
+  ]);
+}
+
+async function getOfflineCaptureFallback(url, request) {
+  const cachedCapturePage = await caches.match(request);
+
+  if (cachedCapturePage) {
+    return cachedCapturePage;
+  }
+
+  const captureSessionId = getCaptureSessionId(url.pathname);
+
+  if (captureSessionId) {
+    return Response.redirect(
+      `${url.origin}/offline/capture?sessionId=${encodeURIComponent(
+        captureSessionId,
+      )}`,
+      302,
+    );
+  }
+
+  return (
+    (await caches.match("/offline")) ||
+    new Response("Offline", {
+      status: 503,
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+      },
+    })
+  );
 }
 
 self.addEventListener("fetch", (event) => {
