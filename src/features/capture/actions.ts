@@ -1033,10 +1033,38 @@ export async function createCaptureRecordFromUploadedFile(
     .single()
 
   if (captureErrorResult || !captureItem) {
-    logCaptureFailure({
-      step: 'capture_item_insert',
-      ...getSafeErrorDetails(captureErrorResult),
-    })
+    if (captureErrorResult?.code === '23505') {
+      const { data: recoveredCapture, error: recoveryError } = await supabase
+        .from('capture_items')
+        .select('id')
+        .eq('documentation_session_id', session.id)
+        .eq('organization_id', profile.organization_id)
+        .eq('storage_path', storagePath)
+        .is('deleted_at', null)
+        .maybeSingle()
+
+      if (!recoveryError && recoveredCapture) {
+        return {
+          ok: true,
+          sessionId: session.id,
+          captureItemId: recoveredCapture.id,
+          processingStatus: 'saved',
+          storagePath,
+          recovered: true,
+        }
+      }
+
+      logCaptureFailure({
+        step: 'capture_item_unique_conflict_recovery',
+        ...getSafeErrorDetails(recoveryError ?? captureErrorResult),
+      })
+    } else {
+      logCaptureFailure({
+        step: 'capture_item_insert',
+        ...getSafeErrorDetails(captureErrorResult),
+      })
+    }
+
     return captureError('The image uploaded, but CRED could not finish saving it. Tap Retry.', session.id, {
       stage: 'metadata',
       code: 'metadata_creation_failed',
