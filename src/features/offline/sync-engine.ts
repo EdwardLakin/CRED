@@ -1,5 +1,28 @@
-import { getCurrentStatus, subscribe } from "@/features/offline/connectivity";
-import { getPendingCaptures } from "@/features/offline/queue";
+import {
+  createCaptureRecordFromUploadedFile,
+  validateCaptureBillingAccess,
+} from "@/features/capture/actions";
+import type {
+  CaptureIntent,
+  CaptureType,
+} from "@/features/capture/types";
+import {
+  getCurrentStatus,
+  subscribe,
+} from "@/features/offline/connectivity";
+import {
+  getPendingCaptures,
+  removeCapture,
+  saveQueuedCapture,
+} from "@/features/offline/queue";
+import type {
+  OfflineCaptureRecord,
+  QueueStatus,
+} from "@/features/offline/types";
+import { createClient } from "@/lib/supabase/client";
+
+const CAPTURE_BUCKET = "documentation-captures";
+const MAX_AUTOMATIC_RETRIES = 5;
 
 type SyncEngineListener = (state: OfflineSyncEngineState) => void;
 
@@ -10,11 +33,283 @@ export type OfflineSyncEngineState = {
   lastError: string | null;
 };
 
+function sanitizeFilename(filename: string) {
+  const sanitized = filename
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "")
+    .slice(0, 96);
+
+  return sanitized || "capture-file";
+}
+
+function createStoragePath(record: OfflineCaptureRecord) {
+  const timestamp = record.createdAt
+    .replace(/[:.]/g, "-")
+    .replace(/Z$/, "");
+
+  return [
+    "organizations",
+    record.organizationId,
+    "sessions",
+    record.sessionId,
+    "captures",
+    `${timestamp}-${record.clientMutationId}-${sanitizeFilename(
+      record.metadata.filename,
+    )}`,
+  ].join("/");
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+
+  return "Offline capture sync failed.";
+}
+
+function storageObjectAlreadyExists(message: string) {
+  const normalized = message.toLowerCase();
+
+  return (
+    normalized.includes("already exists") ||
+    normalized.includes("duplicate") ||
+    normalized.includes("resource already exists")
+  );
+}
+
+function canAutomaticallyRetry(record: OfflineCaptureRecord) {
+  if (record.retryCount >= MAX_AUTOMATIC_RETRIES) {
+    return false;
+  }
+
+  return (
+    record.status === "local" ||
+    record.status === "queued" ||
+    record.status === "failed" ||
+    record.status === "blocked"
+  );
+}
+
+async function updateRecord(
+  record: OfflineCaptureRecord,
+  patch: Partial<OfflineCaptureRecord> & {
+    status?: QueueStatus;
+  },
+) {
+  return saveQueuedCapture({
+    ...record,
+    ...patch,
+    metadata: {
+      ...record.metadata,
+      ...(patch.metadata ?? {}),
+    },
+    uploadState: {
+      ...record.uploadState,
+      ...(patch.uploadState ?? {}),
+    },
+  });
+}
+
+async function syncCapture(record: OfflineCaptureRecord) {
+  const supabase = createClient();
+  const storagePath =
+    record.uploadState.storagePath ?? createStoragePath(record);
+
+  let current = await updateRecord(record, {
+    status: "uploading",
+    lastError: null,
+    uploadState: {
+      ...record.uploadState,
+      storagePath,
+    },
+    metadata: {
+      ...record.metadata,
+      uploadStatus: "uploading",
+      uiError: undefined,
+    },
+  });
+
+  const accessResult = await validateCaptureBillingAccess(
+    current.sessionId,
+    [
+      {
+        size: current.metadata.size,
+        mimeType: current.metadata.mimeType,
+      },
+    ],
+  );
+
+  if (!accessResult.ok) {
+    await updateRecord(current, {
+      status: "blocked",
+      retryCount: current.retryCount + 1,
+      lastError: accessResult.error,
+      metadata: {
+        ...current.metadata,
+        uploadStatus: "failed",
+        uiError: accessResult.error,
+      },
+    });
+
+    throw new Error(accessResult.error);
+  }
+
+  if (!current.uploadState.uploadedAt) {
+    const file =
+      current.blob instanceof File
+        ? current.blob
+        : new File(
+            [current.blob],
+            current.metadata.filename,
+            {
+              type: current.metadata.mimeType,
+            },
+          );
+
+    const { error: uploadError } = await supabase.storage
+      .from(CAPTURE_BUCKET)
+      .upload(storagePath, file, {
+        cacheControl: "3600",
+        contentType: current.metadata.mimeType,
+        upsert: false,
+      });
+
+    if (
+      uploadError &&
+      !storageObjectAlreadyExists(uploadError.message)
+    ) {
+      const message = getErrorMessage(uploadError);
+
+      await updateRecord(current, {
+        status: "failed",
+        retryCount: current.retryCount + 1,
+        lastError: message,
+        metadata: {
+          ...current.metadata,
+          uploadStatus: "failed",
+          uiError: message,
+        },
+      });
+
+      throw new Error(message);
+    }
+
+    current = await updateRecord(current, {
+      status: "creating_record",
+      uploadState: {
+        ...current.uploadState,
+        storagePath,
+        uploadedAt: new Date().toISOString(),
+      },
+      metadata: {
+        ...current.metadata,
+        uploadStatus: "finishing",
+        storageUploaded: true,
+      },
+    });
+  } else {
+    current = await updateRecord(current, {
+      status: "creating_record",
+      metadata: {
+        ...current.metadata,
+        uploadStatus: "finishing",
+        storageUploaded: true,
+      },
+    });
+  }
+
+  const result = await createCaptureRecordFromUploadedFile({
+    sessionId: current.sessionId,
+    storagePath,
+    filename: current.metadata.filename,
+    mimeType: current.metadata.mimeType,
+    size: current.metadata.size,
+    captureIntent:
+      current.metadata.captureIntent as CaptureIntent,
+    manualType:
+      current.metadata.manualType as CaptureType | null,
+    guidedStep: current.metadata.guidedStep ?? undefined,
+    guidedLabel: current.metadata.guidedLabel ?? undefined,
+    workflow: current.metadata.workflow ?? undefined,
+    technicianNote: current.metadata.technicianNote,
+    transcriptStatus:
+      current.metadata.transcriptStatus as
+        | "not_started"
+        | "pending"
+        | "completed"
+        | "failed"
+        | "unavailable",
+    noteSource:
+      current.metadata.noteSource as
+        | "manual"
+        | "voice"
+        | "edited",
+    reportOrder: current.metadata.reportOrder,
+    includeInReport: current.metadata.includeInReport,
+    sourceDocumentType: null,
+    sourceDocumentLabel: null,
+  });
+
+  if (!result.ok) {
+    const message =
+      result.message ??
+      result.error ??
+      "CRED could not finish saving this capture.";
+
+    await updateRecord(current, {
+      status: result.storageUploaded ? "blocked" : "failed",
+      retryCount: current.retryCount + 1,
+      lastError: message,
+      metadata: {
+        ...current.metadata,
+        uploadStatus: result.storageUploaded
+          ? "metadata_recovery"
+          : "failed",
+        uiError: message,
+        storageUploaded:
+          result.storageUploaded ??
+          current.metadata.storageUploaded,
+      },
+    });
+
+    throw new Error(message);
+  }
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("cred:offline-capture-synced", {
+        detail: {
+          localId: current.localId,
+          sessionId: current.sessionId,
+          captureItemId: result.captureItemId,
+        },
+      }),
+    );
+  }
+
+  await removeCapture(current.localId);
+
+  return result.captureItemId;
+}
+
 export class OfflineSyncEngine {
   private running = false;
   private syncing = false;
   private listeners = new Set<SyncEngineListener>();
-  private unsubscribeConnectivity: (() => void) | null = null;
+  private unsubscribeConnectivity: (() => void) | null =
+    null;
   private pendingCount = 0;
   private lastError: string | null = null;
 
@@ -76,7 +371,7 @@ export class OfflineSyncEngine {
     try {
       await this.processQueue();
     } catch (error) {
-      this.lastError = error instanceof Error ? error.message : "Offline sync failed.";
+      this.lastError = getErrorMessage(error);
     } finally {
       this.syncing = false;
       await this.refreshPendingCount();
@@ -88,14 +383,42 @@ export class OfflineSyncEngine {
 
   async processQueue() {
     const pending = await getPendingCaptures();
-    this.pendingCount = pending.length;
+    const retryable = pending
+      .filter(canAutomaticallyRetry)
+      .sort((left, right) =>
+        left.createdAt.localeCompare(right.createdAt),
+      );
 
-    return pending;
+    this.pendingCount = pending.length;
+    this.emit();
+
+    const failures: string[] = [];
+
+    for (const record of retryable) {
+      if (!getCurrentStatus().online) {
+        break;
+      }
+
+      try {
+        await syncCapture(record);
+      } catch (error) {
+        failures.push(getErrorMessage(error));
+      }
+
+      await this.refreshPendingCount();
+      this.emit();
+    }
+
+    if (failures.length > 0) {
+      throw new Error(failures[0]);
+    }
   }
 
   private async refreshPendingCount() {
     try {
-      this.pendingCount = (await getPendingCaptures()).length;
+      this.pendingCount = (
+        await getPendingCaptures()
+      ).length;
     } catch {
       this.pendingCount = 0;
     }
