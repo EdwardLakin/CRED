@@ -14,12 +14,16 @@ import {
   getPendingCaptures,
   queueCapture,
   removeCapture,
-  saveQueuedCapture,
+  updateQueuedCapture,
 } from "@/features/offline/queue";
 import {
   getCaptureSessionSnapshot,
   type OfflineCaptureSessionData,
 } from "@/features/offline/session-cache";
+import {
+  estimateStorage,
+  requestPersistentStorage,
+} from "@/features/offline/storage";
 import type {
   CachedSessionRecord,
   OfflineCaptureRecord,
@@ -87,6 +91,8 @@ export function OfflineCaptureWorkspace() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [storageWarning, setStorageWarning] =
+    useState<string | null>(null);
 
   const sessionData = useMemo(() => {
     if (!session || !isCaptureSessionData(session.data)) {
@@ -133,6 +139,26 @@ export function OfflineCaptureWorkspace() {
         return;
       }
 
+      await requestPersistentStorage();
+
+      const storageEstimate = await estimateStorage();
+
+      if (
+        storageEstimate.available !== null &&
+        storageEstimate.available < 100 * 1024 * 1024
+      ) {
+        setStorageWarning(
+          "Device storage is running low. Sync existing captures before adding a large batch.",
+        );
+      } else if (
+        storageEstimate.percentUsed !== null &&
+        storageEstimate.percentUsed >= 85
+      ) {
+        setStorageWarning(
+          "CRED is using most of the storage currently available to this browser.",
+        );
+      }
+
       const records = await getPendingCaptures(identity.userId);
       const scopedRecords = records
         .filter(
@@ -140,9 +166,18 @@ export function OfflineCaptureWorkspace() {
             record.sessionId === sessionId &&
             record.organizationId === identity.organizationId,
         )
-        .sort((left, right) =>
-          left.createdAt.localeCompare(right.createdAt),
-        );
+        .sort((left, right) => {
+          const leftOrder =
+            left.metadata.reportOrder ?? Number.MAX_SAFE_INTEGER;
+          const rightOrder =
+            right.metadata.reportOrder ?? Number.MAX_SAFE_INTEGER;
+
+          if (leftOrder !== rightOrder) {
+            return leftOrder - rightOrder;
+          }
+
+          return left.createdAt.localeCompare(right.createdAt);
+        });
 
       const restoredItems = scopedRecords.map((record) => {
         const previewUrl = URL.createObjectURL(record.blob);
@@ -186,6 +221,22 @@ export function OfflineCaptureWorkspace() {
       return;
     }
 
+    const requiredBytes = files.reduce(
+      (total, file) => total + file.size,
+      0,
+    );
+    const storageEstimate = await estimateStorage();
+
+    if (
+      storageEstimate.available !== null &&
+      storageEstimate.available <= requiredBytes
+    ) {
+      setError(
+        "This device does not currently have enough browser storage for the selected files.",
+      );
+      return;
+    }
+
     const identity = getOfflineIdentity();
 
     if (
@@ -218,9 +269,10 @@ export function OfflineCaptureWorkspace() {
     );
 
     const addedItems: OfflineWorkspaceItem[] = [];
+    const startingOrder = items.length;
 
     try {
-      for (const file of files) {
+      for (const [fileIndex, file] of files.entries()) {
         const localId = createLocalId();
 
         const record = await queueCapture({
@@ -240,7 +292,7 @@ export function OfflineCaptureWorkspace() {
             technicianNote: "",
             transcriptStatus: "not_started",
             noteSource: "manual",
-            reportOrder: null,
+            reportOrder: startingOrder + fileIndex,
             includeInReport: true,
             filename: file.name,
             mimeType: file.type,
@@ -294,23 +346,22 @@ export function OfflineCaptureWorkspace() {
     localId: string,
     technicianNote: string,
   ) {
-    const item = items.find(
-      (candidate) => candidate.record.localId === localId,
+    const updatedRecord = await updateQueuedCapture(
+      localId,
+      (record) => ({
+        ...record,
+        metadata: {
+          ...record.metadata,
+          technicianNote,
+          noteSource: "edited",
+          noteSaveStatus: "unsaved",
+        },
+      }),
     );
 
-    if (!item) {
+    if (!updatedRecord) {
       return;
     }
-
-    const updatedRecord = await saveQueuedCapture({
-      ...item.record,
-      metadata: {
-        ...item.record.metadata,
-        technicianNote,
-        noteSource: "edited",
-        noteSaveStatus: "unsaved",
-      },
-    });
 
     setItems((current) =>
       current.map((candidate) =>
@@ -320,6 +371,56 @@ export function OfflineCaptureWorkspace() {
               record: updatedRecord,
             }
           : candidate,
+      ),
+    );
+  }
+
+  async function moveItem(
+    localId: string,
+    direction: -1 | 1,
+  ) {
+    const currentIndex = items.findIndex(
+      (candidate) => candidate.record.localId === localId,
+    );
+    const nextIndex = currentIndex + direction;
+
+    if (
+      currentIndex < 0 ||
+      nextIndex < 0 ||
+      nextIndex >= items.length
+    ) {
+      return;
+    }
+
+    const reordered = [...items];
+    const [moved] = reordered.splice(currentIndex, 1);
+    reordered.splice(nextIndex, 0, moved);
+
+    const normalized = reordered.map((item, index) => ({
+      ...item,
+      record: {
+        ...item.record,
+        metadata: {
+          ...item.record.metadata,
+          reportOrder: index,
+        },
+      },
+    }));
+
+    setItems(normalized);
+
+    await Promise.all(
+      normalized.map((item, index) =>
+        updateQueuedCapture(
+          item.record.localId,
+          (record) => ({
+            ...record,
+            metadata: {
+              ...record.metadata,
+              reportOrder: index,
+            },
+          }),
+        ),
       ),
     );
   }
@@ -391,6 +492,9 @@ export function OfflineCaptureWorkspace() {
       </div>
 
       {message ? <p className="success">{message}</p> : null}
+      {storageWarning ? (
+        <p className="warning">{storageWarning}</p>
+      ) : null}
       {error ? <p className="error">{error}</p> : null}
 
       <section className="card detail-card form-stack">
@@ -525,13 +629,39 @@ export function OfflineCaptureWorkspace() {
                 />
               </label>
 
-              <button
-                className="button button-secondary"
-                type="button"
-                onClick={() => void discardItem(record.localId)}
-              >
-                Discard local capture
-              </button>
+              <div className="button-row">
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  disabled={index === 0}
+                  onClick={() =>
+                    void moveItem(record.localId, -1)
+                  }
+                >
+                  Move up
+                </button>
+
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  disabled={index === items.length - 1}
+                  onClick={() =>
+                    void moveItem(record.localId, 1)
+                  }
+                >
+                  Move down
+                </button>
+
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  onClick={() =>
+                    void discardItem(record.localId)
+                  }
+                >
+                  Discard local capture
+                </button>
+              </div>
             </article>
           ))}
         </section>

@@ -115,3 +115,34 @@ export async function saveQueuedCapture(record: OfflineCaptureRecord) {
   await db.put("queuedCaptures", updated);
   return updated;
 }
+
+export async function updateQueuedCapture(
+  localId: string,
+  updater: (
+    record: OfflineCaptureRecord,
+  ) => OfflineCaptureRecord,
+) {
+  const db = await getOfflineDb();
+  const transaction = db.transaction(
+    "queuedCaptures",
+    "readwrite",
+  );
+  const store = transaction.objectStore("queuedCaptures");
+  const current = await store.get(localId);
+
+  if (!current) {
+    await transaction.done;
+    return null;
+  }
+
+  const updated: OfflineCaptureRecord = {
+    ...updater(current),
+    localId: current.localId,
+    updatedAt: now(),
+  };
+
+  await store.put(updated);
+  await transaction.done;
+
+  return updated;
+}
