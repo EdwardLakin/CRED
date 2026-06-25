@@ -74,6 +74,7 @@ export default async function GuidedCapturePage({
         <AddCaptureForm
           sessionId={session.id}
           organizationId={session.organization_id}
+          userId={profile.user_id}
           sessionType={session.session_type}
           returnPath={`/dashboard/sessions/${session.id}/capture#main-capture-card`}
           captureButtonLabel="Camera"

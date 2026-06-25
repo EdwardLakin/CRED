@@ -123,6 +123,7 @@ function StepCard({
   captures,
   sessionId,
   organizationId,
+  userId,
   maxCaptureFileSizeBytes,
   maxVideoFileSizeBytes,
 }: {
@@ -131,6 +132,7 @@ function StepCard({
   captures: CaptureItem[]
   sessionId: string
   organizationId: string
+  userId: string
   maxCaptureFileSizeBytes: number
   maxVideoFileSizeBytes: number
 }) {
@@ -289,6 +291,7 @@ function StepCard({
         <AddCaptureForm
           sessionId={sessionId}
           organizationId={organizationId}
+          userId={userId}
           workflow="diagnostic_procedure"
           guidedStep={stepId}
           guidedLabel={title}
@@ -460,6 +463,7 @@ export default async function DiagnosticProcedurePage({
               captures={captures ?? []}
               sessionId={session.id}
               organizationId={session.organization_id}
+              userId={profile.user_id}
               maxCaptureFileSizeBytes={planLimits.maxCaptureFileSizeBytes}
               maxVideoFileSizeBytes={planLimits.maxVideoFileSizeBytes}
             />

@@ -330,6 +330,7 @@ function getFriendlyUploadError(message: string) {
 export function AddCaptureForm({
   sessionId,
   organizationId,
+  userId,
   guidedStep,
   guidedLabel,
   workflow,
@@ -343,6 +344,7 @@ export function AddCaptureForm({
 }: {
   sessionId: string;
   organizationId: string;
+  userId: string;
   sessionType?: string | null;
   guidedStep?: string;
   guidedLabel?: string;
@@ -439,7 +441,10 @@ export function AddCaptureForm({
       organizationId: record.organizationId,
       workspaceId: existing?.workspaceId ?? null,
       sessionId: record.sessionId,
-      userId: existing?.userId ?? "current-user",
+      userId:
+        existing?.userId && existing.userId !== "current-user"
+          ? existing.userId
+          : userId,
       blob: record.file,
       metadata: {
         captureIntent,
@@ -490,14 +495,26 @@ export function AddCaptureForm({
     targetSessionId: string,
   ): Promise<PersistedSelectedEvidenceFile[]> {
     const records = await getPendingCaptures();
+    const scopedRecords = records.filter(
+      (record) =>
+        record.sessionId === targetSessionId &&
+        record.organizationId === organizationId &&
+        (record.userId === userId ||
+          record.userId === "current-user"),
+    );
 
-    return records
-      .filter(
-        (record) =>
-          record.sessionId === targetSessionId &&
-          record.organizationId === organizationId,
-      )
-      .map((record) => {
+    await Promise.all(
+      scopedRecords
+        .filter((record) => record.userId === "current-user")
+        .map((record) =>
+          saveQueuedCapture({
+            ...record,
+            userId,
+          }),
+        ),
+    );
+
+    return scopedRecords.map((record) => {
         const metadata = record.metadata;
         const file =
           record.blob instanceof File
