@@ -13,8 +13,13 @@ import {
 import {
   getPendingCaptures,
   removeCapture,
+  retargetQueuedCaptures,
   saveQueuedCapture,
 } from "@/features/offline/queue";
+import {
+  getPendingOfflineSessions,
+  updateOfflineSessionStatus,
+} from "@/features/offline/offline-sessions";
 import type {
   OfflineCaptureRecord,
   QueueStatus,
@@ -129,6 +134,62 @@ async function updateRecord(
       ...(patch.uploadState ?? {}),
     },
   });
+}
+
+async function syncOfflineSessions(userId: string) {
+  const pendingSessions = await getPendingOfflineSessions(userId);
+
+  for (const session of pendingSessions) {
+    if (!getCurrentStatus().online) {
+      break;
+    }
+
+    await updateOfflineSessionStatus(session.localSessionId, "creating", {
+      lastError: null,
+    });
+
+    const response = await fetch("/api/dashboard/sessions/offline", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        clientSessionId: session.localSessionId,
+        title: session.title,
+        sessionType: session.sessionType,
+        createdAt: session.createdAt,
+      }),
+    });
+
+    const result = (await response.json()) as {
+      ok?: boolean;
+      sessionId?: string;
+      error?: string;
+    };
+
+    if (!response.ok || !result.ok || !result.sessionId) {
+      const message =
+        result.error ?? "Unable to create offline session on the server.";
+
+      await updateOfflineSessionStatus(session.localSessionId, "failed", {
+        retryCount: session.retryCount + 1,
+        lastError: message,
+      });
+
+      throw new Error(message);
+    }
+
+    await retargetQueuedCaptures(
+      session.localSessionId,
+      result.sessionId,
+      userId,
+    );
+
+    await updateOfflineSessionStatus(session.localSessionId, "ready", {
+      serverSessionId: result.sessionId,
+      lastError: null,
+    });
+  }
 }
 
 async function syncCapture(record: OfflineCaptureRecord) {
@@ -440,6 +501,8 @@ export class OfflineSyncEngine {
         "Your sign-in expired. Sign in again to sync queued captures.",
       );
     }
+
+    await syncOfflineSessions(userId);
 
     const pending = await getPendingCaptures(userId);
     const retryable = pending
