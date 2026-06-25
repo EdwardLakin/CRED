@@ -27,6 +27,12 @@ function NavigationLink({ item }: { item: DashboardNavigationDestination }) {
 }
 
 export function DashboardNavigation({ destinations }: { destinations: DashboardNavigationDestination[] }) {
+  const pathname = usePathname()
+
+  if (/^\/dashboard\/sessions\/[^/]+(?:\/|$)/.test(pathname)) {
+    return null
+  }
+
   const technicianItems = getDestinationsBySurface(destinations, 'technician')
   const accountItems = destinations.filter((item) => item.surface === 'account' || item.surface === 'admin')
 

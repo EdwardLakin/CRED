@@ -5592,3 +5592,16 @@ a:focus-visible {
     width: 100%;
   }
 }
+
+.session-workspace-back-row {
+  margin: 0 auto;
+  max-width: 1200px;
+  padding: 1rem 1rem 0;
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  .session-workspace-back-row {
+    padding-inline: 1.5rem;
+  }
+}

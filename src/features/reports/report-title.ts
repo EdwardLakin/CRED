@@ -24,11 +24,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function isPlaceholderReportTitle(value: string | null | undefined) {
   const title = stripConfidenceText(value ?? '').trim()
+
   return (
     !title ||
     /^(new session|session|untitled session)\b/i.test(title) ||
     /\d{4}-\d{2}-\d{2}t\d{2}:\d{2}|\butc\b/i.test(title) ||
-    /^new session\b.*\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b.*\b\d{1,2}:\d{2}\b/i.test(title)
+    /^new session\b.*\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b.*\b\d{1,2}:\d{2}\b/i.test(title) ||
+    /^(?:licen[cs]e plate|vin plate|information plate|info plate|data plate|evidence photo|supporting evidence|supporting image|photo|image|document)$/i.test(
+      title,
+    )
   )
 }
 
@@ -46,7 +50,25 @@ export function getReportInfoValue(draft: ReportTitleDraft, session: Pick<Report
   const metadata = normalizeSessionMetadata(session.session_metadata, session)
   if (normalizedKey in metadata && metadata[normalizedKey as keyof typeof metadata]) return metadata[normalizedKey as keyof typeof metadata]
   if (isRecord(draft?.header_fields) && typeof draft.header_fields[key] === 'string') return draft.header_fields[key] as string
-  if (isRecord(session.suggested_details) && isRecord(session.suggested_details.report_information) && typeof session.suggested_details.report_information[key] === 'string') return session.suggested_details.report_information[key] as string
+  if (
+    isRecord(session.suggested_details) &&
+    isRecord(session.suggested_details.report_information) &&
+    typeof session.suggested_details.report_information[key] === 'string'
+  ) {
+    return session.suggested_details.report_information[key] as string
+  }
+
+  if (isRecord(session.suggested_details)) {
+    const suggestedValue = session.suggested_details[key]
+
+    if (
+      isRecord(suggestedValue) &&
+      typeof suggestedValue.value === 'string'
+    ) {
+      return suggestedValue.value
+    }
+  }
+
   return ''
 }
 
@@ -65,6 +87,7 @@ export function getDisplayReportTitle(draft: ReportTitleDraft, session: ReportTi
     || session.asset_label
     || getReportInfoValue(draft, session, 'reference_number')
     || session.unit_number
+    || getReportInfoValue(draft, session, 'vin')
     || session.vin
     || ''
   const subjectTitle = buildSubjectReportTitle(subject)
