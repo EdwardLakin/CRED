@@ -82,3 +82,23 @@ export type OfflineSettings = {
   value: unknown;
   updatedAt: string;
 };
+
+export type OfflineSessionStatus =
+  | "local"
+  | "creating"
+  | "ready"
+  | "failed";
+
+export type OfflineSessionRecord = {
+  localSessionId: string;
+  organizationId: string;
+  userId: string;
+  title: string;
+  sessionType: string;
+  status: OfflineSessionStatus;
+  serverSessionId: string | null;
+  retryCount: number;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+};

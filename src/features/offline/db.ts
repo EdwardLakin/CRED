@@ -3,12 +3,13 @@ import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type {
   CachedSessionRecord,
   OfflineCaptureRecord,
+  OfflineSessionRecord,
   OfflineSettings,
   SyncStateRecord,
 } from "@/features/offline/types";
 
 export const OFFLINE_DB_NAME = "cred-offline";
-export const OFFLINE_DB_VERSION = 1;
+export const OFFLINE_DB_VERSION = 2;
 
 export interface CredOfflineSchema extends DBSchema {
   queuedCaptures: {
@@ -28,6 +29,16 @@ export interface CredOfflineSchema extends DBSchema {
       "by-user": string;
       "by-organization": string;
       "by-cached-at": string;
+    };
+  };
+  offlineSessions: {
+    key: string;
+    value: OfflineSessionRecord;
+    indexes: {
+      "by-user": string;
+      "by-organization": string;
+      "by-status": string;
+      "by-created-at": string;
     };
   };
   syncState: {
@@ -68,6 +79,23 @@ export function getOfflineDb() {
         store.createIndex("by-user", "userId");
         store.createIndex("by-organization", "organizationId");
         store.createIndex("by-cached-at", "cachedAt");
+      }
+
+      if (!db.objectStoreNames.contains("offlineSessions")) {
+        const store = db.createObjectStore(
+          "offlineSessions",
+          { keyPath: "localSessionId" },
+        );
+        store.createIndex("by-user", "userId");
+        store.createIndex(
+          "by-organization",
+          "organizationId",
+        );
+        store.createIndex("by-status", "status");
+        store.createIndex(
+          "by-created-at",
+          "createdAt",
+        );
       }
 
       if (!db.objectStoreNames.contains("syncState")) {

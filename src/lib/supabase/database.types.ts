@@ -350,6 +350,7 @@ export interface Database {
           id: string
           organization_id: string
           created_by: string
+          offline_client_id: string | null
           title: string
           session_type: string
           session_metadata: Json
@@ -380,6 +381,7 @@ export interface Database {
           id?: string
           organization_id: string
           created_by: string
+          offline_client_id?: string | null
           title: string
           session_type: string
           session_metadata?: Json
@@ -410,6 +412,7 @@ export interface Database {
           id?: string
           organization_id?: string
           created_by?: string
+          offline_client_id?: string | null
           title?: string
           session_type?: string
           session_metadata?: Json
