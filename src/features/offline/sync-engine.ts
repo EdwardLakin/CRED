@@ -187,22 +187,12 @@ async function syncCapture(record: OfflineCaptureRecord) {
             },
           );
 
-    const { error: uploadError } = await supabase.storage
-      .from(CAPTURE_BUCKET)
-      .upload(storagePath, file, {
-        cacheControl: "3600",
-        contentType: current.metadata.mimeType,
-        upsert: false,
-      });
-
-    if (
-      uploadError &&
-      !storageObjectAlreadyExists(uploadError.message)
-    ) {
-      const message = getErrorMessage(uploadError);
+    if (file.size <= 0 || current.blob.size <= 0) {
+      const message =
+        "The locally saved capture is empty and cannot be uploaded.";
 
       await updateRecord(current, {
-        status: "failed",
+        status: "blocked",
         retryCount: current.retryCount + 1,
         lastError: message,
         metadata: {
@@ -213,6 +203,58 @@ async function syncCapture(record: OfflineCaptureRecord) {
       });
 
       throw new Error(message);
+    }
+
+    const { error: uploadError } = await supabase.storage
+      .from(CAPTURE_BUCKET)
+      .upload(storagePath, file, {
+        cacheControl: "3600",
+        contentType: current.metadata.mimeType,
+        upsert: false,
+      });
+
+    if (uploadError) {
+      if (storageObjectAlreadyExists(uploadError.message)) {
+        const { error: overwriteError } = await supabase.storage
+          .from(CAPTURE_BUCKET)
+          .upload(storagePath, file, {
+            cacheControl: "3600",
+            contentType: current.metadata.mimeType,
+            upsert: true,
+          });
+
+        if (overwriteError) {
+          const message = getErrorMessage(overwriteError);
+
+          await updateRecord(current, {
+            status: "failed",
+            retryCount: current.retryCount + 1,
+            lastError: message,
+            metadata: {
+              ...current.metadata,
+              uploadStatus: "failed",
+              uiError: message,
+            },
+          });
+
+          throw new Error(message);
+        }
+      } else {
+        const message = getErrorMessage(uploadError);
+
+        await updateRecord(current, {
+          status: "failed",
+          retryCount: current.retryCount + 1,
+          lastError: message,
+          metadata: {
+            ...current.metadata,
+            uploadStatus: "failed",
+            uiError: message,
+          },
+        });
+
+        throw new Error(message);
+      }
     }
 
     current = await updateRecord(current, {
