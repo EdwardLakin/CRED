@@ -45,3 +45,35 @@ export async function hasEnoughStorage(requiredBytes: number) {
 
   return estimate.available > requiredBytes;
 }
+
+export async function requestPersistentStorage() {
+  if (
+    typeof navigator === "undefined" ||
+    !("storage" in navigator) ||
+    typeof navigator.storage?.persist !== "function"
+  ) {
+    return {
+      supported: false,
+      persisted: false,
+    };
+  }
+
+  const alreadyPersisted =
+    typeof navigator.storage.persisted === "function"
+      ? await navigator.storage.persisted()
+      : false;
+
+  if (alreadyPersisted) {
+    return {
+      supported: true,
+      persisted: true,
+    };
+  }
+
+  const persisted = await navigator.storage.persist();
+
+  return {
+    supported: true,
+    persisted,
+  };
+}

@@ -1,5 +1,9 @@
-const CACHE_VERSION = "cred-offline-v1";
-const APP_SHELL = ["/offline", "/manifest.webmanifest"];
+const CACHE_VERSION = "cred-offline-v2";
+const APP_SHELL = [
+  "/offline",
+  "/offline/capture",
+  "/manifest.webmanifest",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -15,14 +19,21 @@ self.addEventListener("activate", (event) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((key) => key !== CACHE_VERSION).map((key) => caches.delete(key))),
+        Promise.all(
+          keys
+            .filter((key) => key !== CACHE_VERSION)
+            .map((key) => caches.delete(key)),
+        ),
       )
       .then(() => self.clients.claim()),
   );
 });
 
 function isApiRequest(url) {
-  return url.pathname.startsWith("/api/") || url.hostname.includes("supabase.co");
+  return (
+    url.pathname.startsWith("/api/") ||
+    url.hostname.includes("supabase.co")
+  );
 }
 
 function isStaticAsset(request, url) {
@@ -34,6 +45,14 @@ function isStaticAsset(request, url) {
     url.pathname.startsWith("/_next/static/") ||
     url.pathname.startsWith("/icons/")
   );
+}
+
+function getCaptureSessionId(pathname) {
+  const match = pathname.match(
+    /^\/dashboard\/sessions\/([^/]+)\/capture\/?$/,
+  );
+
+  return match?.[1] ?? null;
 }
 
 self.addEventListener("fetch", (event) => {
@@ -58,7 +77,11 @@ self.addEventListener("fetch", (event) => {
 
         return fetch(request).then((response) => {
           const copy = response.clone();
-          caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));
+
+          caches
+            .open(CACHE_VERSION)
+            .then((cache) => cache.put(request, copy));
+
           return response;
         });
       }),
@@ -71,10 +94,37 @@ self.addEventListener("fetch", (event) => {
       fetch(request)
         .then((response) => {
           const copy = response.clone();
-          caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));
+
+          caches
+            .open(CACHE_VERSION)
+            .then((cache) => cache.put(request, copy));
+
           return response;
         })
-        .catch(() => caches.match("/offline")),
+        .catch(async () => {
+          const captureSessionId = getCaptureSessionId(url.pathname);
+
+          if (captureSessionId) {
+            return Response.redirect(
+              `${url.origin}/offline/capture?sessionId=${encodeURIComponent(
+                captureSessionId,
+              )}`,
+              302,
+            );
+          }
+
+          if (url.pathname === "/offline/capture") {
+            const offlineCapture = await caches.match(
+              "/offline/capture",
+            );
+
+            if (offlineCapture) {
+              return offlineCapture;
+            }
+          }
+
+          return caches.match("/offline");
+        }),
     );
   }
 });
