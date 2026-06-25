@@ -268,13 +268,14 @@ function formatFileSize(bytes: number) {
 }
 
 function getUploadStatusLabel(status: UploadStatus, error?: string) {
+  if (status === "queued") return "Saved on device";
   if (status === "uploading") return "Uploading";
   if (status === "finishing") return "Finishing save";
   if (status === "metadata_recovery") return "Save incomplete — retry";
   if (status === "needs_queue_retry") return "Needs attention";
-  if (status === "saved") return "Saved";
+  if (status === "saved") return "Synced";
   if (status === "failed") return error ?? "Upload failed. Please retry.";
-  return "Preparing";
+  return "Saved on device";
 }
 
 function getNoteSaveStatusLabel(
@@ -284,7 +285,7 @@ function getNoteSaveStatusLabel(
   if (status === "saving") return "Saving…";
   if (status === "saved") return "Saved";
   if (status === "failed") return "Save failed";
-  return "Unsaved until media upload completes";
+  return "Saved on device";
 }
 
 function getFriendlyUploadError(message: string) {
@@ -736,6 +737,8 @@ export function AddCaptureForm({
         file.id === fileId ? { ...file, noteSaveStatus } : file,
       );
       selectedFilesRef.current = nextFiles;
+      const updatedFile = nextFiles.find((file) => file.id === fileId);
+      if (updatedFile) persistSelectedFile(updatedFile);
       return nextFiles;
     });
   }
@@ -784,10 +787,36 @@ export function AddCaptureForm({
     }
 
     const evidenceFiles = buildSelectedEvidenceFiles(files);
+
+    setSaveMessage(
+      `Saving ${evidenceFiles.length} capture${evidenceFiles.length === 1 ? "" : "s"} on this device…`,
+    );
+
+    try {
+      await Promise.all(
+        evidenceFiles.map((file) =>
+          writeUploadQueueRecord({
+            ...file,
+            sessionId,
+            organizationId,
+          }),
+        ),
+      );
+    } catch (error) {
+      console.warn("Unable to save capture locally", error);
+      setClientError(
+        "CRED could not save this capture on your device. Do not leave this page yet.",
+      );
+      return;
+    }
+
     const nextFiles = [...selectedFilesRef.current, ...evidenceFiles];
     selectedFilesRef.current = nextFiles;
     setSelectedFiles(nextFiles);
     setClientError(null);
+    setSaveMessage(
+      `${evidenceFiles.length} capture${evidenceFiles.length === 1 ? "" : "s"} saved on this device. CRED will sync when it can.`,
+    );
 
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -812,6 +841,8 @@ export function AddCaptureForm({
           : file,
       );
       selectedFilesRef.current = nextFiles;
+      const updatedFile = nextFiles.find((file) => file.id === fileId);
+      if (updatedFile) persistSelectedFile(updatedFile);
       return nextFiles;
     });
 
