@@ -35,6 +35,16 @@ import { createClient } from "@/lib/supabase/client";
 const MAX_BATCH_FILES = 50;
 const MEDIA_NOTE_AUTOSAVE_DELAY_MS = 800;
 
+function storageObjectAlreadyExists(message: string) {
+  const normalized = message.toLowerCase();
+
+  return (
+    normalized.includes("already exists") ||
+    normalized.includes("duplicate") ||
+    normalized.includes("resource already exists")
+  );
+}
+
 type UploadStatus =
   | "queued"
   | "uploading"
@@ -1141,11 +1151,15 @@ export function AddCaptureForm({
               upsert: false,
             });
 
-          if (uploadError) {
+          if (
+            uploadError &&
+            !storageObjectAlreadyExists(uploadError.message)
+          ) {
             throw new Error(uploadError.message);
           }
 
           storageUploaded = true;
+
           updateSelectedFileStatus(
             selectedFile.id,
             "finishing",
