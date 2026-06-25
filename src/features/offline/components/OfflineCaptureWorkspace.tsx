@@ -17,6 +17,7 @@ import {
   updateQueuedCapture,
 } from "@/features/offline/queue";
 import {
+  getCachedCaptureSessions,
   getCaptureSessionSnapshot,
   type OfflineCaptureSessionData,
 } from "@/features/offline/session-cache";
@@ -79,6 +80,39 @@ function getStatusLabel(record: OfflineCaptureRecord) {
   return "Saved on device";
 }
 
+function withTimeout<T>(
+  promise: Promise<T>,
+  fallback: T,
+  timeoutMs = 2500,
+): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => {
+      window.setTimeout(() => resolve(fallback), timeoutMs);
+    }),
+  ]);
+}
+
+async function safeRequestPersistentStorage() {
+  return withTimeout(
+    requestPersistentStorage(),
+    { supported: false, persisted: false },
+  );
+}
+
+async function safeEstimateStorage() {
+  return withTimeout(
+    estimateStorage(),
+    {
+      supported: false,
+      quota: null,
+      usage: null,
+      available: null,
+      percentUsed: null,
+    },
+  );
+}
+
 export function OfflineCaptureWorkspace() {
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("sessionId");
@@ -107,12 +141,6 @@ export function OfflineCaptureWorkspace() {
     const createdUrls: string[] = [];
 
     async function loadWorkspace() {
-      if (!sessionId) {
-        setError("No offline capture session was selected.");
-        setLoading(false);
-        return;
-      }
-
       const identity = getOfflineIdentity();
 
       if (!identity) {
@@ -123,8 +151,21 @@ export function OfflineCaptureWorkspace() {
         return;
       }
 
+      let targetSessionId = sessionId;
+
+      if (!targetSessionId) {
+        const cachedSessions = await getCachedCaptureSessions(identity.userId);
+        targetSessionId = cachedSessions[0]?.sessionId ?? null;
+      }
+
+      if (!targetSessionId) {
+        setError("No offline capture session is saved on this device yet.");
+        setLoading(false);
+        return;
+      }
+
       const cachedSession = await getCaptureSessionSnapshot(
-        sessionId,
+        targetSessionId,
         identity.userId,
       );
 
@@ -139,9 +180,9 @@ export function OfflineCaptureWorkspace() {
         return;
       }
 
-      await requestPersistentStorage();
+      await safeRequestPersistentStorage();
 
-      const storageEstimate = await estimateStorage();
+      const storageEstimate = await safeEstimateStorage();
 
       if (
         storageEstimate.available !== null &&
@@ -163,7 +204,7 @@ export function OfflineCaptureWorkspace() {
       const scopedRecords = records
         .filter(
           (record) =>
-            record.sessionId === sessionId &&
+            record.sessionId === cachedSession.sessionId &&
             record.organizationId === identity.organizationId,
         )
         .sort((left, right) => {
@@ -225,7 +266,7 @@ export function OfflineCaptureWorkspace() {
       (total, file) => total + file.size,
       0,
     );
-    const storageEstimate = await estimateStorage();
+    const storageEstimate = await safeEstimateStorage();
 
     if (
       storageEstimate.available !== null &&
