@@ -1,8 +1,10 @@
 import type { Metadata, Viewport } from 'next'
 import type { ReactNode } from 'react'
 
+import { OfflineBanner } from '@/components/offline/OfflineBanner'
 import { InstallPrompt } from '@/components/pwa'
 import { ThemeProvider, type ThemeMode } from '@/components/theme'
+import { OfflineProvider } from '@/features/offline/OfflineProvider'
 import { createClient } from '@/lib/supabase/server'
 
 import './globals.css'
@@ -10,7 +12,7 @@ import './globals.css'
 export const metadata: Metadata = {
   title: 'CRED by ProFixIQ',
   description: 'Capture, Review, Extract, Document',
-  manifest: '/manifest.json',
+  manifest: '/manifest.webmanifest',
   applicationName: 'CRED',
   appleWebApp: {
     capable: true,
@@ -67,8 +69,11 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     <html lang="en" data-theme={initialResolvedTheme} style={{ colorScheme: initialResolvedTheme }} suppressHydrationWarning>
       <body>
         <ThemeProvider initialMode={initialThemeMode}>
-          {children}
-          <InstallPrompt />
+          <OfflineProvider>
+            <OfflineBanner />
+            {children}
+            <InstallPrompt />
+          </OfflineProvider>
         </ThemeProvider>
       </body>
     </html>
