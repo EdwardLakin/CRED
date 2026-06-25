@@ -81,6 +81,12 @@ type SelectedEvidenceFile = {
   noteSaveStatus?: "idle" | "unsaved" | "saving" | "saved" | "failed";
 };
 
+type OfflineCaptureSyncedDetail = {
+  localId: string;
+  sessionId: string;
+  captureItemId: string;
+};
+
 type SpeechRecognitionResultLike = {
   0?: { transcript?: string };
 };
@@ -555,6 +561,68 @@ export function AddCaptureForm({
       );
     };
   }, []);
+
+  useEffect(() => {
+    function handleOfflineCaptureSynced(event: Event) {
+      const detail = (
+        event as CustomEvent<OfflineCaptureSyncedDetail>
+      ).detail;
+
+      if (!detail || detail.sessionId !== sessionId) {
+        return;
+      }
+
+      let matchedCapture = false;
+
+      setSelectedFiles((currentFiles) => {
+        const nextFiles = currentFiles.map((file) => {
+          if (file.id !== detail.localId) {
+            return file;
+          }
+
+          matchedCapture = true;
+
+          return {
+            ...file,
+            status: "saved" as UploadStatus,
+            error: undefined,
+            captureItemId: detail.captureItemId,
+            storageUploaded: true,
+            noteSaveStatus:
+              file.noteSaveStatus === "failed"
+                ? "unsaved"
+                : file.noteSaveStatus,
+          };
+        });
+
+        selectedFilesRef.current = nextFiles;
+        return nextFiles;
+      });
+
+      uploadStartedFileIdsRef.current.add(detail.localId);
+
+      if (matchedCapture) {
+        setActionError(null);
+        setSaveMessage(
+          "Queued capture synced successfully. Ready for review.",
+        );
+      }
+
+      router.refresh();
+    }
+
+    window.addEventListener(
+      "cred:offline-capture-synced",
+      handleOfflineCaptureSynced,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "cred:offline-capture-synced",
+        handleOfflineCaptureSynced,
+      );
+    };
+  }, [router, sessionId]);
 
   function persistSelectedFile(file: SelectedEvidenceFile) {
     if (!isLocalUploadPending(file.status)) {
