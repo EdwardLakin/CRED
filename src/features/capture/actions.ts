@@ -836,6 +836,53 @@ export async function createCaptureRecordFromUploadedFile(
     })
   }
 
+  const { data: storedFile, error: storedFileError } =
+    await supabase.storage
+      .from('documentation-captures')
+      .download(storagePath)
+
+  if (storedFileError || !storedFile) {
+    return captureError(
+      'The uploaded file could not be verified in storage. Retry the upload.',
+      sessionId,
+      {
+        stage: 'storage',
+        code: 'storage_verification_failed',
+        recoverable: true,
+        storagePath,
+        storageUploaded: false,
+      },
+    )
+  }
+
+  if (storedFile.size <= 0) {
+    return captureError(
+      'The uploaded file is empty in storage. Retry the upload.',
+      sessionId,
+      {
+        stage: 'storage',
+        code: 'storage_verification_failed',
+        recoverable: true,
+        storagePath,
+        storageUploaded: false,
+      },
+    )
+  }
+
+  if (storedFile.size !== size) {
+    return captureError(
+      `The uploaded file size did not match the local capture. Expected ${size} bytes but found ${storedFile.size} bytes.`,
+      sessionId,
+      {
+        stage: 'storage',
+        code: 'storage_verification_failed',
+        recoverable: true,
+        storagePath,
+        storageUploaded: false,
+      },
+    )
+  }
+
   let observationGroupId: string | null = null
   let groupOrder: number | null = null
   if (requestedObservationGroupId && !safeObservationGroupId) {

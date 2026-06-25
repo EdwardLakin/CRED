@@ -1193,11 +1193,22 @@ export function AddCaptureForm({
               upsert: false,
             });
 
-          if (
-            uploadError &&
-            !storageObjectAlreadyExists(uploadError.message)
-          ) {
-            throw new Error(uploadError.message);
+          if (uploadError) {
+            if (storageObjectAlreadyExists(uploadError.message)) {
+              const { error: overwriteError } = await supabase.storage
+                .from("documentation-captures")
+                .upload(storagePath, file, {
+                  cacheControl: "3600",
+                  contentType: file.type,
+                  upsert: true,
+                });
+
+              if (overwriteError) {
+                throw new Error(overwriteError.message);
+              }
+            } else {
+              throw new Error(uploadError.message);
+            }
           }
 
           storageUploaded = true;
