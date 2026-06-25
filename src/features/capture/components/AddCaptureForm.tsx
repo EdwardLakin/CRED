@@ -694,6 +694,20 @@ export function AddCaptureForm({
     }
   }
 
+  function clearVisibleFileSelectionPreservingQueue() {
+    selectedFilesRef.current.forEach((file) => {
+      URL.revokeObjectURL(file.previewUrl);
+    });
+
+    selectedFilesRef.current = [];
+    uploadStartedFileIdsRef.current = new Set();
+    setSelectedFiles([]);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+
   function getSelectedEvidenceFileId(file: File, index: number) {
     return `${file.name}-${file.size}-${file.lastModified}-${index}`;
   }
@@ -972,33 +986,51 @@ export function AddCaptureForm({
   }
 
   async function startNewObservation() {
-    const pendingLocalUploads = selectedFilesRef.current.filter((file) =>
+    const currentFiles = [...selectedFilesRef.current];
+    const pendingLocalUploads = currentFiles.filter((file) =>
       isLocalUploadPending(file.status),
     );
 
     if (pendingLocalUploads.length > 0) {
-      setClientError(
-        `Still saving ${pendingLocalUploads.length} file${pendingLocalUploads.length === 1 ? "" : "s"}. Wait for the current observation to finish before starting another.`,
-      );
+      try {
+        await Promise.all(
+          pendingLocalUploads.map((file) =>
+            writeUploadQueueRecord({
+              ...file,
+              sessionId,
+              organizationId,
+            }),
+          ),
+        );
+      } catch (queueError) {
+        console.warn(
+          "Unable to preserve capture before starting another observation",
+          queueError,
+        );
+        setClientError(
+          "CRED could not save the current observation on this device. Try again before continuing.",
+        );
+        return;
+      }
 
-      void autoSaveSelectedMedia(
-        pendingLocalUploads.filter(
-          (file) => file.status !== "uploading",
-        ),
+      clearVisibleFileSelectionPreservingQueue();
+      setSaveMessage(
+        `${pendingLocalUploads.length} capture${pendingLocalUploads.length === 1 ? "" : "s"} saved on this device. CRED will sync them when it can.`,
       );
-      return;
+    } else {
+      const notesSaved = await flushMediaNoteSaves();
+
+      if (!notesSaved) {
+        setClientError(
+          "Could not save one media note. Retry before starting a new observation.",
+        );
+        return;
+      }
+
+      resetFileSelection();
+      setSaveMessage("Ready for a new observation.");
     }
 
-    const notesSaved = await flushMediaNoteSaves();
-
-    if (!notesSaved) {
-      setClientError(
-        "Could not save one media note. Retry before starting a new observation.",
-      );
-      return;
-    }
-
-    resetFileSelection();
     setActiveObservationGroupId(null);
     setNote("");
     setNoteSource("manual");
@@ -1006,7 +1038,6 @@ export function AddCaptureForm({
     setVoiceNoteStatus("idle");
     setClientError(null);
     setActionError(null);
-    setSaveMessage("Ready for a new observation.");
     setCaptureIntent("auto_evidence");
     setPreferCameraCapture(true);
 
