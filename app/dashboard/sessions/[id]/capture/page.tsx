@@ -57,7 +57,7 @@ export default async function GuidedCapturePage({
   const captureReturnPath =
     `/dashboard/sessions/${session.id}/capture#main-capture-card`;
   const captureDonePath =
-    `/dashboard/sessions/${session.id}/report?prepare=1`;
+    `/dashboard/sessions/${session.id}`;
 
   return (
     <main className="page-shell dashboard-shell focused-capture-shell">

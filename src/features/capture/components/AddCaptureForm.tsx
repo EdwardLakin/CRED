@@ -971,6 +971,48 @@ export function AddCaptureForm({
     window.setTimeout(() => fileInputRef.current?.click(), 0);
   }
 
+  async function startNewObservation() {
+    const pendingLocalUploads = selectedFilesRef.current.filter((file) =>
+      isLocalUploadPending(file.status),
+    );
+
+    if (pendingLocalUploads.length > 0) {
+      setClientError(
+        `Still saving ${pendingLocalUploads.length} file${pendingLocalUploads.length === 1 ? "" : "s"}. Wait for the current observation to finish before starting another.`,
+      );
+
+      void autoSaveSelectedMedia(
+        pendingLocalUploads.filter(
+          (file) => file.status !== "uploading",
+        ),
+      );
+      return;
+    }
+
+    const notesSaved = await flushMediaNoteSaves();
+
+    if (!notesSaved) {
+      setClientError(
+        "Could not save one media note. Retry before starting a new observation.",
+      );
+      return;
+    }
+
+    resetFileSelection();
+    setActiveObservationGroupId(null);
+    setNote("");
+    setNoteSource("manual");
+    setTranscriptStatus("not_started");
+    setVoiceNoteStatus("idle");
+    setClientError(null);
+    setActionError(null);
+    setSaveMessage("Ready for a new observation.");
+    setCaptureIntent("auto_evidence");
+    setPreferCameraCapture(true);
+
+    window.setTimeout(() => fileInputRef.current?.click(), 0);
+  }
+
   async function openGalleryPicker() {
     await flushMediaNoteSaves();
     setCaptureIntent("auto_evidence");
@@ -1825,14 +1867,6 @@ export function AddCaptureForm({
                   without leaving this workspace.
                 </p>
               </div>
-              <button
-                type="button"
-                className="button button-primary touch-target observation-add-image-button"
-                onClick={openCameraPicker}
-                disabled={isSaving}
-              >
-                + Add Image
-              </button>
             </div>
 
             {observationFiles.length > 0 ? (
@@ -1945,17 +1979,17 @@ export function AddCaptureForm({
                 onClick={openCameraPicker}
                 disabled={isSaving}
               >
-                Add Image
+                Add Supporting Image
               </button>
-              {stickyDoneHref ? (
-                <Link
-                  href={stickyDoneHref}
-                  className="button button-secondary touch-target"
-                  onClick={handleDoneNavigation}
-                >
-                  Done
-                </Link>
-              ) : null}
+
+              <button
+                type="button"
+                className="button button-secondary touch-target"
+                onClick={() => void startNewObservation()}
+                disabled={isSaving}
+              >
+                New Observation
+              </button>
             </div>
           </section>
         ) : null}
@@ -2002,10 +2036,10 @@ export function AddCaptureForm({
           <button
             type="button"
             className="button button-primary touch-target"
-            onClick={openCameraPicker}
+            onClick={() => void startNewObservation()}
             disabled={isSaving}
           >
-            Camera
+            New Observation
           </button>
           {isSaving ? (
             <button
