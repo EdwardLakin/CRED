@@ -89,6 +89,15 @@ function storageObjectAlreadyExists(message: string) {
   );
 }
 
+async function getAuthenticatedUserId() {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  return user?.id ?? null;
+}
+
 function canAutomaticallyRetry(record: OfflineCaptureRecord) {
   if (record.retryCount >= MAX_AUTOMATIC_RETRIES) {
     return false;
@@ -382,7 +391,15 @@ export class OfflineSyncEngine {
   }
 
   async processQueue() {
-    const pending = await getPendingCaptures();
+    const userId = await getAuthenticatedUserId();
+
+    if (!userId) {
+      throw new Error(
+        "Your sign-in expired. Sign in again to sync queued captures.",
+      );
+    }
+
+    const pending = await getPendingCaptures(userId);
     const retryable = pending
       .filter(canAutomaticallyRetry)
       .sort((left, right) =>
@@ -416,9 +433,11 @@ export class OfflineSyncEngine {
 
   private async refreshPendingCount() {
     try {
-      this.pendingCount = (
-        await getPendingCaptures()
-      ).length;
+      const userId = await getAuthenticatedUserId();
+
+      this.pendingCount = userId
+        ? (await getPendingCaptures(userId)).length
+        : 0;
     } catch {
       this.pendingCount = 0;
     }
