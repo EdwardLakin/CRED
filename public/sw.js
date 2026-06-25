@@ -1,105 +1,80 @@
-const CACHE_VERSION = 'cred-pwa-v2'
-const STATIC_CACHE = `${CACHE_VERSION}-static`
-const OFFLINE_URL = '/offline'
-const CORE_ASSETS = [
-  OFFLINE_URL,
-  '/manifest.json',
-  '/icons/cred-icon.svg',
-  '/icons/cred-maskable.svg',
-  '/splash/cred-splash.svg',
-]
+const CACHE_VERSION = "cred-offline-v1";
+const APP_SHELL = ["/offline", "/manifest.webmanifest"];
 
-self.addEventListener('install', (event) => {
+self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
-      .open(STATIC_CACHE)
-      .then((cache) => cache.addAll(CORE_ASSETS))
+      .open(CACHE_VERSION)
+      .then((cache) => cache.addAll(APP_SHELL))
       .then(() => self.skipWaiting()),
-  )
-})
+  );
+});
 
-self.addEventListener('activate', (event) => {
+self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key.startsWith('cred-pwa-') && key !== STATIC_CACHE).map((key) => caches.delete(key))))
+      .then((keys) =>
+        Promise.all(keys.filter((key) => key !== CACHE_VERSION).map((key) => caches.delete(key))),
+      )
       .then(() => self.clients.claim()),
-  )
-})
+  );
+});
 
 function isApiRequest(url) {
-  return url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/') || url.hostname.includes('supabase')
+  return url.pathname.startsWith("/api/") || url.hostname.includes("supabase.co");
 }
 
-function isStaticAsset(url) {
+function isStaticAsset(request, url) {
   return (
-    url.pathname.startsWith('/_next/static/') ||
-    url.pathname.startsWith('/icons/') ||
-    url.pathname.startsWith('/splash/') ||
-    url.pathname === '/manifest.json' ||
-    url.pathname === '/favicon.ico' ||
-    url.pathname === '/file.svg' ||
-    url.pathname === '/globe.svg' ||
-    url.pathname === '/next.svg' ||
-    url.pathname === '/vercel.svg' ||
-    url.pathname === '/window.svg'
-  )
+    request.destination === "script" ||
+    request.destination === "style" ||
+    request.destination === "font" ||
+    request.destination === "manifest" ||
+    url.pathname.startsWith("/_next/static/") ||
+    url.pathname.startsWith("/icons/")
+  );
 }
 
-async function staleWhileRevalidate(request) {
-  const cache = await caches.open(STATIC_CACHE)
-  const cached = await cache.match(request)
-  const network = fetch(request)
-    .then((response) => {
-      if (response.ok) {
-        cache.put(request, response.clone())
-      }
+self.addEventListener("fetch", (event) => {
+  const request = event.request;
 
-      return response
-    })
-    .catch(() => cached)
-
-  return cached || network
-}
-
-async function networkFirstNavigation(request) {
-  try {
-    const response = await fetch(request)
-    return response
-  } catch {
-    const cachedOfflinePage = await caches.match(OFFLINE_URL)
-
-    return (
-      cachedOfflinePage ||
-      new Response("You're offline. Reconnect to continue using CRED.", {
-        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-        status: 503,
-        statusText: 'Offline',
-      })
-    )
-  }
-}
-
-self.addEventListener('fetch', (event) => {
-  const { request } = event
-
-  if (request.method !== 'GET') {
-    return
+  if (request.method !== "GET") {
+    return;
   }
 
-  const url = new URL(request.url)
+  const url = new URL(request.url);
 
   if (isApiRequest(url)) {
-    event.respondWith(fetch(request))
-    return
+    return;
   }
 
-  if (request.mode === 'navigate') {
-    event.respondWith(networkFirstNavigation(request))
-    return
+  if (isStaticAsset(request, url)) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) {
+          return cached;
+        }
+
+        return fetch(request).then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));
+          return response;
+        });
+      }),
+    );
+    return;
   }
 
-  if (url.origin === self.location.origin && isStaticAsset(url)) {
-    event.respondWith(staleWhileRevalidate(request))
+  if (request.mode === "navigate") {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));
+          return response;
+        })
+        .catch(() => caches.match("/offline")),
+    );
   }
-})
+});
