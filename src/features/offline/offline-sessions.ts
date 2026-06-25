@@ -9,40 +9,28 @@ function now() {
 }
 
 function createId() {
-  if (
-    typeof crypto !== "undefined" &&
-    typeof crypto.randomUUID === "function"
-  ) {
-    return crypto.randomUUID();
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `offline-${crypto.randomUUID()}`;
   }
 
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `offline-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-export type CreateOfflineSessionInput = {
+export async function createOfflineSessionDraft(input: {
   organizationId: string;
   userId: string;
   title?: string;
   sessionType?: string;
-};
-
-export async function createOfflineSession(
-  input: CreateOfflineSessionInput,
-) {
+}) {
   const db = await getOfflineDb();
   const timestamp = now();
-  const localSessionId = createId();
 
   const record: OfflineSessionRecord = {
-    localSessionId,
+    localSessionId: createId(),
     organizationId: input.organizationId,
     userId: input.userId,
-    title:
-      input.title?.trim() ||
-      `New Offline Session ${new Date(timestamp).toLocaleString()}`,
-    sessionType:
-      input.sessionType?.trim() ||
-      "General Evidence Report",
+    title: input.title || `Offline Evidence ${new Date().toLocaleString()}`,
+    sessionType: input.sessionType || "General Evidence Report",
     status: "local",
     serverSessionId: null,
     retryCount: 0,
@@ -55,114 +43,35 @@ export async function createOfflineSession(
   return record;
 }
 
-export async function getOfflineSession(
-  localSessionId: string,
-) {
+export async function getPendingOfflineSessions(userId: string) {
   const db = await getOfflineDb();
-  return db.get("offlineSessions", localSessionId);
-}
-
-export async function getPendingOfflineSessions(
-  userId: string,
-) {
-  const db = await getOfflineDb();
-  const records = await db.getAllFromIndex(
-    "offlineSessions",
-    "by-user",
-    userId,
-  );
+  const records = await db.getAllFromIndex("offlineSessions", "by-user", userId);
 
   return records
-    .filter(
-      (record) =>
-        record.status !== "ready" ||
-        !record.serverSessionId,
-    )
-    .sort((left, right) =>
-      left.createdAt.localeCompare(right.createdAt),
-    );
+    .filter((record) => record.status === "local" || record.status === "failed")
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 }
 
-export async function getAllOfflineSessions(
-  userId: string,
-) {
+export async function saveOfflineSession(record: OfflineSessionRecord) {
   const db = await getOfflineDb();
-  const records = await db.getAllFromIndex(
-    "offlineSessions",
-    "by-user",
-    userId,
-  );
-
-  return records.sort((left, right) =>
-    right.createdAt.localeCompare(left.createdAt),
-  );
-}
-
-export async function updateOfflineSession(
-  localSessionId: string,
-  patch: Partial<
-    Omit<
-      OfflineSessionRecord,
-      "localSessionId" | "createdAt"
-    >
-  >,
-) {
-  const db = await getOfflineDb();
-  const transaction = db.transaction(
-    "offlineSessions",
-    "readwrite",
-  );
-  const store = transaction.objectStore(
-    "offlineSessions",
-  );
-  const current = await store.get(localSessionId);
-
-  if (!current) {
-    await transaction.done;
-    return null;
-  }
-
-  const updated: OfflineSessionRecord = {
-    ...current,
-    ...patch,
-    localSessionId: current.localSessionId,
-    createdAt: current.createdAt,
-    updatedAt: now(),
-  };
-
-  await store.put(updated);
-  await transaction.done;
-
+  const updated = { ...record, updatedAt: now() };
+  await db.put("offlineSessions", updated);
   return updated;
 }
 
-export async function setOfflineSessionStatus(
+export async function updateOfflineSessionStatus(
   localSessionId: string,
   status: OfflineSessionStatus,
-  options: {
-    serverSessionId?: string | null;
-    lastError?: string | null;
-    incrementRetry?: boolean;
-  } = {},
+  patch: Partial<OfflineSessionRecord> = {},
 ) {
-  const current = await getOfflineSession(localSessionId);
+  const db = await getOfflineDb();
+  const existing = await db.get("offlineSessions", localSessionId);
 
-  if (!current) {
-    return null;
-  }
+  if (!existing) return null;
 
-  return updateOfflineSession(localSessionId, {
+  return saveOfflineSession({
+    ...existing,
+    ...patch,
     status,
-    serverSessionId:
-      options.serverSessionId !== undefined
-        ? options.serverSessionId
-        : current.serverSessionId,
-    lastError:
-      options.lastError !== undefined
-        ? options.lastError
-        : current.lastError,
-    retryCount: options.incrementRetry
-      ? current.retryCount + 1
-      : current.retryCount,
   });
 }

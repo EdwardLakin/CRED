@@ -146,3 +146,28 @@ export async function updateQueuedCapture(
 
   return updated;
 }
+
+export async function retargetQueuedCaptures(
+  fromSessionId: string,
+  toSessionId: string,
+  userId: string,
+) {
+  const db = await getOfflineDb();
+  const records = await db.getAll("queuedCaptures");
+  const matching = records.filter(
+    (record) =>
+      record.sessionId === fromSessionId &&
+      record.userId === userId,
+  );
+
+  await Promise.all(
+    matching.map((record) =>
+      saveQueuedCapture({
+        ...record,
+        sessionId: toSessionId,
+      }),
+    ),
+  );
+
+  return matching.length;
+}
