@@ -33,6 +33,41 @@ function getSafeDownloadFilename(storagePath: string, fallbackId: string) {
   return safeName || `evidence-${fallbackId}`;
 }
 
+function getInlineContentType(
+  storagePath: string,
+  blobType: string | undefined,
+) {
+  const normalizedBlobType = String(blobType ?? "").toLowerCase();
+
+  if (
+    normalizedBlobType.startsWith("image/") ||
+    normalizedBlobType.startsWith("video/") ||
+    normalizedBlobType.startsWith("audio/") ||
+    normalizedBlobType === "application/pdf"
+  ) {
+    return normalizedBlobType;
+  }
+
+  const extension =
+    storagePath.split(".").pop()?.toLowerCase() ?? "";
+
+  const extensionTypes: Record<string, string> = {
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    webp: "image/webp",
+    gif: "image/gif",
+    heic: "image/heic",
+    heif: "image/heif",
+    pdf: "application/pdf",
+    mp4: "video/mp4",
+    mov: "video/quicktime",
+    webm: "video/webm",
+  };
+
+  return extensionTypes[extension] ?? "application/octet-stream";
+}
+
 async function validateShareTokenAccess(
   supabase: SupabaseClient<Database>,
   token: string,
@@ -142,19 +177,37 @@ export async function GET(request: Request, { params }: RouteContext) {
 
     const { data, error } = await supabase.storage
       .from(CAPTURE_BUCKET)
-      .createSignedUrl(capture.storage_path, 60 * 10);
+      .download(capture.storage_path);
 
-    if (!data?.signedUrl) {
-      console.warn("[report-media-capture-signing]", {
+    if (!data || error) {
+      console.warn("[report-media-capture-inline-download]", {
         session_id: id,
         capture_id: captureId,
         storage_path_exists: true,
-        error: error?.message ?? "No signed URL returned",
+        error: error?.message ?? "No file returned",
       });
       return cleanMediaError(410);
     }
 
-    return Response.redirect(data.signedUrl, 302);
+    const filename = getSafeDownloadFilename(
+      capture.storage_path,
+      capture.id,
+    );
+    const contentType = getInlineContentType(
+      capture.storage_path,
+      data.type,
+    );
+
+    return new Response(data.stream(), {
+      status: 200,
+      headers: {
+        "Content-Type": contentType,
+        "Content-Length": String(data.size),
+        "Content-Disposition": `inline; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        "Cache-Control": "private, max-age=300",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
   } catch (error) {
     console.warn("[report-media-capture-error]", {
       session_id: id,
