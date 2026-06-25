@@ -29,6 +29,11 @@ export type OfflineCaptureMetadata = {
   filename: string;
   mimeType: string;
   size: number;
+  uploadStatus?: string;
+  uiError?: string;
+  captureItemId?: string;
+  storageUploaded?: boolean;
+  noteSaveStatus?: string;
 };
 
 export type OfflineCaptureRecord = {
