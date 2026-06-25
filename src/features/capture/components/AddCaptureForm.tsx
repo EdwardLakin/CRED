@@ -20,6 +20,16 @@ import {
   validateCaptureBillingAccess,
 } from "@/features/capture/actions";
 import { type CaptureIntent, type CaptureType } from "@/features/capture/types";
+import {
+  getPendingCaptures,
+  getQueuedCapture,
+  removeCapture as removeOfflineCapture,
+  saveQueuedCapture,
+} from "@/features/offline/queue";
+import type {
+  OfflineCaptureRecord,
+  QueueStatus,
+} from "@/features/offline/types";
 import { createClient } from "@/lib/supabase/client";
 
 const MAX_BATCH_FILES = 50;
@@ -168,9 +178,6 @@ const ALLOWED_MIME_TYPES: Record<CaptureType, readonly string[]> = {
   ],
 };
 
-const UPLOAD_QUEUE_DB_NAME = "cred-capture-upload-queue";
-const UPLOAD_QUEUE_STORE_NAME = "pending_files";
-const UPLOAD_QUEUE_DB_VERSION = 1;
 const LOCAL_UPLOAD_PENDING_STATUSES: UploadStatus[] = [
   "queued",
   "uploading",
@@ -192,64 +199,28 @@ function isLocalUploadPending(status: UploadStatus) {
   return LOCAL_UPLOAD_PENDING_STATUSES.includes(status);
 }
 
-function openUploadQueueDb() {
-  return new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(
-      UPLOAD_QUEUE_DB_NAME,
-      UPLOAD_QUEUE_DB_VERSION,
-    );
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(UPLOAD_QUEUE_STORE_NAME)) {
-        db.createObjectStore(UPLOAD_QUEUE_STORE_NAME, { keyPath: "id" });
-      }
-    };
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-  });
-}
+function mapUploadStatusToQueueStatus(
+  status: UploadStatus,
+): QueueStatus {
+  if (status === "saved") return "synced";
+  if (status === "failed") return "failed";
 
-async function writeUploadQueueRecord(record: PersistedSelectedEvidenceFile) {
-  const db = await openUploadQueueDb();
-  await new Promise<void>((resolve, reject) => {
-    const transaction = db.transaction(UPLOAD_QUEUE_STORE_NAME, "readwrite");
-    transaction.objectStore(UPLOAD_QUEUE_STORE_NAME).put(record);
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
-  });
-  db.close();
-}
+  if (
+    status === "metadata_recovery" ||
+    status === "needs_queue_retry"
+  ) {
+    return "blocked";
+  }
 
-async function deleteUploadQueueRecord(fileId: string) {
-  const db = await openUploadQueueDb();
-  await new Promise<void>((resolve, reject) => {
-    const transaction = db.transaction(UPLOAD_QUEUE_STORE_NAME, "readwrite");
-    transaction.objectStore(UPLOAD_QUEUE_STORE_NAME).delete(fileId);
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
-  });
-  db.close();
-}
+  if (status === "finishing") {
+    return "creating_record";
+  }
 
-async function readUploadQueueRecords(sessionId: string) {
-  const db = await openUploadQueueDb();
-  const records = await new Promise<PersistedSelectedEvidenceFile[]>(
-    (resolve, reject) => {
-      const request = db
-        .transaction(UPLOAD_QUEUE_STORE_NAME, "readonly")
-        .objectStore(UPLOAD_QUEUE_STORE_NAME)
-        .getAll();
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () =>
-        resolve(
-          (request.result as PersistedSelectedEvidenceFile[]).filter(
-            (record) => record.sessionId === sessionId,
-          ),
-        );
-    },
-  );
-  db.close();
-  return records;
+  if (status === "uploading") {
+    return "uploading";
+  }
+
+  return "queued";
 }
 
 function sanitizeFilename(filename: string) {
@@ -448,6 +419,120 @@ export function AddCaptureForm({
     failedFiles.length > 0
       ? failedFiles
       : selectedFiles.filter((file) => file.status === "queued");
+
+  async function writeUploadQueueRecord(
+    record: PersistedSelectedEvidenceFile,
+  ) {
+    const existing = await getQueuedCapture(record.id);
+    const timestamp = new Date().toISOString();
+
+    const queuedRecord: OfflineCaptureRecord = {
+      localId: record.id,
+      clientMutationId:
+        existing?.clientMutationId ?? record.id,
+      organizationId: record.organizationId,
+      workspaceId: existing?.workspaceId ?? null,
+      sessionId: record.sessionId,
+      userId: existing?.userId ?? "current-user",
+      blob: record.file,
+      metadata: {
+        captureIntent,
+        manualType:
+          captureIntent === "manual" ? manualType : null,
+        guidedStep: guidedStep ?? null,
+        guidedLabel: guidedLabel ?? null,
+        workflow: workflow ?? null,
+        technicianNote: record.note,
+        transcriptStatus,
+        noteSource,
+        reportOrder: null,
+        includeInReport: true,
+        filename: record.file.name,
+        mimeType: record.file.type,
+        size: record.file.size,
+        uploadStatus: record.status,
+        uiError: record.error,
+        captureItemId: record.captureItemId,
+        storageUploaded: record.storageUploaded,
+        noteSaveStatus: record.noteSaveStatus,
+      },
+      status: mapUploadStatusToQueueStatus(record.status),
+      retryCount: existing?.retryCount ?? 0,
+      lastError: record.error ?? null,
+      uploadState: {
+        storagePath: record.storagePath ?? null,
+        uploadedAt:
+          record.storageUploaded
+            ? existing?.uploadState.uploadedAt ?? timestamp
+            : null,
+        finalizedAt:
+          record.status === "saved" ? timestamp : null,
+      },
+      serverCaptureId: record.captureItemId ?? null,
+      createdAt: existing?.createdAt ?? timestamp,
+      updatedAt: timestamp,
+    };
+
+    await saveQueuedCapture(queuedRecord);
+  }
+
+  async function deleteUploadQueueRecord(fileId: string) {
+    await removeOfflineCapture(fileId);
+  }
+
+  async function readUploadQueueRecords(
+    targetSessionId: string,
+  ): Promise<PersistedSelectedEvidenceFile[]> {
+    const records = await getPendingCaptures();
+
+    return records
+      .filter(
+        (record) =>
+          record.sessionId === targetSessionId &&
+          record.organizationId === organizationId,
+      )
+      .map((record) => {
+        const metadata = record.metadata;
+        const file =
+          record.blob instanceof File
+            ? record.blob
+            : new File(
+                [record.blob],
+                metadata.filename,
+                { type: metadata.mimeType },
+              );
+
+        return {
+          id: record.localId,
+          file,
+          name: metadata.filename,
+          type: metadata.mimeType,
+          size: metadata.size,
+          status:
+            metadata.uploadStatus === "uploading"
+              ? "queued"
+              : ((metadata.uploadStatus ??
+                  "queued") as UploadStatus),
+          error: metadata.uiError,
+          note: metadata.technicianNote,
+          captureItemId:
+            metadata.captureItemId ??
+            record.serverCaptureId ??
+            undefined,
+          storagePath:
+            record.uploadState.storagePath ?? undefined,
+          storageUploaded:
+            metadata.storageUploaded ??
+            Boolean(record.uploadState.uploadedAt),
+          noteSaveStatus:
+            metadata.noteSaveStatus as
+              | SelectedEvidenceFile["noteSaveStatus"]
+              | undefined,
+          sessionId: record.sessionId,
+          organizationId: record.organizationId,
+        };
+      });
+  }
 
   function getMaxFileSizeForFile(file: File) {
     return fileIsVideo(file) ? maxVideoFileSizeBytes : maxCaptureFileSizeBytes;
@@ -841,6 +926,8 @@ export function AddCaptureForm({
   useEffect(() => {
     let cancelled = false;
 
+    // The queue reader intentionally uses the latest component state while
+    // restoration is scoped by sessionId.
     readUploadQueueRecords(sessionId)
       .then((records) => {
         if (cancelled || records.length === 0) return;
@@ -871,6 +958,9 @@ export function AddCaptureForm({
     return () => {
       cancelled = true;
     };
+    // readUploadQueueRecords is component-scoped so it can serialize the
+    // current capture metadata without duplicating queue logic.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
   async function uploadSelectedFiles(filesToUpload: SelectedEvidenceFile[]) {

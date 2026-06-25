@@ -102,3 +102,16 @@ export async function getQueuedCapture(localId: string) {
   const db = await getOfflineDb();
   return db.get("queuedCaptures", localId);
 }
+
+
+export async function saveQueuedCapture(record: OfflineCaptureRecord) {
+  const db = await getOfflineDb();
+
+  const updated: OfflineCaptureRecord = {
+    ...record,
+    updatedAt: now(),
+  };
+
+  await db.put("queuedCaptures", updated);
+  return updated;
+}
