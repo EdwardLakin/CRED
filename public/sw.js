@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cred-offline-v2";
+const CACHE_VERSION = "cred-offline-v3";
 const APP_SHELL = [
   "/offline",
   "/offline/capture",

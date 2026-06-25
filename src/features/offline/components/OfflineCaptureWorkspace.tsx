@@ -138,7 +138,20 @@ export function OfflineCaptureWorkspace() {
 
   useEffect(() => {
     let cancelled = false;
+    let finished = false;
     const createdUrls: string[] = [];
+
+    const loadingTimeout = window.setTimeout(() => {
+      if (cancelled || finished) {
+        return;
+      }
+
+      cancelled = true;
+      setError(
+        "The local workspace took too long to open. Reload this page or reconnect and open the session again.",
+      );
+      setLoading(false);
+    }, 8000);
 
     async function loadWorkspace() {
       const identity = getOfflineIdentity();
@@ -154,7 +167,11 @@ export function OfflineCaptureWorkspace() {
       let targetSessionId = sessionId;
 
       if (!targetSessionId) {
-        const cachedSessions = await getCachedCaptureSessions(identity.userId);
+        const cachedSessions = await withTimeout(
+          getCachedCaptureSessions(identity.userId),
+          [],
+          5000,
+        );
         targetSessionId = cachedSessions[0]?.sessionId ?? null;
       }
 
@@ -164,9 +181,13 @@ export function OfflineCaptureWorkspace() {
         return;
       }
 
-      const cachedSession = await getCaptureSessionSnapshot(
-        targetSessionId,
-        identity.userId,
+      const cachedSession = await withTimeout(
+        getCaptureSessionSnapshot(
+          targetSessionId,
+          identity.userId,
+        ),
+        null,
+        5000,
       );
 
       if (
@@ -200,7 +221,11 @@ export function OfflineCaptureWorkspace() {
         );
       }
 
-      const records = await getPendingCaptures(identity.userId);
+      const records = await withTimeout(
+        getPendingCaptures(identity.userId),
+        [],
+        5000,
+      );
       const scopedRecords = records
         .filter(
           (record) =>
@@ -235,6 +260,8 @@ export function OfflineCaptureWorkspace() {
         return;
       }
 
+      finished = true;
+      window.clearTimeout(loadingTimeout);
       setSession(cachedSession);
       setItems(restoredItems);
       setLoading(false);
@@ -244,6 +271,8 @@ export function OfflineCaptureWorkspace() {
       console.warn("Unable to load offline capture workspace", loadError);
 
       if (!cancelled) {
+        finished = true;
+        window.clearTimeout(loadingTimeout);
         setError(
           "CRED could not open the locally saved capture workspace.",
         );
@@ -253,6 +282,7 @@ export function OfflineCaptureWorkspace() {
 
     return () => {
       cancelled = true;
+      window.clearTimeout(loadingTimeout);
       createdUrls.forEach((url) => URL.revokeObjectURL(url));
     };
   }, [sessionId]);
