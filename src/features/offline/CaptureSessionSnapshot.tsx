@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 
+import { saveOfflineIdentity } from "@/features/offline/offline-identity";
 import {
   saveCaptureSessionSnapshot,
   type OfflineCaptureSessionData,
@@ -25,6 +26,8 @@ export function CaptureSessionSnapshot({
   data,
 }: CaptureSessionSnapshotProps) {
   useEffect(() => {
+    saveOfflineIdentity(userId, organizationId);
+
     void saveCaptureSessionSnapshot({
       sessionId,
       organizationId,
