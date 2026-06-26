@@ -33,7 +33,7 @@ export function OfflineDashboard() {
       userId: identity.userId,
     });
 
-    window.location.href = `/offline/capture?sessionId=${encodeURIComponent(session.localSessionId)}`;
+    window.location.href = `/offline/capture?localSessionId=${encodeURIComponent(session.localSessionId)}`;
   }
 
   return (
