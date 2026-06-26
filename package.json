@@ -5,12 +5,13 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "build": "next build",
+    "build": "next build && node scripts/generate-offline-sw.mjs && next build",
     "dev": "next dev",
     "start": "next start",
     "test": "node --test $(find tests -maxdepth 1 -name '*.test.mjs' ! -name '*.integration.test.mjs' -print)",
     "test:integration": "node --test tests/*.integration.test.mjs",
-    "test:e2e": "node scripts/run-e2e.mjs"
+    "test:e2e": "node scripts/run-e2e.mjs",
+    "build:next": "next build"
   },
   "dependencies": {
     "@supabase/ssr": "latest",

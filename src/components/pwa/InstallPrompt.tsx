@@ -35,9 +35,34 @@ export function InstallPrompt() {
 
   useEffect(() => {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' }).catch((error: unknown) => {
-        console.warn('CRED service worker registration failed', error)
-      })
+      navigator.serviceWorker
+        .register('/sw.js', {
+          scope: '/',
+          updateViaCache: 'none',
+        })
+        .then(async (registration) => {
+          await registration.update()
+
+          if (registration.waiting) {
+            registration.waiting.postMessage({
+              type: 'SKIP_WAITING',
+            })
+          }
+        })
+        .catch((error: unknown) => {
+          console.warn(
+            'CRED service worker registration failed',
+            error,
+          )
+        })
+
+      navigator.serviceWorker.addEventListener(
+        'controllerchange',
+        () => {
+          document.documentElement.dataset.offlineShell =
+            'ready'
+        },
+      )
     }
 
     const updateStandaloneState = () => {
