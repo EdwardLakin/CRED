@@ -1,45 +1,71 @@
-const CACHE_VERSION = "cred-offline-e318861bf6120e85";
-const OFFLINE_ROUTE = "/offline";
-const OFFLINE_CAPTURE_ROUTE = "/offline/capture";
-const PRECACHE_ASSETS = [
+import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
+
+const root = process.cwd();
+const nextStaticRoot = path.join(root, ".next", "static");
+const outputPath = path.join(root, "public", "sw.js");
+
+async function walk(directory) {
+  const entries = await fs.readdir(directory, {
+    withFileTypes: true,
+  });
+
+  const files = [];
+
+  for (const entry of entries) {
+    const absolutePath = path.join(directory, entry.name);
+
+    if (entry.isDirectory()) {
+      files.push(...(await walk(absolutePath)));
+      continue;
+    }
+
+    if (entry.isFile()) {
+      files.push(absolutePath);
+    }
+  }
+
+  return files;
+}
+
+const staticFiles = await walk(nextStaticRoot);
+
+const nextAssets = staticFiles
+  .map((absolutePath) => {
+    const relativePath = path
+      .relative(nextStaticRoot, absolutePath)
+      .split(path.sep)
+      .join("/");
+
+    return `/_next/static/${relativePath}`;
+  })
+  .sort();
+
+const shellAssets = [
   "/offline",
   "/offline/capture",
   "/manifest.webmanifest",
   "/icons/cred-icon.svg",
   "/icons/cred-maskable.svg",
   "/splash/cred-splash.svg",
-  "/_next/static/Ecn-tqFUbGvBpy2WMl6sp/_buildManifest.js",
-  "/_next/static/Ecn-tqFUbGvBpy2WMl6sp/_clientMiddlewareManifest.js",
-  "/_next/static/Ecn-tqFUbGvBpy2WMl6sp/_ssgManifest.js",
-  "/_next/static/chunks/0245a4ypel7xx.js",
-  "/_next/static/chunks/029n8m0xw83nn.js",
-  "/_next/static/chunks/05-c3ty_6dwfk.js",
-  "/_next/static/chunks/0cz1d0mv5g_q7.js",
-  "/_next/static/chunks/0jr-cjjbn9cqu.js",
-  "/_next/static/chunks/0tp4vav8khzgx.js",
-  "/_next/static/chunks/0zm7blno40yu7.js",
-  "/_next/static/chunks/14mrh2-p_w84d.js",
-  "/_next/static/chunks/1623e7d1cscih.js",
-  "/_next/static/chunks/1ldhwkdsg700d.js",
-  "/_next/static/chunks/1p5lb30nn3tou.js",
-  "/_next/static/chunks/1rxncug86bump.js",
-  "/_next/static/chunks/1ts45b53bo7-v.js",
-  "/_next/static/chunks/21x9obqqc2awh.js",
-  "/_next/static/chunks/27jktro2p5rq9.js",
-  "/_next/static/chunks/2836ny7zux4n1.js",
-  "/_next/static/chunks/2cya-h6pss2j9.js",
-  "/_next/static/chunks/2fxatfi4xu1vg.js",
-  "/_next/static/chunks/34a1oukrr93wj.js",
-  "/_next/static/chunks/36z57ezv9m8s9.js",
-  "/_next/static/chunks/3dok_125yxd77.js",
-  "/_next/static/chunks/3j2u3da3i8eh9.css",
-  "/_next/static/chunks/3jvkbm-wxvaor.js",
-  "/_next/static/chunks/3lj22afoxci84.js",
-  "/_next/static/chunks/3m-ymi1f2e3l_.js",
-  "/_next/static/chunks/43cavunylurnk.js",
-  "/_next/static/chunks/turbopack-3y4_9gvwbdyxg.js",
-  "/_next/static/media/favicon.2vob68tjqpejf.ico"
+  ...nextAssets,
 ];
+
+const uniqueAssets = [...new Set(shellAssets)];
+
+const revision = crypto
+  .createHash("sha256")
+  .update(uniqueAssets.join("\n"))
+  .digest("hex")
+  .slice(0, 16);
+
+const source = `const CACHE_VERSION = ${JSON.stringify(
+  `cred-offline-${revision}`,
+)};
+const OFFLINE_ROUTE = "/offline";
+const OFFLINE_CAPTURE_ROUTE = "/offline/capture";
+const PRECACHE_ASSETS = ${JSON.stringify(uniqueAssets, null, 2)};
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -57,7 +83,7 @@ self.addEventListener("install", (event) => {
 
           if (!response.ok) {
             throw new Error(
-              `Unable to precache ${asset}: ${response.status}`,
+              \`Unable to precache \${asset}: \${response.status}\`,
             );
           }
 
@@ -117,7 +143,7 @@ function isStaticAsset(request, url) {
 }
 
 function isCaptureRoute(pathname) {
-  return /^\/dashboard\/sessions\/[^/]+\/capture\/?$/.test(
+  return /^\\/dashboard\\/sessions\\/[^/]+\\/capture\\/?$/.test(
     pathname,
   );
 }
@@ -251,3 +277,10 @@ self.addEventListener("fetch", (event) => {
     })(),
   );
 });
+`;
+
+await fs.writeFile(outputPath, source, "utf8");
+
+console.log(
+  `Generated public/sw.js with ${uniqueAssets.length} precached assets (${revision}).`,
+);
