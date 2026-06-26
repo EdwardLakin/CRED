@@ -1,12 +1,10 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
-// @ts-nocheck
 import { OFFLINE_DB_NAME, OFFLINE_DB_VERSION } from './contracts.js';
 
-function ensureIndex(store, name, keyPath) {
+function ensureIndex(store: IDBObjectStore, name: string, keyPath: string | string[]) {
   if (!store.indexNames.contains(name)) store.createIndex(name, keyPath);
 }
 
-export function openOfflineDb() {
+export function openOfflineDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (!('indexedDB' in globalThis)) {
       reject(new Error('IndexedDB is unavailable in this browser.'));
@@ -62,25 +60,25 @@ export function openOfflineDb() {
   });
 }
 
-export async function getAll(storeName) {
+export async function getAll(storeName: string): Promise<unknown[]> {
   const db = await openOfflineDb();
-  return new Promise((resolve, reject) => {
+  return new Promise<unknown[]>((resolve, reject) => {
     const request = db.transaction(storeName).objectStore(storeName).getAll();
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
 }
-export async function put(storeName, value) {
+export async function put<T>(storeName: string, value: T): Promise<T> {
   const db = await openOfflineDb();
-  return new Promise((resolve, reject) => {
+  return new Promise<T>((resolve, reject) => {
     const request = db.transaction(storeName, 'readwrite').objectStore(storeName).put(value);
     request.onsuccess = () => resolve(value);
     request.onerror = () => reject(request.error);
   });
 }
-export async function remove(storeName, key) {
+export async function remove(storeName: string, key: IDBValidKey): Promise<void> {
   const db = await openOfflineDb();
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     const request = db.transaction(storeName, 'readwrite').objectStore(storeName).delete(key);
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);

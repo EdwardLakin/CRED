@@ -41,9 +41,9 @@ test('server-session idempotency is per organization and local session', () => {
 });
 
 test('independent sync preserves auth failures and partial work per session', () => {
-  assert.match(app, /async function syncSession\(localSessionId\)/);
+  assert.match(app, /async function syncSession\(localSessionId/);
   assert.match(app, /Sign-in required to complete sync\. Local data remains/);
-  assert.match(contracts, /partially_synced/);
+  assert.match(contracts, /handoff_pending/);
   assert.match(app, /for \(const session of sessions\.filter/);
   assert.doesNotMatch(app, /clearQueue/);
 });

@@ -1,16 +1,15 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
-// @ts-nocheck
+import type { OfflineCapabilities, OfflineCaptureRecord, OfflineIdentity, OfflineLocalSession, SessionStatus } from './contracts.js';
 import { now, SESSION_STATUSES, SYNCABLE_STATUSES } from './contracts.js';
 import { addCapture, capturesForSession, createSession, deleteCapture, deleteSession, getOfflineIdentity, listSessions, retargetSessionCaptures, saveSession, sessionStats, updateCapture } from './store.js';
 
-const state = { identity: null, activeSession: null, objectUrls: [], storageEstimate: null, capabilities: null };
-const $ = (id) => document.getElementById(id);
-const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
-const formatBytes = (bytes) => bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-const formatDate = (value) => value ? new Date(value).toLocaleString() : 'Not recorded';
-function setMessage(text, className = '') { const el = $('message'); if (el) { el.textContent = text || ''; el.className = className; } }
+const state: { identity: OfflineIdentity | null; activeSession: OfflineLocalSession | null; objectUrls: string[]; storageEstimate: StorageEstimate | null; capabilities: OfflineCapabilities | null } = { identity: null, activeSession: null, objectUrls: [], storageEstimate: null, capabilities: null };
+const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement;
+const escapeHtml = (value: unknown): string => String(value || '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] ?? char);
+const formatBytes = (bytes: number): string => bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+const formatDate = (value: string | null | undefined): string => value ? new Date(value).toLocaleString() : 'Not recorded';
+function setMessage(text: string, className = '') { const el = $('message'); if (el) { el.textContent = text || ''; el.className = className; } }
 
-function detectCapabilities() {
+function detectCapabilities(): OfflineCapabilities {
   const input = document.createElement('input');
   input.type = 'file';
   return {
@@ -39,8 +38,9 @@ async function canReachServer() {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 3500);
-    const response = await fetch('/manifest.webmanifest', { cache: 'no-store', signal: controller.signal });
+    const response = await fetch('/api/offline/reachability', { cache: 'no-store', signal: controller.signal, headers: { Accept: 'application/json' } });
     clearTimeout(timeout);
+    if (response.status === 401 || response.status === 403) throw new Error('Sign-in required to complete sync. Local data remains on this device.');
     return response.ok;
   } catch {
     return false;
@@ -49,6 +49,7 @@ async function canReachServer() {
 
 function renderSupport() {
   const c = state.capabilities;
+  if (!c) return;
   const issues = [];
   if (!c.indexedDB) issues.push('Browser storage unavailable: IndexedDB is required for local captures.');
   if (!c.serviceWorker) issues.push('Service worker unavailable: local capture can work in this tab, but cold offline relaunch may not work.');
@@ -75,23 +76,23 @@ async function renderDashboard() {
   }
   $('provisioning').textContent = `Provisioned for organization ${state.identity.organizationId}. Provisioned at ${state.identity.provisionedAt || 'unknown time'}.`;
   const sessions = await listSessions(state.identity);
-  const rows = await Promise.all(sessions.map(async (session) => ({ session, stats: await sessionStats(session.localSessionId, state.identity) })));
+  const rows = await Promise.all(sessions.map(async (session: OfflineLocalSession) => ({ session, stats: await sessionStats(session.localSessionId, state.identity) })));
   $('sessions').innerHTML = rows.length ? rows.map(({ session, stats }) => sessionCard(session, stats)).join('') : '<section class="card"><h2>No local sessions yet</h2><p class="muted">Start a new session before leaving connectivity, or create one now if this device is already provisioned.</p></section>';
   for (const { session } of rows) bindSessionCard(session);
 }
 
-function sessionCard(session, stats) {
+function sessionCard(session: OfflineLocalSession, stats: { captureCount: number; pendingCount: number; verifiedCount: number; bytes: number }): string {
   const progress = stats.captureCount ? `${stats.verifiedCount}/${stats.captureCount} verified` : 'No captures yet';
   return `<article class="card session-card" id="session-${session.localSessionId}">
     <div class="card-header"><div><h2>${escapeHtml(session.title)}</h2><p class="muted">${escapeHtml(session.sessionType)} · Created ${formatDate(session.createdAt)}</p><p class="muted">Last opened ${formatDate(session.lastOpenedAt || session.updatedAt)}</p></div><span class="status">${escapeHtml(session.status)}</span></div>
     <p class="muted">${stats.captureCount} capture(s), ${stats.pendingCount} pending, ${progress}, ${formatBytes(stats.bytes)} local media.</p>
     <p class="muted">Server session: ${session.serverSessionId ? escapeHtml(session.serverSessionId) : 'not assigned yet'}</p>
     ${session.lastError ? `<p class="error">${escapeHtml(session.lastError)}</p>` : ''}
-    <div class="button-row"><button data-action="continue">Continue</button><button class="secondary" data-action="rename">Rename</button><button class="secondary" data-action="sync">${session.lastError ? 'Retry Sync' : 'Sync'}</button><button class="danger" data-action="delete">Delete Local Session</button></div>
+    <div class="button-row"><button data-action="continue">Continue</button><button class="secondary" data-action="rename">Rename</button><button class="secondary" data-action="sync">${session.lastError ? 'Retry online handoff' : 'Prepare online handoff'}</button><button class="danger" data-action="delete">Delete Local Session</button></div>
   </article>`;
 }
 
-function bindSessionCard(session) {
+function bindSessionCard(session: OfflineLocalSession): void {
   const card = $(`session-${session.localSessionId}`);
   card?.querySelector('[data-action="continue"]')?.addEventListener('click', () => openSession(session.localSessionId));
   card?.querySelector('[data-action="rename"]')?.addEventListener('click', async () => {
@@ -100,15 +101,16 @@ function bindSessionCard(session) {
   });
   card?.querySelector('[data-action="sync"]')?.addEventListener('click', () => syncSession(session.localSessionId));
   card?.querySelector('[data-action="delete"]')?.addEventListener('click', async () => {
+    if (!state.identity) return;
     const stats = await sessionStats(session.localSessionId, state.identity);
     const warning = stats.pendingCount > 0 ? `This deletes ${stats.pendingCount} unsynced capture(s) from this local session only. Type DELETE to confirm.` : 'Delete this local session from this device? Type DELETE to confirm.';
     if (prompt(warning) === 'DELETE') { await deleteSession(session, state.identity); await renderDashboard(); }
   });
 }
 
-async function openSession(localSessionId) {
+async function openSession(localSessionId: string) {
   const sessions = await listSessions(state.identity);
-  const session = sessions.find((candidate) => candidate.localSessionId === localSessionId);
+  const session = sessions.find((candidate: OfflineLocalSession) => candidate.localSessionId === localSessionId);
   if (!session) return setMessage('Local session not found for this user and organization.', 'error');
   state.activeSession = await saveSession(session, { lastOpenedAt: now() });
   $('dashboard').classList.add('hidden');
@@ -121,45 +123,47 @@ function revokeUrls() { state.objectUrls.forEach((url) => URL.revokeObjectURL(ur
 async function renderWorkspace() {
   revokeUrls();
   const session = state.activeSession;
+  if (!session) return;
   const captures = await capturesForSession(session.localSessionId, state.identity);
-  $('workspace').innerHTML = `<section class="card"><button class="ghost" id="backToDashboard">← Offline dashboard</button><p class="eyebrow">Offline capture</p><h1>${escapeHtml(session.title)}</h1><p class="muted">${escapeHtml(session.sessionType)} · ${captures.length} local capture(s)</p><div class="button-row"><button id="takePhoto">Take photo / video</button><button class="secondary" id="chooseMedia">Choose media</button><button class="secondary" id="syncActive">Sync this session</button></div><input id="cameraInput" class="hidden" type="file" accept="image/*,video/*" capture="environment" multiple><input id="galleryInput" class="hidden" type="file" accept="image/*,video/*" multiple></section><section class="grid" id="captureList"></section>`;
-  $('backToDashboard').onclick = renderDashboard;
-  $('syncActive').onclick = () => syncSession(session.localSessionId);
-  $('takePhoto').onclick = () => $('cameraInput').click();
-  $('chooseMedia').onclick = () => $('galleryInput').click();
-  $('cameraInput').onchange = $('galleryInput').onchange = (event) => addFiles([...event.target.files]);
+  $('workspace').innerHTML = `<section class="card"><button class="ghost" id="backToDashboard">← Offline dashboard</button><p class="eyebrow">Offline capture</p><h1>${escapeHtml(session.title)}</h1><p class="muted">${escapeHtml(session.sessionType)} · ${captures.length} local capture(s)</p><div class="button-row"><button id="takePhoto">Take photo / video</button><button class="secondary" id="chooseMedia">Choose media</button><button class="secondary" id="syncActive">Prepare this session online</button></div><input id="cameraInput" class="hidden" type="file" accept="image/*,video/*" capture="environment" multiple><input id="galleryInput" class="hidden" type="file" accept="image/*,video/*" multiple></section><section class="grid" id="captureList"></section>`;
+  ($('backToDashboard') as HTMLButtonElement).onclick = renderDashboard;
+  ($('syncActive') as HTMLButtonElement).onclick = () => syncSession(session.localSessionId);
+  ($('takePhoto') as HTMLButtonElement).onclick = () => $('cameraInput').click();
+  ($('chooseMedia') as HTMLButtonElement).onclick = () => $('galleryInput').click();
+  ($('cameraInput') as HTMLInputElement).onchange = ($('galleryInput') as HTMLInputElement).onchange = (event: Event) => addFiles(Array.from(((event.target as HTMLInputElement).files ?? [])));
   const list = $('captureList');
   if (!captures.length) list.innerHTML = '<section class="card"><h2>No captures in this session</h2><p class="muted">Add media; blobs are saved immediately in IndexedDB.</p></section>';
   captures.forEach((capture, index) => renderCaptureCard(list, captures, capture, index));
 }
 
-function renderCaptureCard(list, captures, capture, index) {
+function renderCaptureCard(list: HTMLElement, captures: OfflineCaptureRecord[], capture: OfflineCaptureRecord, index: number): void {
   const url = URL.createObjectURL(capture.blob);
   state.objectUrls.push(url);
   const article = document.createElement('article');
   article.className = 'card capture';
   article.innerHTML = `<div class="card-header"><div><h2>Capture ${index + 1}</h2><p class="muted">${escapeHtml(capture.metadata.filename)} · ${formatBytes(capture.metadata.size)}</p></div><span class="status">${escapeHtml(capture.status)}</span></div>${capture.metadata.mimeType.startsWith('video/') ? `<video controls preload="metadata" src="${url}"></video>` : `<img alt="Offline capture ${index + 1}" src="${url}">`}<label>Technician notes<textarea rows="4">${escapeHtml(capture.metadata.technicianNote)}</textarea></label><div class="button-row"><button class="secondary" data-up>Move up</button><button class="secondary" data-down>Move down</button><button class="danger" data-delete>Delete capture</button></div>`;
-  article.querySelector('textarea').addEventListener('input', async (event) => {
-    capture.metadata.technicianNote = event.target.value;
+  (article.querySelector('textarea') as HTMLTextAreaElement).addEventListener('input', async (event: Event) => {
+    capture.metadata.technicianNote = (event.target as HTMLTextAreaElement).value;
     capture.metadata.noteSource = 'edited';
     capture.metadata.noteSaveStatus = 'saved';
     await updateCapture(capture, { metadata: capture.metadata });
   });
-  article.querySelector('[data-delete]').onclick = async () => { await deleteCapture(capture); await renderWorkspace(); };
-  article.querySelector('[data-up]').onclick = () => moveCapture(captures, index, -1);
-  article.querySelector('[data-down]').onclick = () => moveCapture(captures, index, 1);
+  (article.querySelector('[data-delete]') as HTMLButtonElement).onclick = async () => { await deleteCapture(capture); await renderWorkspace(); };
+  (article.querySelector('[data-up]') as HTMLButtonElement).onclick = () => moveCapture(captures, index, -1);
+  (article.querySelector('[data-down]') as HTMLButtonElement).onclick = () => moveCapture(captures, index, 1);
   list.append(article);
 }
 
-async function addFiles(files) {
+async function addFiles(files: File[]) {
   if (!state.activeSession || !files.length) return;
   const estimate = state.storageEstimate;
   const available = estimate?.quota && estimate?.usage !== undefined ? estimate.quota - estimate.usage : null;
-  const required = files.reduce((sum, file) => sum + file.size, 0);
+  const required = files.reduce((sum: number, file: File) => sum + file.size, 0);
   if (available !== null && required > available) return setMessage('This device does not report enough available browser storage for those files.', 'error');
   const existing = await capturesForSession(state.activeSession.localSessionId, state.identity);
   let order = existing.length;
   for (const file of files) {
+    if (!state.identity) return;
     const limit = file.type.startsWith('video/') ? state.identity.captureLimits.maxVideoFileSizeBytes : state.identity.captureLimits.maxCaptureFileSizeBytes;
     if (file.size > limit) { setMessage(`${file.name} exceeds the configured offline capture limit.`, 'error'); continue; }
     await addCapture(state.activeSession, file, order++);
@@ -169,19 +173,19 @@ async function addFiles(files) {
   await renderWorkspace();
 }
 
-async function moveCapture(captures, index, direction) {
+async function moveCapture(captures: OfflineCaptureRecord[], index: number, direction: -1 | 1) {
   const next = index + direction;
   if (next < 0 || next >= captures.length) return;
   [captures[index], captures[next]] = [captures[next], captures[index]];
-  await Promise.all(captures.map((capture, reportOrder) => updateCapture(capture, { metadata: { ...capture.metadata, reportOrder } })));
+  await Promise.all(captures.map((capture: OfflineCaptureRecord, reportOrder: number) => updateCapture(capture, { metadata: { ...capture.metadata, reportOrder } })));
   await renderWorkspace();
 }
 
-async function syncSession(localSessionId) {
+async function syncSession(localSessionId: string) {
   const reachable = await canReachServer();
   if (!reachable) return setMessage('Server is not reachable yet. Local data is preserved and sync can be retried.', 'warning');
   const sessions = await listSessions(state.identity);
-  let session = sessions.find((candidate) => candidate.localSessionId === localSessionId);
+  let session = sessions.find((candidate: OfflineLocalSession) => candidate.localSessionId === localSessionId);
   if (!session) return;
   try {
     session = await saveSession(session, { status: SESSION_STATUSES.creatingServerSession, serverCreateAttemptCount: (session.serverCreateAttemptCount || 0) + 1, serverCreateLastAttemptAt: now(), lastError: null });
@@ -190,12 +194,14 @@ async function syncSession(localSessionId) {
       if (response.status === 401 || response.status === 403) throw new Error('Sign-in required to complete sync. Local data remains on this device.');
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !result.sessionId) throw new Error(result.error || 'Unable to create or recover the server session.');
+      if (!state.identity) throw new Error('Device identity is unavailable.');
       await retargetSessionCaptures(session.localSessionId, result.sessionId, state.identity);
-      session = await saveSession(session, { serverSessionId: result.sessionId, serverCreateRecoveredAt: now(), status: SESSION_STATUSES.partiallySynced });
+      session = await saveSession(session, { serverSessionId: result.sessionId, serverCreateRecoveredAt: now(), status: SESSION_STATUSES.handoffPending });
     }
     const stats = await sessionStats(session.localSessionId, state.identity);
-    await saveSession(session, { status: stats.pendingCount > 0 ? SESSION_STATUSES.partiallySynced : SESSION_STATUSES.synced, syncedAt: stats.pendingCount > 0 ? session.syncedAt : now(), lastError: null });
-    setMessage('Server session is assigned. Open CRED online to upload and verify queued media if uploads remain.', 'success');
+    await saveSession(session, { status: stats.pendingCount > 0 ? SESSION_STATUSES.handoffPending : SESSION_STATUSES.synced, syncedAt: stats.pendingCount > 0 ? session.syncedAt : now(), lastError: null });
+    setMessage('Prepared for online handoff. Opening CRED to upload and verify queued media.', 'success');
+    window.setTimeout(() => { window.location.href = '/dashboard?offlineSync=1'; }, 300);
   } catch (error) {
     await saveSession(session, { status: SESSION_STATUSES.error, lastError: error instanceof Error ? error.message : 'Sync failed.' });
     setMessage(error instanceof Error ? error.message : 'Sync failed.', 'error');
@@ -206,9 +212,9 @@ async function syncSession(localSessionId) {
 async function boot() {
   state.capabilities = detectCapabilities();
   if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
-  $('newSession').onclick = async () => { if (!state.identity) return setMessage('Device not provisioned. Sign in online first.', 'error'); const session = await createSession(state.identity); await openSession(session.localSessionId); };
-  $('syncAll').onclick = async () => { const sessions = await listSessions(state.identity); for (const session of sessions.filter((candidate) => SYNCABLE_STATUSES.includes(candidate.status))) await syncSession(session.localSessionId); };
-  window.addEventListener('online', () => setMessage('Network signal returned. Use Sync to verify server reachability and upload readiness.', 'success'));
+  ($('newSession') as HTMLButtonElement).onclick = async () => { if (!state.identity) return setMessage('Device not provisioned. Sign in online first.', 'error'); const session = await createSession(state.identity); await openSession(session.localSessionId); };
+  ($('syncAll') as HTMLButtonElement).onclick = async () => { const sessions = await listSessions(state.identity); for (const session of sessions.filter((candidate: OfflineLocalSession) => SYNCABLE_STATUSES.includes(candidate.status as SessionStatus))) await syncSession(session.localSessionId); };
+  window.addEventListener('online', () => setMessage('Network signal returned. Use Prepare online handoff to verify server reachability and continue upload.', 'success'));
   if (navigator.serviceWorker?.controller) {
     const channel = new MessageChannel();
     channel.port1.onmessage = (event) => { $('version').textContent = `Service worker: ${JSON.stringify(event.data)}`; };
