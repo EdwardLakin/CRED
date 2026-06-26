@@ -18,6 +18,7 @@ import {
 } from "@/features/offline/queue";
 import {
   getPendingOfflineSessions,
+  recordVerifiedOfflineCapture,
   updateOfflineSessionStatus,
 } from "@/features/offline/offline-sessions";
 import type {
@@ -112,7 +113,8 @@ function canAutomaticallyRetry(record: OfflineCaptureRecord) {
     record.status === "local" ||
     record.status === "queued" ||
     record.status === "failed" ||
-    record.status === "blocked"
+    record.status === "blocked" ||
+    record.status === "finalized_unverified"
   );
 }
 
@@ -144,8 +146,10 @@ async function syncOfflineSessions(userId: string) {
       break;
     }
 
-    await updateOfflineSessionStatus(session.localSessionId, "creating", {
+    await updateOfflineSessionStatus(session.localSessionId, "creating_server_session", {
       lastError: null,
+      serverCreateAttemptCount: (session.serverCreateAttemptCount ?? 0) + 1,
+      serverCreateLastAttemptAt: new Date().toISOString(),
     });
 
     const response = await fetch("/api/dashboard/sessions/offline", {
@@ -158,6 +162,8 @@ async function syncOfflineSessions(userId: string) {
         title: session.title,
         sessionType: session.sessionType,
         createdAt: session.createdAt,
+        idempotencyKey: session.idempotencyKey,
+        organizationId: session.organizationId,
       }),
     });
 
@@ -171,7 +177,7 @@ async function syncOfflineSessions(userId: string) {
       const message =
         result.error ?? "Unable to create offline session on the server.";
 
-      await updateOfflineSessionStatus(session.localSessionId, "failed", {
+      await updateOfflineSessionStatus(session.localSessionId, "error", {
         retryCount: session.retryCount + 1,
         lastError: message,
       });
@@ -185,10 +191,38 @@ async function syncOfflineSessions(userId: string) {
       userId,
     );
 
-    await updateOfflineSessionStatus(session.localSessionId, "ready", {
+    await updateOfflineSessionStatus(session.localSessionId, "partially_synced", {
       serverSessionId: result.sessionId,
+      serverCreateRecoveredAt: new Date().toISOString(),
       lastError: null,
     });
+  }
+}
+
+
+async function verifySyncedCapture(record: OfflineCaptureRecord, captureItemId: string, storagePath: string) {
+  const response = await fetch("/api/offline/captures/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    cache: "no-store",
+    body: JSON.stringify({
+      sessionId: record.sessionId,
+      captureItemId,
+      localId: record.localId,
+      clientMutationId: record.clientMutationId,
+      storagePath,
+      expectedSize: record.metadata.size,
+      filename: record.metadata.filename,
+      mimeType: record.metadata.mimeType,
+      technicianNote: record.metadata.technicianNote,
+      reportOrder: record.metadata.reportOrder,
+    }),
+  });
+
+  const result = (await response.json().catch(() => null)) as { ok?: boolean; verified?: boolean; error?: string; mismatches?: string[] } | null;
+
+  if (!response.ok || !result?.ok || !result.verified) {
+    throw new Error(result?.error ?? (result?.mismatches?.length ? `Capture verification failed: ${result.mismatches.join(", ")}` : "Capture verification failed."));
   }
 }
 
@@ -411,6 +445,56 @@ async function syncCapture(record: OfflineCaptureRecord) {
     );
   }
 
+  current = await updateRecord(current, {
+    status: "verifying",
+    serverCaptureId: result.captureItemId,
+    uploadState: {
+      ...current.uploadState,
+      finalizedAt: new Date().toISOString(),
+    },
+    metadata: {
+      ...current.metadata,
+      captureItemId: result.captureItemId,
+      uploadStatus: "verifying",
+      verified: false,
+    },
+  });
+
+  try {
+    await verifySyncedCapture(current, result.captureItemId, storagePath);
+  } catch (verificationError) {
+    const message = getErrorMessage(verificationError);
+    await updateRecord(current, {
+      status: "finalized_unverified",
+      retryCount: current.retryCount + 1,
+      lastError: message,
+      metadata: {
+        ...current.metadata,
+        uploadStatus: "verification_failed",
+        uiError: message,
+        verified: false,
+      },
+    });
+    throw verificationError;
+  }
+
+  current = await updateRecord(current, {
+    status: "synced",
+    serverCaptureId: result.captureItemId,
+    uploadState: {
+      ...current.uploadState,
+      finalizedAt: current.uploadState.finalizedAt ?? new Date().toISOString(),
+      verifiedAt: new Date().toISOString(),
+    },
+    metadata: {
+      ...current.metadata,
+      captureItemId: result.captureItemId,
+      uploadStatus: "verified",
+      verified: true,
+    },
+  });
+
+  await recordVerifiedOfflineCapture(current.localSessionId, current.metadata.reportOrder !== null ? current.metadata.reportOrder + 1 : 1);
   await removeCapture(current.localId);
 
   return result.captureItemId;

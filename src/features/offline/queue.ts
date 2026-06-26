@@ -1,10 +1,13 @@
 import { getOfflineDb } from "@/features/offline/db";
+import { incrementOfflineSessionCaptureCount } from "@/features/offline/offline-sessions";
 import type { OfflineCaptureRecord, QueueStatus } from "@/features/offline/types";
 
 export type QueueCaptureInput = Omit<
   OfflineCaptureRecord,
   | "localId"
   | "clientMutationId"
+  | "localSessionId"
+  | "serverSessionId"
   | "status"
   | "retryCount"
   | "lastError"
@@ -14,6 +17,8 @@ export type QueueCaptureInput = Omit<
 > & {
   localId?: string;
   clientMutationId?: string;
+  localSessionId?: string;
+  serverSessionId?: string | null;
   status?: QueueStatus;
 };
 
@@ -33,10 +38,14 @@ export async function queueCapture(input: QueueCaptureInput) {
   const db = await getOfflineDb();
   const timestamp = now();
 
+  const localId = input.localId ?? createId();
+  const localSessionId = input.localSessionId ?? (input.sessionId.startsWith("offline-") ? input.sessionId : input.sessionId);
   const record: OfflineCaptureRecord = {
     ...input,
-    localId: input.localId ?? createId(),
-    clientMutationId: input.clientMutationId ?? createId(),
+    localId,
+    localSessionId,
+    serverSessionId: input.serverSessionId ?? (input.sessionId.startsWith("offline-") ? null : input.sessionId),
+    clientMutationId: input.clientMutationId ?? localId,
     status: input.status ?? "queued",
     retryCount: 0,
     lastError: null,
@@ -46,6 +55,7 @@ export async function queueCapture(input: QueueCaptureInput) {
   };
 
   await db.put("queuedCaptures", record);
+  await incrementOfflineSessionCaptureCount(record.localSessionId);
   return record;
 }
 
@@ -147,8 +157,22 @@ export async function updateQueuedCapture(
   return updated;
 }
 
+export async function getCapturesForLocalSession(localSessionId: string, userId?: string) {
+  const db = await getOfflineDb();
+  const records = await db.getAll("queuedCaptures");
+  return records.filter((record) => record.localSessionId === localSessionId && (!userId || record.userId === userId));
+}
+
+export async function deleteCapturesForLocalSession(localSessionId: string, userId: string, organizationId: string) {
+  const db = await getOfflineDb();
+  const records = await db.getAll("queuedCaptures");
+  const matching = records.filter((record) => record.localSessionId === localSessionId && record.userId === userId && record.organizationId === organizationId);
+  await Promise.all(matching.map((record) => db.delete("queuedCaptures", record.localId)));
+  return matching.length;
+}
+
 export async function retargetQueuedCaptures(
-  fromSessionId: string,
+  localSessionId: string,
   toSessionId: string,
   userId: string,
 ) {
@@ -156,7 +180,7 @@ export async function retargetQueuedCaptures(
   const records = await db.getAll("queuedCaptures");
   const matching = records.filter(
     (record) =>
-      record.sessionId === fromSessionId &&
+      record.localSessionId === localSessionId &&
       record.userId === userId,
   );
 
@@ -165,6 +189,8 @@ export async function retargetQueuedCaptures(
       saveQueuedCapture({
         ...record,
         sessionId: toSessionId,
+        serverSessionId: toSessionId,
+        status: record.status === "synced" ? record.status : "queued",
       }),
     ),
   );

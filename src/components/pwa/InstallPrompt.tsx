@@ -48,6 +48,19 @@ export function InstallPrompt() {
               type: 'SKIP_WAITING',
             })
           }
+
+          navigator.serviceWorker.ready
+            .then((readyRegistration) => {
+              const channel = new MessageChannel()
+              channel.port1.onmessage = (event) => {
+                console.info('CRED offline shell diagnostics', event.data)
+              }
+              readyRegistration.active?.postMessage(
+                { type: 'CRED_SW_DIAGNOSTICS' },
+                [channel.port2],
+              )
+            })
+            .catch(() => {})
         })
         .catch((error: unknown) => {
           console.warn(

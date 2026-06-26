@@ -10,8 +10,6 @@ type OfflineBootstrapProps = {
   organizationId: string;
 };
 
-const PROVISIONED_KEY = "cred-offline-provisioned-at";
-
 export function OfflineBootstrap({
   userId,
   organizationId,
@@ -19,10 +17,6 @@ export function OfflineBootstrap({
   useEffect(() => {
     saveOfflineIdentity(userId, organizationId);
 
-    window.localStorage.setItem(
-      PROVISIONED_KEY,
-      new Date().toISOString(),
-    );
 
     void requestPersistentStorage().catch((error: unknown) => {
       console.warn(

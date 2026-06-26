@@ -9,6 +9,8 @@ type OfflineSessionRequest = {
   title?: unknown;
   sessionType?: unknown;
   createdAt?: unknown;
+  idempotencyKey?: unknown;
+  organizationId?: unknown;
 };
 
 function readString(
@@ -38,6 +40,12 @@ export async function POST(request: Request) {
       body.createdAt,
       64,
     );
+    const requestedIdempotencyKey = readString(
+      body.idempotencyKey,
+      240,
+    );
+
+    const offlineClientId = requestedIdempotencyKey || clientSessionId;
 
     if (!clientSessionId) {
       return NextResponse.json(
@@ -71,7 +79,7 @@ export async function POST(request: Request) {
         "organization_id",
         profile.organization_id,
       )
-      .eq("offline_client_id", clientSessionId)
+      .eq("offline_client_id", offlineClientId)
       .is("deleted_at", null)
       .maybeSingle();
 
@@ -105,7 +113,7 @@ export async function POST(request: Request) {
       created_by: profile.id,
       organization_id: profile.organization_id,
       workflow_template_id: null,
-      offline_client_id: clientSessionId,
+      offline_client_id: offlineClientId,
       created_at: createdAt,
     } as Database["public"]["Tables"]["documentation_sessions"]["Insert"] & {
       offline_client_id: string;
@@ -126,7 +134,7 @@ export async function POST(request: Request) {
             "organization_id",
             profile.organization_id,
           )
-          .eq("offline_client_id", clientSessionId)
+          .eq("offline_client_id", offlineClientId)
           .is("deleted_at", null)
           .maybeSingle();
 
