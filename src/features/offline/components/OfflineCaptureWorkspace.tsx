@@ -117,10 +117,15 @@ async function safeEstimateStorage() {
   );
 }
 
-export function OfflineCaptureWorkspace() {
+export function OfflineCaptureWorkspace({
+  forcedLocalSessionId = null,
+}: {
+  forcedLocalSessionId?: string | null;
+}) {
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("sessionId");
   const localSessionId =
+    forcedLocalSessionId ??
     searchParams.get("localSessionId") ??
     (sessionId?.startsWith("offline-") ? sessionId : null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
