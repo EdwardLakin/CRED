@@ -216,6 +216,19 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     (async () => {
       if (
+        !self.navigator.onLine &&
+        (
+          url.pathname === "/dashboard" ||
+          url.pathname.startsWith("/dashboard/")
+        )
+      ) {
+        return Response.redirect(
+          \`\${url.origin}\${OFFLINE_ROUTE}\`,
+          302,
+        );
+      }
+
+      if (
         url.pathname === OFFLINE_ROUTE ||
         url.pathname === OFFLINE_CAPTURE_ROUTE
       ) {
@@ -269,6 +282,16 @@ self.addEventListener("fetch", (event) => {
 
         return response;
       } catch {
+        if (
+          url.pathname === "/dashboard" ||
+          url.pathname.startsWith("/dashboard/")
+        ) {
+          return Response.redirect(
+            \`\${url.origin}\${OFFLINE_ROUTE}\`,
+            302,
+          );
+        }
+
         return (
           (await caches.match(request)) ||
           (await cachedOfflineResponse())
