@@ -56,7 +56,7 @@ const uniqueAssets = [...new Set(shellAssets)];
 
 const revision = crypto
   .createHash("sha256")
-  .update(uniqueAssets.join("\n"))
+  .update(`offline-shell-v2\n${uniqueAssets.join("\n")}`)
   .digest("hex")
   .slice(0, 16);
 
@@ -72,7 +72,7 @@ self.addEventListener("install", (event) => {
     (async () => {
       const cache = await caches.open(CACHE_VERSION);
 
-      await Promise.allSettled(
+      await Promise.all(
         PRECACHE_ASSETS.map(async (asset) => {
           const request = new Request(asset, {
             cache: "reload",
