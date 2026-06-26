@@ -118,7 +118,7 @@ export default async function HomePage() {
           <a href="#use-cases">Use cases</a>
           <a href="#pricing">Pricing</a>
           {isAuthenticated ? (
-            <Link href="/dashboard">Dashboard</Link>
+            <a href="/dashboard">Dashboard</a>
           ) : (
             <Link href="/sign-in">Sign in</Link>
           )}
@@ -133,7 +133,15 @@ export default async function HomePage() {
           <p className="landing-hero-copy">Capture photos, forms, notes, and documents in one session. CRED organizes everything into documentation your team can review, approve, share, and export.</p>
           <div className="workflow-pills" aria-label="CRED workflow"><span>Capture</span><span>Review</span><span>Approve</span><span>Export</span></div>
           <p className="hero-copy-guardrail">CRED organizes user-provided material. It does not diagnose, certify findings automatically, or replace your team’s review, recommendations, and sign-off.</p>
-          <div className="landing-hero-actions"><Link href={isAuthenticated ? '/dashboard?checkout=individual' : '/sign-up?plan=individual'} className="button button-primary">Start with Essentials</Link><a href="#pricing" className="button button-secondary">Compare plans</a></div>
+          <div className="landing-hero-actions">{isAuthenticated ? (
+              <a href="/dashboard?checkout=individual" className="button button-primary">
+                Open CRED
+              </a>
+            ) : (
+              <Link href="/sign-up?plan=individual" className="button button-primary">
+                Start with Essentials
+              </Link>
+            )}<a href="#pricing" className="button button-secondary">Compare plans</a></div>
         </div>
         <div className="hero-product-card transformation-card" aria-label="Evidence to report transformation preview">
           <div className="mock-phone-header"><span /><strong>Capture → Report</strong><em>Human review</em></div>
