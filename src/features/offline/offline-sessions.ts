@@ -75,3 +75,20 @@ export async function updateOfflineSessionStatus(
     status,
   });
 }
+
+export async function getOfflineSession(localSessionId: string) {
+  const db = await getOfflineDb();
+  return db.get("offlineSessions", localSessionId);
+}
+
+export async function getMostRecentOfflineSession(userId: string) {
+  const db = await getOfflineDb();
+  const records = await db.getAllFromIndex("offlineSessions", "by-user", userId);
+
+  return (
+    records
+      .filter((record) => record.status !== "ready" || !record.serverSessionId)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0] ??
+    null
+  );
+}

@@ -22,6 +22,10 @@ import {
   type OfflineCaptureSessionData,
 } from "@/features/offline/session-cache";
 import {
+  getMostRecentOfflineSession,
+  getOfflineSession,
+} from "@/features/offline/offline-sessions";
+import {
   estimateStorage,
   requestPersistentStorage,
 } from "@/features/offline/storage";
@@ -116,6 +120,9 @@ async function safeEstimateStorage() {
 export function OfflineCaptureWorkspace() {
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("sessionId");
+  const localSessionId =
+    searchParams.get("localSessionId") ??
+    (sessionId?.startsWith("offline-") ? sessionId : null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
@@ -164,41 +171,120 @@ export function OfflineCaptureWorkspace() {
         return;
       }
 
-      let targetSessionId = sessionId;
+      let cachedSession: CachedSessionRecord | null = null;
 
-      if (!targetSessionId) {
-        const cachedSessions = await withTimeout(
-          getCachedCaptureSessions(identity.userId),
-          [],
+      if (localSessionId) {
+        const offlineSession = await withTimeout(
+          getOfflineSession(localSessionId),
+          null,
           5000,
         );
-        targetSessionId = cachedSessions[0]?.sessionId ?? null;
-      }
 
-      if (!targetSessionId) {
-        setError("No offline capture session is saved on this device yet.");
-        setLoading(false);
-        return;
-      }
+        if (
+          !offlineSession ||
+          offlineSession.userId !== identity.userId ||
+          offlineSession.organizationId !== identity.organizationId
+        ) {
+          setError("This offline session is not available for the current user.");
+          setLoading(false);
+          return;
+        }
 
-      const cachedSession = await withTimeout(
-        getCaptureSessionSnapshot(
-          targetSessionId,
-          identity.userId,
-        ),
-        null,
-        5000,
-      );
+        cachedSession = {
+          sessionId: offlineSession.serverSessionId ?? offlineSession.localSessionId,
+          organizationId: offlineSession.organizationId,
+          workspaceId: null,
+          userId: offlineSession.userId,
+          title: offlineSession.title,
+          sessionType: offlineSession.sessionType,
+          workflow: "observation_capture",
+          cachedAt: offlineSession.updatedAt,
+          expiresAt: null,
+          data: {
+            captureTitle: "Observation Capture",
+            returnPath: "/offline",
+            donePath: "/offline",
+            observationGroupId: null,
+            maxCaptureFileSizeBytes: 25 * 1024 * 1024,
+            maxVideoFileSizeBytes: 50 * 1024 * 1024,
+          },
+        };
+      } else {
+        let targetSessionId = sessionId;
 
-      if (
-        !cachedSession ||
-        cachedSession.organizationId !== identity.organizationId
-      ) {
-        setError(
-          "This session is not available offline for the current user.",
+        if (!targetSessionId) {
+          const cachedSessions = await withTimeout(
+            getCachedCaptureSessions(identity.userId),
+            [],
+            5000,
+          );
+          const offlineSession = await withTimeout(
+            getMostRecentOfflineSession(identity.userId),
+            null,
+            5000,
+          );
+
+          targetSessionId =
+            cachedSessions[0]?.sessionId ??
+            offlineSession?.localSessionId ??
+            null;
+        }
+
+        if (!targetSessionId) {
+          setError("No offline capture session is saved on this device yet.");
+          setLoading(false);
+          return;
+        }
+
+        cachedSession = await withTimeout(
+          getCaptureSessionSnapshot(
+            targetSessionId,
+            identity.userId,
+          ),
+          null,
+          5000,
         );
-        setLoading(false);
-        return;
+
+        if (!cachedSession && targetSessionId.startsWith("offline-")) {
+          const offlineSession = await withTimeout(
+            getOfflineSession(targetSessionId),
+            null,
+            5000,
+          );
+
+          if (offlineSession) {
+            cachedSession = {
+              sessionId: offlineSession.serverSessionId ?? offlineSession.localSessionId,
+              organizationId: offlineSession.organizationId,
+              workspaceId: null,
+              userId: offlineSession.userId,
+              title: offlineSession.title,
+              sessionType: offlineSession.sessionType,
+              workflow: "observation_capture",
+              cachedAt: offlineSession.updatedAt,
+              expiresAt: null,
+              data: {
+                captureTitle: "Observation Capture",
+                returnPath: "/offline",
+                donePath: "/offline",
+                observationGroupId: null,
+                maxCaptureFileSizeBytes: 25 * 1024 * 1024,
+                maxVideoFileSizeBytes: 50 * 1024 * 1024,
+              },
+            };
+          }
+        }
+
+        if (
+          !cachedSession ||
+          cachedSession.organizationId !== identity.organizationId
+        ) {
+          setError(
+            "This session is not available offline for the current user.",
+          );
+          setLoading(false);
+          return;
+        }
       }
 
       await safeRequestPersistentStorage();
@@ -285,7 +371,7 @@ export function OfflineCaptureWorkspace() {
       window.clearTimeout(loadingTimeout);
       createdUrls.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [sessionId]);
+  }, [localSessionId, sessionId]);
 
   async function addFiles(files: File[]) {
     if (!session || !sessionData) {
