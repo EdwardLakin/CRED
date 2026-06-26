@@ -11,7 +11,8 @@
     "test": "node --test $(find tests -maxdepth 1 -name '*.test.mjs' ! -name '*.integration.test.mjs' -print)",
     "test:integration": "node --test tests/*.integration.test.mjs",
     "test:e2e": "node scripts/run-e2e.mjs",
-    "postbuild": "node scripts/generate-offline-sw.mjs"
+    "postbuild": "node scripts/build-offline-shell.mjs && node scripts/generate-offline-sw.mjs",
+    "test:offline-browser": "playwright test"
   },
   "dependencies": {
     "@supabase/ssr": "latest",

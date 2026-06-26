@@ -449,6 +449,8 @@ export function AddCaptureForm({
       localId: record.id,
       clientMutationId:
         existing?.clientMutationId ?? record.id,
+      localSessionId: existing?.localSessionId ?? record.sessionId,
+      serverSessionId: existing?.serverSessionId ?? (record.sessionId.startsWith("offline-") ? null : record.sessionId),
       organizationId: record.organizationId,
       workspaceId: existing?.workspaceId ?? null,
       sessionId: record.sessionId,
@@ -488,6 +490,8 @@ export function AddCaptureForm({
             ? existing?.uploadState.uploadedAt ?? timestamp
             : null,
         finalizedAt:
+          record.status === "saved" ? timestamp : null,
+        verifiedAt:
           record.status === "saved" ? timestamp : null,
       },
       serverCaptureId: record.captureItemId ?? null,

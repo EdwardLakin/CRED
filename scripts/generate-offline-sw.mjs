@@ -25,8 +25,14 @@ const nextAssets = staticFiles.map((absolutePath) => {
   return `/_next/static/${relativePath}`;
 }).sort();
 
+const offlineAssetRoot = path.join(root, "public", "offline");
+const offlineFiles = (await walk(offlineAssetRoot))
+  .map((absolutePath) => `/offline/${path.relative(offlineAssetRoot, absolutePath).split(path.sep).join("/")}`)
+  .sort();
+
 const shellAssets = [
   "/offline.html",
+  ...offlineFiles,
   "/manifest.webmanifest",
   "/icons/cred-icon.svg",
   "/icons/cred-maskable.svg",

@@ -3,6 +3,7 @@ export type QueueStatus =
   | "queued"
   | "uploading"
   | "creating_record"
+  | "verifying"
   | "synced"
   | "blocked"
   | "failed";
@@ -13,6 +14,7 @@ export type OfflineUploadState = {
   storagePath: string | null;
   uploadedAt: string | null;
   finalizedAt: string | null;
+  verifiedAt?: string | null;
 };
 
 export type OfflineCaptureMetadata = {
@@ -29,15 +31,19 @@ export type OfflineCaptureMetadata = {
   filename: string;
   mimeType: string;
   size: number;
+  checksum?: string | null;
   uploadStatus?: string;
   uiError?: string;
   captureItemId?: string;
   storageUploaded?: boolean;
   noteSaveStatus?: string;
+  verified?: boolean;
 };
 
 export type OfflineCaptureRecord = {
   localId: string;
+  localSessionId: string;
+  serverSessionId: string | null;
   clientMutationId: string;
   organizationId: string;
   workspaceId: string | null;
@@ -84,6 +90,14 @@ export type OfflineSettings = {
 };
 
 export type OfflineSessionStatus =
+  | "draft"
+  | "capturing"
+  | "ready_to_sync"
+  | "creating_server_session"
+  | "syncing"
+  | "partially_synced"
+  | "synced"
+  | "error"
   | "local"
   | "creating"
   | "ready"
@@ -91,14 +105,20 @@ export type OfflineSessionStatus =
 
 export type OfflineSessionRecord = {
   localSessionId: string;
+  serverSessionId: string | null;
   organizationId: string;
   userId: string;
   title: string;
   sessionType: string;
   status: OfflineSessionStatus;
-  serverSessionId: string | null;
+  idempotencyKey?: string;
+  lastOpenedAt?: string;
+  serverCreateAttemptCount?: number;
+  serverCreateLastAttemptAt?: string | null;
+  serverCreateRecoveredAt?: string | null;
   retryCount: number;
   lastError: string | null;
+  syncedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 };

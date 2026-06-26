@@ -144,8 +144,10 @@ async function syncOfflineSessions(userId: string) {
       break;
     }
 
-    await updateOfflineSessionStatus(session.localSessionId, "creating", {
+    await updateOfflineSessionStatus(session.localSessionId, "creating_server_session", {
       lastError: null,
+      serverCreateAttemptCount: (session.serverCreateAttemptCount ?? 0) + 1,
+      serverCreateLastAttemptAt: new Date().toISOString(),
     });
 
     const response = await fetch("/api/dashboard/sessions/offline", {
@@ -158,6 +160,8 @@ async function syncOfflineSessions(userId: string) {
         title: session.title,
         sessionType: session.sessionType,
         createdAt: session.createdAt,
+        idempotencyKey: session.idempotencyKey,
+        organizationId: session.organizationId,
       }),
     });
 
@@ -171,7 +175,7 @@ async function syncOfflineSessions(userId: string) {
       const message =
         result.error ?? "Unable to create offline session on the server.";
 
-      await updateOfflineSessionStatus(session.localSessionId, "failed", {
+      await updateOfflineSessionStatus(session.localSessionId, "error", {
         retryCount: session.retryCount + 1,
         lastError: message,
       });
@@ -185,8 +189,9 @@ async function syncOfflineSessions(userId: string) {
       userId,
     );
 
-    await updateOfflineSessionStatus(session.localSessionId, "ready", {
+    await updateOfflineSessionStatus(session.localSessionId, "partially_synced", {
       serverSessionId: result.sessionId,
+      serverCreateRecoveredAt: new Date().toISOString(),
       lastError: null,
     });
   }
@@ -410,6 +415,22 @@ async function syncCapture(record: OfflineCaptureRecord) {
       }),
     );
   }
+
+  current = await updateRecord(current, {
+    status: "verifying",
+    serverCaptureId: result.captureItemId,
+    uploadState: {
+      ...current.uploadState,
+      finalizedAt: new Date().toISOString(),
+      verifiedAt: new Date().toISOString(),
+    },
+    metadata: {
+      ...current.metadata,
+      captureItemId: result.captureItemId,
+      uploadStatus: "verified",
+      verified: true,
+    },
+  });
 
   await removeCapture(current.localId);
 

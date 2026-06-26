@@ -5,19 +5,16 @@ import test from 'node:test';
 const generator = fs.readFileSync('scripts/generate-offline-sw.mjs', 'utf8');
 const offlineHtml = fs.readFileSync('public/offline.html', 'utf8');
 
-test('offline shell is a standalone static document with local session and capture persistence', () => {
+test('offline shell is a static document that loads deterministic local assets', () => {
   assert.match(offlineHtml, /CRED offline shell/);
-  assert.match(offlineHtml, /indexedDB\.open\(DB,VER\)/);
-  assert.match(offlineHtml, /offlineSessions/);
-  assert.match(offlineHtml, /queuedCaptures/);
-  assert.match(offlineHtml, /URL\.createObjectURL\(r\.blob\)/);
-  assert.match(offlineHtml, /reportOrder/);
-  assert.match(offlineHtml, /technicianNote/);
+  assert.match(offlineHtml, /\/offline\/offline-shell\.css/);
+  assert.match(offlineHtml, /type="module" src="\/offline\/offline-shell\.js"/);
+  assert.doesNotMatch(offlineHtml, /indexedDB\.open/);
 });
 
-test('service-worker generation precaches the static offline entry and validates assets', () => {
+test('service-worker generation precaches static offline entry and all shell assets', () => {
   assert.match(generator, /"\/offline\.html"/);
-  assert.doesNotMatch(generator.match(/const shellAssets = \[([\s\S]*?)\];/)?.[1] ?? '', /"\/offline"/);
+  assert.match(generator, /offlineFiles/);
   assert.match(generator, /redirect: "error"/);
   assert.match(generator, /Refusing to precache HTML for asset/);
   assert.match(generator, /response\.redirected/);
