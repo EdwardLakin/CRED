@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cred-offline-4b7d792dceef3060";
+const CACHE_VERSION = "cred-offline-017a0e7ad069e1a4";
 const OFFLINE_ROUTE = "/offline";
 const OFFLINE_CAPTURE_ROUTE = "/offline/capture";
 const PRECACHE_ASSETS = [
@@ -8,30 +8,30 @@ const PRECACHE_ASSETS = [
   "/icons/cred-icon.svg",
   "/icons/cred-maskable.svg",
   "/splash/cred-splash.svg",
-  "/_next/static/aUQizO8QsUHyPyIhmV64E/_buildManifest.js",
-  "/_next/static/aUQizO8QsUHyPyIhmV64E/_clientMiddlewareManifest.js",
-  "/_next/static/aUQizO8QsUHyPyIhmV64E/_ssgManifest.js",
+  "/_next/static/9xArfSo1j6HlcOBbxGZJk/_buildManifest.js",
+  "/_next/static/9xArfSo1j6HlcOBbxGZJk/_clientMiddlewareManifest.js",
+  "/_next/static/9xArfSo1j6HlcOBbxGZJk/_ssgManifest.js",
   "/_next/static/chunks/0245a4ypel7xx.js",
   "/_next/static/chunks/05-c3ty_6dwfk.js",
+  "/_next/static/chunks/0bkv5rrc09el3.js",
   "/_next/static/chunks/0cz1d0mv5g_q7.js",
+  "/_next/static/chunks/0ded34472jbsn.js",
+  "/_next/static/chunks/0jixbqy0k4bzj.js",
   "/_next/static/chunks/0jr-cjjbn9cqu.js",
-  "/_next/static/chunks/0qoti1pp9x7uc.js",
-  "/_next/static/chunks/0vidjj1dhy3dp.js",
   "/_next/static/chunks/0zm7blno40yu7.js",
   "/_next/static/chunks/14mrh2-p_w84d.js",
-  "/_next/static/chunks/19kvub6cc2jf6.js",
-  "/_next/static/chunks/1f0euw-uct5ws.js",
   "/_next/static/chunks/1ldhwkdsg700d.js",
   "/_next/static/chunks/1p5lb30nn3tou.js",
   "/_next/static/chunks/1rxncug86bump.js",
   "/_next/static/chunks/21x9obqqc2awh.js",
   "/_next/static/chunks/27jktro2p5rq9.js",
   "/_next/static/chunks/2cya-h6pss2j9.js",
+  "/_next/static/chunks/2emo93yu_8gto.js",
   "/_next/static/chunks/2fxatfi4xu1vg.js",
-  "/_next/static/chunks/33fwor1w647pa.js",
+  "/_next/static/chunks/2fzoez5-dhmm_.js",
   "/_next/static/chunks/34a1oukrr93wj.js",
   "/_next/static/chunks/36z57ezv9m8s9.js",
-  "/_next/static/chunks/3efziasrc3p6j.js",
+  "/_next/static/chunks/3fa2x824vlxtg.js",
   "/_next/static/chunks/3j2u3da3i8eh9.css",
   "/_next/static/chunks/3jvkbm-wxvaor.js",
   "/_next/static/chunks/3lj22afoxci84.js",
@@ -46,7 +46,7 @@ self.addEventListener("install", (event) => {
     (async () => {
       const cache = await caches.open(CACHE_VERSION);
 
-      await Promise.allSettled(
+      await Promise.all(
         PRECACHE_ASSETS.map(async (asset) => {
           const request = new Request(asset, {
             cache: "reload",
