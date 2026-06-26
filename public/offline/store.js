@@ -87,10 +87,12 @@ export async function capturesForSession(localSessionId, identity = getOfflineId
 }
 export async function sessionStats(localSessionId, identity = getOfflineIdentity()) {
     const captures = await capturesForSession(localSessionId, identity);
+    const sessions = await listSessions(identity);
+    const session = sessions.find((candidate) => candidate.localSessionId === localSessionId);
     const pending = captures.filter((capture) => capture.status !== 'synced' && !capture.uploadState?.verifiedAt);
     const verified = captures.filter((capture) => capture.uploadState?.verifiedAt || capture.metadata?.verified);
     const bytes = captures.reduce((sum, capture) => sum + (capture.metadata?.size || capture.blob?.size || 0), 0);
-    return { captureCount: captures.length, pendingCount: pending.length, verifiedCount: verified.length, bytes };
+    return { captureCount: Math.max(captures.length, session?.originalCaptureCount ?? 0), pendingCount: pending.length, verifiedCount: Math.max(verified.length, session?.verifiedCaptureCount ?? 0), bytes };
 }
 export async function addCapture(session, file, order) {
     const timestamp = now();
@@ -118,7 +120,7 @@ export async function addCapture(session, file, order) {
     };
     await put('queuedCaptures', record);
     const nextStatus = session.status === SESSION_STATUSES.synced ? SESSION_STATUSES.partiallySynced : SESSION_STATUSES.capturing;
-    await saveSession(session, { status: nextStatus, syncedAt: null });
+    await saveSession(session, { status: nextStatus, syncedAt: null, originalCaptureCount: (session.originalCaptureCount ?? 0) + 1 });
     return record;
 }
 export async function updateCapture(capture, patch) { return put('queuedCaptures', { ...capture, ...patch, updatedAt: now() }); }

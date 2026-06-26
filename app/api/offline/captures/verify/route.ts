@@ -67,10 +67,11 @@ export async function POST(request: Request) {
 
     const { data: storedFile, error: storageError } = await supabase.storage
       .from(CAPTURE_BUCKET)
-      .download(storagePath);
+      .info(storagePath);
 
     if (storageError || !storedFile) mismatches.push("storage_object");
-    if (storedFile && Number.isFinite(expectedSize) && storedFile.size !== expectedSize) mismatches.push("storage_size");
+    if (storedFile && Number.isFinite(expectedSize) && typeof storedFile.size === "number" && storedFile.size !== expectedSize) mismatches.push("storage_size");
+    if (storedFile && mimeType && storedFile.contentType && storedFile.contentType.toLowerCase() !== mimeType) mismatches.push("storage_content_type");
 
     if (mismatches.length > 0) {
       return NextResponse.json({ ok: false, verified: false, mismatches }, { status: 409, headers: { "Cache-Control": "no-store" } });

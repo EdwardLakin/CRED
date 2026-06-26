@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cred-offline-20e72869f4fe05f3";
+const CACHE_VERSION = "cred-offline-76b4a1a5750171fe";
 const OFFLINE_DOCUMENT = "/offline.html";
 const PRECACHE_ASSETS = [
   "/offline.html",
@@ -11,37 +11,38 @@ const PRECACHE_ASSETS = [
   "/icons/cred-icon.svg",
   "/icons/cred-maskable.svg",
   "/splash/cred-splash.svg",
+  "/_next/static/chunks/018mpmg71m-z8.js",
   "/_next/static/chunks/0245a4ypel7xx.js",
   "/_next/static/chunks/05-c3ty_6dwfk.js",
-  "/_next/static/chunks/07d56l6rbn9t2.js",
   "/_next/static/chunks/0cz1d0mv5g_q7.js",
+  "/_next/static/chunks/0eg8onq1j4-sw.js",
   "/_next/static/chunks/0jr-cjjbn9cqu.js",
-  "/_next/static/chunks/0kaesdo4c8ydp.js",
+  "/_next/static/chunks/0s-0lv6l6r0r-.js",
   "/_next/static/chunks/0zm7blno40yu7.js",
   "/_next/static/chunks/14mrh2-p_w84d.js",
-  "/_next/static/chunks/1ip10urrssanf.js",
   "/_next/static/chunks/1ldhwkdsg700d.js",
   "/_next/static/chunks/1rxncug86bump.js",
-  "/_next/static/chunks/1tmvbs6r7mo1e.js",
   "/_next/static/chunks/21x9obqqc2awh.js",
+  "/_next/static/chunks/26uwj8-hs2_53.js",
   "/_next/static/chunks/27jktro2p5rq9.js",
   "/_next/static/chunks/2cya-h6pss2j9.js",
-  "/_next/static/chunks/2f_s7jseohohb.js",
   "/_next/static/chunks/2fxatfi4xu1vg.js",
   "/_next/static/chunks/2nfb637yct5x2.js",
   "/_next/static/chunks/34a1oukrr93wj.js",
+  "/_next/static/chunks/353ljl5xkkd14.js",
   "/_next/static/chunks/362catsqzs45j.js",
   "/_next/static/chunks/36z57ezv9m8s9.js",
   "/_next/static/chunks/3ct-0kbhmcuu4.js",
+  "/_next/static/chunks/3d85m1mfaag_e.js",
   "/_next/static/chunks/3j2u3da3i8eh9.css",
   "/_next/static/chunks/3jvkbm-wxvaor.js",
-  "/_next/static/chunks/3lsv8lgn1_lit.js",
+  "/_next/static/chunks/3rhx_ktvpde77.js",
   "/_next/static/chunks/43cavunylurnk.js",
   "/_next/static/chunks/turbopack-3y4_9gvwbdyxg.js",
   "/_next/static/media/favicon.2vob68tjqpejf.ico",
-  "/_next/static/vc7p-zwmwXvfSWD6TjgDm/_buildManifest.js",
-  "/_next/static/vc7p-zwmwXvfSWD6TjgDm/_clientMiddlewareManifest.js",
-  "/_next/static/vc7p-zwmwXvfSWD6TjgDm/_ssgManifest.js"
+  "/_next/static/nKi4w_1yLysn9cBtShFbm/_buildManifest.js",
+  "/_next/static/nKi4w_1yLysn9cBtShFbm/_clientMiddlewareManifest.js",
+  "/_next/static/nKi4w_1yLysn9cBtShFbm/_ssgManifest.js"
 ];
 const NAVIGATION_PATHS = new Set(["/", "/dashboard", "/offline", "/offline/capture"]);
 

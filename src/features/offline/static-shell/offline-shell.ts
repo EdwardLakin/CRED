@@ -1,4 +1,4 @@
-import type { OfflineCapabilities, OfflineCaptureRecord, OfflineIdentity, OfflineLocalSession, SessionStatus } from './contracts.js';
+import type { OfflineCapabilities, OfflineCaptureRecord, OfflineIdentity, OfflineLocalSession, ReachabilityResult, SessionStatus } from './contracts.js';
 import { now, SESSION_STATUSES, SYNCABLE_STATUSES } from './contracts.js';
 import { addCapture, capturesForSession, createSession, deleteCapture, deleteSession, getOfflineIdentity, listSessions, retargetSessionCaptures, saveSession, sessionStats, updateCapture } from './store.js';
 
@@ -33,17 +33,25 @@ async function refreshStorageEstimate() {
   }
 }
 
-async function canReachServer() {
-  if (!navigator.onLine) return false;
+async function canReachServer(identity: OfflineIdentity | null): Promise<ReachabilityResult> {
+  if (!identity) return { ok: false, status: 'unauthenticated', error: 'Device is not provisioned for offline handoff.' };
+  if (!navigator.onLine) return { ok: false, status: 'offline', error: 'Network signal is offline.' };
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 3500);
     const response = await fetch('/api/offline/reachability', { cache: 'no-store', signal: controller.signal, headers: { Accept: 'application/json' } });
     clearTimeout(timeout);
-    if (response.status === 401 || response.status === 403) throw new Error('Sign-in required to complete sync. Local data remains on this device.');
-    return response.ok;
+    const result = (await response.json().catch(() => null)) as ReachabilityResult | null;
+    if (response.status === 401 || response.status === 403 || result?.status === 'unauthenticated') {
+      return { ok: false, status: 'unauthenticated', error: 'Sign-in required to complete sync. Local data remains on this device.' };
+    }
+    if (!response.ok || !result?.ok) return { ok: false, status: 'api_unavailable', error: result?.error || 'CRED API is unavailable.' };
+    if (result.userId !== identity.userId || result.organizationId !== identity.organizationId) {
+      return { ok: false, status: 'auth_mismatch', userId: result.userId, organizationId: result.organizationId, error: 'Wrong account or organization. Sign into the account that provisioned these offline sessions; local data was not changed.' };
+    }
+    return result;
   } catch {
-    return false;
+    return { ok: false, status: 'api_unavailable', error: 'CRED API is unavailable or the connection is captive/intermittent.' };
   }
 }
 
@@ -182,8 +190,8 @@ async function moveCapture(captures: OfflineCaptureRecord[], index: number, dire
 }
 
 async function syncSession(localSessionId: string) {
-  const reachable = await canReachServer();
-  if (!reachable) return setMessage('Server is not reachable yet. Local data is preserved and sync can be retried.', 'warning');
+  const reachability = await canReachServer(state.identity);
+  if (!reachability.ok) return setMessage(reachability.error || 'Server is not reachable yet. Local data is preserved and sync can be retried.', reachability.status === 'unauthenticated' ? 'error' : 'warning');
   const sessions = await listSessions(state.identity);
   let session = sessions.find((candidate: OfflineLocalSession) => candidate.localSessionId === localSessionId);
   if (!session) return;

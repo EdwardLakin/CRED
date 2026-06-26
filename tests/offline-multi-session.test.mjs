@@ -47,3 +47,22 @@ test('independent sync preserves auth failures and partial work per session', ()
   assert.match(app, /for \(const session of sessions\.filter/);
   assert.doesNotMatch(app, /clearQueue/);
 });
+
+
+test('handoff requires authenticated identity to match provisioned user and organization', () => {
+  assert.match(app, /result\.userId !== identity\.userId/);
+  assert.match(app, /result\.organizationId !== identity\.organizationId/);
+  assert.match(app, /Wrong account or organization/);
+  assert.match(app, /Device is not provisioned for offline handoff/);
+  assert.match(app, /Sign-in required to complete sync/);
+  assert.match(app, /fetch\('\/api\/dashboard\/sessions\/offline'/);
+});
+
+test('verification uses storage metadata instead of downloading full media blobs', () => {
+  const verifyRoute = fs.readFileSync('app/api/offline/captures/verify/route.ts', 'utf8');
+  assert.match(verifyRoute, /\.info\(storagePath\)/);
+  assert.doesNotMatch(verifyRoute, /\.download\(storagePath\)/);
+  assert.match(verifyRoute, /storage_size/);
+  assert.match(verifyRoute, /technician_note/);
+  assert.match(verifyRoute, /report_order/);
+});

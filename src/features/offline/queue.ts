@@ -1,4 +1,5 @@
 import { getOfflineDb } from "@/features/offline/db";
+import { incrementOfflineSessionCaptureCount } from "@/features/offline/offline-sessions";
 import type { OfflineCaptureRecord, QueueStatus } from "@/features/offline/types";
 
 export type QueueCaptureInput = Omit<
@@ -54,6 +55,7 @@ export async function queueCapture(input: QueueCaptureInput) {
   };
 
   await db.put("queuedCaptures", record);
+  await incrementOfflineSessionCaptureCount(record.localSessionId);
   return record;
 }
 

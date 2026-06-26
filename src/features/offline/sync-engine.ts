@@ -18,6 +18,7 @@ import {
 } from "@/features/offline/queue";
 import {
   getPendingOfflineSessions,
+  recordVerifiedOfflineCapture,
   updateOfflineSessionStatus,
 } from "@/features/offline/offline-sessions";
 import type {
@@ -493,6 +494,7 @@ async function syncCapture(record: OfflineCaptureRecord) {
     },
   });
 
+  await recordVerifiedOfflineCapture(current.localSessionId, current.metadata.reportOrder !== null ? current.metadata.reportOrder + 1 : 1);
   await removeCapture(current.localId);
 
   return result.captureItemId;

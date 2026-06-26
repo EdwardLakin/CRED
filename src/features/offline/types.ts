@@ -126,6 +126,8 @@ export type OfflineSessionRecord = {
   retryCount: number;
   lastError: string | null;
   syncedAt?: string | null;
+  originalCaptureCount?: number;
+  verifiedCaptureCount?: number;
   createdAt: string;
   updatedAt: string;
 };

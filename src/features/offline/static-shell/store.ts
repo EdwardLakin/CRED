@@ -90,10 +90,12 @@ export async function capturesForSession(localSessionId: string, identity: Offli
 
 export async function sessionStats(localSessionId: string, identity: OfflineIdentity | null = getOfflineIdentity()): Promise<{ captureCount: number; pendingCount: number; verifiedCount: number; bytes: number }> {
   const captures = await capturesForSession(localSessionId, identity);
+  const sessions = await listSessions(identity);
+  const session = sessions.find((candidate: OfflineLocalSession) => candidate.localSessionId === localSessionId);
   const pending = captures.filter((capture: OfflineCaptureRecord) => capture.status !== 'synced' && !capture.uploadState?.verifiedAt);
   const verified = captures.filter((capture: OfflineCaptureRecord) => capture.uploadState?.verifiedAt || capture.metadata?.verified);
   const bytes = captures.reduce((sum: number, capture: OfflineCaptureRecord) => sum + (capture.metadata?.size || capture.blob?.size || 0), 0);
-  return { captureCount: captures.length, pendingCount: pending.length, verifiedCount: verified.length, bytes };
+  return { captureCount: Math.max(captures.length, session?.originalCaptureCount ?? 0), pendingCount: pending.length, verifiedCount: Math.max(verified.length, session?.verifiedCaptureCount ?? 0), bytes };
 }
 
 export async function addCapture(session: OfflineLocalSession, file: File, order: number): Promise<OfflineCaptureRecord> {
@@ -122,7 +124,7 @@ export async function addCapture(session: OfflineLocalSession, file: File, order
   };
   await put('queuedCaptures', record);
   const nextStatus = session.status === SESSION_STATUSES.synced ? SESSION_STATUSES.partiallySynced : SESSION_STATUSES.capturing;
-  await saveSession(session, { status: nextStatus, syncedAt: null });
+  await saveSession(session, { status: nextStatus, syncedAt: null, originalCaptureCount: (session.originalCaptureCount ?? 0) + 1 });
   return record;
 }
 

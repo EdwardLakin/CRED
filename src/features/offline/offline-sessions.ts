@@ -28,6 +28,8 @@ function normalizeSession(record: OfflineSessionRecord): OfflineSessionRecord {
     serverCreateLastAttemptAt: record.serverCreateLastAttemptAt ?? null,
     serverCreateRecoveredAt: record.serverCreateRecoveredAt ?? null,
     syncedAt: record.syncedAt ?? null,
+    originalCaptureCount: record.originalCaptureCount ?? 0,
+    verifiedCaptureCount: record.verifiedCaptureCount ?? 0,
   };
 }
 
@@ -118,4 +120,32 @@ export async function getMostRecentOfflineSession(userId: string) {
   return records
     .filter((record) => record.status !== "synced" || !record.serverSessionId)
     .sort((left, right) => (right.lastOpenedAt ?? right.updatedAt).localeCompare(left.lastOpenedAt ?? left.updatedAt))[0] ?? null;
+}
+
+export async function incrementOfflineSessionCaptureCount(localSessionId: string) {
+  const db = await getOfflineDb();
+  const existing = await db.get("offlineSessions", localSessionId);
+  if (!existing) return null;
+  return saveOfflineSession({
+    ...existing,
+    originalCaptureCount: (existing.originalCaptureCount ?? 0) + 1,
+    status: existing.status === "synced" ? "partially_synced" : existing.status,
+    syncedAt: existing.status === "synced" ? null : existing.syncedAt,
+  });
+}
+
+export async function recordVerifiedOfflineCapture(localSessionId: string, expectedCaptureCount: number) {
+  const db = await getOfflineDb();
+  const existing = await db.get("offlineSessions", localSessionId);
+  if (!existing) return null;
+  const verifiedCaptureCount = (existing.verifiedCaptureCount ?? 0) + 1;
+  const originalCaptureCount = Math.max(existing.originalCaptureCount ?? 0, expectedCaptureCount, verifiedCaptureCount);
+  return saveOfflineSession({
+    ...existing,
+    originalCaptureCount,
+    verifiedCaptureCount,
+    status: verifiedCaptureCount >= originalCaptureCount ? "synced" : "partially_synced",
+    syncedAt: verifiedCaptureCount >= originalCaptureCount ? now() : existing.syncedAt,
+    lastError: null,
+  });
 }
