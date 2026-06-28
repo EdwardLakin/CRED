@@ -11,6 +11,11 @@ test('offline shell is a static document that loads deterministic local assets',
   assert.match(offlineHtml, /\/offline\/offline-shell\.css/);
   assert.match(offlineHtml, /type="module" src="\/offline\/offline-shell\.js"/);
   assert.doesNotMatch(offlineHtml, /indexedDB\.open/);
+  const shell = fs.readFileSync('src/features/offline/static-shell/offline-shell.ts', 'utf8');
+  assert.match(shell, /navigator\.serviceWorker\.register\('\/sw\.js'/);
+  assert.match(shell, /navigator\.serviceWorker\.controller/);
+  assert.match(shell, /CONTROL_RELOAD_KEY/);
+  assert.match(shell, /Offline ready on this device/);
 });
 
 test('service-worker generation precaches static offline entry and all shell assets', () => {
@@ -56,4 +61,13 @@ test('Apple Home Screen icon is declared, generated as 180px PNG, and precached'
   assert.match(generator, /await fs\.access\(path\.join\(root, "public", "apple-touch-icon\.png"\)\)/);
   assert.match(generator, /"\/apple-touch-icon\.png"/);
   assert.match(generator, /url\.pathname === "\/apple-touch-icon\.png"/);
+});
+
+
+test('iOS/iPadOS Home Screen documentation points users to offline install page', () => {
+  const docs = fs.readFileSync('docs/OFFLINE_HOME_SCREEN_INSTALL.md', 'utf8');
+  assert.match(docs, /Set up offline Home Screen app/);
+  assert.match(docs, /\/offline\.html/);
+  assert.match(docs, /Share → Add to Home Screen/);
+  assert.match(docs, /Airplane Mode/);
 });

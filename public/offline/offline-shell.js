@@ -1,6 +1,8 @@
 import { now, SESSION_STATUSES, SYNCABLE_STATUSES } from './contracts.js';
 import { addCapture, capturesForSession, createSession, deleteCapture, deleteSession, getOfflineIdentity, listSessions, retargetSessionCaptures, saveSession, sessionStats, updateCapture } from './store.js';
-const state = { identity: null, activeSession: null, objectUrls: [], storageEstimate: null, capabilities: null };
+const REQUIRED_OFFLINE_ASSETS = ['/offline.html', '/offline/offline-shell.css', '/offline/offline-shell.js', '/offline/contracts.js', '/offline/db.js', '/offline/store.js', '/manifest.webmanifest', '/apple-touch-icon.png'];
+const CONTROL_RELOAD_KEY = 'cred-offline-control-reload-attempted';
+const state = { identity: null, activeSession: null, objectUrls: [], storageEstimate: null, capabilities: null, serviceWorker: { registered: false, active: false, controlled: false, cached: false, cacheMissing: REQUIRED_OFFLINE_ASSETS, error: null } };
 const $ = (id) => document.getElementById(id);
 const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] ?? char);
 const formatBytes = (bytes) => bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -9,6 +11,76 @@ function setMessage(text, className = '') { const el = $('message'); if (el) {
     el.textContent = text || '';
     el.className = className;
 } }
+function waitForControllerChange(timeoutMs = 2500) {
+    if (navigator.serviceWorker?.controller)
+        return Promise.resolve(true);
+    return new Promise((resolve) => {
+        const timeout = window.setTimeout(() => { cleanup(); resolve(Boolean(navigator.serviceWorker?.controller)); }, timeoutMs);
+        const onControllerChange = () => { cleanup(); resolve(true); };
+        const cleanup = () => { window.clearTimeout(timeout); navigator.serviceWorker?.removeEventListener('controllerchange', onControllerChange); };
+        navigator.serviceWorker?.addEventListener('controllerchange', onControllerChange, { once: true });
+    });
+}
+async function requiredAssetsCached() {
+    if (!('caches' in globalThis))
+        return { cached: false, missing: REQUIRED_OFFLINE_ASSETS };
+    const results = await Promise.all(REQUIRED_OFFLINE_ASSETS.map(async (asset) => ({ asset, response: await caches.match(asset).catch(() => undefined) })));
+    const missing = results.filter(({ response }) => !response?.ok).map(({ asset }) => asset);
+    return { cached: missing.length === 0, missing };
+}
+async function ensureServiceWorkerControl() {
+    if (!('serviceWorker' in navigator))
+        return { registered: false, active: false, controlled: false, cached: false, cacheMissing: REQUIRED_OFFLINE_ASSETS, error: 'Service workers are not supported in this browser.' };
+    try {
+        const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' });
+        await registration.update().catch(() => undefined);
+        if (registration.waiting)
+            registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+        const readyRegistration = await navigator.serviceWorker.ready;
+        const active = Boolean(readyRegistration.active || registration.active);
+        let controlled = Boolean(navigator.serviceWorker.controller);
+        if (!controlled)
+            controlled = await waitForControllerChange();
+        const cacheState = await requiredAssetsCached();
+        const readiness = { registered: true, active, controlled, cached: cacheState.cached, cacheMissing: cacheState.missing, error: null };
+        state.serviceWorker = readiness;
+        if (navigator.onLine && !controlled && sessionStorage.getItem(CONTROL_RELOAD_KEY) !== 'true') {
+            sessionStorage.setItem(CONTROL_RELOAD_KEY, 'true');
+            setMessage('Installing the offline Home Screen app shell. Reloading once so this page is controlled by the service worker…', 'warning');
+            window.setTimeout(() => window.location.reload(), 250);
+        }
+        else if (controlled) {
+            sessionStorage.removeItem(CONTROL_RELOAD_KEY);
+        }
+        return readiness;
+    }
+    catch (error) {
+        const cacheState = await requiredAssetsCached();
+        const readiness = { registered: false, active: false, controlled: Boolean(navigator.serviceWorker.controller), cached: cacheState.cached, cacheMissing: cacheState.missing, error: error instanceof Error ? error.message : 'Service worker registration failed.' };
+        state.serviceWorker = readiness;
+        return readiness;
+    }
+}
+function renderOfflineReadiness() {
+    const sw = state.serviceWorker;
+    const identityReady = Boolean(state.identity);
+    const ready = identityReady && sw.registered && sw.active && sw.controlled && sw.cached;
+    const missing = [];
+    if (!identityReady)
+        missing.push('offline identity is not provisioned');
+    if (!sw.registered)
+        missing.push('service worker is not registered');
+    if (!sw.active)
+        missing.push('service worker is not active');
+    if (!sw.controlled)
+        missing.push('this page is not controlled by the service worker yet');
+    if (!sw.cached)
+        missing.push(`required offline assets are not cached${sw.cacheMissing.length ? ` (${sw.cacheMissing.join(', ')})` : ''}`);
+    const detail = sw.error ? ` ${escapeHtml(sw.error)}` : '';
+    $('offlineReady').innerHTML = ready
+        ? '<span class="status success">Offline ready on this device</span><p class="muted">Use Share → Add to Home Screen from this /offline.html page on iPhone or iPad. Then launch once online before relying on Airplane Mode.</p>'
+        : `<span class="status warning">Offline setup incomplete</span><p class="muted">Waiting for: ${escapeHtml(missing.join('; ') || 'offline setup checks')}.${detail}</p>`;
+}
 function detectCapabilities() {
     const input = document.createElement('input');
     input.type = 'file';
@@ -83,12 +155,15 @@ async function renderDashboard() {
     renderSupport();
     $('workspace').classList.add('hidden');
     $('dashboard').classList.remove('hidden');
+    renderOfflineReadiness();
     if (!state.identity) {
         $('provisioning').textContent = 'Device not provisioned. Sign in online once and open Dashboard to save offline identity before creating local sessions.';
         $('sessions').innerHTML = '';
+        renderOfflineReadiness();
         return;
     }
     $('provisioning').textContent = `Provisioned for organization ${state.identity.organizationId}. Provisioned at ${state.identity.provisionedAt || 'unknown time'}.`;
+    renderOfflineReadiness();
     const sessions = await listSessions(state.identity);
     const rows = await Promise.all(sessions.map(async (session) => ({ session, stats: await sessionStats(session.localSessionId, state.identity) })));
     $('sessions').innerHTML = rows.length ? rows.map(({ session, stats }) => sessionCard(session, stats)).join('') : '<section class="card"><h2>No local sessions yet</h2><p class="muted">Start a new session before leaving connectivity, or create one now if this device is already provisioned.</p></section>';
@@ -242,6 +317,7 @@ async function syncSession(localSessionId) {
 }
 async function boot() {
     state.capabilities = detectCapabilities();
+    await ensureServiceWorkerControl();
     if (navigator.storage?.persist)
         navigator.storage.persist().catch(() => { });
     $('newSession').onclick = async () => { if (!state.identity)

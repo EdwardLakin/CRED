@@ -160,11 +160,14 @@ export function InstallPrompt() {
         <strong>{installLabel}</strong>
         <p>
           {isIOS
-            ? 'On iPhone or iPad, use Share → Add to Home Screen to launch CRED full screen without Safari chrome.'
+            ? 'On iPhone or iPad, open the Offline Install page first, confirm it says Offline ready, then use Share → Add to Home Screen from that page.'
             : 'Install CRED from your browser for a native app experience on this device.'}
         </p>
       </div>
       <div className="pwa-install-actions">
+        <a className="button button-secondary" href="/offline.html">
+          Set up offline Home Screen app
+        </a>
         {canInstall ? (
           <button type="button" className="button button-primary" onClick={handleInstall}>
             Install
