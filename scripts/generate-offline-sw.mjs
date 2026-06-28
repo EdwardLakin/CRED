@@ -19,6 +19,7 @@ async function walk(directory) {
 }
 
 await fs.access(offlineDocumentPath);
+await fs.access(path.join(root, "public", "apple-touch-icon.png"));
 const staticFiles = await walk(nextStaticRoot);
 const nextAssets = staticFiles.map((absolutePath) => {
   const relativePath = path.relative(nextStaticRoot, absolutePath).split(path.sep).join("/");
@@ -34,6 +35,7 @@ const shellAssets = [
   "/offline.html",
   ...offlineFiles,
   "/manifest.webmanifest",
+  "/apple-touch-icon.png",
   "/icons/cred-icon.svg",
   "/icons/cred-maskable.svg",
   "/splash/cred-splash.svg",
@@ -100,7 +102,7 @@ self.addEventListener("message", (event) => {
 function sameOrigin(url) { return url.origin === self.location.origin; }
 function isApiOrExternal(url) { return !sameOrigin(url) || url.pathname.startsWith("/api/") || url.hostname.includes("supabase.co"); }
 function isRscRequest(request, url) { return url.searchParams.has("_rsc") || request.headers.get("RSC") === "1" || (request.headers.get("Accept") || "").includes("text/x-component"); }
-function isStaticAsset(request, url) { return request.destination === "script" || request.destination === "style" || request.destination === "font" || request.destination === "manifest" || request.destination === "image" || url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/icons/") || url.pathname.startsWith("/splash/"); }
+function isStaticAsset(request, url) { return request.destination === "script" || request.destination === "style" || request.destination === "font" || request.destination === "manifest" || request.destination === "image" || url.pathname.startsWith("/_next/static/") || url.pathname === "/apple-touch-icon.png" || url.pathname.startsWith("/icons/") || url.pathname.startsWith("/splash/"); }
 function shouldUseOfflineShell(url) { return NAVIGATION_PATHS.has(url.pathname) || url.pathname.startsWith("/dashboard/") || url.pathname.startsWith("/offline/"); }
 async function offlineDocument() { return (await caches.match(OFFLINE_DOCUMENT)) || new Response("CRED offline shell is not installed.", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } }); }
 async function fetchWithTimeout(request, timeoutMs) { const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), timeoutMs); try { return await fetch(request, { signal: controller.signal }); } finally { clearTimeout(timeout); } }
