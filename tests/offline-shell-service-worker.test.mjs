@@ -122,3 +122,60 @@ test('iOS/iPadOS Home Screen documentation points users to offline install page'
   assert.match(docs, /Share → Add to Home Screen/);
   assert.match(docs, /Airplane Mode/);
 });
+
+test('service worker install treats icons and generated static assets as optional', () => {
+  const worker = fs.readFileSync('public/sw.js', 'utf8');
+
+  assert.match(worker, /const REQUIRED_ASSETS = new Set\(REQUIRED_DIAGNOSTIC_ASSETS\)/);
+  assert.match(worker, /optionalErrors\.push\(\{ asset, error: message \}\)/);
+  assert.match(worker, /if \(REQUIRED_ASSETS\.has\(asset\)\) throw new Error\(`Required offline asset failed: \$\{asset\}: \$\{message\}`\)/);
+  assert.doesNotMatch(worker.match(/const REQUIRED_DIAGNOSTIC_ASSETS = \[[^\]]+\]/)?.[0] || '', /apple-touch-icon|\/icons\/|\/splash\/|\/_next\/static\//);
+});
+
+test('service worker install does not reject for skipWaiting or diagnostic storage failures', () => {
+  const worker = fs.readFileSync('public/sw.js', 'utf8');
+
+  assert.match(worker, /async function executeSkipWaiting[\s\S]*return false;[\s\S]*\}/);
+  assert.doesNotMatch(worker, /throw error; \} \}\n\nasync function storeInstallError/);
+  assert.match(worker, /await storeInstallError\(message\)\.catch\(\(\) => undefined\);/);
+  assert.match(worker, /await executeSkipWaiting\("install"\);/);
+});
+
+test('service worker cache.put failures include the exact asset name', () => {
+  const worker = fs.readFileSync('public/sw.js', 'utf8');
+
+  assert.match(worker, /Unable to cache\.put precache asset \$\{asset\}/);
+  assert.match(worker, /Unable to fetch precache asset \$\{asset\}/);
+});
+
+test('successful required cache install resolves install and then activates with non-fatal clients.claim', () => {
+  const worker = fs.readFileSync('public/sw.js', 'utf8');
+
+  assert.match(worker, /markLifecycle\("install", \{ completedAt: new Date\(\)\.toISOString\(\), error: null, optionalErrors \}\);/);
+  assert.match(worker, /await executeSkipWaiting\("install"\);/);
+  assert.match(worker, /self\.addEventListener\("activate"/);
+  assert.match(worker, /await self\.clients\.claim\(\)/);
+  assert.match(worker, /clients\.claim failed/);
+  assert.doesNotMatch(worker, /clients\.claim[\s\S]{0,220}throw error/);
+});
+
+test('fetch diagnostics are guarded so they cannot throw globally', () => {
+  const worker = fs.readFileSync('public/sw.js', 'utf8');
+
+  assert.match(worker, /self\.addEventListener\("fetch", \(event\) => \{\n  let request, url;/);
+  assert.match(worker, /catch \(error\) \{\n    lifecycleState\.fetch = \{ \.\.\.lifecycleState\.fetch, error: errorMessage\(error\) \};\n    return;\n  \}/);
+});
+
+test('offline page reports service worker installing stuck after lifecycle timeout', () => {
+  const shell = fs.readFileSync('src/features/offline/static-shell/offline-shell.ts', 'utf8');
+
+  assert.match(shell, /function detectStuckInstalling\(registration: ServiceWorkerRegistration, timeoutMs = TIMEOUTS\.workerState\)/);
+  assert.match(shell, /worker\.state === 'installing'/);
+  assert.match(shell, /finalStatus: 'Service worker install is stuck\.'/);
+  assert.match(shell, /installingState: worker\.state/);
+  assert.match(shell, /installingScriptURL: worker\.scriptURL/);
+  assert.match(shell, /installingLastStateChangeAt/);
+  assert.match(shell, /\['Installing state', sw\.installingState \|\| 'none'\]/);
+  assert.match(shell, /\['Installing scriptURL', sw\.installingScriptURL \|\| 'none'\]/);
+  assert.match(shell, /\['Last installing statechange', sw\.installingLastStateChangeAt \|\| 'not observed'\]/);
+});
