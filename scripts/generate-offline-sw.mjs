@@ -65,10 +65,13 @@ const OFFLINE_DOCUMENT = "/offline.html";
 const PRECACHE_ASSETS = ${JSON.stringify(uniqueAssets, null, 2)};
 const NAVIGATION_PATHS = new Set(["/", "/dashboard", "/offline", "/offline/capture"]);
 const INSTALL_ERROR_KEY = "/__cred_sw_last_install_error__";
-const REQUIRED_DIAGNOSTIC_ASSETS = ["/offline.html", "/offline/offline-shell.css", "/offline/offline-shell.js", "/offline/contracts.js", "/offline/db.js", "/offline/store.js", "/manifest.webmanifest", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"];
-const lifecycleState = { install: null, activate: null, claim: { executed: false, completedAt: null, error: null }, skipWaiting: { executed: false, at: null, source: null, error: null }, fetch: { count: 0, lastAt: null, lastUrl: null, lastMode: null, lastDestination: null }, messages: [] };
-function markLifecycle(name, patch = {}) { lifecycleState[name] = { ...(lifecycleState[name] || {}), ...patch }; console.log("[CRED SW] " + name, lifecycleState[name]); }
-async function executeSkipWaiting(source) { lifecycleState.skipWaiting = { executed: false, at: new Date().toISOString(), source, error: null }; try { await self.skipWaiting(); lifecycleState.skipWaiting.executed = true; console.log("[CRED SW] skipWaiting complete", lifecycleState.skipWaiting); } catch (error) { lifecycleState.skipWaiting.error = error instanceof Error ? error.message : String(error); console.error("[CRED SW] skipWaiting failed", lifecycleState.skipWaiting); throw error; } }
+const REQUIRED_DIAGNOSTIC_ASSETS = ["/offline.html", "/offline/offline-shell.css", "/offline/offline-shell.js", "/offline/contracts.js", "/offline/db.js", "/offline/store.js", "/manifest.webmanifest"];
+const REQUIRED_ASSETS = new Set(REQUIRED_DIAGNOSTIC_ASSETS);
+const lifecycleState = { install: null, activate: null, claim: { executed: false, completedAt: null, error: null }, skipWaiting: { executed: false, at: null, source: null, error: null }, fetch: { count: 0, lastAt: null, lastUrl: null, lastMode: null, lastDestination: null, error: null }, messages: [], installLog: [] };
+function errorMessage(error) { return error instanceof Error ? error.message : String(error); }
+function recordInstallLog(entry) { try { lifecycleState.installLog.push({ at: new Date().toISOString(), ...entry }); if (lifecycleState.installLog.length > 80) lifecycleState.installLog.shift(); } catch { } }
+function markLifecycle(name, patch = {}) { try { lifecycleState[name] = { ...(lifecycleState[name] || {}), ...patch }; console.log("[CRED SW] " + name, lifecycleState[name]); } catch { } }
+async function executeSkipWaiting(source) { lifecycleState.skipWaiting = { executed: false, at: new Date().toISOString(), source, error: null }; try { await self.skipWaiting(); lifecycleState.skipWaiting.executed = true; console.log("[CRED SW] skipWaiting complete", lifecycleState.skipWaiting); return true; } catch (error) { lifecycleState.skipWaiting.error = errorMessage(error); recordInstallLog({ level: "warn", step: "skipWaiting", error: lifecycleState.skipWaiting.error }); console.error("[CRED SW] skipWaiting failed", lifecycleState.skipWaiting); return false; } }
 
 async function storeInstallError(message) {
   try {
@@ -113,31 +116,54 @@ async function diagnosticsPayload() {
   };
 }
 
+async function precacheAsset(cache, asset) {
+  const request = new Request(asset, { cache: "reload", credentials: "same-origin", redirect: "error" });
+  let response;
+  try {
+    response = await fetch(request);
+  } catch (error) {
+    throw new Error(\`Unable to fetch precache asset \${asset}: \${errorMessage(error)}\`);
+  }
+  if (!response.ok || response.redirected || response.type === "opaqueredirect" || response.type === "opaque") {
+    throw new Error(\`Unable to precache \${asset}: status=\${response.status} redirected=\${response.redirected} type=\${response.type}\`);
+  }
+  const contentType = response.headers.get("content-type") || "";
+  if ((asset.endsWith(".js") && contentType.includes("text/html")) || (asset.endsWith(".css") && contentType.includes("text/html"))) {
+    throw new Error(\`Refusing to precache HTML for asset \${asset}\`);
+  }
+  try {
+    await cache.put(asset, response);
+  } catch (error) {
+    throw new Error(\`Unable to cache.put precache asset \${asset}: \${errorMessage(error)}\`);
+  }
+}
+
 self.addEventListener("install", (event) => {
-  markLifecycle("install", { startedAt: new Date().toISOString(), completedAt: null, error: null, cacheName: CACHE_VERSION });
+  markLifecycle("install", { startedAt: new Date().toISOString(), completedAt: null, error: null, optionalErrors: [], cacheName: CACHE_VERSION });
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_VERSION);
+    const optionalErrors = [];
     try {
-    for (const asset of PRECACHE_ASSETS) {
-      const request = new Request(asset, { cache: "reload", credentials: "same-origin", redirect: "error" });
-      const response = await fetch(request);
-      if (!response.ok || response.redirected || response.type === "opaqueredirect" || response.type === "opaque") {
-        throw new Error(\`Unable to precache \${asset}: status=\${response.status} redirected=\${response.redirected} type=\${response.type}\`);
+      for (const asset of PRECACHE_ASSETS) {
+        try {
+          await precacheAsset(cache, asset);
+          recordInstallLog({ level: "info", step: "cached", asset, required: REQUIRED_ASSETS.has(asset) });
+        } catch (error) {
+          const message = errorMessage(error);
+          recordInstallLog({ level: REQUIRED_ASSETS.has(asset) ? "error" : "warn", step: "precache", asset, required: REQUIRED_ASSETS.has(asset), error: message });
+          if (REQUIRED_ASSETS.has(asset)) throw new Error(\`Required offline asset failed: \${asset}: \${message}\`);
+          optionalErrors.push({ asset, error: message });
+        }
       }
-      const contentType = response.headers.get("content-type") || "";
-      if ((asset.endsWith(".js") && contentType.includes("text/html")) || (asset.endsWith(".css") && contentType.includes("text/html"))) {
-        throw new Error(\`Refusing to precache HTML for asset \${asset}\`);
-      }
-      await cache.put(asset, response);
-    }
-    await cache.delete(INSTALL_ERROR_KEY);
-    markLifecycle("install", { completedAt: new Date().toISOString(), error: null });
-    await executeSkipWaiting("install");
+      markLifecycle("install", { completedAt: new Date().toISOString(), error: null, optionalErrors });
+      await storeInstallError(optionalErrors.length ? \`Optional precache failures: \${optionalErrors.map((item) => item.asset).join(", ")}\` : "").catch(() => undefined);
+      await cache.delete(INSTALL_ERROR_KEY).catch((error) => recordInstallLog({ level: "warn", step: "clearInstallError", error: errorMessage(error) }));
+      await executeSkipWaiting("install");
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      markLifecycle("install", { error: message });
+      const message = errorMessage(error);
+      markLifecycle("install", { error: message, optionalErrors });
       console.error("[CRED SW] install failed", message);
-      await storeInstallError(message);
+      await storeInstallError(message).catch(() => undefined);
       throw error;
     }
   })());
@@ -150,19 +176,17 @@ self.addEventListener("activate", (event) => {
     if (!offline || !offline.ok) throw new Error("Offline document missing after install");
     const keys = await caches.keys();
     await Promise.all(keys.filter((key) => key.startsWith("cred-offline-") && key !== CACHE_VERSION).map((key) => caches.delete(key)));
-    try { await self.clients.claim(); lifecycleState.claim = { executed: true, completedAt: new Date().toISOString(), error: null }; } catch (error) { lifecycleState.claim = { executed: false, completedAt: new Date().toISOString(), error: error instanceof Error ? error.message : String(error) }; throw error; }
+    try { await self.clients.claim(); lifecycleState.claim = { executed: true, completedAt: new Date().toISOString(), error: null }; } catch (error) { lifecycleState.claim = { executed: false, completedAt: new Date().toISOString(), error: errorMessage(error) }; console.error("[CRED SW] clients.claim failed", lifecycleState.claim); }
     markLifecycle("activate", { completedAt: new Date().toISOString(), error: null });
   })());
 });
 
 self.addEventListener("message", (event) => {
-  lifecycleState.messages.push({ at: new Date().toISOString(), type: event.data?.type || null });
-  if (lifecycleState.messages.length > 20) lifecycleState.messages.shift();
-  console.log("[CRED SW] message", event.data);
+  try { lifecycleState.messages.push({ at: new Date().toISOString(), type: event.data?.type || null }); if (lifecycleState.messages.length > 20) lifecycleState.messages.shift(); console.log("[CRED SW] message", event.data); } catch { }
   if (event.data?.type === "SKIP_WAITING") event.waitUntil(executeSkipWaiting("message"));
   if (event.data?.type === "CRED_SW_DIAGNOSTICS") {
     event.waitUntil((async () => {
-      event.ports?.[0]?.postMessage(await diagnosticsPayload());
+      try { event.ports?.[0]?.postMessage(await diagnosticsPayload()); } catch (error) { event.ports?.[0]?.postMessage({ error: errorMessage(error) }); }
     })());
   }
 });
@@ -177,11 +201,17 @@ async function fetchWithTimeout(request, timeoutMs) { const controller = new Abo
 function validAssetResponse(response) { return response.ok && !response.redirected && response.type !== "opaque" && response.type !== "opaqueredirect" && !(response.headers.get("content-type") || "").includes("text/html"); }
 
 self.addEventListener("fetch", (event) => {
-  const request = event.request;
-  if (request.method !== "GET") return;
-  const url = new URL(request.url);
-  lifecycleState.fetch = { count: lifecycleState.fetch.count + 1, lastAt: new Date().toISOString(), lastUrl: url.href, lastMode: request.mode, lastDestination: request.destination };
-  console.log("[CRED SW] fetch", lifecycleState.fetch);
+  let request, url;
+  try {
+    request = event.request;
+    if (request.method !== "GET") return;
+    url = new URL(request.url);
+    lifecycleState.fetch = { count: lifecycleState.fetch.count + 1, lastAt: new Date().toISOString(), lastUrl: url.href, lastMode: request.mode, lastDestination: request.destination, error: null };
+    console.log("[CRED SW] fetch", lifecycleState.fetch);
+  } catch (error) {
+    lifecycleState.fetch = { ...lifecycleState.fetch, error: errorMessage(error) };
+    return;
+  }
   if (isApiOrExternal(url)) return;
 
   if (isRscRequest(request, url)) {
