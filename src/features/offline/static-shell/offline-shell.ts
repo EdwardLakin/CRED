@@ -251,7 +251,8 @@ async function syncSession(localSessionId: string) {
 
 async function boot() {
   state.capabilities = detectCapabilities();
-  await ensureServiceWorkerControl();
+  renderOfflineReadiness();
+  const serviceWorkerReadiness = ensureServiceWorkerControl();
   if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
   ($('newSession') as HTMLButtonElement).onclick = async () => { if (!state.identity) return setMessage('Device not provisioned. Sign in online first.', 'error'); const session = await createSession(state.identity); await openSession(session.localSessionId); };
   ($('syncAll') as HTMLButtonElement).onclick = async () => { const sessions = await listSessions(state.identity); for (const session of sessions.filter((candidate: OfflineLocalSession) => SYNCABLE_STATUSES.includes(candidate.status as SessionStatus))) await syncSession(session.localSessionId); };
@@ -262,6 +263,7 @@ async function boot() {
     navigator.serviceWorker.controller.postMessage({ type: 'CRED_SW_DIAGNOSTICS' }, [channel.port2]);
   }
   await renderDashboard();
+  await serviceWorkerReadiness;
 }
 
 boot().catch((error) => { console.error(error); setMessage(error instanceof Error ? error.message : 'Offline shell failed to start.', 'error'); });
