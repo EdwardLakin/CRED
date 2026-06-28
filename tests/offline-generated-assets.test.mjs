@@ -4,6 +4,9 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 test('generated static shell and service worker match committed assets when build output exists', () => {
+  const icon = spawnSync(process.execPath, ['scripts/generate-apple-touch-icon.mjs'], { encoding: 'utf8' });
+  assert.equal(icon.status, 0, icon.stderr || icon.stdout);
+
   const build = spawnSync(process.execPath, ['scripts/build-offline-shell.mjs'], { encoding: 'utf8' });
   assert.equal(build.status, 0, build.stderr || build.stdout);
 
@@ -19,4 +22,8 @@ test('generated static shell and service worker match committed assets when buil
   const worker = fs.readFileSync('public/sw.js', 'utf8');
   assert.match(worker, /const CACHE_VERSION = "cred-offline-/);
   assert.match(worker, /const PRECACHE_ASSETS = \[/);
+  assert.match(worker, /"\/apple-touch-icon\.png"/);
+
+  const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+  assert.match(packageJson.scripts.postbuild, /generate-apple-touch-icon\.mjs .*generate-offline-sw\.mjs/);
 });

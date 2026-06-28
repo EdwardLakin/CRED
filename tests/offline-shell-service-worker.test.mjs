@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 const generator = fs.readFileSync('scripts/generate-offline-sw.mjs', 'utf8');
@@ -14,6 +15,7 @@ test('offline shell is a static document that loads deterministic local assets',
 
 test('service-worker generation precaches static offline entry and all shell assets', () => {
   assert.match(generator, /"\/offline\.html"/);
+  assert.match(generator, /"\/apple-touch-icon\.png"/);
   assert.match(generator, /offlineFiles/);
   assert.match(generator, /redirect: "error"/);
   assert.match(generator, /Refusing to precache HTML for asset/);
@@ -33,4 +35,25 @@ test('RSC requests are handled separately and never receive an HTML fallback', (
   assert.match(generator, /text\/x-component/);
   assert.match(generator, /RSC data is unavailable offline/);
   assert.match(generator, /"Content-Type": "application\/json; charset=utf-8"/);
+});
+
+
+test('Apple Home Screen icon is declared, generated as 180px PNG, and precached', () => {
+  const layout = fs.readFileSync('app/layout.tsx', 'utf8');
+  const iconScript = fs.readFileSync('scripts/generate-apple-touch-icon.mjs', 'utf8');
+  const generated = spawnSync(process.execPath, ['scripts/generate-apple-touch-icon.mjs'], { encoding: 'utf8' });
+  assert.equal(generated.status, 0, generated.stderr || generated.stdout);
+
+  const icon = fs.readFileSync('public/apple-touch-icon.png');
+  assert.deepEqual([...icon.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  assert.equal(icon.readUInt32BE(16), 180);
+  assert.equal(icon.readUInt32BE(20), 180);
+  assert.equal(icon[24], 8, 'PNG bit depth should be 8');
+  assert.equal(icon[25], 6, 'PNG color type should be RGBA');
+  assert.match(layout, /apple: \[\{ url: '\/apple-touch-icon\.png', sizes: '180x180', type: 'image\/png' \}\]/);
+  assert.match(iconScript, /public.+icons.+cred-icon\.svg/s);
+  assert.match(iconScript, /CRED by ProFixIQ app icon/);
+  assert.match(generator, /await fs\.access\(path\.join\(root, "public", "apple-touch-icon\.png"\)\)/);
+  assert.match(generator, /"\/apple-touch-icon\.png"/);
+  assert.match(generator, /url\.pathname === "\/apple-touch-icon\.png"/);
 });

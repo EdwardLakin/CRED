@@ -30,6 +30,7 @@ export const metadata: Metadata = {
       { url: '/icons/cred-icon.svg', sizes: '192x192', type: 'image/svg+xml' },
       { url: '/icons/cred-icon.svg', sizes: '512x512', type: 'image/svg+xml' },
     ],
+    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
   },
   other: {
     'apple-mobile-web-app-capable': 'yes',

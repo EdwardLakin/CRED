@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { getPlanLimits, parseBillingPlan } from "@/features/billing";
@@ -5,6 +6,35 @@ import { AddCaptureForm, RecentCapturesList } from "@/features/capture";
 import { CaptureSessionSnapshot } from "@/features/offline/CaptureSessionSnapshot";
 import { getDisplayReportTitle } from "@/features/reports/report-title";
 import { requireSessionWorkspace } from "@/features/sessions/data";
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+type CaptureRoute404Reason =
+  | "malformed_session_id"
+  | "session_not_found_or_inaccessible"
+  | "session_deleted"
+  | "session_outside_current_organization";
+
+function isLikelyPrefetch(requestHeaders: Headers) {
+  return (
+    requestHeaders.get("next-router-prefetch") === "1" ||
+    requestHeaders.get("purpose") === "prefetch" ||
+    requestHeaders.get("sec-purpose")?.includes("prefetch") === true
+  );
+}
+
+function logCaptureRoute404(details: {
+  reason: CaptureRoute404Reason;
+  prefetched: boolean;
+  supabaseCode?: string;
+}) {
+  console.warn("capture_route_session_404", {
+    route: "/dashboard/sessions/[id]/capture",
+    reason: details.reason,
+    prefetched: details.prefetched,
+    supabaseCode: details.supabaseCode,
+  });
+}
 
 export default async function GuidedCapturePage({
   params,
@@ -15,16 +45,50 @@ export default async function GuidedCapturePage({
 }) {
   const { id } = await params;
   const { captureSaved, addTo } = await searchParams;
+  const requestHeaders = await headers();
+  const prefetched = isLikelyPrefetch(requestHeaders);
   const { supabase, profile } = await requireSessionWorkspace();
+
+  if (!UUID_PATTERN.test(id)) {
+    logCaptureRoute404({
+      reason: "malformed_session_id",
+      prefetched,
+    });
+    notFound();
+  }
+
   const { data: session, error: sessionError } = await supabase
     .from("documentation_sessions")
     .select("*")
     .eq("id", id)
     .eq("organization_id", profile.organization_id)
-    .is("deleted_at", null)
-    .single();
+    .maybeSingle();
 
   if (sessionError || !session) {
+    const { data: visibleSession } = await supabase
+      .from("documentation_sessions")
+      .select("organization_id, deleted_at")
+      .eq("id", id)
+      .maybeSingle();
+    const reason = visibleSession?.deleted_at
+      ? "session_deleted"
+      : visibleSession?.organization_id && visibleSession.organization_id !== profile.organization_id
+        ? "session_outside_current_organization"
+        : "session_not_found_or_inaccessible";
+
+    logCaptureRoute404({
+      reason,
+      prefetched,
+      supabaseCode: sessionError?.code,
+    });
+    notFound();
+  }
+
+  if (session.deleted_at) {
+    logCaptureRoute404({
+      reason: "session_deleted",
+      prefetched,
+    });
     notFound();
   }
 
