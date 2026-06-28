@@ -105,6 +105,19 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         </div>
       </section>
 
+
+      <section className="card stack" aria-label="Offline Home Screen setup">
+        <div className="section-header">
+          <div>
+            <h2>Offline Home Screen app</h2>
+            <p className="muted">On iPhone or iPad, add CRED to the Home Screen from the dedicated Offline Install page—not from Dashboard or the root page—so Airplane Mode launches the cached offline shell.</p>
+          </div>
+          <Link href="/offline.html" className="button button-primary touch-target">
+            Set up offline Home Screen app
+          </Link>
+        </div>
+      </section>
+
       <section className="stack" aria-label="Recent sessions">
         <div className="section-header">
           <div>

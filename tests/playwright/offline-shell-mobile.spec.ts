@@ -156,3 +156,21 @@ test('identity mismatch and expired auth stop handoff without deleting local dat
   await expect(page.getByText(/Sign-in required/)).toBeVisible();
   await expect.poll(() => queuedCaptureCount(page)).toBe(1);
 });
+
+test('offline install page self-registers service worker and survives offline reload', async ({ page, context }) => {
+  await page.goto(`${baseURL}/offline.html`);
+  await page.evaluate(() => {
+    localStorage.setItem('cred-offline-user-id', 'user-mobile');
+    localStorage.setItem('cred-offline-organization-id', 'org-mobile');
+    localStorage.setItem('cred-offline-provisioned-at', new Date().toISOString());
+  });
+  await page.goto(`${baseURL}/offline.html`, { waitUntil: 'load' });
+
+  await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)), { timeout: 10000 }).toBe(true);
+  await expect(page.getByText('Offline ready on this device')).toBeVisible({ timeout: 10000 });
+
+  await context.setOffline(true);
+  await page.reload({ waitUntil: 'load' });
+  await expect(page.getByText('Offline Dashboard')).toBeVisible();
+  await expect(page.getByText('Offline ready on this device')).toBeVisible();
+});
