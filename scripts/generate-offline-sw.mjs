@@ -20,6 +20,7 @@ async function walk(directory) {
 
 await fs.access(offlineDocumentPath);
 await fs.access(path.join(root, "public", "apple-touch-icon.png"));
+await fs.access(path.join(root, "public", "apple-touch-icon-precomposed.png"));
 const staticFiles = await walk(nextStaticRoot);
 const nextAssets = staticFiles.map((absolutePath) => {
   const relativePath = path.relative(nextStaticRoot, absolutePath).split(path.sep).join("/");
@@ -36,6 +37,7 @@ const shellAssets = [
   ...offlineFiles,
   "/manifest.webmanifest",
   "/apple-touch-icon.png",
+  "/apple-touch-icon-precomposed.png",
   "/icons/cred-icon.svg",
   "/icons/cred-maskable.svg",
   "/splash/cred-splash.svg",
@@ -56,14 +58,17 @@ const assetFingerprints = await Promise.all(uniqueAssets.map(async (asset) => {
     throw error;
   }
 }));
-const revision = crypto.createHash("sha256").update(`offline-shell-v3\n${assetFingerprints.join("\n")}`).digest("hex").slice(0, 16);
+const revision = crypto.createHash("sha256").update(`offline-shell-v4\n${assetFingerprints.join("\n")}`).digest("hex").slice(0, 16);
 
 const source = `const CACHE_VERSION = ${JSON.stringify(`cred-offline-${revision}`)};
 const OFFLINE_DOCUMENT = "/offline.html";
 const PRECACHE_ASSETS = ${JSON.stringify(uniqueAssets, null, 2)};
 const NAVIGATION_PATHS = new Set(["/", "/dashboard", "/offline", "/offline/capture"]);
 const INSTALL_ERROR_KEY = "/__cred_sw_last_install_error__";
-const REQUIRED_DIAGNOSTIC_ASSETS = ["/offline.html", "/offline/offline-shell.css", "/offline/offline-shell.js", "/offline/contracts.js", "/offline/db.js", "/offline/store.js", "/manifest.webmanifest", "/apple-touch-icon.png"];
+const REQUIRED_DIAGNOSTIC_ASSETS = ["/offline.html", "/offline/offline-shell.css", "/offline/offline-shell.js", "/offline/contracts.js", "/offline/db.js", "/offline/store.js", "/manifest.webmanifest", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"];
+const lifecycleState = { install: null, activate: null, claim: { executed: false, completedAt: null, error: null }, skipWaiting: { executed: false, at: null, source: null, error: null }, fetch: { count: 0, lastAt: null, lastUrl: null, lastMode: null, lastDestination: null }, messages: [] };
+function markLifecycle(name, patch = {}) { lifecycleState[name] = { ...(lifecycleState[name] || {}), ...patch }; console.log("[CRED SW] " + name, lifecycleState[name]); }
+async function executeSkipWaiting(source) { lifecycleState.skipWaiting = { executed: false, at: new Date().toISOString(), source, error: null }; try { await self.skipWaiting(); lifecycleState.skipWaiting.executed = true; console.log("[CRED SW] skipWaiting complete", lifecycleState.skipWaiting); } catch (error) { lifecycleState.skipWaiting.error = error instanceof Error ? error.message : String(error); console.error("[CRED SW] skipWaiting failed", lifecycleState.skipWaiting); throw error; } }
 
 async function storeInstallError(message) {
   try {
@@ -97,11 +102,19 @@ async function diagnosticsPayload() {
     missingRequiredAssets: await missingRequiredAssets(),
     lastInstallError: await readLastInstallError(),
     cacheNames,
+    scriptURL: self.location.href,
+    scope: self.registration?.scope || null,
+    lifecycleState,
+    install: lifecycleState.install,
+    activate: lifecycleState.activate,
+    claim: lifecycleState.claim,
+    skipWaiting: lifecycleState.skipWaiting,
+    fetch: lifecycleState.fetch,
   };
 }
 
 self.addEventListener("install", (event) => {
-  console.log("[CRED SW] install started", CACHE_VERSION);
+  markLifecycle("install", { startedAt: new Date().toISOString(), completedAt: null, error: null, cacheName: CACHE_VERSION });
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_VERSION);
     try {
@@ -118,10 +131,11 @@ self.addEventListener("install", (event) => {
       await cache.put(asset, response);
     }
     await cache.delete(INSTALL_ERROR_KEY);
-    console.log("[CRED SW] install complete", CACHE_VERSION);
-    await self.skipWaiting();
+    markLifecycle("install", { completedAt: new Date().toISOString(), error: null });
+    await executeSkipWaiting("install");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      markLifecycle("install", { error: message });
       console.error("[CRED SW] install failed", message);
       await storeInstallError(message);
       throw error;
@@ -130,19 +144,22 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  console.log("[CRED SW] activate started", CACHE_VERSION);
+  markLifecycle("activate", { startedAt: new Date().toISOString(), completedAt: null, error: null, cacheName: CACHE_VERSION });
   event.waitUntil((async () => {
     const offline = await caches.match(OFFLINE_DOCUMENT);
     if (!offline || !offline.ok) throw new Error("Offline document missing after install");
     const keys = await caches.keys();
     await Promise.all(keys.filter((key) => key.startsWith("cred-offline-") && key !== CACHE_VERSION).map((key) => caches.delete(key)));
-    await self.clients.claim();
-    console.log("[CRED SW] activate complete", CACHE_VERSION);
+    try { await self.clients.claim(); lifecycleState.claim = { executed: true, completedAt: new Date().toISOString(), error: null }; } catch (error) { lifecycleState.claim = { executed: false, completedAt: new Date().toISOString(), error: error instanceof Error ? error.message : String(error) }; throw error; }
+    markLifecycle("activate", { completedAt: new Date().toISOString(), error: null });
   })());
 });
 
 self.addEventListener("message", (event) => {
-  if (event.data?.type === "SKIP_WAITING") void self.skipWaiting();
+  lifecycleState.messages.push({ at: new Date().toISOString(), type: event.data?.type || null });
+  if (lifecycleState.messages.length > 20) lifecycleState.messages.shift();
+  console.log("[CRED SW] message", event.data);
+  if (event.data?.type === "SKIP_WAITING") event.waitUntil(executeSkipWaiting("message"));
   if (event.data?.type === "CRED_SW_DIAGNOSTICS") {
     event.waitUntil((async () => {
       event.ports?.[0]?.postMessage(await diagnosticsPayload());
@@ -153,7 +170,7 @@ self.addEventListener("message", (event) => {
 function sameOrigin(url) { return url.origin === self.location.origin; }
 function isApiOrExternal(url) { return !sameOrigin(url) || url.pathname.startsWith("/api/") || url.hostname.includes("supabase.co"); }
 function isRscRequest(request, url) { return url.searchParams.has("_rsc") || request.headers.get("RSC") === "1" || (request.headers.get("Accept") || "").includes("text/x-component"); }
-function isStaticAsset(request, url) { return request.destination === "script" || request.destination === "style" || request.destination === "font" || request.destination === "manifest" || request.destination === "image" || url.pathname.startsWith("/_next/static/") || url.pathname === "/apple-touch-icon.png" || url.pathname.startsWith("/icons/") || url.pathname.startsWith("/splash/"); }
+function isStaticAsset(request, url) { return request.destination === "script" || request.destination === "style" || request.destination === "font" || request.destination === "manifest" || request.destination === "image" || url.pathname.startsWith("/_next/static/") || url.pathname === "/apple-touch-icon.png" || url.pathname === "/apple-touch-icon-precomposed.png" || url.pathname.startsWith("/icons/") || url.pathname.startsWith("/splash/"); }
 function shouldUseOfflineShell(url) { return NAVIGATION_PATHS.has(url.pathname) || url.pathname.startsWith("/dashboard/") || url.pathname.startsWith("/offline/"); }
 async function offlineDocument() { return (await caches.match(OFFLINE_DOCUMENT)) || new Response("CRED offline shell is not installed.", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } }); }
 async function fetchWithTimeout(request, timeoutMs) { const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), timeoutMs); try { return await fetch(request, { signal: controller.signal }); } finally { clearTimeout(timeout); } }
@@ -163,6 +180,8 @@ self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET") return;
   const url = new URL(request.url);
+  lifecycleState.fetch = { count: lifecycleState.fetch.count + 1, lastAt: new Date().toISOString(), lastUrl: url.href, lastMode: request.mode, lastDestination: request.destination };
+  console.log("[CRED SW] fetch", lifecycleState.fetch);
   if (isApiOrExternal(url)) return;
 
   if (isRscRequest(request, url)) {

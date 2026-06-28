@@ -11,3 +11,5 @@ supabase/.temp
 playwright-report/
 test-results/
 public/apple-touch-icon.png
+
+public/apple-touch-icon-precomposed.png
