@@ -2,7 +2,7 @@ import { now, SESSION_STATUSES, SYNCABLE_STATUSES } from './contracts.js';
 import { addCapture, capturesForSession, createSession, deleteCapture, deleteSession, getOfflineIdentity, listSessions, retargetSessionCaptures, saveSession, sessionStats, updateCapture } from './store.js';
 const REQUIRED_OFFLINE_ASSETS = ['/offline.html', '/offline/offline-shell.css', '/offline/offline-shell.js', '/offline/contracts.js', '/offline/db.js', '/offline/store.js', '/manifest.webmanifest', '/apple-touch-icon.png'];
 const CONTROL_RELOAD_KEY = 'cred-offline-control-reload-attempted';
-const TIMEOUTS = { swFetch: 5000, registration: 10000, ready: 10000, controller: 3500, cache: 5000, diagnostics: 3500 };
+const TIMEOUTS = { swFetch: 5000, registration: 10000, ready: 10000, controller: 3500, cache: 20000, cachePoll: 500, diagnostics: 3500, workerState: 10000 };
 const state = { identity: null, activeSession: null, objectUrls: [], storageEstimate: null, capabilities: null, serviceWorker: { supported: 'serviceWorker' in navigator, registrationAttempted: false, registered: false, registrationError: null, installing: false, installed: false, waiting: false, activating: false, activated: false, skipWaitingSent: false, controllerChangeReceived: false, controlled: Boolean(navigator.serviceWorker?.controller), readyResolved: false, readyTimedOut: false, cacheNames: [], cached: false, cacheMissing: REQUIRED_OFFLINE_ASSETS, diagnostics: null, finalStatus: 'Checking offline readiness…', error: null, swScriptCheck: null } };
 const $ = (id) => document.getElementById(id);
 const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] ?? char);
@@ -15,8 +15,10 @@ function setMessage(text, className = '') { const el = $('message'); if (el) {
 function logReadiness(step, detail) { console.log(`[CRED offline readiness] ${step}`, detail ?? ''); }
 function withTimeout(promise, ms, label) { let timeoutId = 0; const timeout = new Promise((_, reject) => { timeoutId = window.setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms); }); return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timeoutId)); }
 function updateSw(patch) { state.serviceWorker = { ...state.serviceWorker, ...patch }; renderOfflineReadiness(); }
+function syncWorkerState(worker) { if (!worker)
+    return; updateSw({ installing: worker.state === 'installing', installed: worker.state === 'installed' || worker.state === 'activated', activating: worker.state === 'activating', activated: worker.state === 'activated' }); }
 function watchRegistration(registration) { const watchWorker = (worker) => { if (!worker)
-    return; const sync = () => updateSw({ installing: worker.state === 'installing', installed: worker.state === 'installed' || worker.state === 'activated', activating: worker.state === 'activating', activated: worker.state === 'activated' }); sync(); logReadiness(`worker state ${worker.state}`); worker.addEventListener('statechange', () => { logReadiness(`worker state ${worker.state}`); sync(); }); }; watchWorker(registration.installing || registration.waiting || registration.active); registration.addEventListener('updatefound', () => watchWorker(registration.installing)); }
+    return; syncWorkerState(worker); logReadiness(`worker state ${worker.state}`); worker.addEventListener('statechange', () => { logReadiness(`worker state ${worker.state}`); syncWorkerState(worker); }); }; watchWorker(registration.installing); watchWorker(registration.waiting); watchWorker(registration.active); registration.addEventListener('updatefound', () => watchWorker(registration.installing)); }
 async function checkServiceWorkerScript() { logReadiness('checking /sw.js'); const response = await withTimeout(fetch('/sw.js', { cache: 'no-store', redirect: 'manual', headers: { Accept: 'application/javascript,text/javascript,*/*' } }), TIMEOUTS.swFetch, '/sw.js fetch'); const contentType = response.headers.get('content-type') || ''; const text = await response.clone().text().catch(() => ''); const result = { status: response.status, ok: response.ok, redirected: response.redirected, type: response.type, contentType }; if (!response.ok)
     throw new Error(`/sw.js unavailable: status=${response.status} content-type=${contentType || 'missing'}`); if (response.redirected || response.type === 'opaqueredirect')
     throw new Error(`/sw.js redirected: status=${response.status} type=${response.type}`); if (contentType.includes('text/html') || /^\s*<!doctype html/i.test(text) || /^\s*<html/i.test(text))
@@ -24,8 +26,27 @@ async function checkServiceWorkerScript() { logReadiness('checking /sw.js'); con
     throw new Error(`/sw.js wrong content-type: ${contentType}`); updateSw({ swScriptCheck: result }); return result; }
 function waitForControllerChange(timeoutMs = TIMEOUTS.controller) { if (navigator.serviceWorker?.controller)
     return Promise.resolve(true); logReadiness('waiting for controllerchange'); return new Promise((resolve) => { const timeout = window.setTimeout(() => { cleanup(); resolve(Boolean(navigator.serviceWorker?.controller)); }, timeoutMs); const onControllerChange = () => { updateSw({ controllerChangeReceived: true, controlled: Boolean(navigator.serviceWorker?.controller) }); cleanup(); resolve(true); }; const cleanup = () => { window.clearTimeout(timeout); navigator.serviceWorker?.removeEventListener('controllerchange', onControllerChange); }; navigator.serviceWorker?.addEventListener('controllerchange', onControllerChange, { once: true }); }); }
-async function requiredAssetsCached() { logReadiness('verifying cache assets'); if (!('caches' in globalThis))
-    return { cached: false, missing: REQUIRED_OFFLINE_ASSETS, cacheNames: [], error: 'Cache Storage is not supported.' }; return withTimeout((async () => { const cacheNames = await caches.keys(); const results = await Promise.all(REQUIRED_OFFLINE_ASSETS.map(async (asset) => ({ asset, response: await caches.match(asset).catch(() => undefined) }))); const missing = results.filter(({ response }) => !response?.ok).map(({ asset }) => asset); return { cached: missing.length === 0, missing, cacheNames }; })(), TIMEOUTS.cache, 'Cache verification'); }
+async function requiredAssetsCached(requiredAssets = REQUIRED_OFFLINE_ASSETS) { logReadiness('verifying cache assets'); if (!('caches' in globalThis))
+    return { cached: false, missing: requiredAssets, cacheNames: [], error: 'Cache Storage is not supported.' }; return withTimeout((async () => { const cacheNames = await caches.keys(); const offlineCacheNames = cacheNames.filter((name) => name.startsWith('cred-offline-')); const results = await Promise.all(requiredAssets.map(async (asset) => { for (const cacheName of offlineCacheNames) {
+    const response = await caches.open(cacheName).then((cache) => cache.match(asset)).catch(() => undefined);
+    if (response?.ok)
+        return { asset, response };
+} const response = await caches.match(asset).catch(() => undefined); return { asset, response }; })); const missing = results.filter(({ response }) => !response?.ok).map(({ asset }) => asset); return { cached: missing.length === 0, missing, cacheNames }; })(), TIMEOUTS.cachePoll, 'Cache verification'); }
+function delay(ms) { return new Promise((resolve) => window.setTimeout(resolve, ms)); }
+async function waitForOfflineAssets(requiredAssets = REQUIRED_OFFLINE_ASSETS, timeoutMs = TIMEOUTS.cache, intervalMs = TIMEOUTS.cachePoll) { const expires = Date.now() + timeoutMs; let last = { cached: false, missing: requiredAssets, cacheNames: [] }; updateSw({ finalStatus: 'Installing offline assets…', error: null }); while (Date.now() < expires) {
+    last = await requiredAssetsCached(requiredAssets).catch((error) => ({ cached: false, missing: requiredAssets, cacheNames: [], error: error instanceof Error ? error.message : String(error) }));
+    updateSw({ cacheNames: last.cacheNames || [], cached: last.cached, cacheMissing: last.missing || requiredAssets, finalStatus: last.cached ? 'Offline assets installed.' : 'Installing offline assets…', error: last.error || null });
+    if (last.cached)
+        return last;
+    await delay(intervalMs);
+} last = await requiredAssetsCached(requiredAssets).catch((error) => ({ cached: false, missing: requiredAssets, cacheNames: [], error: error instanceof Error ? error.message : String(error) })); return { ...last, timedOut: !last.cached }; }
+function waitForWorkerState(registration, targetStates, timeoutMs = TIMEOUTS.workerState) { const workers = () => [registration.installing, registration.waiting, registration.active].filter(Boolean); if (workers().some((worker) => targetStates.includes(worker.state)))
+    return Promise.resolve(true); logReadiness(`waiting for worker states ${targetStates.join(', ')}`); return new Promise((resolve) => { const workerListeners = []; let done = false; const cleanup = () => { window.clearTimeout(timeout); registration.removeEventListener('updatefound', onUpdateFound); for (const [worker, listener] of workerListeners)
+    worker.removeEventListener('statechange', listener); }; const finish = (value) => { if (done)
+    return; done = true; cleanup(); resolve(value); }; const watch = (worker) => { if (!worker)
+    return; syncWorkerState(worker); if (targetStates.includes(worker.state))
+    finish(true); const listener = () => { syncWorkerState(worker); if (targetStates.includes(worker.state))
+    finish(true); }; worker.addEventListener('statechange', listener); workerListeners.push([worker, listener]); }; const onUpdateFound = () => watch(registration.installing); const timeout = window.setTimeout(() => finish(workers().some((worker) => targetStates.includes(worker.state))), timeoutMs); registration.addEventListener('updatefound', onUpdateFound); workers().forEach(watch); }); }
 async function getServiceWorkerDiagnostics() { const target = navigator.serviceWorker?.controller || (await navigator.serviceWorker?.getRegistration('/'))?.active; if (!target)
     return null; return withTimeout(new Promise((resolve) => { const channel = new MessageChannel(); channel.port1.onmessage = (event) => resolve(event.data); target.postMessage({ type: 'CRED_SW_DIAGNOSTICS' }, [channel.port2]); }), TIMEOUTS.diagnostics, 'Service worker diagnostics').catch((error) => ({ error: error instanceof Error ? error.message : String(error) })); }
 async function ensureServiceWorkerControl() { if (!('serviceWorker' in navigator)) {
@@ -37,7 +58,8 @@ async function ensureServiceWorkerControl() { if (!('serviceWorker' in navigator
     logReadiness('registering /sw.js');
     const registration = await withTimeout(navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' }), TIMEOUTS.registration, 'Service worker registration');
     watchRegistration(registration);
-    updateSw({ registered: true, registrationError: null, waiting: Boolean(registration.waiting), activated: Boolean(registration.active), finalStatus: 'Registration succeeded' });
+    updateSw({ registered: true, registrationError: null, installing: Boolean(registration.installing), waiting: Boolean(registration.waiting), activated: Boolean(registration.active), finalStatus: 'Installing offline assets…', error: null });
+    const workerProgress = waitForWorkerState(registration, ['installed', 'activating', 'activated'], TIMEOUTS.workerState).catch((error) => { logReadiness('worker state wait failed', error); return false; });
     await registration.update().catch((error) => logReadiness('registration update failed', error));
     if (registration.waiting) {
         registration.waiting.postMessage({ type: 'SKIP_WAITING' });
@@ -50,23 +72,27 @@ async function ensureServiceWorkerControl() { if (!('serviceWorker' in navigator
         logReadiness('navigator.serviceWorker.ready resolved');
     }
     catch (error) {
-        updateSw({ readyResolved: false, readyTimedOut: true, error: error instanceof Error ? error.message : String(error) });
+        updateSw({ readyResolved: false, readyTimedOut: true });
         logReadiness('navigator.serviceWorker.ready timed out', error);
     }
+    const cacheState = await waitForOfflineAssets(REQUIRED_OFFLINE_ASSETS, TIMEOUTS.cache, TIMEOUTS.cachePoll);
+    await workerProgress;
     let controlled = Boolean(navigator.serviceWorker.controller);
     if (!controlled)
         controlled = await waitForControllerChange();
-    const cacheState = await requiredAssetsCached().catch((error) => ({ cached: false, missing: REQUIRED_OFFLINE_ASSETS, cacheNames: [], error: error instanceof Error ? error.message : String(error) }));
     const diagnostics = await getServiceWorkerDiagnostics();
     const base = { controlled, cacheNames: cacheState.cacheNames || [], cached: cacheState.cached, cacheMissing: cacheState.missing || REQUIRED_OFFLINE_ASSETS, diagnostics };
+    if (!cacheState.cached) {
+        updateSw({ ...base, finalStatus: 'Offline asset installation timed out.', error: cacheState.error || 'Offline asset installation timed out.' });
+        return state.serviceWorker;
+    }
     if (!controlled) {
         const reloaded = sessionStorage.getItem(CONTROL_RELOAD_KEY) === 'true';
-        updateSw({ ...base, finalStatus: reloaded ? 'Service worker installed but this browser has not attached control yet. Close and reopen CRED while online.' : 'Service worker installed. Reload once to finish offline setup.', error: null });
+        updateSw({ ...base, finalStatus: reloaded ? 'Offline assets installed, but Safari has not attached control yet. Close and reopen this offline page while online.' : 'Offline assets installed. Reload once to finish offline setup.', error: null });
         return state.serviceWorker;
     }
     sessionStorage.removeItem(CONTROL_RELOAD_KEY);
-    const finalStatus = cacheState.cached ? 'Offline ready' : `Missing required offline assets: ${(cacheState.missing || []).join(', ') || cacheState.error || 'unknown'}`;
-    updateSw({ ...base, finalStatus, error: cacheState.error || null });
+    updateSw({ ...base, finalStatus: 'Offline assets installed.', error: null });
     return state.serviceWorker;
 }
 catch (error) {
@@ -76,7 +102,7 @@ catch (error) {
 } }
 function diagnosticsPayload() { return { origin: window.location.origin, href: window.location.href, userAgent: navigator.userAgent, online: navigator.onLine, reloadedOnce: sessionStorage.getItem(CONTROL_RELOAD_KEY) === 'true', serviceWorker: state.serviceWorker, capabilities: state.capabilities, storageEstimate: state.storageEstimate }; }
 async function copyDiagnostics() { const payload = JSON.stringify(diagnosticsPayload(), null, 2); await navigator.clipboard?.writeText(payload).catch(() => undefined); setMessage(navigator.clipboard ? 'Diagnostics copied.' : payload, navigator.clipboard ? 'success' : 'warning'); }
-function renderOfflineReadiness() { const sw = state.serviceWorker; const identityReady = Boolean(state.identity); const readyCopy = 'Offline ready on this device'; const ready = identityReady && sw.registered && sw.activated && sw.controlled && sw.cached; const rows = [['Current origin', window.location.origin], ['Service worker supported', sw.supported ? 'yes' : 'no'], ['Registration attempted', sw.registrationAttempted ? 'yes' : 'no'], ['Registration', sw.registrationError ? `failed: ${sw.registrationError}` : sw.registered ? 'succeeded' : 'not complete'], ['Installing', sw.installing ? 'yes' : 'no'], ['Installed', sw.installed ? 'yes' : 'no'], ['Waiting', sw.waiting ? 'yes' : 'no'], ['Activating', sw.activating ? 'yes' : 'no'], ['Activated', sw.activated ? 'yes' : 'no'], ['skipWaiting message sent', sw.skipWaitingSent ? 'yes' : 'no'], ['controllerchange received', sw.controllerChangeReceived ? 'yes' : 'no'], ['navigator.serviceWorker.controller', sw.controlled ? 'present' : 'absent'], ['navigator.serviceWorker.ready', sw.readyResolved ? 'resolved' : sw.readyTimedOut ? 'timed out' : 'pending/not reached'], ['Cache names found', sw.cacheNames.length ? sw.cacheNames.join(', ') : 'none'], ['Required offline assets', sw.cached ? 'found' : `missing: ${sw.cacheMissing.join(', ') || 'unknown'}`], ['Final status', sw.finalStatus]]; const reloadButton = !sw.controlled && sw.registered && sessionStorage.getItem(CONTROL_RELOAD_KEY) !== 'true' ? '<button id="reloadOfflineSetup" class="secondary">Reload</button>' : ''; $('offlineReady').innerHTML = `<span class="status ${ready ? 'success' : sw.error || sw.registrationError ? 'error' : 'warning'}">${escapeHtml(ready ? readyCopy : sw.finalStatus)}</span><div class="diagnostics-grid">${rows.map(([label, value]) => `<div><strong>${escapeHtml(label)}</strong></div><div>${escapeHtml(value)}</div>`).join('')}</div><div class="button-row">${reloadButton}<button id="copyDiagnostics" class="secondary">Copy diagnostics</button></div>`; $('reloadOfflineSetup')?.addEventListener('click', () => { sessionStorage.setItem(CONTROL_RELOAD_KEY, 'true'); window.location.reload(); }); $('copyDiagnostics')?.addEventListener('click', copyDiagnostics); $('version').textContent = `Service worker: ${sw.diagnostics?.version || sw.diagnostics?.activeCacheName || sw.finalStatus}`; }
+function renderOfflineReadiness() { const sw = state.serviceWorker; const identityReady = Boolean(state.identity); const readyCopy = 'Offline ready on this device'; const ready = identityReady && sw.registered && sw.activated && sw.cached; const rows = [['Current origin', window.location.origin], ['Service worker supported', sw.supported ? 'yes' : 'no'], ['Registration attempted', sw.registrationAttempted ? 'yes' : 'no'], ['Registration', sw.registrationError ? `failed: ${sw.registrationError}` : sw.registered ? 'succeeded' : 'not complete'], ['Installing', sw.installing ? 'yes' : 'no'], ['Installed', sw.installed ? 'yes' : 'no'], ['Waiting', sw.waiting ? 'yes' : 'no'], ['Activating', sw.activating ? 'yes' : 'no'], ['Activated', sw.activated ? 'yes' : 'no'], ['skipWaiting message sent', sw.skipWaitingSent ? 'yes' : 'no'], ['controllerchange received', sw.controllerChangeReceived ? 'yes' : 'no'], ['navigator.serviceWorker.controller', sw.controlled ? 'present' : 'absent'], ['navigator.serviceWorker.ready', sw.readyResolved ? 'resolved' : sw.readyTimedOut ? 'timed out' : 'pending/not reached'], ['Cache names found', sw.cacheNames.length ? sw.cacheNames.join(', ') : 'none'], ['Required offline assets', sw.cached ? 'found' : `missing: ${sw.cacheMissing.join(', ') || 'unknown'}`], ['Final status', sw.finalStatus]]; const reloadButton = !sw.controlled && sw.registered && sessionStorage.getItem(CONTROL_RELOAD_KEY) !== 'true' ? '<button id="reloadOfflineSetup" class="secondary">Reload</button>' : ''; $('offlineReady').innerHTML = `<span class="status ${ready ? 'success' : sw.error || sw.registrationError ? 'error' : 'warning'}">${escapeHtml(ready ? readyCopy : sw.finalStatus)}</span><div class="diagnostics-grid">${rows.map(([label, value]) => `<div><strong>${escapeHtml(label)}</strong></div><div>${escapeHtml(value)}</div>`).join('')}</div><div class="button-row">${reloadButton}<button id="copyDiagnostics" class="secondary">Copy diagnostics</button></div>`; $('reloadOfflineSetup')?.addEventListener('click', () => { sessionStorage.setItem(CONTROL_RELOAD_KEY, 'true'); window.location.reload(); }); $('copyDiagnostics')?.addEventListener('click', copyDiagnostics); $('version').textContent = `Service worker: ${sw.diagnostics?.version || sw.diagnostics?.activeCacheName || sw.finalStatus}`; }
 function detectCapabilities() {
     const input = document.createElement('input');
     input.type = 'file';
