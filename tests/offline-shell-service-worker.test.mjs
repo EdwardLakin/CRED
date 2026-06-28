@@ -43,6 +43,47 @@ test('RSC requests are handled separately and never receive an HTML fallback', (
 });
 
 
+
+test('offline readiness polls cache installation instead of finalizing at registration', () => {
+  const shell = fs.readFileSync('src/features/offline/static-shell/offline-shell.ts', 'utf8');
+
+  assert.match(shell, /async function waitForOfflineAssets\(requiredAssets = REQUIRED_OFFLINE_ASSETS, timeoutMs = TIMEOUTS\.cache, intervalMs = TIMEOUTS\.cachePoll\)/);
+  assert.match(shell, /while \(Date\.now\(\) < expires\)/);
+  assert.match(shell, /await requiredAssetsCached\(requiredAssets\)/);
+  assert.match(shell, /finalStatus: 'Installing offline assets…'/);
+  assert.match(shell, /finalStatus: 'Offline assets installed\.'/);
+  assert.match(shell, /finalStatus: 'Offline asset installation timed out\.'/);
+  assert.match(shell, /cacheMissing: cacheState\.missing \|\| REQUIRED_OFFLINE_ASSETS/);
+});
+
+test('offline readiness watches service worker lifecycle states', () => {
+  const shell = fs.readFileSync('src/features/offline/static-shell/offline-shell.ts', 'utf8');
+
+  assert.match(shell, /function waitForWorkerState\(registration: ServiceWorkerRegistration, targetStates: ServiceWorkerState\[\], timeoutMs = TIMEOUTS\.workerState\)/);
+  assert.match(shell, /registration\.installing, registration\.waiting, registration\.active/);
+  assert.match(shell, /worker\.addEventListener\('statechange', listener\)/);
+  assert.match(shell, /registration\.addEventListener\('updatefound', onUpdateFound\)/);
+  assert.match(shell, /waitForWorkerState\(registration, \['installed', 'activating', 'activated'\], TIMEOUTS\.workerState\)/);
+});
+
+test('offline readiness distinguishes controlled and uncontrolled installed assets', () => {
+  const shell = fs.readFileSync('src/features/offline/static-shell/offline-shell.ts', 'utf8');
+
+  assert.match(shell, /Offline assets installed\. Reload once to finish offline setup\./);
+  assert.match(shell, /Offline assets installed, but Safari has not attached control yet\. Close and reopen this offline page while online\./);
+  assert.match(shell, /const ready = identityReady && sw\.registered && sw\.activated && sw\.cached;/);
+  assert.doesNotMatch(shell, /const ready = identityReady && sw\.registered && sw\.activated && sw\.controlled && sw\.cached;/);
+});
+
+test('offline readiness does not leave registration as the final status', () => {
+  const shell = fs.readFileSync('src/features/offline/static-shell/offline-shell.ts', 'utf8');
+  const ensureBody = shell.slice(shell.indexOf('async function ensureServiceWorkerControl'), shell.indexOf('function diagnosticsPayload'));
+
+  assert.doesNotMatch(ensureBody, /finalStatus: 'Registration succeeded'/);
+  assert.doesNotMatch(ensureBody, /finalStatus: 'Checking offline readiness…'/);
+  assert.match(ensureBody, /finalStatus: 'Installing offline assets…'/);
+});
+
 test('Apple Home Screen icon is declared, generated as 180px PNG, and precached', () => {
   const layout = fs.readFileSync('app/layout.tsx', 'utf8');
   const iconScript = fs.readFileSync('scripts/generate-apple-touch-icon.mjs', 'utf8');
