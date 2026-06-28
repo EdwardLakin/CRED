@@ -4,7 +4,10 @@ import zlib from "node:zlib";
 
 const root = process.cwd();
 const sourcePath = path.join(root, "public", "icons", "cred-icon.svg");
-const outputPath = path.join(root, "public", "apple-touch-icon.png");
+const outputPaths = [
+  path.join(root, "public", "apple-touch-icon.png"),
+  path.join(root, "public", "apple-touch-icon-precomposed.png"),
+];
 const size = 180;
 
 function parseHexColor(value) {
@@ -177,5 +180,6 @@ for (let y = 0; y < size; y += 1) {
 drawText(pixels, "CRED", 90, 86, 8, white, 1);
 drawText(pixels, "PROFIXIQ", 90, 137, 3, subtitle, 1);
 
-await fs.writeFile(outputPath, encodePng(pixels));
-console.log(`Generated ${path.relative(root, outputPath)} from ${path.relative(root, sourcePath)} (${size}x${size}).`);
+const png = encodePng(pixels);
+await Promise.all(outputPaths.map((outputPath) => fs.writeFile(outputPath, png)));
+console.log(`Generated ${outputPaths.map((outputPath) => path.relative(root, outputPath)).join(" and ")} from ${path.relative(root, sourcePath)} (${size}x${size}).`);
