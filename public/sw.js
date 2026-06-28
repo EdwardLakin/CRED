@@ -46,10 +46,49 @@ const PRECACHE_ASSETS = [
   "/_next/static/media/favicon.2vob68tjqpejf.ico"
 ];
 const NAVIGATION_PATHS = new Set(["/", "/dashboard", "/offline", "/offline/capture"]);
+const INSTALL_ERROR_KEY = "/__cred_sw_last_install_error__";
+const REQUIRED_DIAGNOSTIC_ASSETS = ["/offline.html", "/offline/offline-shell.css", "/offline/offline-shell.js", "/offline/contracts.js", "/offline/db.js", "/offline/store.js", "/manifest.webmanifest", "/apple-touch-icon.png"];
+
+async function storeInstallError(message) {
+  try {
+    const cache = await caches.open(CACHE_VERSION);
+    await cache.put(INSTALL_ERROR_KEY, new Response(JSON.stringify({ message, at: new Date().toISOString() }), { headers: { "Content-Type": "application/json; charset=utf-8" } }));
+  } catch { }
+}
+
+async function missingRequiredAssets() {
+  const missing = [];
+  for (const asset of REQUIRED_DIAGNOSTIC_ASSETS) {
+    const response = await caches.match(asset).catch(() => undefined);
+    if (!response || !response.ok) missing.push(asset);
+  }
+  return missing;
+}
+
+async function readLastInstallError() {
+  const response = await caches.match(INSTALL_ERROR_KEY).catch(() => undefined);
+  if (!response) return null;
+  return response.json().catch(() => null);
+}
+
+async function diagnosticsPayload() {
+  const cacheNames = await caches.keys();
+  return {
+    version: CACHE_VERSION,
+    activeCacheName: CACHE_VERSION,
+    precacheAssetCount: PRECACHE_ASSETS.length,
+    requiredAssetCount: REQUIRED_DIAGNOSTIC_ASSETS.length,
+    missingRequiredAssets: await missingRequiredAssets(),
+    lastInstallError: await readLastInstallError(),
+    cacheNames,
+  };
+}
 
 self.addEventListener("install", (event) => {
+  console.log("[CRED SW] install started", CACHE_VERSION);
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_VERSION);
+    try {
     for (const asset of PRECACHE_ASSETS) {
       const request = new Request(asset, { cache: "reload", credentials: "same-origin", redirect: "error" });
       const response = await fetch(request);
@@ -62,24 +101,36 @@ self.addEventListener("install", (event) => {
       }
       await cache.put(asset, response);
     }
+    await cache.delete(INSTALL_ERROR_KEY);
+    console.log("[CRED SW] install complete", CACHE_VERSION);
     await self.skipWaiting();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("[CRED SW] install failed", message);
+      await storeInstallError(message);
+      throw error;
+    }
   })());
 });
 
 self.addEventListener("activate", (event) => {
+  console.log("[CRED SW] activate started", CACHE_VERSION);
   event.waitUntil((async () => {
     const offline = await caches.match(OFFLINE_DOCUMENT);
     if (!offline || !offline.ok) throw new Error("Offline document missing after install");
     const keys = await caches.keys();
     await Promise.all(keys.filter((key) => key.startsWith("cred-offline-") && key !== CACHE_VERSION).map((key) => caches.delete(key)));
     await self.clients.claim();
+    console.log("[CRED SW] activate complete", CACHE_VERSION);
   })());
 });
 
 self.addEventListener("message", (event) => {
   if (event.data?.type === "SKIP_WAITING") void self.skipWaiting();
   if (event.data?.type === "CRED_SW_DIAGNOSTICS") {
-    event.ports?.[0]?.postMessage({ version: CACHE_VERSION, offlineDocument: OFFLINE_DOCUMENT, assets: PRECACHE_ASSETS.length });
+    event.waitUntil((async () => {
+      event.ports?.[0]?.postMessage(await diagnosticsPayload());
+    })());
   }
 });
 
