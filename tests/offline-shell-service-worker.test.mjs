@@ -69,8 +69,8 @@ test('offline readiness watches service worker lifecycle states', () => {
 test('offline readiness distinguishes controlled and uncontrolled installed assets', () => {
   const shell = fs.readFileSync('src/features/offline/static-shell/offline-shell.ts', 'utf8');
 
-  assert.match(shell, /Offline assets installed\. Reload once to finish offline setup\./);
-  assert.match(shell, /Offline assets installed, but Safari has not attached control yet\. Close and reopen this offline page while online\./);
+  assert.match(shell, /Offline capture available now; cold launch protection pending\./);
+  assert.match(shell, /Test offline reload/);
   assert.match(shell, /const ready = identityReady && sw\.registered && sw\.activated && sw\.cached;/);
   assert.doesNotMatch(shell, /const ready = identityReady && sw\.registered && sw\.activated && sw\.controlled && sw\.cached;/);
 });

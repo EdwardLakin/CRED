@@ -25,5 +25,6 @@ test('generated static shell and service worker match committed assets when buil
   assert.match(worker, /"\/apple-touch-icon\.png"/);
 
   const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-  assert.match(packageJson.scripts.postbuild, /generate-apple-touch-icon\.mjs .*generate-offline-sw\.mjs/);
+  assert.match(packageJson.scripts.prebuild, /generate-apple-touch-icon\.mjs .*write-offline-document\.mjs .*build-offline-shell\.mjs/);
+  assert.match(packageJson.scripts.postbuild, /generate-offline-sw\.mjs .*verify-offline-build-output\.mjs/);
 });
