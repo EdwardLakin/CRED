@@ -84,6 +84,16 @@ test('offline readiness does not leave registration as the final status', () => 
   assert.match(ensureBody, /finalStatus: 'Installing offline assets…'/);
 });
 
+test('offline shell renders readiness panel before awaiting service worker readiness', () => {
+  const shell = fs.readFileSync('src/features/offline/static-shell/offline-shell.ts', 'utf8');
+  const bootBody = shell.slice(shell.indexOf('async function boot'), shell.indexOf('boot().catch'));
+
+  assert.match(bootBody, /renderOfflineReadiness\(\);/);
+  assert.match(bootBody, /const serviceWorkerReadiness = ensureServiceWorkerControl\(\);/);
+  assert.match(bootBody, /await renderDashboard\(\);[\s\S]*await serviceWorkerReadiness;/);
+  assert.doesNotMatch(bootBody, /await ensureServiceWorkerControl\(\);/);
+});
+
 test('Apple Home Screen icon is declared, generated as 180px PNG, and precached', () => {
   const layout = fs.readFileSync('app/layout.tsx', 'utf8');
   const iconScript = fs.readFileSync('scripts/generate-apple-touch-icon.mjs', 'utf8');

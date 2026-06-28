@@ -369,7 +369,8 @@ async function syncSession(localSessionId) {
 }
 async function boot() {
     state.capabilities = detectCapabilities();
-    await ensureServiceWorkerControl();
+    renderOfflineReadiness();
+    const serviceWorkerReadiness = ensureServiceWorkerControl();
     if (navigator.storage?.persist)
         navigator.storage.persist().catch(() => { });
     $('newSession').onclick = async () => { if (!state.identity)
@@ -383,5 +384,6 @@ async function boot() {
         navigator.serviceWorker.controller.postMessage({ type: 'CRED_SW_DIAGNOSTICS' }, [channel.port2]);
     }
     await renderDashboard();
+    await serviceWorkerReadiness;
 }
 boot().catch((error) => { console.error(error); setMessage(error instanceof Error ? error.message : 'Offline shell failed to start.', 'error'); });
