@@ -758,6 +758,63 @@ export function OfflineCaptureWorkspace({
                 />
               )}
 
+              {(record.lastError ||
+                record.metadata.uiError ||
+                record.metadata.diagnostics) ? (
+                <div className="diagnostics-grid">
+                  {record.metadata.uiError || record.lastError ? (
+                    <>
+                      <strong>Upload issue</strong>
+                      <span>
+                        {record.metadata.uiError ?? record.lastError}
+                      </span>
+                    </>
+                  ) : null}
+                  <strong>Failure stage</strong>
+                  <span>
+                    {record.metadata.diagnostics?.failureStage ??
+                      "none"}
+                  </span>
+                  <strong>Local Blob size</strong>
+                  <span>
+                    {record.metadata.diagnostics?.localBlobSize ??
+                      record.blob?.size ??
+                      "unknown"}
+                  </span>
+                  <strong>Expected size</strong>
+                  <span>
+                    {record.metadata.diagnostics?.expectedSize ??
+                      record.metadata.size}
+                  </span>
+                  <strong>MIME type</strong>
+                  <span>
+                    {record.metadata.diagnostics?.mimeType ??
+                      record.metadata.mimeType}
+                  </span>
+                  <strong>Filename</strong>
+                  <span>
+                    {record.metadata.diagnostics?.filename ??
+                      record.metadata.filename}
+                  </span>
+                  <strong>Storage path</strong>
+                  <span>
+                    {record.metadata.diagnostics?.storagePath ??
+                      record.uploadState.storagePath ??
+                      "not assigned"}
+                  </span>
+                  <strong>Upload attempts</strong>
+                  <span>
+                    {record.metadata.diagnostics
+                      ?.uploadAttemptCount ?? record.retryCount}
+                  </span>
+                  <strong>Server object size</strong>
+                  <span>
+                    {record.metadata.diagnostics
+                      ?.serverObjectSize ?? "unknown"}
+                  </span>
+                </div>
+              ) : null}
+
               <label className="form-stack">
                 <span>Technician note</span>
                 <textarea

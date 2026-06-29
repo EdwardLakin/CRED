@@ -22,6 +22,7 @@ import {
   updateOfflineSessionStatus,
 } from "@/features/offline/offline-sessions";
 import type {
+  OfflineCaptureFailureStage,
   OfflineCaptureRecord,
   QueueStatus,
 } from "@/features/offline/types";
@@ -93,6 +94,29 @@ function storageObjectAlreadyExists(message: string) {
     normalized.includes("duplicate") ||
     normalized.includes("resource already exists")
   );
+}
+
+function getBlobSize(blob: Blob | null | undefined) {
+  return typeof blob?.size === "number" ? blob.size : null;
+}
+
+function buildDiagnostics(
+  record: OfflineCaptureRecord,
+  storagePath: string | null,
+  failureStage: OfflineCaptureFailureStage | null = null,
+  serverObjectSize: number | null = record.metadata.diagnostics?.serverObjectSize ?? null,
+) {
+  return {
+    ...record.metadata.diagnostics,
+    localBlobSize: getBlobSize(record.blob),
+    expectedSize: record.metadata.size,
+    mimeType: record.metadata.mimeType,
+    filename: record.metadata.filename,
+    storagePath,
+    uploadAttemptCount: record.retryCount + 1,
+    serverObjectSize,
+    failureStage,
+  };
 }
 
 async function getAuthenticatedUserId() {
@@ -219,14 +243,21 @@ async function verifySyncedCapture(record: OfflineCaptureRecord, captureItemId: 
     }),
   });
 
-  const result = (await response.json().catch(() => null)) as { ok?: boolean; verified?: boolean; error?: string; mismatches?: string[] } | null;
+  const result = (await response.json().catch(() => null)) as { ok?: boolean; verified?: boolean; error?: string; mismatches?: string[]; serverObjectSize?: number | null; failureStage?: OfflineCaptureFailureStage } | null;
 
   if (!response.ok || !result?.ok || !result.verified) {
-    throw new Error(result?.error ?? (result?.mismatches?.length ? `Capture verification failed: ${result.mismatches.join(", ")}` : "Capture verification failed."));
+    const error = new Error(result?.error ?? (result?.mismatches?.length ? `Capture verification failed: ${result.mismatches.join(", ")}` : "Capture verification failed."));
+    Object.assign(error, {
+      serverObjectSize: result?.serverObjectSize ?? null,
+      failureStage: result?.failureStage ?? "verify_failed",
+    });
+    throw error;
   }
+
+  return { serverObjectSize: result.serverObjectSize ?? record.metadata.size };
 }
 
-async function syncCapture(record: OfflineCaptureRecord) {
+export async function syncCapture(record: OfflineCaptureRecord) {
   const supabase = createClient();
   const storagePath =
     record.uploadState.storagePath ?? createStoragePath(record);
@@ -242,6 +273,7 @@ async function syncCapture(record: OfflineCaptureRecord) {
       ...record.metadata,
       uploadStatus: "uploading",
       uiError: undefined,
+      diagnostics: buildDiagnostics(record, storagePath, null),
     },
   });
 
@@ -264,6 +296,7 @@ async function syncCapture(record: OfflineCaptureRecord) {
         ...current.metadata,
         uploadStatus: "failed",
         uiError: accessResult.error,
+        diagnostics: buildDiagnostics(current, storagePath, "upload_failed"),
       },
     });
 
@@ -271,6 +304,44 @@ async function syncCapture(record: OfflineCaptureRecord) {
   }
 
   if (!current.uploadState.uploadedAt) {
+    const localBlobSize = getBlobSize(current.blob);
+    if (!current.blob || localBlobSize === null || localBlobSize <= 0) {
+      const message =
+        "Local blob missing/empty. The locally saved capture is empty and cannot be uploaded.";
+
+      await updateRecord(current, {
+        status: "blocked",
+        retryCount: current.retryCount + 1,
+        lastError: message,
+        uploadState: { ...current.uploadState, uploadedAt: null },
+        metadata: {
+          ...current.metadata,
+          uploadStatus: "failed",
+          uiError: message,
+          diagnostics: buildDiagnostics(current, storagePath, "local_blob_empty"),
+        },
+      });
+
+      throw new Error(message);
+    }
+
+    if (Number.isFinite(current.metadata.size) && current.metadata.size > 0 && current.metadata.size !== localBlobSize) {
+      const message = `Local blob size mismatch. Expected ${current.metadata.size} bytes but found ${localBlobSize} bytes.`;
+      await updateRecord(current, {
+        status: "blocked",
+        retryCount: current.retryCount + 1,
+        lastError: message,
+        uploadState: { ...current.uploadState, uploadedAt: null },
+        metadata: {
+          ...current.metadata,
+          uploadStatus: "failed",
+          uiError: message,
+          diagnostics: buildDiagnostics(current, storagePath, "local_blob_empty"),
+        },
+      });
+      throw new Error(message);
+    }
+
     const file =
       current.blob instanceof File
         ? current.blob
@@ -294,6 +365,7 @@ async function syncCapture(record: OfflineCaptureRecord) {
           ...current.metadata,
           uploadStatus: "failed",
           uiError: message,
+          diagnostics: buildDiagnostics(current, storagePath, "local_blob_empty"),
         },
       });
 
@@ -305,7 +377,7 @@ async function syncCapture(record: OfflineCaptureRecord) {
       .upload(storagePath, file, {
         cacheControl: "3600",
         contentType: current.metadata.mimeType,
-        upsert: false,
+        upsert: Boolean(current.uploadState.uploadedAt),
       });
 
     if (uploadError) {
@@ -329,6 +401,7 @@ async function syncCapture(record: OfflineCaptureRecord) {
               ...current.metadata,
               uploadStatus: "failed",
               uiError: message,
+              diagnostics: buildDiagnostics(current, storagePath, "upload_failed"),
             },
           });
 
@@ -345,6 +418,7 @@ async function syncCapture(record: OfflineCaptureRecord) {
             ...current.metadata,
             uploadStatus: "failed",
             uiError: message,
+            diagnostics: buildDiagnostics(current, storagePath, "upload_failed"),
           },
         });
 
@@ -363,6 +437,7 @@ async function syncCapture(record: OfflineCaptureRecord) {
         ...current.metadata,
         uploadStatus: "finishing",
         storageUploaded: true,
+        diagnostics: buildDiagnostics(current, storagePath, null),
       },
     });
   } else {
@@ -372,6 +447,7 @@ async function syncCapture(record: OfflineCaptureRecord) {
         ...current.metadata,
         uploadStatus: "finishing",
         storageUploaded: true,
+        diagnostics: buildDiagnostics(current, storagePath, null),
       },
     });
   }
@@ -418,6 +494,10 @@ async function syncCapture(record: OfflineCaptureRecord) {
       status: result.storageUploaded ? "blocked" : "failed",
       retryCount: current.retryCount + 1,
       lastError: message,
+      uploadState: {
+        ...current.uploadState,
+        uploadedAt: result.storageUploaded === false ? null : current.uploadState.uploadedAt,
+      },
       metadata: {
         ...current.metadata,
         uploadStatus: result.storageUploaded
@@ -427,6 +507,12 @@ async function syncCapture(record: OfflineCaptureRecord) {
         storageUploaded:
           result.storageUploaded ??
           current.metadata.storageUploaded,
+        diagnostics: buildDiagnostics(
+          current,
+          storagePath,
+          message.toLowerCase().includes("empty in storage") ? "storage_upload_empty" : "finalize_failed",
+          message.toLowerCase().includes("empty in storage") ? 0 : current.metadata.diagnostics?.serverObjectSize ?? null,
+        ),
       },
     });
 
@@ -457,22 +543,38 @@ async function syncCapture(record: OfflineCaptureRecord) {
       captureItemId: result.captureItemId,
       uploadStatus: "verifying",
       verified: false,
+      diagnostics: buildDiagnostics(current, storagePath, null),
     },
   });
 
   try {
-    await verifySyncedCapture(current, result.captureItemId, storagePath);
+    const verification = await verifySyncedCapture(current, result.captureItemId, storagePath);
+    current = await updateRecord(current, {
+      metadata: {
+        ...current.metadata,
+        diagnostics: buildDiagnostics(current, storagePath, null, verification.serverObjectSize),
+      },
+    });
   } catch (verificationError) {
     const message = getErrorMessage(verificationError);
+    const serverObjectSize = typeof (verificationError as { serverObjectSize?: unknown }).serverObjectSize === "number"
+      ? (verificationError as { serverObjectSize: number }).serverObjectSize
+      : null;
+    const failureStage = ((verificationError as { failureStage?: OfflineCaptureFailureStage }).failureStage ?? "verify_failed");
     await updateRecord(current, {
       status: "finalized_unverified",
       retryCount: current.retryCount + 1,
       lastError: message,
+      uploadState: {
+        ...current.uploadState,
+        uploadedAt: failureStage === "storage_upload_empty" ? null : current.uploadState.uploadedAt,
+      },
       metadata: {
         ...current.metadata,
         uploadStatus: "verification_failed",
         uiError: message,
         verified: false,
+        diagnostics: buildDiagnostics(current, storagePath, failureStage, serverObjectSize),
       },
     });
     throw verificationError;
