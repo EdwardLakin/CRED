@@ -4,13 +4,14 @@ Use the dedicated offline entry point when installing CRED on iPhone or iPad. iO
 
 ## Manual iPad test steps
 
-1. Sign in online.
-2. Open Dashboard once to provision identity on the device.
-3. Tap **Set up offline Home Screen app**.
-4. Confirm `/offline.html` says **Offline ready on this device**.
-5. Use **Share → Add to Home Screen** from that `/offline.html` page.
-6. Launch the Home Screen app once while online.
-7. Close the app, enable Airplane Mode, and relaunch it.
-8. Confirm the Offline Dashboard loads.
+1. Install the Home Screen app from `/offline.html` with **Share → Add to Home Screen**.
+2. Launch the Home Screen app while online.
+3. Tap **Sign in and provision this device**.
+4. Sign in.
+5. Reach Dashboard and allow the offline bootstrap to persist offline identity.
+6. Return to the offline shell at `/offline.html`.
+7. Go offline, such as by enabling Airplane Mode.
+8. Launch the Home Screen app.
+9. Confirm the Offline Dashboard works and local sessions/captures are available.
 
 Android and Chromium PWA installs can still use the browser install prompt. The dedicated `/offline.html` path is safe there too and keeps the same service-worker-backed offline shell.

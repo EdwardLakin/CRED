@@ -22,7 +22,7 @@ test('static shell supports three retained local sessions and dashboard session 
   assert.match(app, /listSessions/);
   assert.match(app, /sessionCard/);
   assert.match(offlineHtml, /Start New Session/);
-  assert.doesNotMatch(app, /Continue Offline Session/);
+  assert.match(app, /Continue Offline Session/);
 });
 
 test('captures are scoped by localSessionId for restore, note edits, reorder, retarget, and deletion', () => {

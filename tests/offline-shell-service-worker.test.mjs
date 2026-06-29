@@ -31,7 +31,7 @@ test('service-worker generation precaches static offline entry and all shell ass
 test('offline navigation fallback returns cached document directly without redirects', () => {
   assert.match(generator, /return offlineDocument\(\)/);
   assert.doesNotMatch(generator, /Response\.redirect/);
-  assert.match(generator, /NAVIGATION_PATHS = new Set\(\["\/", "\/dashboard", "\/offline", "\/offline\/capture"\]\)/);
+  assert.match(generator, /NAVIGATION_PATHS = new Set\(\["\/", "\/dashboard", "\/sign-in", "\/offline", "\/offline\/capture"\]\)/);
   assert.match(generator, /url\.pathname\.startsWith\("\/dashboard\/"\)/);
 });
 
@@ -163,7 +163,7 @@ test('Apple Home Screen icon is declared, generated as 180px PNG, and precached'
 
 test('iOS/iPadOS Home Screen documentation points users to offline install page', () => {
   const docs = fs.readFileSync('docs/OFFLINE_HOME_SCREEN_INSTALL.md', 'utf8');
-  assert.match(docs, /Set up offline Home Screen app/);
+  assert.match(docs, /Sign in and provision this device/);
   assert.match(docs, /\/offline\.html/);
   assert.match(docs, /Share → Add to Home Screen/);
   assert.match(docs, /Airplane Mode/);
@@ -224,4 +224,45 @@ test('offline page reports service worker installing stuck after lifecycle timeo
   assert.match(shell, /\['Installing state', sw\.installingState \|\| 'none'\]/);
   assert.match(shell, /\['Installing scriptURL', sw\.installingScriptURL \|\| 'none'\]/);
   assert.match(shell, /\['Last installing statechange', sw\.installingLastStateChangeAt \|\| 'not observed'\]/);
+});
+
+
+test('offline shell exposes online navigation actions for Home Screen launches', () => {
+  const html = fs.readFileSync('public/offline.html', 'utf8');
+  const shell = fs.readFileSync('src/features/offline/static-shell/offline-shell.ts', 'utf8');
+
+  assert.match(html, /id="onlineNavigation"/);
+  assert.match(shell, /function navigateTo\(path: string\) \{ window\.location\.href = path; \}/);
+  assert.match(shell, /Open CRED Dashboard/);
+  assert.match(shell, /Sign in to CRED/);
+  assert.match(shell, /Provision this device/);
+  assert.match(shell, /Return to Offline Dashboard/);
+  assert.match(shell, /Open Online Dashboard/);
+  assert.match(shell, /Prepare All Reachable Sessions/);
+  assert.match(shell, /Continue Offline Session/);
+  assert.match(shell, /navigateTo\('\/dashboard'\)/);
+  assert.match(shell, /navigateTo\('\/sign-in'\)/);
+  assert.match(shell, /navigateTo\('\/dashboard\?offlineProvision=1'\)/);
+});
+
+test('not-provisioned offline shell shows primary sign-in and provision action', () => {
+  const shell = fs.readFileSync('src/features/offline/static-shell/offline-shell.ts', 'utf8');
+
+  assert.match(shell, /Sign in and provision this device/);
+  assert.match(shell, /signInProvisionPath/);
+  assert.match(shell, /encodeURIComponent\('\/dashboard\?offlineProvision=1'\)/);
+  assert.match(shell, /data-nav="signin-provision"/);
+  assert.match(shell, /navigateTo\(signInProvisionPath\(\)\)/);
+});
+
+test('service worker does not intercept online dashboard and sign-in navigation with offline shell', () => {
+  const generator = fs.readFileSync('scripts/generate-offline-sw.mjs', 'utf8');
+  const worker = fs.readFileSync('public/sw.js', 'utf8');
+
+  for (const source of [generator, worker]) {
+    assert.match(source, /"\/sign-in"/);
+    assert.match(source, /if \(!self\.navigator\.onLine && shouldUseOfflineShell\(url\)\) return offlineDocument\(\);/);
+    assert.match(source, /const response = await fetchWithTimeout\(request, shouldUseOfflineShell\(url\) \? 1200 : 3000\);/);
+    assert.match(source, new RegExp('catch \\{\\n      if \\(shouldUseOfflineShell\\(url\\)\\) return offlineDocument\\(\\);'));
+  }
 });

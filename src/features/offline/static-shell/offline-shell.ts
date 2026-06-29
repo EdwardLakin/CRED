@@ -101,6 +101,33 @@ function renderSupport() {
   $('support').innerHTML = `<span class="status">${issues.length ? 'Supported with limitations' : 'Fully supported by detected capabilities'}</span><p class="muted">${storage}</p>${issues.map((issue) => `<p class="warning">${escapeHtml(issue)}</p>`).join('')}`;
 }
 
+
+function navigateTo(path: string) { window.location.href = path; }
+function signInProvisionPath(): string { return `/sign-in?next=${encodeURIComponent('/dashboard?offlineProvision=1')}`; }
+function onlineNavigationMarkup(identity: OfflineIdentity | null): string {
+  const online = navigator.onLine;
+  if (!online) {
+    return '<h2>Offline mode</h2><p class="muted">Online CRED navigation is disabled while this device is offline. Local capture and session actions remain available below.</p><div class="button-row"><button class="secondary" data-nav="offline">Return to Offline Dashboard</button></div>';
+  }
+  if (!identity) {
+    return '<h2>Online access</h2><p class="muted">This Home Screen app is online, but the device is not provisioned for offline use yet. Sign in, open Dashboard, and CRED will save the offline identity for this browser.</p><div class="button-row"><button data-nav="signin-provision">Sign in and provision this device</button><button class="secondary" data-nav="dashboard">Open CRED Dashboard</button><button class="secondary" data-nav="signin">Sign in to CRED</button><button class="secondary" data-nav="provision">Provision this device</button><button class="ghost" data-nav="offline">Return to Offline Dashboard</button></div>';
+  }
+  return '<h2>Online access</h2><p class="muted">This Home Screen app is online and provisioned. You can open the normal dashboard, prepare local sessions for handoff, or continue capturing offline.</p><div class="button-row"><button data-nav="online-dashboard">Open Online Dashboard</button><button class="secondary" data-nav="sync-all-online">Prepare All Reachable Sessions</button><button class="secondary" data-nav="continue-offline">Continue Offline Session</button><button class="secondary" data-nav="signin">Sign in to CRED</button><button class="secondary" data-nav="provision">Provision this device</button><button class="ghost" data-nav="offline">Return to Offline Dashboard</button></div>';
+}
+function bindOnlineNavigation() {
+  const nav = $('onlineNavigation');
+  nav.querySelector('[data-nav="dashboard"]')?.addEventListener('click', () => navigateTo('/dashboard'));
+  nav.querySelector('[data-nav="online-dashboard"]')?.addEventListener('click', () => navigateTo('/dashboard'));
+  nav.querySelector('[data-nav="signin"]')?.addEventListener('click', () => navigateTo('/sign-in'));
+  nav.querySelector('[data-nav="signin-provision"]')?.addEventListener('click', () => navigateTo(signInProvisionPath()));
+  nav.querySelector('[data-nav="provision"]')?.addEventListener('click', () => navigateTo('/dashboard?offlineProvision=1'));
+  nav.querySelector('[data-nav="offline"]')?.addEventListener('click', () => setMessage('Already on the Offline Dashboard.', 'success'));
+  nav.querySelector('[data-nav="continue-offline"]')?.addEventListener('click', () => $('sessions').scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  nav.querySelector('[data-nav="sync-all-online"]')?.addEventListener('click', () => syncAllReachableSessions());
+}
+function renderOnlineNavigation() { const nav = $('onlineNavigation'); nav.innerHTML = onlineNavigationMarkup(state.identity); bindOnlineNavigation(); const syncAll = $('syncAll') as HTMLButtonElement; syncAll.disabled = !navigator.onLine || !Boolean(state.identity); syncAll.title = navigator.onLine ? '' : 'Online handoff is unavailable while offline.'; }
+async function syncAllReachableSessions() { if (!state.identity) return setMessage('Device not provisioned. Sign in and provision this device first.', 'error'); const sessions = await listSessions(state.identity); for (const session of sessions.filter((candidate: OfflineLocalSession) => SYNCABLE_STATUSES.includes(candidate.status as SessionStatus))) await syncSession(session.localSessionId); }
+
 async function renderDashboard() {
   state.activeSession = null;
   revokeUrls();
@@ -258,8 +285,9 @@ async function boot() {
   const serviceWorkerReadiness = ensureServiceWorkerControl();
   if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
   ($('newSession') as HTMLButtonElement).onclick = async () => { if (!state.identity) return setMessage('Device not provisioned. Sign in online first.', 'error'); const session = await createSession(state.identity); await openSession(session.localSessionId); };
-  ($('syncAll') as HTMLButtonElement).onclick = async () => { const sessions = await listSessions(state.identity); for (const session of sessions.filter((candidate: OfflineLocalSession) => SYNCABLE_STATUSES.includes(candidate.status as SessionStatus))) await syncSession(session.localSessionId); };
-  window.addEventListener('online', () => setMessage('Network signal returned. Use Prepare online handoff to verify server reachability and continue upload.', 'success'));
+  ($('syncAll') as HTMLButtonElement).onclick = syncAllReachableSessions;
+  window.addEventListener('online', () => { renderOnlineNavigation(); setMessage('Network signal returned. Use Prepare online handoff to verify server reachability and continue upload.', 'success'); });
+  window.addEventListener('offline', () => { renderOnlineNavigation(); setMessage('Network signal is offline. Online CRED navigation is disabled, but local sessions remain available.', 'warning'); });
   if (navigator.serviceWorker?.controller) {
     const channel = new MessageChannel();
     channel.port1.onmessage = (event) => { $('version').textContent = `Service worker: ${JSON.stringify(event.data)}`; };
