@@ -28,7 +28,7 @@ const ALLOWED_PROCEDURE_MIME_TYPES = new Set([
 ])
 
 const STEP_STATUSES = new Set(['not_tested', 'pass', 'fail', 'blocked', 'not_applicable'])
-const SIGN_OFF_STATEMENT = 'I followed the OEM procedure and documented technician-selected results. AI did not diagnose, select branches, determine root cause, or recommend repair.'
+const SIGN_OFF_STATEMENT = 'I documented technician-selected procedure results. CRED assembled documentation only and did not diagnose, select branches, or create recommendations.'
 
 type ActionResult = { ok: true; message?: string } | { ok: false; error: string }
 type DiagnosticAuditEventType = 'procedure_uploaded' | 'extraction_review_approved' | 'step_updated' | 'branch_selected' | 'reading_added_or_updated' | 'evidence_attached' | 'step_hidden_or_unhidden' | 'procedure_signed_off' | 'report_approved_for_export'

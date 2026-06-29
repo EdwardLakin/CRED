@@ -37,18 +37,18 @@ function genericFallbackDraftSections(draftOutput: Awaited<ReturnType<typeof gen
     const matchingSection = draftOutput.sections.find((section) => {
       const normalizedTitle = section.title.toLowerCase()
       if (title === 'Customer Concern') return /customer|concern|complaint/.test(normalizedTitle)
-      if (title === 'Initial Inspection') return /initial|inspection|arrival/.test(normalizedTitle)
-      if (title === 'Retrieved DTCs') return /dtc|code|retrieved/.test(normalizedTitle)
-      if (title === 'Freeze Frame') return /freeze frame|snapshot/.test(normalizedTitle)
-      if (title === 'Live Data Analysis') return /live data|pid|data analysis/.test(normalizedTitle)
-      if (title === 'Functional Testing') return /functional|output state|actuation|test/.test(normalizedTitle)
+      if (title === 'Vehicle / Asset Information') return /vehicle|asset|unit|vin|serial|odometer|hour/.test(normalizedTitle)
+      if (title === 'DTCs / Fault Codes') return /dtc|fault|code|retrieved/.test(normalizedTitle)
+      if (title === 'Freeze Frame Data') return /freeze frame|snapshot/.test(normalizedTitle)
+      if (title === 'Live Data / Measurements') return /live data|pid|measurement|reading/.test(normalizedTitle)
+      if (title === 'Functional Tests') return /functional|output state|actuation|test/.test(normalizedTitle)
       if (title === 'Repairs Performed') return /repair|replaced|adaptation/.test(normalizedTitle)
-      if (title === 'Post Repair Verification') return /verification|post repair|verify/.test(normalizedTitle)
-      if (title === 'Forced Regeneration Results') return /regen|regeneration|exhaust filter cleaning/.test(normalizedTitle)
+      if (title === 'Verification / Retest Results') return /verification|retest|post repair|verify/.test(normalizedTitle)
+      if (title === 'Road Test Results') return /road test|drive cycle/.test(normalizedTitle)
       if (title === 'Technician Observations') return /technician|observation|note/.test(normalizedTitle)
-      if (title === 'Workshop Information Reviewed') return /workshop|manual|reference|recall/.test(normalizedTitle)
+      if (title === 'Reference Documents Reviewed') return /workshop|manual|reference|recall|tsb|pinpoint/.test(normalizedTitle)
       if (title === 'Diagnostic Summary') return /diagnostic summary|summary|finding|condition|issue|defect/.test(normalizedTitle)
-      if (title === 'Recommended Next Step') return /recommend|next step|action/.test(normalizedTitle)
+      if (title === 'Recommended Next Step / Escalation') return /recommend|next step|escalation|action/.test(normalizedTitle)
       if (title === 'Evidence Appendix') return /evidence|appendix|capture|photo/.test(normalizedTitle)
       if (title === 'Inspector / Facility Details') return /inspector|facility/.test(normalizedTitle)
       if (title === 'Signoff') return /sign|approval/.test(normalizedTitle)
@@ -58,7 +58,7 @@ function genericFallbackDraftSections(draftOutput: Awaited<ReturnType<typeof gen
     return {
       section_key: title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''),
       title,
-      body: matchingSection?.body ?? (title === 'Diagnostic Summary' ? draftOutput.summary : null),
+      body: title === 'Diagnostic Summary' ? 'No technician diagnostic summary entered.' : (matchingSection?.body ?? null),
       status: matchingSection?.status ?? 'informational' as const,
       confidence: matchingSection?.confidence ?? draftOutput.confidence,
       source_capture_ids: getSectionSourceCaptureIds(title, matchingSection?.source_capture_ids, allCaptureIds, noteCaptureIds),
@@ -76,7 +76,7 @@ function genericFallbackDraftSections(draftOutput: Awaited<ReturnType<typeof gen
 function getSectionSourceCaptureIds(title: string, existingIds: string[] | null | undefined, allCaptureIds: string[], noteCaptureIds: string[]) {
   if (existingIds?.length) return existingIds.filter((id) => allCaptureIds.includes(id))
   if (title === 'Technician Observations') return noteCaptureIds
-  if (['Evidence Appendix', 'Customer Concern', 'Initial Inspection', 'Retrieved DTCs', 'Freeze Frame', 'Live Data Analysis', 'Functional Testing', 'Repairs Performed', 'Post Repair Verification', 'Forced Regeneration Results', 'Diagnostic Summary', 'Recommended Next Step'].includes(title)) return allCaptureIds
+  if (['Evidence Appendix', 'Customer Concern', 'Vehicle / Asset Information', 'DTCs / Fault Codes', 'Freeze Frame Data', 'Live Data / Measurements', 'Functional Tests', 'Repairs Performed', 'Verification / Retest Results', 'Road Test Results', 'Diagnostic Summary', 'Recommended Next Step / Escalation'].includes(title)) return allCaptureIds
   return []
 }
 
