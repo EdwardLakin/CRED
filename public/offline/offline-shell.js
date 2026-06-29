@@ -57,15 +57,31 @@ function waitForWorkerState(registration, targetStates, timeoutMs = TIMEOUTS.wor
     finish(true); }; worker.addEventListener('statechange', listener); workerListeners.push([worker, listener]); }; const onUpdateFound = () => watch(registration.installing); const timeout = window.setTimeout(() => finish(workers().some((worker) => targetStates.includes(worker.state))), timeoutMs); registration.addEventListener('updatefound', onUpdateFound); workers().forEach(watch); }); }
 async function getServiceWorkerDiagnostics() { const target = navigator.serviceWorker?.controller || (await navigator.serviceWorker?.getRegistration('/'))?.active; if (!target)
     return null; return withTimeout(new Promise((resolve) => { const channel = new MessageChannel(); channel.port1.onmessage = (event) => resolve(event.data); target.postMessage({ type: 'CRED_SW_DIAGNOSTICS' }, [channel.port2]); }), TIMEOUTS.diagnostics, 'Service worker diagnostics').catch((error) => ({ error: error instanceof Error ? error.message : String(error) })); }
+function activeRegistrationSnapshot(snapshots) { return snapshots.find((item) => Boolean(item.active.scriptURL)) || null; }
+async function finalizeOfflineControlledBoot(snapshots) { logReadiness('offline controlled boot: using existing registration'); const activeRegistration = activeRegistrationSnapshot(snapshots); const cacheState = await requiredAssetsCached(REQUIRED_OFFLINE_ASSETS).catch((error) => ({ cached: false, missing: REQUIRED_OFFLINE_ASSETS, cacheNames: state.serviceWorker.cacheNames, error: error instanceof Error ? error.message : String(error) })); const diagnostics = await getServiceWorkerDiagnostics(); const base = { controlled: true, registered: Boolean(activeRegistration), registrationError: null, registrationScope: activeRegistration?.scope || state.serviceWorker.registrationScope, scopeMatchesPage: activeRegistration ? scopeMatchesPage(activeRegistration.scope) : state.serviceWorker.scopeMatchesPage, activeScriptURL: navigator.serviceWorker.controller?.scriptURL || activeRegistration?.active.scriptURL || state.serviceWorker.activeScriptURL, activated: Boolean(activeRegistration?.active.scriptURL || navigator.serviceWorker.controller), cacheNames: cacheState.cacheNames || state.serviceWorker.cacheNames, cached: cacheState.cached, cacheMissing: cacheState.missing || REQUIRED_OFFLINE_ASSETS, diagnostics }; if (cacheState.cached) {
+    sessionStorage.removeItem(CONTROL_RELOAD_KEY);
+    updateSw({ ...base, finalStatus: 'Offline ready on this device', error: null });
+    return state.serviceWorker;
+} updateSw({ ...base, finalStatus: 'Offline cache missing required assets', error: cacheState.error || 'Offline cache missing required assets' }); return state.serviceWorker; }
 async function ensureServiceWorkerControl() { if (!('serviceWorker' in navigator)) {
     updateSw({ supported: false, finalStatus: 'Service workers are not supported in this browser.', error: 'Service workers are not supported in this browser.' });
     return state.serviceWorker;
 } navigator.serviceWorker.addEventListener('controllerchange', () => { logReadiness('controllerchange received'); updateSw({ controllerChangeReceived: true, controlled: Boolean(navigator.serviceWorker.controller) }); recordController('controllerchange'); }); try {
     recordController('before registration');
-    await snapshotRegistrations();
-    await checkServiceWorkerScript();
-    updateSw({ registrationAttempted: true, finalStatus: 'Registration attempted' });
-    logReadiness('registering /sw.js', { scope: '/' });
+    const snapshots = await snapshotRegistrations();
+    const controlledAtBoot = Boolean(navigator.serviceWorker.controller);
+    const activeAtBoot = Boolean(activeRegistrationSnapshot(snapshots));
+    if (!navigator.onLine && controlledAtBoot && activeAtBoot)
+        return await finalizeOfflineControlledBoot(snapshots);
+    if (navigator.onLine || (!controlledAtBoot && !activeAtBoot)) {
+        await checkServiceWorkerScript();
+        updateSw({ registrationAttempted: true, finalStatus: 'Registration attempted' });
+        logReadiness('registering /sw.js', { scope: '/' });
+    }
+    else {
+        updateSw({ registrationAttempted: false, finalStatus: 'Using existing service worker registration' });
+        return await finalizeOfflineControlledBoot(snapshots);
+    }
     const registration = await withTimeout(navigator.serviceWorker.register('/sw.js', { scope: '/' }), TIMEOUTS.registration, 'Service worker registration');
     logReadiness('registration effective scope', registration.scope);
     watchRegistration(registration);
@@ -74,7 +90,8 @@ async function ensureServiceWorkerControl() { if (!('serviceWorker' in navigator
     updateSw({ registered: true, registrationError: null, registrationScope: registration.scope, scopeMatchesPage: scopeMatchesPage(registration.scope), installing: Boolean(registration.installing), waiting: Boolean(registration.waiting), activated: Boolean(registration.active), finalStatus: 'Installing offline assets…', error: null });
     recordController('after registration');
     const workerProgress = waitForWorkerState(registration, ['installed', 'activating', 'activated'], TIMEOUTS.workerState).catch((error) => { logReadiness('worker state wait failed', error); return false; });
-    await registration.update().catch((error) => logReadiness('registration update failed', error));
+    if (navigator.onLine)
+        await registration.update().catch((error) => logReadiness('registration update failed', error));
     if (registration.waiting) {
         registration.waiting.postMessage({ type: 'SKIP_WAITING' });
         updateSw({ skipWaitingSent: true, waiting: true });
@@ -115,6 +132,9 @@ async function ensureServiceWorkerControl() { if (!('serviceWorker' in navigator
 }
 catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const snapshots = state.serviceWorker.registrations;
+    if (!navigator.onLine && navigator.serviceWorker.controller && activeRegistrationSnapshot(snapshots))
+        return await finalizeOfflineControlledBoot(snapshots);
     updateSw({ registered: false, registrationError: message, error: message, finalStatus: message });
     return state.serviceWorker;
 } }
