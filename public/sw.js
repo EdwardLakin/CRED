@@ -46,7 +46,7 @@ const PRECACHE_ASSETS = [
   "/_next/static/chunks/turbopack-3y4_9gvwbdyxg.js",
   "/_next/static/media/favicon.2vob68tjqpejf.ico"
 ];
-const NAVIGATION_PATHS = new Set(["/", "/dashboard", "/offline", "/offline/capture"]);
+const NAVIGATION_PATHS = new Set(["/", "/dashboard", "/sign-in", "/offline", "/offline/capture"]);
 const INSTALL_ERROR_KEY = "/__cred_sw_last_install_error__";
 const REQUIRED_DIAGNOSTIC_ASSETS = ["/offline.html", "/offline/offline-shell.css", "/offline/offline-shell.js", "/offline/contracts.js", "/offline/db.js", "/offline/store.js", "/manifest.webmanifest"];
 const REQUIRED_ASSETS = new Set(REQUIRED_DIAGNOSTIC_ASSETS);
