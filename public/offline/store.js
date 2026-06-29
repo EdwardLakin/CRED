@@ -85,6 +85,16 @@ export async function saveSession(session, patch = {}) {
 export async function capturesForSession(localSessionId, identity = getOfflineIdentity()) {
     return (await getAll('queuedCaptures')).filter((capture) => capture.localSessionId === localSessionId && (!identity || (capture.userId === identity.userId && capture.organizationId === identity.organizationId))).sort((a, b) => (a.metadata.reportOrder ?? 999999) - (b.metadata.reportOrder ?? 999999) || a.createdAt.localeCompare(b.createdAt));
 }
+export async function normalizeSessionReportOrders(localSessionId, identity = getOfflineIdentity()) {
+    const captures = await capturesForSession(localSessionId, identity);
+    const normalized = captures.map((capture, index) => ({
+        ...capture,
+        metadata: { ...capture.metadata, reportOrder: index + 1 },
+        updatedAt: capture.metadata.reportOrder === index + 1 ? capture.updatedAt : now(),
+    }));
+    await Promise.all(normalized.filter((capture, index) => captures[index]?.metadata.reportOrder !== index + 1).map((capture) => put('queuedCaptures', capture)));
+    return normalized;
+}
 export async function sessionStats(localSessionId, identity = getOfflineIdentity()) {
     const captures = await capturesForSession(localSessionId, identity);
     const sessions = await listSessions(identity);

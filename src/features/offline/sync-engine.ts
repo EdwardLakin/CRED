@@ -12,6 +12,8 @@ import {
 } from "@/features/offline/connectivity";
 import {
   getPendingCaptures,
+  normalizeSessionReportOrders,
+  positiveReportOrder,
   removeCapture,
   retargetQueuedCaptures,
   saveQueuedCapture,
@@ -225,6 +227,7 @@ async function syncOfflineSessions(userId: string) {
 
 
 async function verifySyncedCapture(record: OfflineCaptureRecord, captureItemId: string, storagePath: string) {
+  const reportOrder = positiveReportOrder(record.metadata.reportOrder);
   const response = await fetch("/api/offline/captures/verify", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -239,7 +242,7 @@ async function verifySyncedCapture(record: OfflineCaptureRecord, captureItemId: 
       filename: record.metadata.filename,
       mimeType: record.metadata.mimeType,
       technicianNote: record.metadata.technicianNote,
-      reportOrder: record.metadata.reportOrder,
+      ...(reportOrder ? { reportOrder } : {}),
     }),
   });
 
@@ -452,6 +455,8 @@ export async function syncCapture(record: OfflineCaptureRecord) {
     });
   }
 
+  const reportOrder = positiveReportOrder(current.metadata.reportOrder);
+
   const result = await createCaptureRecordFromUploadedFile({
     sessionId: current.sessionId,
     storagePath,
@@ -478,7 +483,7 @@ export async function syncCapture(record: OfflineCaptureRecord) {
         | "manual"
         | "voice"
         | "edited",
-    reportOrder: current.metadata.reportOrder,
+    reportOrder,
     includeInReport: current.metadata.includeInReport,
     sourceDocumentType: null,
     sourceDocumentLabel: null,
@@ -596,7 +601,7 @@ export async function syncCapture(record: OfflineCaptureRecord) {
     },
   });
 
-  await recordVerifiedOfflineCapture(current.localSessionId, current.metadata.reportOrder !== null ? current.metadata.reportOrder + 1 : 1);
+  await recordVerifiedOfflineCapture(current.localSessionId, positiveReportOrder(current.metadata.reportOrder) ?? 1);
   await removeCapture(current.localId);
 
   return result.captureItemId;
@@ -689,6 +694,19 @@ export class OfflineSyncEngine {
     }
 
     await syncOfflineSessions(userId);
+
+    const pendingBeforeNormalization = await getPendingCaptures(userId);
+    const sessionsToNormalize = new Map(
+      pendingBeforeNormalization.map((record) => [
+        record.localSessionId,
+        { userId: record.userId, organizationId: record.organizationId },
+      ]),
+    );
+    await Promise.all(
+      Array.from(sessionsToNormalize, ([localSessionId, identity]) =>
+        normalizeSessionReportOrders(localSessionId, identity),
+      ),
+    );
 
     const pending = await getPendingCaptures(userId);
     const retryable = pending

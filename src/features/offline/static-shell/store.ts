@@ -88,6 +88,17 @@ export async function capturesForSession(localSessionId: string, identity: Offli
   return (await getAll('queuedCaptures') as OfflineCaptureRecord[]).filter((capture: OfflineCaptureRecord) => capture.localSessionId === localSessionId && (!identity || (capture.userId === identity.userId && capture.organizationId === identity.organizationId))).sort((a: OfflineCaptureRecord, b: OfflineCaptureRecord) => (a.metadata.reportOrder ?? 999999) - (b.metadata.reportOrder ?? 999999) || a.createdAt.localeCompare(b.createdAt));
 }
 
+export async function normalizeSessionReportOrders(localSessionId: string, identity: OfflineIdentity | null = getOfflineIdentity()): Promise<OfflineCaptureRecord[]> {
+  const captures = await capturesForSession(localSessionId, identity);
+  const normalized = captures.map((capture: OfflineCaptureRecord, index: number) => ({
+    ...capture,
+    metadata: { ...capture.metadata, reportOrder: index + 1 },
+    updatedAt: capture.metadata.reportOrder === index + 1 ? capture.updatedAt : now(),
+  }));
+  await Promise.all(normalized.filter((capture, index) => captures[index]?.metadata.reportOrder !== index + 1).map((capture) => put('queuedCaptures', capture)));
+  return normalized;
+}
+
 export async function sessionStats(localSessionId: string, identity: OfflineIdentity | null = getOfflineIdentity()): Promise<{ captureCount: number; pendingCount: number; verifiedCount: number; bytes: number }> {
   const captures = await capturesForSession(localSessionId, identity);
   const sessions = await listSessions(identity);
