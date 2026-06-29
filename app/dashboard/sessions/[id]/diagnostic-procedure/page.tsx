@@ -394,7 +394,7 @@ export default async function DiagnosticProcedurePage({
           <div>
             <p className="eyebrow">Upload OEM procedure</p>
             <h2>Create procedure workspace</h2>
-            <p className="muted">Upload a Ford pinpoint test, OEM service procedure, TSB, wiring test, warranty diagnostic checklist, or scan-tool test procedure. CRED will organize it for documentation review.</p>
+            <p className="muted">Upload a service diagnostic procedure, reference document, TSB, wiring test, warranty diagnostic checklist, or scan-tool test procedure. CRED will organize it for documentation review.</p>
           </div>
           <form action={uploadAction} className="form-stack">
             <label className="field-stack">
@@ -413,7 +413,7 @@ export default async function DiagnosticProcedurePage({
               <p className="muted">{[procedureInfo?.manufacturer, procedureInfo?.documentType, procedureInfo?.sourceFile].filter(Boolean).join(' · ')}</p>
               <p className="muted">Status: {(procedureInfo?.status ?? 'technician_review_required').replace(/_/g, ' ')}</p>
               <p className="muted">Sign-off: {signOffInfo.signedOff ? `Signed by ${signOffInfo.signOffName ?? signOffInfo.signedOffBy ?? 'technician'}${formatTimestamp(signOffInfo.signedOffAt) ? ` at ${formatTimestamp(signOffInfo.signedOffAt)}` : ''}` : 'Not signed off'}</p>
-              <form action={approveAction}><button className="button button-primary touch-target">Approve corrected structure for use</button></form><p className="notice info"><strong>Guardrail:</strong> OEM flow text is shown for reference only. The technician decides what was tested and documents the result.</p>
+              <form action={approveAction}><button className="button button-primary touch-target">Approve corrected structure for use</button></form><p className="notice info"><strong>Guardrail:</strong> OEM flow text is shown for reference only. The technician decides what was tested, documents the result, and reviews before export.</p>
             </div>
           </section>
 
@@ -442,7 +442,7 @@ export default async function DiagnosticProcedurePage({
                 {!procedureProgress.reportReady ? <label className="field-stack notice warning"><span><input type="checkbox" name="incomplete_acknowledged" /> I acknowledge incomplete, blocked, warning, or missing required documentation remains and sign off with that limitation recorded.</span></label> : null}
                 <label className="field-stack"><span className="label">Technician name</span><input className="input" name="sign_off_name" defaultValue={profile.full_name} required /></label>
                 <input type="hidden" name="report_ready" value={procedureProgress.reportReady ? 'true' : 'false'} />
-                <label className="field-stack notice info"><span><input type="checkbox" name="sign_off_acknowledged" required /> I followed the OEM procedure and documented technician-selected results. The technician owns branch selection, root cause, and repair recommendations.</span></label>
+                <label className="field-stack notice info"><span><input type="checkbox" name="sign_off_acknowledged" required /> I documented technician-selected procedure results. The technician owns all findings, conclusions, and next-step or escalation notes.</span></label>
                 <button className="button button-primary touch-target">Save technician sign-off</button>
               </form>
             )}

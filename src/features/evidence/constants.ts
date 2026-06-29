@@ -99,33 +99,33 @@ export const EVIDENCE_SUGGESTION_SOURCES = [
 export const DIAGNOSTIC_EVENT_TYPES = [
   'manual',
   'capture',
-  'ai_suggestion',
   'read_codes',
   'freeze_frame',
   'live_data',
   'functional_test',
-  'repair',
+  'measurement',
+  'repair_performed',
   'verification',
   'road_test',
   'forced_regen',
-  'measurement',
   'reference_document',
+  'technician_observation',
 ] as const
 
 export const DIAGNOSTIC_EVENT_TYPE_LABELS: Record<(typeof DIAGNOSTIC_EVENT_TYPES)[number], string> = {
   manual: 'Manual note',
   capture: 'Evidence capture',
-  ai_suggestion: 'AI suggestion',
   read_codes: 'Read codes',
   freeze_frame: 'Freeze frame',
   live_data: 'Live data',
   functional_test: 'Functional test',
-  repair: 'Repair',
+  measurement: 'Measurement',
+  repair_performed: 'Repair performed',
   verification: 'Verification',
   road_test: 'Road test',
   forced_regen: 'Forced regeneration',
-  measurement: 'Measurement',
   reference_document: 'Reference document',
+  technician_observation: 'Technician observation',
 }
 
 export function formatDiagnosticEventType(value: string | null | undefined) {
