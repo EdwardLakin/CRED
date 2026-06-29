@@ -70,14 +70,18 @@ export async function POST(request: Request) {
       .info(storagePath);
 
     if (storageError || !storedFile) mismatches.push("storage_object");
-    if (storedFile && Number.isFinite(expectedSize) && typeof storedFile.size === "number" && storedFile.size !== expectedSize) mismatches.push("storage_size");
+    const serverObjectSize = storedFile && typeof storedFile.size === "number" ? storedFile.size : null;
+    if (storedFile && Number.isFinite(expectedSize) && serverObjectSize !== null && serverObjectSize !== expectedSize) mismatches.push("storage_size");
     if (storedFile && mimeType && storedFile.contentType && storedFile.contentType.toLowerCase() !== mimeType) mismatches.push("storage_content_type");
 
     if (mismatches.length > 0) {
-      return NextResponse.json({ ok: false, verified: false, mismatches }, { status: 409, headers: { "Cache-Control": "no-store" } });
+      const failureStage = serverObjectSize === 0 && Number.isFinite(expectedSize) && expectedSize > 0
+        ? "storage_upload_empty"
+        : "verify_failed";
+      return NextResponse.json({ ok: false, verified: false, mismatches, serverObjectSize, failureStage }, { status: 409, headers: { "Cache-Control": "no-store" } });
     }
 
-    return NextResponse.json({ ok: true, verified: true, captureItemId, sessionId, storagePath }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ ok: true, verified: true, captureItemId, sessionId, storagePath, serverObjectSize }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return NextResponse.json({ ok: false, verified: false, error: error instanceof Error ? error.message : "Unable to verify capture." }, { status: 500, headers: { "Cache-Control": "no-store" } });
   }

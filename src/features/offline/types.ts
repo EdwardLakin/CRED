@@ -18,6 +18,24 @@ export type OfflineUploadState = {
   verifiedAt?: string | null;
 };
 
+export type OfflineCaptureFailureStage =
+  | "local_blob_empty"
+  | "upload_failed"
+  | "storage_upload_empty"
+  | "finalize_failed"
+  | "verify_failed";
+
+export type OfflineCaptureDiagnostics = {
+  localBlobSize?: number | null;
+  expectedSize?: number | null;
+  mimeType?: string | null;
+  filename?: string | null;
+  storagePath?: string | null;
+  uploadAttemptCount?: number;
+  serverObjectSize?: number | null;
+  failureStage?: OfflineCaptureFailureStage | null;
+};
+
 export type OfflineCaptureMetadata = {
   captureIntent: string;
   manualType: string | null;
@@ -39,6 +57,7 @@ export type OfflineCaptureMetadata = {
   storageUploaded?: boolean;
   noteSaveStatus?: string;
   verified?: boolean;
+  diagnostics?: OfflineCaptureDiagnostics;
 };
 
 export type OfflineCaptureRecord = {
