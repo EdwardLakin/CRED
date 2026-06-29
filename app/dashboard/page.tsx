@@ -29,6 +29,17 @@ function getContinueSession(sessions: Parameters<typeof getSessionWorkflowState>
   return sessions.find((session) => getSessionWorkflowState(session) === 'capturing') ?? sessions[0]
 }
 
+function getDashboardAction(session: Parameters<typeof getSessionWorkflowState>[0] | undefined) {
+  if (!session) {
+    return { label: 'No Active Session', title: 'Start New Session', description: 'Create a clean workspace for photos, notes, forms, and documents.', href: null }
+  }
+
+  const state = getSessionWorkflowState(session)
+  if (state === 'ready') return { label: 'Ready', title: 'Resume Review', description: 'Open the approved report workspace and prepare export.', href: `/dashboard/sessions/${session.id}/report` }
+  if (state === 'review_required') return { label: 'Review Required', title: 'Resume Review', description: 'Resolve review items and move the report toward delivery.', href: `/dashboard/sessions/${session.id}/report` }
+  return { label: 'In Progress', title: 'Continue Current Session', description: 'Keep capturing field evidence for the active report.', href: `/dashboard/sessions/${session.id}/capture` }
+}
+
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const { billing, checkout, error: dashboardError, notice } = await searchParams
 
@@ -55,6 +66,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   const recentSessions = sessions ?? []
   const continueSession = getContinueSession(recentSessions)
+  const dashboardAction = getDashboardAction(continueSession)
   const sessionIds = recentSessions.map((session) => session.id)
   const { data: captures } = sessionIds.length > 0
     ? await supabase
@@ -87,21 +99,33 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
       <section className="hero-card operational-hero">
         <div>
-          <h1>What do you want to work on?</h1>
+          <p className="eyebrow">Field documentation workspace</p>
+          <h1>{dashboardAction.title}</h1>
+          <p className="hero-copy">{dashboardAction.description}</p>
         </div>
-        <div className="start-option-grid" aria-label="Start or continue work">
+        <div className="primary-action-panel" aria-label="Start or continue work">
+          {dashboardAction.href ? (
+            <Link href={dashboardAction.href} className="start-option-card action-card-primary touch-target">
+              <span className="action-kicker">{dashboardAction.label}</span>
+              <strong>{dashboardAction.title}</strong>
+              <span>{dashboardAction.description}</span>
+              <div className="workflow-mini" aria-label="Workflow"><span>Capture</span><span>Review</span><span>Export</span></div>
+            </Link>
+          ) : (
+            <form action={createQuickCaptureSession}>
+              <button className="start-option-card action-card-primary touch-target start-option-button">
+                <span className="action-kicker">No Active Session</span>
+                <strong>Start New Session</strong>
+                <span>Capture evidence, review the report, and export documentation.</span>
+              </button>
+            </form>
+          )}
           <form action={createQuickCaptureSession}>
-            <button className="start-option-card touch-target start-option-button">
+            <button className="start-option-card action-card-secondary touch-target start-option-button">
               <strong>New Session</strong>
-              <span>Start capturing now.</span>
+              <span>Start a separate inspection record.</span>
             </button>
           </form>
-          {continueSession ? (
-            <Link href={`/dashboard/sessions/${continueSession.id}/capture`} className="start-option-card touch-target">
-              <strong>Continue Session</strong>
-              <span>Keep adding evidence.</span>
-            </Link>
-          ) : null}
         </div>
       </section>
 
