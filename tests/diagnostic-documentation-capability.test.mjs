@@ -63,6 +63,11 @@ test('service diagnostic report export uses generic evidence sections', () => {
 test('diagnostic report assembly preserves chronology and avoids generated diagnosis content', () => {
   assert.match(reportActions, /GENERIC_REPORT_SECTION_TITLES\.map\(\(title, index\)/)
   assert.match(reportActions, /sort_order: index/)
-  assert.match(reportActions, /title === 'Diagnostic Summary' \? 'No technician diagnostic summary entered\.'/)
+  assert.match(reportActions, /if \(title === 'Diagnostic Summary'\) return 'No technician diagnostic summary entered\.'/)
+  assert.match(reportActions, /if \(title === 'Recommended Next Step \/ Escalation'\) return 'No technician next step or escalation note entered\.'/)
+  assert.match(reportActions, /isTechnicianOwnedDiagnosticSection\(title\) \? null : draftOutput\.sections\.find/)
+  assert.match(reportActions, /if \(isTechnicianOwnedDiagnosticSection\(title\)\) return noteCaptureIds/)
+  assert.match(reportActions, /if \(title === 'Reference Documents Reviewed'\) return referenceDocumentCaptureIds/)
+  assert.match(reportActions, /vehicleEvidenceCaptureIds = captures\.filter\(\(capture\) => !isReferenceDocumentCapture\(capture\)\)/)
   assert.doesNotMatch(reportActions, /root[- ]cause ranking|likely cause|suggested cause|diagnostic recommendation|recommended fix|diagnosis engine/i)
 })
