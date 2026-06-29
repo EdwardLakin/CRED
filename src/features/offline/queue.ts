@@ -34,8 +34,40 @@ function now() {
   return new Date().toISOString();
 }
 
-export async function queueCapture(input: QueueCaptureInput) {
+async function normalizeCaptureBlobForIndexedDb(record: OfflineCaptureRecord) {
+  const source = record.blob;
+  if (!(source instanceof Blob)) {
+    throw new Error("IndexedDB capture record does not contain Blob data.");
+  }
+
+  const blob = source instanceof File
+    ? new Blob([await source.arrayBuffer()], {
+        type: record.metadata.mimeType || source.type || "application/octet-stream",
+      })
+    : source;
+
+  return {
+    ...record,
+    blob,
+  };
+}
+
+async function putQueuedCapture(record: OfflineCaptureRecord) {
+  try {
+    return dbPutQueuedCapture(await normalizeCaptureBlobForIndexedDb(record));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`IndexedDB queued capture write failed while preparing Blob data: ${message}`);
+  }
+}
+
+async function dbPutQueuedCapture(record: OfflineCaptureRecord) {
   const db = await getOfflineDb();
+  await db.put("queuedCaptures", record);
+  return record;
+}
+
+export async function queueCapture(input: QueueCaptureInput) {
   const timestamp = now();
 
   const localId = input.localId ?? createId();
@@ -54,7 +86,7 @@ export async function queueCapture(input: QueueCaptureInput) {
     updatedAt: timestamp,
   };
 
-  await db.put("queuedCaptures", record);
+  await putQueuedCapture(record);
   await incrementOfflineSessionCaptureCount(record.localSessionId);
   return record;
 }
@@ -79,7 +111,7 @@ export async function retryCapture(localId: string) {
     updatedAt: now(),
   };
 
-  await db.put("queuedCaptures", updated);
+  await putQueuedCapture(updated);
   return updated;
 }
 
@@ -115,14 +147,12 @@ export async function getQueuedCapture(localId: string) {
 
 
 export async function saveQueuedCapture(record: OfflineCaptureRecord) {
-  const db = await getOfflineDb();
-
   const updated: OfflineCaptureRecord = {
     ...record,
     updatedAt: now(),
   };
 
-  await db.put("queuedCaptures", updated);
+  await putQueuedCapture(updated);
   return updated;
 }
 
@@ -151,8 +181,8 @@ export async function updateQueuedCapture(
     updatedAt: now(),
   };
 
-  await store.put(updated);
   await transaction.done;
+  await putQueuedCapture(updated);
 
   return updated;
 }
@@ -206,7 +236,7 @@ export async function normalizeSessionReportOrders(
   await Promise.all(
     normalized
       .filter((record, index) => matching[index]?.metadata.reportOrder !== index + 1)
-      .map((record) => db.put("queuedCaptures", record)),
+      .map((record) => putQueuedCapture(record)),
   );
 
   return normalized;

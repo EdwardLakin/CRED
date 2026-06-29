@@ -69,10 +69,10 @@ test('offline readiness watches service worker lifecycle states', () => {
 test('offline readiness distinguishes controlled and uncontrolled installed assets', () => {
   const shell = fs.readFileSync('src/features/offline/static-shell/offline-shell.ts', 'utf8');
 
-  assert.match(shell, /Offline capture available now; cold launch protection pending\./);
-  assert.match(shell, /Test offline reload/);
-  assert.match(shell, /const ready = identityReady && sw\.registered && sw\.activated && sw\.cached;/);
-  assert.doesNotMatch(shell, /const ready = identityReady && sw\.registered && sw\.activated && sw\.controlled && sw\.cached;/);
+  assert.match(shell, /Offline Ready/);
+  assert.match(shell, /Developer diagnostics/);
+  assert.match(shell, /const ready = identityReady && storageReady && sw\.registered && sw\.activated && sw\.cached;/);
+  assert.doesNotMatch(shell, /const ready = identityReady && storageReady && sw\.registered && sw\.activated && sw\.controlled && sw\.cached;/);
 });
 
 test('offline readiness does not leave registration as the final status', () => {
@@ -170,7 +170,10 @@ test('raw diagnostics objects are never rendered in the service-worker summary l
 
   assert.match(shell, /function safeStatusLabel\(value: unknown\): string/);
   assert.doesNotMatch(bootBody, /JSON\.stringify\(event\.data\)/);
-  assert.match(renderBody, /Service worker: \$\{safeStatusLabel\(sw\.diagnostics\?\.version \|\| sw\.diagnostics\?\.activeCacheName \|\| sw\.finalStatus\)\}/);
+  assert.match(renderBody, /offlineDebugEnabled\(\)/);
+  assert.match(renderBody, /Offline Ready/);
+  assert.match(renderBody, /Developer diagnostics/);
+  assert.doesNotMatch(renderBody, /Service worker: \$\{safeStatusLabel/);
 });
 
 test('finalStatus remains Offline ready when controller and cache are present and navigator.onLine becomes false', () => {
