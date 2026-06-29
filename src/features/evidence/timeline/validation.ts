@@ -1,9 +1,14 @@
 import {
+  DIAGNOSTIC_EVENT_TYPES,
   EVIDENCE_RELATIONSHIP_TYPES,
   EVIDENCE_SOURCE_KINDS,
   EVENT_DATE_PRECISIONS,
 } from '@/features/evidence/constants'
 import { assertSameEvidenceWorkspace, parseSuggestionReviewStatus } from '@/features/evidence/validation'
+
+export function parseDiagnosticEventType(value: FormDataEntryValue | null) {
+  return typeof value === 'string' && DIAGNOSTIC_EVENT_TYPES.includes(value as (typeof DIAGNOSTIC_EVENT_TYPES)[number]) ? value : null
+}
 
 export function parseTimelineDatePrecision(value: FormDataEntryValue | null) {
   return typeof value === 'string' && EVENT_DATE_PRECISIONS.includes(value as (typeof EVENT_DATE_PRECISIONS)[number]) ? value : null
@@ -30,6 +35,9 @@ export function parseTimelineEventForm(formData: FormData) {
   const title = String(formData.get('title') ?? '').trim()
   if (!title) throw new Error('Timeline title is required')
 
+  const eventType = parseDiagnosticEventType(formData.get('event_type'))
+  if (!eventType) throw new Error('Invalid diagnostic event type')
+
   const sourceKind = parseTimelineSourceKind(formData.get('source_kind'))
   if (!sourceKind) throw new Error('Invalid timeline source kind')
 
@@ -40,6 +48,7 @@ export function parseTimelineEventForm(formData: FormData) {
   if (!requestedStatus) throw new Error('Invalid timeline review status')
 
   return {
+    event_type: eventType,
     title,
     description: String(formData.get('description') ?? '').trim() || null,
     event_start_at: normalizeTimelineDateTime(formData.get('event_start_at')),

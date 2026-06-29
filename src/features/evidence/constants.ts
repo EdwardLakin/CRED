@@ -95,6 +95,43 @@ export const EVIDENCE_SUGGESTION_SOURCES = [
 ] as const
 
 
+
+export const DIAGNOSTIC_EVENT_TYPES = [
+  'manual',
+  'capture',
+  'ai_suggestion',
+  'read_codes',
+  'freeze_frame',
+  'live_data',
+  'functional_test',
+  'repair',
+  'verification',
+  'road_test',
+  'forced_regen',
+  'measurement',
+  'reference_document',
+] as const
+
+export const DIAGNOSTIC_EVENT_TYPE_LABELS: Record<(typeof DIAGNOSTIC_EVENT_TYPES)[number], string> = {
+  manual: 'Manual note',
+  capture: 'Evidence capture',
+  ai_suggestion: 'AI suggestion',
+  read_codes: 'Read codes',
+  freeze_frame: 'Freeze frame',
+  live_data: 'Live data',
+  functional_test: 'Functional test',
+  repair: 'Repair',
+  verification: 'Verification',
+  road_test: 'Road test',
+  forced_regen: 'Forced regeneration',
+  measurement: 'Measurement',
+  reference_document: 'Reference document',
+}
+
+export function formatDiagnosticEventType(value: string | null | undefined) {
+  return value && value in DIAGNOSTIC_EVENT_TYPE_LABELS ? DIAGNOSTIC_EVENT_TYPE_LABELS[value as (typeof DIAGNOSTIC_EVENT_TYPES)[number]] : 'Timeline event'
+}
+
 export const EVIDENCE_WORKSPACE_LABELS = {
   library: 'Evidence Library',
   timeline: 'Timeline',

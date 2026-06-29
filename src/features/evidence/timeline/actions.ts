@@ -50,7 +50,7 @@ export async function createTimelineEvent(sessionId: string, formData: FormData)
   const values = parseTimelineEventForm(formData)
   const now = new Date().toISOString()
   const reviewStatus = values.source_kind === 'system' ? values.review_status : 'accepted'
-  const { error } = await supabase.from('timeline_events').insert({ ...values, event_time: values.event_start_at ?? now, event_type: 'manual', review_status: reviewStatus, documentation_session_id: sessionId, organization_id: profile.organization_id, provenance: { created_from: 'timeline_workspace' }, created_by: profile.id ?? null, reviewed_at: reviewStatus === 'accepted' ? now : null, updated_at: now })
+  const { error } = await supabase.from('timeline_events').insert({ ...values, event_time: values.event_start_at ?? now, event_type: values.event_type, review_status: reviewStatus, documentation_session_id: sessionId, organization_id: profile.organization_id, provenance: { created_from: 'timeline_workspace' }, created_by: profile.id ?? null, reviewed_at: reviewStatus === 'accepted' ? now : null, updated_at: now })
   if (error) throw new Error('Unable to create timeline event')
   revalidatePath(`/dashboard/sessions/${sessionId}/timeline`)
 }

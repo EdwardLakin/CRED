@@ -31,7 +31,8 @@ test('create and update timeline validation uses constants and defaults human-cr
   assert.match(validationSource, /EVIDENCE_SOURCE_KINDS\.includes/)
   assert.match(actionSource, /parseTimelineEventForm\(formData\)/)
   assert.match(actionSource, /reviewStatus = values\.source_kind === 'system' \? values\.review_status : 'accepted'/)
-  assert.match(actionSource, /event_type: 'manual'/)
+  assert.match(validationSource, /DIAGNOSTIC_EVENT_TYPES\.includes/)
+  assert.match(actionSource, /event_type: values\.event_type/)
 })
 
 test('evidence relationship actions validate same session and organization', () => {
@@ -54,7 +55,7 @@ test('timeline links evidence through accepted user documents or supports relati
 })
 
 test('timeline UI displays event details and evidence linking controls', () => {
-  for (const expected of ['title', 'description', 'event_date_precision', 'source_kind', 'review_status', 'Linked evidence', 'relationship_type', 'capture_item_id']) {
+  for (const expected of ['event_type', 'title', 'description', 'event_date_precision', 'source_kind', 'review_status', 'Linked evidence', 'relationship_type', 'capture_item_id']) {
     assert.ok(timelineComponent.includes(expected), `missing ${expected}`)
   }
 })
