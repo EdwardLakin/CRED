@@ -36,12 +36,20 @@ function genericFallbackDraftSections(draftOutput: Awaited<ReturnType<typeof gen
   return GENERIC_REPORT_SECTION_TITLES.map((title, index) => {
     const matchingSection = draftOutput.sections.find((section) => {
       const normalizedTitle = section.title.toLowerCase()
-      if (title === 'Findings') return /finding|condition|issue|defect/.test(normalizedTitle)
-      if (title === 'Recommendations') return /recommend|action/.test(normalizedTitle)
-      if (title === 'Technician Notes') return /technician|note/.test(normalizedTitle)
-      if (title === 'Evidence Captured') return /evidence|capture|photo/.test(normalizedTitle)
-      if (title === 'Report Summary') return /summary|overview/.test(normalizedTitle)
-      if (title === 'Final Summary / Report Notes') return /final|report notes|work order/.test(normalizedTitle)
+      if (title === 'Customer Concern') return /customer|concern|complaint/.test(normalizedTitle)
+      if (title === 'Initial Inspection') return /initial|inspection|arrival/.test(normalizedTitle)
+      if (title === 'Retrieved DTCs') return /dtc|code|retrieved/.test(normalizedTitle)
+      if (title === 'Freeze Frame') return /freeze frame|snapshot/.test(normalizedTitle)
+      if (title === 'Live Data Analysis') return /live data|pid|data analysis/.test(normalizedTitle)
+      if (title === 'Functional Testing') return /functional|output state|actuation|test/.test(normalizedTitle)
+      if (title === 'Repairs Performed') return /repair|replaced|adaptation/.test(normalizedTitle)
+      if (title === 'Post Repair Verification') return /verification|post repair|verify/.test(normalizedTitle)
+      if (title === 'Forced Regeneration Results') return /regen|regeneration|exhaust filter cleaning/.test(normalizedTitle)
+      if (title === 'Technician Observations') return /technician|observation|note/.test(normalizedTitle)
+      if (title === 'Workshop Information Reviewed') return /workshop|manual|reference|recall/.test(normalizedTitle)
+      if (title === 'Diagnostic Summary') return /diagnostic summary|summary|finding|condition|issue|defect/.test(normalizedTitle)
+      if (title === 'Recommended Next Step') return /recommend|next step|action/.test(normalizedTitle)
+      if (title === 'Evidence Appendix') return /evidence|appendix|capture|photo/.test(normalizedTitle)
       if (title === 'Inspector / Facility Details') return /inspector|facility/.test(normalizedTitle)
       if (title === 'Signoff') return /sign|approval/.test(normalizedTitle)
       return false
@@ -50,7 +58,7 @@ function genericFallbackDraftSections(draftOutput: Awaited<ReturnType<typeof gen
     return {
       section_key: title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''),
       title,
-      body: matchingSection?.body ?? (title === 'Report Summary' ? draftOutput.summary : null),
+      body: matchingSection?.body ?? (title === 'Diagnostic Summary' ? draftOutput.summary : null),
       status: matchingSection?.status ?? 'informational' as const,
       confidence: matchingSection?.confidence ?? draftOutput.confidence,
       source_capture_ids: getSectionSourceCaptureIds(title, matchingSection?.source_capture_ids, allCaptureIds, noteCaptureIds),
@@ -67,8 +75,8 @@ function genericFallbackDraftSections(draftOutput: Awaited<ReturnType<typeof gen
 
 function getSectionSourceCaptureIds(title: string, existingIds: string[] | null | undefined, allCaptureIds: string[], noteCaptureIds: string[]) {
   if (existingIds?.length) return existingIds.filter((id) => allCaptureIds.includes(id))
-  if (title === 'Technician Notes') return noteCaptureIds
-  if (title === 'Evidence Captured' || title === 'Report Summary' || title === 'Findings' || title === 'Recommendations') return allCaptureIds
+  if (title === 'Technician Observations') return noteCaptureIds
+  if (['Evidence Appendix', 'Customer Concern', 'Initial Inspection', 'Retrieved DTCs', 'Freeze Frame', 'Live Data Analysis', 'Functional Testing', 'Repairs Performed', 'Post Repair Verification', 'Forced Regeneration Results', 'Diagnostic Summary', 'Recommended Next Step'].includes(title)) return allCaptureIds
   return []
 }
 

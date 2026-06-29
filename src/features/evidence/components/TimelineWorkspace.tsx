@@ -2,7 +2,7 @@ import Link from 'next/link'
 
 import { linkEvidenceToTimelineEvent, createTimelineEvent, deleteTimelineEvent, unlinkEvidenceRelationship, updateTimelineEvent } from '@/features/evidence/timeline/actions'
 import type { TimelineEvent, TimelineEvidenceItem, TimelineRelationship, TimelineSession } from '@/features/evidence/timeline/data'
-import { EVIDENCE_SOURCE_KINDS, EVENT_DATE_PRECISIONS, SUGGESTION_REVIEW_STATUSES, formatSuggestionReviewStatus } from '@/features/evidence/constants'
+import { DIAGNOSTIC_EVENT_TYPES, EVIDENCE_SOURCE_KINDS, EVENT_DATE_PRECISIONS, SUGGESTION_REVIEW_STATUSES, formatDiagnosticEventType, formatSuggestionReviewStatus } from '@/features/evidence/constants'
 import { formatDateTime } from '@/features/sessions'
 
 function evidenceLabel(item: TimelineEvidenceItem) {
@@ -38,7 +38,7 @@ export function TimelineWorkspace({ session, events, evidenceItems, relationship
           <article key={event.id} className="card detail-card form-stack">
             <div className="section-header">
               <div>
-                <p className="eyebrow">{event.source_kind} · {formatSuggestionReviewStatus(event.review_status)}</p>
+                <p className="eyebrow">{formatDiagnosticEventType(event.event_type)} · {event.source_kind} · {formatSuggestionReviewStatus(event.review_status)}</p>
                 <h2>{event.title}</h2>
                 <p className="muted">{eventDate(event, timeZone)} · precision: {event.event_date_precision}{event.timezone ? ` · ${event.timezone}` : ''}</p>
               </div>
@@ -73,6 +73,7 @@ function TimelineEventForm({ sessionId, event, timeZone }: { sessionId: string; 
   return (
     <form action={action} className="card detail-card form-stack">
       <div><p className="eyebrow">{event ? 'Edit timeline event' : 'Create timeline event'}</p><h2>{event ? event.title : 'New event'}</h2></div>
+      <label>Diagnostic event type<select className="input" name="event_type" defaultValue={event?.event_type ?? 'manual'}>{DIAGNOSTIC_EVENT_TYPES.map((value) => <option key={value} value={value}>{formatDiagnosticEventType(value)}</option>)}</select></label>
       <label>Title<input className="input" name="title" required defaultValue={event?.title ?? ''} /></label>
       <label>Description<textarea className="input" name="description" rows={3} defaultValue={event?.description ?? ''} /></label>
       <div className="form-grid two-column">

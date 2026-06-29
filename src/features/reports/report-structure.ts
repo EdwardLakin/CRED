@@ -173,12 +173,20 @@ type FormStructureReliability = {
 }
 
 export const GENERIC_REPORT_SECTION_TITLES = [
-  'Report Summary',
-  'Evidence Captured',
-  'Technician Notes',
-  'Findings',
-  'Recommendations',
-  'Final Summary / Report Notes',
+  'Customer Concern',
+  'Initial Inspection',
+  'Retrieved DTCs',
+  'Freeze Frame',
+  'Live Data Analysis',
+  'Functional Testing',
+  'Repairs Performed',
+  'Post Repair Verification',
+  'Forced Regeneration Results',
+  'Technician Observations',
+  'Workshop Information Reviewed',
+  'Diagnostic Summary',
+  'Recommended Next Step',
+  'Evidence Appendix',
   'Inspector / Facility Details',
   'Signoff',
 ] as const
