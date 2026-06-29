@@ -30,11 +30,29 @@ import type { Json } from '@/lib/supabase/database.types'
 
 const REPORT_SHARE_EXPIRATION_DAYS = 30
 
-function genericFallbackDraftSections(draftOutput: Awaited<ReturnType<typeof generateReportDraft>>, captures: Array<{ id: string; technician_note?: string | null; transcript?: string | null; media_kind?: string | null; type?: string | null }> = []) {
+function isReferenceDocumentCapture(capture: { technician_note?: string | null; transcript?: string | null; media_kind?: string | null; type?: string | null; extracted_data?: Json | null }) {
+  const technicianEnteredText = capture.technician_note?.trim() || capture.transcript?.trim()
+  if (technicianEnteredText) return false
+  return capture.media_kind === 'document' || capture.type === 'document'
+}
+
+function isTechnicianOwnedDiagnosticSection(title: string) {
+  return title === 'Diagnostic Summary' || title === 'Recommended Next Step / Escalation'
+}
+
+function diagnosticPlaceholderForTitle(title: string) {
+  if (title === 'Diagnostic Summary') return 'No technician diagnostic summary entered.'
+  if (title === 'Recommended Next Step / Escalation') return 'No technician next step or escalation note entered.'
+  return null
+}
+
+function genericFallbackDraftSections(draftOutput: Awaited<ReturnType<typeof generateReportDraft>>, captures: Array<{ id: string; technician_note?: string | null; transcript?: string | null; media_kind?: string | null; type?: string | null; extracted_data?: Json | null }> = []) {
   const allCaptureIds = captures.map((capture) => capture.id)
+  const vehicleEvidenceCaptureIds = captures.filter((capture) => !isReferenceDocumentCapture(capture)).map((capture) => capture.id)
+  const referenceDocumentCaptureIds = captures.filter(isReferenceDocumentCapture).map((capture) => capture.id)
   const noteCaptureIds = captures.filter((capture) => capture.technician_note?.trim() || capture.transcript?.trim() || capture.type === 'text_note' || capture.media_kind === 'note' || capture.media_kind === 'audio').map((capture) => capture.id)
   return GENERIC_REPORT_SECTION_TITLES.map((title, index) => {
-    const matchingSection = draftOutput.sections.find((section) => {
+    const matchingSection = isTechnicianOwnedDiagnosticSection(title) ? null : draftOutput.sections.find((section) => {
       const normalizedTitle = section.title.toLowerCase()
       if (title === 'Customer Concern') return /customer|concern|complaint/.test(normalizedTitle)
       if (title === 'Vehicle / Asset Information') return /vehicle|asset|unit|vin|serial|odometer|hour/.test(normalizedTitle)
@@ -47,8 +65,6 @@ function genericFallbackDraftSections(draftOutput: Awaited<ReturnType<typeof gen
       if (title === 'Road Test Results') return /road test|drive cycle/.test(normalizedTitle)
       if (title === 'Technician Observations') return /technician|observation|note/.test(normalizedTitle)
       if (title === 'Reference Documents Reviewed') return /workshop|manual|reference|recall|tsb|pinpoint/.test(normalizedTitle)
-      if (title === 'Diagnostic Summary') return /diagnostic summary|summary|finding|condition|issue|defect/.test(normalizedTitle)
-      if (title === 'Recommended Next Step / Escalation') return /recommend|next step|escalation|action/.test(normalizedTitle)
       if (title === 'Evidence Appendix') return /evidence|appendix|capture|photo/.test(normalizedTitle)
       if (title === 'Inspector / Facility Details') return /inspector|facility/.test(normalizedTitle)
       if (title === 'Signoff') return /sign|approval/.test(normalizedTitle)
@@ -58,10 +74,10 @@ function genericFallbackDraftSections(draftOutput: Awaited<ReturnType<typeof gen
     return {
       section_key: title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''),
       title,
-      body: title === 'Diagnostic Summary' ? 'No technician diagnostic summary entered.' : (matchingSection?.body ?? null),
+      body: diagnosticPlaceholderForTitle(title) ?? matchingSection?.body ?? null,
       status: matchingSection?.status ?? 'informational' as const,
       confidence: matchingSection?.confidence ?? draftOutput.confidence,
-      source_capture_ids: getSectionSourceCaptureIds(title, matchingSection?.source_capture_ids, allCaptureIds, noteCaptureIds),
+      source_capture_ids: getSectionSourceCaptureIds(title, matchingSection?.source_capture_ids, allCaptureIds, noteCaptureIds, vehicleEvidenceCaptureIds, referenceDocumentCaptureIds),
       sort_order: index,
       metadata: {
         source_field_group: title,
@@ -73,10 +89,13 @@ function genericFallbackDraftSections(draftOutput: Awaited<ReturnType<typeof gen
   })
 }
 
-function getSectionSourceCaptureIds(title: string, existingIds: string[] | null | undefined, allCaptureIds: string[], noteCaptureIds: string[]) {
+function getSectionSourceCaptureIds(title: string, existingIds: string[] | null | undefined, allCaptureIds: string[], noteCaptureIds: string[], vehicleEvidenceCaptureIds = allCaptureIds, referenceDocumentCaptureIds: string[] = []) {
   if (existingIds?.length) return existingIds.filter((id) => allCaptureIds.includes(id))
   if (title === 'Technician Observations') return noteCaptureIds
-  if (['Evidence Appendix', 'Customer Concern', 'Vehicle / Asset Information', 'DTCs / Fault Codes', 'Freeze Frame Data', 'Live Data / Measurements', 'Functional Tests', 'Repairs Performed', 'Verification / Retest Results', 'Road Test Results', 'Diagnostic Summary', 'Recommended Next Step / Escalation'].includes(title)) return allCaptureIds
+  if (isTechnicianOwnedDiagnosticSection(title)) return noteCaptureIds
+  if (title === 'Reference Documents Reviewed') return referenceDocumentCaptureIds
+  if (title === 'Evidence Appendix') return allCaptureIds
+  if (['Customer Concern', 'Vehicle / Asset Information', 'DTCs / Fault Codes', 'Freeze Frame Data', 'Live Data / Measurements', 'Functional Tests', 'Repairs Performed', 'Verification / Retest Results', 'Road Test Results'].includes(title)) return vehicleEvidenceCaptureIds
   return []
 }
 
