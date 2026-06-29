@@ -57,13 +57,17 @@ export async function POST(request: Request) {
     }
 
     const mismatches: string[] = [];
+    const mismatchDetails: Array<{ mismatch: string; expected: unknown; actual: unknown }> = [];
     if (capture.storage_path !== storagePath) mismatches.push("storage_path");
     if (clientMutationId && !storagePath.includes(clientMutationId)) mismatches.push("client_mutation_id");
     if (Number.isFinite(expectedSize) && capture.file_size_bytes !== null && capture.file_size_bytes !== expectedSize) mismatches.push("file_size_bytes");
     if (mimeType && capture.mime_type && capture.mime_type.toLowerCase() !== mimeType) mismatches.push("mime_type");
     if (filename && capture.original_filename && capture.original_filename.toLowerCase() !== filename) mismatches.push("original_filename");
     if ((capture.technician_note ?? "") !== (technicianNote || "")) mismatches.push("technician_note");
-    if (reportOrder !== null && capture.report_order !== reportOrder) mismatches.push("report_order");
+    if (reportOrder !== null && capture.report_order !== reportOrder) {
+      mismatches.push("report_order");
+      mismatchDetails.push({ mismatch: "report_order", expected: reportOrder, actual: capture.report_order });
+    }
 
     const { data: storedFile, error: storageError } = await supabase.storage
       .from(CAPTURE_BUCKET)
@@ -78,7 +82,7 @@ export async function POST(request: Request) {
       const failureStage = serverObjectSize === 0 && Number.isFinite(expectedSize) && expectedSize > 0
         ? "storage_upload_empty"
         : "verify_failed";
-      return NextResponse.json({ ok: false, verified: false, mismatches, serverObjectSize, failureStage }, { status: 409, headers: { "Cache-Control": "no-store" } });
+      return NextResponse.json({ ok: false, verified: false, mismatches, mismatchDetails, serverObjectSize, failureStage }, { status: 409, headers: { "Cache-Control": "no-store" } });
     }
 
     return NextResponse.json({ ok: true, verified: true, captureItemId, sessionId, storagePath, serverObjectSize }, { headers: { "Cache-Control": "no-store" } });

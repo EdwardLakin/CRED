@@ -431,7 +431,7 @@ export function OfflineCaptureWorkspace({
     );
 
     const addedItems: OfflineWorkspaceItem[] = [];
-    const startingOrder = items.length;
+    const startingOrder = items.length + 1;
 
     try {
       for (const [fileIndex, file] of files.entries()) {
@@ -564,7 +564,7 @@ export function OfflineCaptureWorkspace({
         ...item.record,
         metadata: {
           ...item.record.metadata,
-          reportOrder: index,
+          reportOrder: index + 1,
         },
       },
     }));
@@ -579,7 +579,7 @@ export function OfflineCaptureWorkspace({
             ...record,
             metadata: {
               ...record.metadata,
-              reportOrder: index,
+              reportOrder: index + 1,
             },
           }),
         ),

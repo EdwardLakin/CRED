@@ -171,6 +171,51 @@ export async function deleteCapturesForLocalSession(localSessionId: string, user
   return matching.length;
 }
 
+function sortCapturesForReportOrder(records: OfflineCaptureRecord[]) {
+  return [...records].sort((left, right) =>
+    (left.metadata.reportOrder ?? Number.MAX_SAFE_INTEGER) -
+      (right.metadata.reportOrder ?? Number.MAX_SAFE_INTEGER) ||
+    left.createdAt.localeCompare(right.createdAt),
+  );
+}
+
+export async function normalizeSessionReportOrders(
+  localSessionId: string,
+  identity: { userId: string; organizationId: string },
+) {
+  const db = await getOfflineDb();
+  const records = await db.getAll("queuedCaptures");
+  const matching = sortCapturesForReportOrder(
+    records.filter(
+      (record) =>
+        record.localSessionId === localSessionId &&
+        record.userId === identity.userId &&
+        record.organizationId === identity.organizationId,
+    ),
+  );
+
+  const normalized = matching.map((record, index) => ({
+    ...record,
+    metadata: {
+      ...record.metadata,
+      reportOrder: index + 1,
+    },
+    updatedAt: record.metadata.reportOrder === index + 1 ? record.updatedAt : now(),
+  }));
+
+  await Promise.all(
+    normalized
+      .filter((record, index) => matching[index]?.metadata.reportOrder !== index + 1)
+      .map((record) => db.put("queuedCaptures", record)),
+  );
+
+  return normalized;
+}
+
+export function positiveReportOrder(value: number | null | undefined) {
+  return Number.isInteger(value) && Number(value) > 0 ? Number(value) : null;
+}
+
 export async function retargetQueuedCaptures(
   localSessionId: string,
   toSessionId: string,

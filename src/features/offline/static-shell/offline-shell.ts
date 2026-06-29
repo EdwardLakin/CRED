@@ -1,6 +1,6 @@
 import type { OfflineCapabilities, OfflineCaptureRecord, OfflineIdentity, OfflineLocalSession, ReachabilityResult, SessionStatus } from './contracts.js';
 import { now, SESSION_STATUSES, SYNCABLE_STATUSES } from './contracts.js';
-import { addCapture, capturesForSession, createSession, deleteCapture, deleteSession, getOfflineIdentity, listSessions, retargetSessionCaptures, saveSession, sessionStats, updateCapture } from './store.js';
+import { addCapture, capturesForSession, createSession, deleteCapture, deleteSession, getOfflineIdentity, listSessions, normalizeSessionReportOrders, retargetSessionCaptures, saveSession, sessionStats, updateCapture } from './store.js';
 
 const REQUIRED_OFFLINE_ASSETS = ['/offline.html', '/offline/offline-shell.css', '/offline/offline-shell.js', '/offline/contracts.js', '/offline/db.js', '/offline/store.js', '/manifest.webmanifest', '/apple-touch-icon.png', '/apple-touch-icon-precomposed.png'];
 const CONTROL_RELOAD_KEY = 'cred-offline-control-reload-attempted';
@@ -171,7 +171,7 @@ function bindOnlineNavigation() {
   nav.querySelector('[data-nav="sync-all-online"]')?.addEventListener('click', () => syncAllReachableSessions());
 }
 function renderOnlineNavigation() { const nav = $('onlineNavigation'); nav.innerHTML = onlineNavigationMarkup(state.identity); bindOnlineNavigation(); const syncAll = $('syncAll') as HTMLButtonElement; syncAll.disabled = !navigator.onLine || !Boolean(state.identity); syncAll.title = navigator.onLine ? '' : 'Online handoff is unavailable while offline.'; }
-async function syncAllReachableSessions() { if (!state.identity) return setMessage('Device not provisioned. Sign in and provision this device first.', 'error'); const sessions = await listSessions(state.identity); for (const session of sessions.filter((candidate: OfflineLocalSession) => SYNCABLE_STATUSES.includes(candidate.status as SessionStatus))) await syncSession(session.localSessionId); }
+async function syncAllReachableSessions() { if (!state.identity) return setMessage('Device not provisioned. Sign in and provision this device first.', 'error'); const sessions = await listSessions(state.identity); for (const session of sessions.filter((candidate: OfflineLocalSession) => SYNCABLE_STATUSES.includes(candidate.status as SessionStatus))) { await normalizeSessionReportOrders(session.localSessionId, state.identity); await syncSession(session.localSessionId); } }
 
 async function renderDashboard() {
   state.activeSession = null;
@@ -239,6 +239,7 @@ async function renderWorkspace() {
   revokeUrls();
   const session = state.activeSession;
   if (!session) return;
+  await normalizeSessionReportOrders(session.localSessionId, state.identity);
   const captures = await capturesForSession(session.localSessionId, state.identity);
   $('workspace').innerHTML = `<section class="card"><button class="ghost" id="backToDashboard">← Offline dashboard</button><p class="eyebrow">Offline capture</p><h1>${escapeHtml(session.title)}</h1><p class="muted">${escapeHtml(session.sessionType)} · ${captures.length} local capture(s)</p><div class="button-row"><button id="takePhoto">Take photo / video</button><button class="secondary" id="chooseMedia">Choose media</button><button class="secondary" id="syncActive">Prepare this session online</button></div><input id="cameraInput" class="hidden" type="file" accept="image/*,video/*" capture="environment" multiple><input id="galleryInput" class="hidden" type="file" accept="image/*,video/*" multiple></section><section class="grid" id="captureList"></section>`;
   ($('backToDashboard') as HTMLButtonElement).onclick = renderDashboard;
@@ -278,7 +279,7 @@ async function addFiles(files: File[]) {
   const required = files.reduce((sum: number, file: File) => sum + file.size, 0);
   if (available !== null && required > available) return setMessage('This device does not report enough available browser storage for those files.', 'error');
   const existing = await capturesForSession(state.activeSession.localSessionId, state.identity);
-  let order = existing.length;
+  let order = existing.length + 1;
   for (const file of files) {
     if (!state.identity) return;
     const limit = file.type.startsWith('video/') ? state.identity.captureLimits.maxVideoFileSizeBytes : state.identity.captureLimits.maxCaptureFileSizeBytes;
@@ -294,11 +295,12 @@ async function moveCapture(captures: OfflineCaptureRecord[], index: number, dire
   const next = index + direction;
   if (next < 0 || next >= captures.length) return;
   [captures[index], captures[next]] = [captures[next], captures[index]];
-  await Promise.all(captures.map((capture: OfflineCaptureRecord, reportOrder: number) => updateCapture(capture, { metadata: { ...capture.metadata, reportOrder } })));
+  await Promise.all(captures.map((capture: OfflineCaptureRecord, index: number) => updateCapture(capture, { metadata: { ...capture.metadata, reportOrder: index + 1 } })));
   await renderWorkspace();
 }
 
 async function syncSession(localSessionId: string) {
+  await normalizeSessionReportOrders(localSessionId, state.identity);
   const reachability = await canReachServer(state.identity);
   if (!reachability.ok) return setMessage(reachability.error || 'Server is not reachable yet. Local data is preserved and sync can be retried.', reachability.status === 'unauthenticated' ? 'error' : 'warning');
   const sessions = await listSessions(state.identity);

@@ -67,9 +67,9 @@ test('multiple captures keep independent byte sizes and deterministic storage pa
 
 test('notes and order survive failed media upload diagnostics', () => {
   assert.match(syncEngine, /technicianNote: record\.metadata\.technicianNote/)
-  assert.match(syncEngine, /reportOrder: record\.metadata\.reportOrder/)
+  assert.match(syncEngine, /const reportOrder = positiveReportOrder\(record\.metadata\.reportOrder\)/)
   assert.match(syncEngine, /technicianNote:\s*current\.metadata\.technicianNote/)
-  assert.match(syncEngine, /reportOrder:\s*current\.metadata\.reportOrder/)
+  assert.match(syncEngine, /reportOrder,/)
 })
 
 test('retry Save cannot create duplicate capture records for the same upload', () => {
@@ -82,4 +82,47 @@ test('failed upload cards expose requested diagnostics', () => {
   for (const expected of ['Local Blob size', 'Expected size', 'MIME type', 'Filename', 'Storage path', 'Upload attempts', 'Server object size', 'Failure stage']) {
     assert.match(shell + workspace, new RegExp(expected))
   }
+})
+
+test('offline reportOrder is one-based for first and multiple captures', () => {
+  assert.match(shell, /let order = existing\.length \+ 1/)
+  assert.match(store, /reportOrder: order/)
+  assert.match(workspace, /const startingOrder = items\.length \+ 1/)
+  assert.match(workspace, /reportOrder: startingOrder \+ fileIndex/)
+})
+
+test('reordering writes one-based reportOrder values', () => {
+  assert.match(shell, /reportOrder: index \+ 1/)
+  assert.match(workspace, /reportOrder: index \+ 1/)
+})
+
+test('legacy local reportOrder values normalize per session before sync', () => {
+  assert.match(store, /export async function normalizeSessionReportOrders/)
+  assert.match(queue, /export async function normalizeSessionReportOrders/)
+  assert.match(queue, /record\.localSessionId === localSessionId &&\s*record\.userId === identity\.userId &&\s*record\.organizationId === identity\.organizationId/s)
+  assert.match(queue, /reportOrder: index \+ 1/)
+  assert.match(syncEngine, /normalizeSessionReportOrders\(localSessionId, identity\)/)
+  assert.match(shell, /await normalizeSessionReportOrders\(localSessionId, state\.identity\)/)
+})
+
+test('sync never sends reportOrder zero to finalize or verification', () => {
+  assert.match(queue, /export function positiveReportOrder/)
+  assert.match(syncEngine, /const reportOrder = positiveReportOrder\(current\.metadata\.reportOrder\)/)
+  assert.match(syncEngine, /reportOrder,/)
+  assert.match(syncEngine, /const reportOrder = positiveReportOrder\(record\.metadata\.reportOrder\)/)
+  assert.match(syncEngine, /\.\.\.\(reportOrder \? \{ reportOrder \} : \{\}\)/)
+  assert.doesNotMatch(syncEngine, /reportOrder:\s*current\.metadata\.reportOrder/)
+  assert.doesNotMatch(syncEngine, /reportOrder:\s*record\.metadata\.reportOrder/)
+})
+
+test('retry can verify recovered server row after legacy order normalization', () => {
+  assert.match(captureActions, /if \(existingCapture\) \{\s*return \{ ok: true/s)
+  assert.match(syncEngine, /const pendingBeforeNormalization = await getPendingCaptures\(userId\)/)
+  assert.match(syncEngine, /const pending = await getPendingCaptures\(userId\)/)
+  assert.match(syncEngine, /await recordVerifiedOfflineCapture\(current\.localSessionId, positiveReportOrder\(current\.metadata\.reportOrder\) \?\? 1\)/)
+})
+
+test('verification response includes expected and actual report_order details', () => {
+  assert.match(verifyRoute, /mismatchDetails/)
+  assert.match(verifyRoute, /\{ mismatch: "report_order", expected: reportOrder, actual: capture\.report_order \}/)
 })
