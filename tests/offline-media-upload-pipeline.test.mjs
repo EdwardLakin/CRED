@@ -12,7 +12,9 @@ const captureActions = readFileSync('src/features/capture/actions.ts', 'utf8')
 
 test('iPad/Safari-style File is stored and restored as the Blob with byte metadata and object URL previews', () => {
   assert.match(store, /addCapture\(session: OfflineLocalSession, file: File, order: number\)/)
-  assert.match(store, /blob: file/)
+  assert.match(store, /blob: new Blob\(\[file\]/)
+  assert.match(store, /normalizeCaptureForIndexedDb/)
+  assert.match(store, /IndexedDB queued capture write failed while preparing Blob data/)
   assert.match(store, /filename: file\.name \|\|/)
   assert.match(store, /mimeType: file\.type \|\| 'application\/octet-stream'/)
   assert.match(store, /size: file\.size/)
@@ -54,7 +56,7 @@ test('retry reuses retained local Blob and can overwrite the bad zero-byte stora
 test('retargeting localSessionId to serverSessionId does not strip Blob data', () => {
   assert.match(queue, /saveQueuedCapture\(\{\s*\.\.\.record,\s*sessionId: toSessionId,\s*serverSessionId: toSessionId/s)
   assert.doesNotMatch(queue, /blob:\s*(undefined|null|new Blob\(\))/)
-  assert.match(store, /put\('queuedCaptures', \{ \.\.\.capture, sessionId: serverSessionId, serverSessionId/)
+  assert.match(store, /putQueuedCapture\(\{ \.\.\.capture, sessionId: serverSessionId, serverSessionId/)
 })
 
 test('multiple captures keep independent byte sizes and deterministic storage paths', () => {

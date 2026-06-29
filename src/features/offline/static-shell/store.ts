@@ -19,6 +19,23 @@ export function getOfflineIdentity(): OfflineIdentity | null {
   };
 }
 
+async function normalizeCaptureForIndexedDb(record: OfflineCaptureRecord): Promise<OfflineCaptureRecord> {
+  const source = record.blob;
+  if (!(source instanceof Blob)) throw new Error('IndexedDB capture record does not contain Blob data.');
+  const blob = source instanceof File ? new Blob([await source.arrayBuffer()], { type: record.metadata.mimeType || source.type || 'application/octet-stream' }) : source;
+  return { ...record, blob };
+}
+
+async function putQueuedCapture(record: OfflineCaptureRecord): Promise<OfflineCaptureRecord> {
+  try {
+    const prepared = await normalizeCaptureForIndexedDb(record);
+    return put('queuedCaptures', prepared);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`IndexedDB queued capture write failed while preparing Blob data: ${message}`);
+  }
+}
+
 export function normalizeSession(session: Partial<OfflineLocalSession> & Record<string, unknown>): OfflineLocalSession {
   const localSessionId = String(session.localSessionId ?? '');
   const organizationId = String(session.organizationId ?? '');
@@ -95,7 +112,7 @@ export async function normalizeSessionReportOrders(localSessionId: string, ident
     metadata: { ...capture.metadata, reportOrder: index + 1 },
     updatedAt: capture.metadata.reportOrder === index + 1 ? capture.updatedAt : now(),
   }));
-  await Promise.all(normalized.filter((capture, index) => captures[index]?.metadata.reportOrder !== index + 1).map((capture) => put('queuedCaptures', capture)));
+  await Promise.all(normalized.filter((capture, index) => captures[index]?.metadata.reportOrder !== index + 1).map((capture) => putQueuedCapture(capture)));
   return normalized;
 }
 
@@ -122,7 +139,7 @@ export async function addCapture(session: OfflineLocalSession, file: File, order
     workspaceId: null,
     sessionId: serverSessionId || session.localSessionId,
     userId: session.userId,
-    blob: file,
+    blob: new Blob([file], { type: file.type || 'application/octet-stream' }),
     metadata: {
       captureIntent: 'auto_evidence', manualType: null, guidedStep: null, guidedLabel: null, workflow: null,
       technicianNote: '', transcriptStatus: 'not_started', noteSource: 'manual', reportOrder: order,
@@ -133,13 +150,13 @@ export async function addCapture(session: OfflineLocalSession, file: File, order
     uploadState: { storagePath: null, uploadedAt: null, finalizedAt: null, verifiedAt: null },
     serverCaptureId: null, createdAt: timestamp, updatedAt: timestamp,
   };
-  await put('queuedCaptures', record);
+  await putQueuedCapture(record);
   const nextStatus = session.status === SESSION_STATUSES.synced ? SESSION_STATUSES.partiallySynced : SESSION_STATUSES.capturing;
   await saveSession(session, { status: nextStatus, syncedAt: null, originalCaptureCount: (session.originalCaptureCount ?? 0) + 1 });
   return record;
 }
 
-export async function updateCapture(capture: OfflineCaptureRecord, patch: Partial<OfflineCaptureRecord>) { return put('queuedCaptures', { ...capture, ...patch, updatedAt: now() }); }
+export async function updateCapture(capture: OfflineCaptureRecord, patch: Partial<OfflineCaptureRecord>) { return putQueuedCapture({ ...capture, ...patch, updatedAt: now() }); }
 export async function deleteCapture(capture: OfflineCaptureRecord) { return remove('queuedCaptures', capture.localId); }
 
 export async function deleteSession(session: OfflineLocalSession, identity: OfflineIdentity) {
@@ -151,6 +168,6 @@ export async function deleteSession(session: OfflineLocalSession, identity: Offl
 
 export async function retargetSessionCaptures(localSessionId: string, serverSessionId: string, identity: OfflineIdentity) {
   const captures = await capturesForSession(localSessionId, identity);
-  await Promise.all(captures.map((capture: OfflineCaptureRecord) => put('queuedCaptures', { ...capture, sessionId: serverSessionId, serverSessionId, status: capture.status === 'synced' ? capture.status : 'queued', updatedAt: now() })));
+  await Promise.all(captures.map((capture: OfflineCaptureRecord) => putQueuedCapture({ ...capture, sessionId: serverSessionId, serverSessionId, status: capture.status === 'synced' ? capture.status : 'queued', updatedAt: now() })));
   return captures.length;
 }
