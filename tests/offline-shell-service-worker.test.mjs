@@ -91,14 +91,14 @@ test('offline boot with existing controller skips /sw.js fetch check', () => {
 
   assert.match(ensureBody, /const controlledAtBoot = Boolean\(navigator\.serviceWorker\.controller\)/);
   assert.match(ensureBody, /if \(!navigator\.onLine && controlledAtBoot && activeAtBoot\) return await finalizeOfflineControlledBoot\(snapshots\);/);
-  assert.match(ensureBody, /if \(navigator\.onLine \|\| \(!controlledAtBoot && !activeAtBoot\)\) \{ await checkServiceWorkerScript\(\);/);
+  assert.match(ensureBody, /if \(navigator\.onLine && \(!controlledAtBoot && !activeAtBoot\)\) \{ await checkServiceWorkerScript\(\);/);
 });
 
 test('offline boot with active registration but register load failure still succeeds if cache exists', () => {
   const shell = fs.readFileSync('src/features/offline/static-shell/offline-shell.ts', 'utf8');
   const ensureBody = shell.slice(shell.indexOf('async function ensureServiceWorkerControl'), shell.indexOf('function diagnosticsPayload'));
 
-  assert.match(ensureBody, /catch \(error\)[\s\S]*if \(!navigator\.onLine && navigator\.serviceWorker\.controller && activeRegistrationSnapshot\(snapshots\)\) return await finalizeOfflineControlledBoot\(snapshots\);/);
+  assert.match(ensureBody, /catch \(error\)[\s\S]*if \(navigator\.serviceWorker\.controller && activeRegistrationSnapshot\(snapshots\)\) return await finalizeOfflineControlledBoot\(snapshots\);/);
   assert.match(shell, /if \(cacheState\.cached\) \{ sessionStorage\.removeItem\(CONTROL_RELOAD_KEY\); updateSw\(\{ \.\.\.base, finalStatus: 'Offline ready on this device', error: null \}\);/);
   assert.doesNotMatch(ensureBody, /registrationError: message[\s\S]{0,120}finalStatus: 'Load failed'/);
 });
@@ -125,9 +125,76 @@ test('offline boot with controller but missing assets shows cache-missing failur
   const shell = fs.readFileSync('src/features/offline/static-shell/offline-shell.ts', 'utf8');
   const offlineBody = shell.slice(shell.indexOf('async function finalizeOfflineControlledBoot'), shell.indexOf('async function ensureServiceWorkerControl'));
 
-  assert.match(offlineBody, /finalStatus: 'Offline cache missing required assets'/);
+  assert.match(offlineBody, /cacheVerificationStatus\(cacheState\.cached, cacheState\.missing, cacheState\.error\)/);
   assert.match(offlineBody, /error: cacheState\.error \|\| 'Offline cache missing required assets'/);
   assert.doesNotMatch(offlineBody, /Load failed/);
+});
+
+
+
+test('offline event does not reset a controlled ready state to Load failed', () => {
+  const shell = fs.readFileSync('src/features/offline/static-shell/offline-shell.ts', 'utf8');
+  const bootBody = shell.slice(shell.indexOf('async function boot'), shell.indexOf('boot().catch'));
+  const updateBody = shell.slice(shell.indexOf('function updateSw'), shell.indexOf('function workerSnapshot'));
+
+  assert.match(bootBody, /window\.addEventListener\('offline', \(\) => \{ renderOnlineNavigation\(\); setMessage\('Network signal is offline/);
+  assert.doesNotMatch(bootBody, /offline[\s\S]{0,140}updateSw\(\{[\s\S]{0,80}Load failed/);
+  assert.match(updateBody, /if \(\(patch\.finalStatus === 'Load failed' \|\| patch\.finalStatus === 'Registration attempted'\) && \(current\.cached \|\| next\.cached\)\) next\.finalStatus = 'Offline ready on this device';/);
+});
+
+test('controller-present state survives register/update Load failed errors', () => {
+  const shell = fs.readFileSync('src/features/offline/static-shell/offline-shell.ts', 'utf8');
+  const ensureBody = shell.slice(shell.indexOf('async function ensureServiceWorkerControl'), shell.indexOf('function diagnosticsPayload'));
+  const updateBody = shell.slice(shell.indexOf('function updateSw'), shell.indexOf('function workerSnapshot'));
+
+  assert.match(ensureBody, /if \(navigator\.serviceWorker\.controller && activeRegistrationSnapshot\(snapshots\)\) return await finalizeOfflineControlledBoot\(snapshots\);/);
+  assert.match(updateBody, /const authoritativeController = current\.controlled \|\| Boolean\(navigator\.serviceWorker\?\.controller\);/);
+  assert.match(updateBody, /next\.controlled = true;/);
+});
+
+test('cacheNames/cacheMissing are not overwritten by a failed network check', () => {
+  const shell = fs.readFileSync('src/features/offline/static-shell/offline-shell.ts', 'utf8');
+  const updateBody = shell.slice(shell.indexOf('function updateSw'), shell.indexOf('function workerSnapshot'));
+  const cacheBody = shell.slice(shell.indexOf('async function requiredAssetsCached'), shell.indexOf('function detectStuckInstalling'));
+
+  assert.match(updateBody, /if \(current\.cached && !patch\.cached\) \{/);
+  assert.match(updateBody, /next\.cacheNames = current\.cacheNames;/);
+  assert.match(updateBody, /next\.cacheMissing = current\.cacheMissing;/);
+  assert.match(cacheBody, /saveLastGoodCacheVerification\(cacheNames\)/);
+});
+
+test('raw diagnostics objects are never rendered in the service-worker summary line', () => {
+  const shell = fs.readFileSync('src/features/offline/static-shell/offline-shell.ts', 'utf8');
+  const bootBody = shell.slice(shell.indexOf('async function boot'), shell.indexOf('boot().catch'));
+  const renderBody = shell.slice(shell.indexOf('function renderOfflineReadiness'), shell.indexOf('function detectCapabilities'));
+
+  assert.match(shell, /function safeStatusLabel\(value: unknown\): string/);
+  assert.doesNotMatch(bootBody, /JSON\.stringify\(event\.data\)/);
+  assert.match(renderBody, /Service worker: \$\{safeStatusLabel\(sw\.diagnostics\?\.version \|\| sw\.diagnostics\?\.activeCacheName \|\| sw\.finalStatus\)\}/);
+});
+
+test('finalStatus remains Offline ready when controller and cache are present and navigator.onLine becomes false', () => {
+  const shell = fs.readFileSync('src/features/offline/static-shell/offline-shell.ts', 'utf8');
+  const updateBody = shell.slice(shell.indexOf('function updateSw'), shell.indexOf('function workerSnapshot'));
+  assert.match(updateBody, /patch\.finalStatus === 'Load failed'/);
+  assert.match(updateBody, /next\.finalStatus = 'Offline ready on this device'/);
+});
+
+test('finalStatus only becomes Load failed without controller, active registration, or cache fallback', () => {
+  const shell = fs.readFileSync('src/features/offline/static-shell/offline-shell.ts', 'utf8');
+  const ensureBody = shell.slice(shell.indexOf('async function ensureServiceWorkerControl'), shell.indexOf('function diagnosticsPayload'));
+  assert.match(ensureBody, /finalStatus: !navigator\.serviceWorker\.controller && !state\.serviceWorker\.cached \? 'Load failed' : message/);
+});
+
+test('local sessions remain visible after Airplane Mode and Start New Session remains available offline when provisioned', () => {
+  const shell = fs.readFileSync('src/features/offline/static-shell/offline-shell.ts', 'utf8');
+  const bootBody = shell.slice(shell.indexOf('async function boot'), shell.indexOf('boot().catch'));
+  const renderBody = shell.slice(shell.indexOf('async function renderDashboard'), shell.indexOf('function sessionCard'));
+
+  assert.match(bootBody, /window\.addEventListener\('offline', \(\) => \{ renderOnlineNavigation\(\);/);
+  assert.doesNotMatch(bootBody, /window\.addEventListener\('offline'[\s\S]{0,200}renderDashboard\(/);
+  assert.match(renderBody, /const sessions = await listSessions\(state\.identity\);/);
+  assert.match(bootBody, /\$\('newSession'\) as HTMLButtonElement\)\.onclick = async \(\) => \{ if \(!state\.identity\) return setMessage\('Device not provisioned/);
 });
 
 test('offline shell renders readiness panel before awaiting service worker readiness', () => {
