@@ -2,14 +2,8 @@ import {
   createCaptureRecordFromUploadedFile,
   validateCaptureBillingAccess,
 } from "@/features/capture/actions";
-import type {
-  CaptureIntent,
-  CaptureType,
-} from "@/features/capture/types";
-import {
-  getCurrentStatus,
-  subscribe,
-} from "@/features/offline/connectivity";
+import type { CaptureIntent, CaptureType } from "@/features/capture/types";
+import { getCurrentStatus, subscribe } from "@/features/offline/connectivity";
 import {
   getPendingCaptures,
   normalizeSessionReportOrders,
@@ -55,9 +49,7 @@ function sanitizeFilename(filename: string) {
 }
 
 function createStoragePath(record: OfflineCaptureRecord) {
-  const timestamp = record.createdAt
-    .replace(/[:.]/g, "-")
-    .replace(/Z$/, "");
+  const timestamp = record.createdAt.replace(/[:.]/g, "-").replace(/Z$/, "");
 
   return [
     "organizations",
@@ -106,7 +98,8 @@ function buildDiagnostics(
   record: OfflineCaptureRecord,
   storagePath: string | null,
   failureStage: OfflineCaptureFailureStage | null = null,
-  serverObjectSize: number | null = record.metadata.diagnostics?.serverObjectSize ?? null,
+  serverObjectSize: number | null = record.metadata.diagnostics
+    ?.serverObjectSize ?? null,
 ) {
   return {
     ...record.metadata.diagnostics,
@@ -121,8 +114,25 @@ function buildDiagnostics(
   };
 }
 
+async function refreshAuthSession(supabase: ReturnType<typeof createClient>) {
+  const { data: sessionData, error: sessionError } =
+    await supabase.auth.getSession();
+
+  if (sessionData.session && !sessionError) {
+    return true;
+  }
+
+  const { error: refreshError } = await supabase.auth.refreshSession();
+  return !refreshError;
+}
+
 async function getAuthenticatedUserId() {
   const supabase = createClient();
+
+  if (!(await refreshAuthSession(supabase))) {
+    return null;
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -172,11 +182,15 @@ async function syncOfflineSessions(userId: string) {
       break;
     }
 
-    await updateOfflineSessionStatus(session.localSessionId, "creating_server_session", {
-      lastError: null,
-      serverCreateAttemptCount: (session.serverCreateAttemptCount ?? 0) + 1,
-      serverCreateLastAttemptAt: new Date().toISOString(),
-    });
+    await updateOfflineSessionStatus(
+      session.localSessionId,
+      "creating_server_session",
+      {
+        lastError: null,
+        serverCreateAttemptCount: (session.serverCreateAttemptCount ?? 0) + 1,
+        serverCreateLastAttemptAt: new Date().toISOString(),
+      },
+    );
 
     const response = await fetch("/api/dashboard/sessions/offline", {
       method: "POST",
@@ -217,16 +231,23 @@ async function syncOfflineSessions(userId: string) {
       userId,
     );
 
-    await updateOfflineSessionStatus(session.localSessionId, "partially_synced", {
-      serverSessionId: result.sessionId,
-      serverCreateRecoveredAt: new Date().toISOString(),
-      lastError: null,
-    });
+    await updateOfflineSessionStatus(
+      session.localSessionId,
+      "partially_synced",
+      {
+        serverSessionId: result.sessionId,
+        serverCreateRecoveredAt: new Date().toISOString(),
+        lastError: null,
+      },
+    );
   }
 }
 
-
-async function verifySyncedCapture(record: OfflineCaptureRecord, captureItemId: string, storagePath: string) {
+async function verifySyncedCapture(
+  record: OfflineCaptureRecord,
+  captureItemId: string,
+  storagePath: string,
+) {
   const reportOrder = positiveReportOrder(record.metadata.reportOrder);
   const response = await fetch("/api/offline/captures/verify", {
     method: "POST",
@@ -246,10 +267,22 @@ async function verifySyncedCapture(record: OfflineCaptureRecord, captureItemId: 
     }),
   });
 
-  const result = (await response.json().catch(() => null)) as { ok?: boolean; verified?: boolean; error?: string; mismatches?: string[]; serverObjectSize?: number | null; failureStage?: OfflineCaptureFailureStage } | null;
+  const result = (await response.json().catch(() => null)) as {
+    ok?: boolean;
+    verified?: boolean;
+    error?: string;
+    mismatches?: string[];
+    serverObjectSize?: number | null;
+    failureStage?: OfflineCaptureFailureStage;
+  } | null;
 
   if (!response.ok || !result?.ok || !result.verified) {
-    const error = new Error(result?.error ?? (result?.mismatches?.length ? `Capture verification failed: ${result.mismatches.join(", ")}` : "Capture verification failed."));
+    const error = new Error(
+      result?.error ??
+        (result?.mismatches?.length
+          ? `Capture verification failed: ${result.mismatches.join(", ")}`
+          : "Capture verification failed."),
+    );
     Object.assign(error, {
       serverObjectSize: result?.serverObjectSize ?? null,
       failureStage: result?.failureStage ?? "verify_failed",
@@ -262,6 +295,20 @@ async function verifySyncedCapture(record: OfflineCaptureRecord, captureItemId: 
 
 export async function syncCapture(record: OfflineCaptureRecord) {
   const supabase = createClient();
+
+  if (!(await refreshAuthSession(supabase))) {
+    await updateRecord(record, {
+      status: "blocked",
+      retryCount: record.retryCount + 1,
+      lastError: "Sign in again to continue uploading.",
+      metadata: {
+        ...record.metadata,
+        uploadStatus: "failed",
+        uiError: "Sign in again to continue uploading.",
+      },
+    });
+    throw new Error("Sign in again to continue uploading.");
+  }
   const storagePath =
     record.uploadState.storagePath ?? createStoragePath(record);
 
@@ -280,15 +327,12 @@ export async function syncCapture(record: OfflineCaptureRecord) {
     },
   });
 
-  const accessResult = await validateCaptureBillingAccess(
-    current.sessionId,
-    [
-      {
-        size: current.metadata.size,
-        mimeType: current.metadata.mimeType,
-      },
-    ],
-  );
+  const accessResult = await validateCaptureBillingAccess(current.sessionId, [
+    {
+      size: current.metadata.size,
+      mimeType: current.metadata.mimeType,
+    },
+  ]);
 
   if (!accessResult.ok) {
     await updateRecord(current, {
@@ -321,14 +365,22 @@ export async function syncCapture(record: OfflineCaptureRecord) {
           ...current.metadata,
           uploadStatus: "failed",
           uiError: message,
-          diagnostics: buildDiagnostics(current, storagePath, "local_blob_empty"),
+          diagnostics: buildDiagnostics(
+            current,
+            storagePath,
+            "local_blob_empty",
+          ),
         },
       });
 
       throw new Error(message);
     }
 
-    if (Number.isFinite(current.metadata.size) && current.metadata.size > 0 && current.metadata.size !== localBlobSize) {
+    if (
+      Number.isFinite(current.metadata.size) &&
+      current.metadata.size > 0 &&
+      current.metadata.size !== localBlobSize
+    ) {
       const message = `Local blob size mismatch. Expected ${current.metadata.size} bytes but found ${localBlobSize} bytes.`;
       await updateRecord(current, {
         status: "blocked",
@@ -339,7 +391,11 @@ export async function syncCapture(record: OfflineCaptureRecord) {
           ...current.metadata,
           uploadStatus: "failed",
           uiError: message,
-          diagnostics: buildDiagnostics(current, storagePath, "local_blob_empty"),
+          diagnostics: buildDiagnostics(
+            current,
+            storagePath,
+            "local_blob_empty",
+          ),
         },
       });
       throw new Error(message);
@@ -348,13 +404,9 @@ export async function syncCapture(record: OfflineCaptureRecord) {
     const file =
       current.blob instanceof File
         ? current.blob
-        : new File(
-            [current.blob],
-            current.metadata.filename,
-            {
-              type: current.metadata.mimeType,
-            },
-          );
+        : new File([current.blob], current.metadata.filename, {
+            type: current.metadata.mimeType,
+          });
 
     if (file.size <= 0 || current.blob.size <= 0) {
       const message =
@@ -368,11 +420,19 @@ export async function syncCapture(record: OfflineCaptureRecord) {
           ...current.metadata,
           uploadStatus: "failed",
           uiError: message,
-          diagnostics: buildDiagnostics(current, storagePath, "local_blob_empty"),
+          diagnostics: buildDiagnostics(
+            current,
+            storagePath,
+            "local_blob_empty",
+          ),
         },
       });
 
       throw new Error(message);
+    }
+
+    if (!(await refreshAuthSession(supabase))) {
+      throw new Error("Sign in again to continue uploading.");
     }
 
     const { error: uploadError } = await supabase.storage
@@ -404,7 +464,11 @@ export async function syncCapture(record: OfflineCaptureRecord) {
               ...current.metadata,
               uploadStatus: "failed",
               uiError: message,
-              diagnostics: buildDiagnostics(current, storagePath, "upload_failed"),
+              diagnostics: buildDiagnostics(
+                current,
+                storagePath,
+                "upload_failed",
+              ),
             },
           });
 
@@ -421,7 +485,11 @@ export async function syncCapture(record: OfflineCaptureRecord) {
             ...current.metadata,
             uploadStatus: "failed",
             uiError: message,
-            diagnostics: buildDiagnostics(current, storagePath, "upload_failed"),
+            diagnostics: buildDiagnostics(
+              current,
+              storagePath,
+              "upload_failed",
+            ),
           },
         });
 
@@ -457,32 +525,29 @@ export async function syncCapture(record: OfflineCaptureRecord) {
 
   const reportOrder = positiveReportOrder(current.metadata.reportOrder);
 
+  if (!(await refreshAuthSession(supabase))) {
+    throw new Error("Sign in again to continue uploading.");
+  }
+
   const result = await createCaptureRecordFromUploadedFile({
     sessionId: current.sessionId,
     storagePath,
     filename: current.metadata.filename,
     mimeType: current.metadata.mimeType,
     size: current.metadata.size,
-    captureIntent:
-      current.metadata.captureIntent as CaptureIntent,
-    manualType:
-      current.metadata.manualType as CaptureType | null,
+    captureIntent: current.metadata.captureIntent as CaptureIntent,
+    manualType: current.metadata.manualType as CaptureType | null,
     guidedStep: current.metadata.guidedStep ?? undefined,
     guidedLabel: current.metadata.guidedLabel ?? undefined,
     workflow: current.metadata.workflow ?? undefined,
     technicianNote: current.metadata.technicianNote,
-    transcriptStatus:
-      current.metadata.transcriptStatus as
-        | "not_started"
-        | "pending"
-        | "completed"
-        | "failed"
-        | "unavailable",
-    noteSource:
-      current.metadata.noteSource as
-        | "manual"
-        | "voice"
-        | "edited",
+    transcriptStatus: current.metadata.transcriptStatus as
+      | "not_started"
+      | "pending"
+      | "completed"
+      | "failed"
+      | "unavailable",
+    noteSource: current.metadata.noteSource as "manual" | "voice" | "edited",
     reportOrder,
     includeInReport: current.metadata.includeInReport,
     sourceDocumentType: null,
@@ -501,22 +566,26 @@ export async function syncCapture(record: OfflineCaptureRecord) {
       lastError: message,
       uploadState: {
         ...current.uploadState,
-        uploadedAt: result.storageUploaded === false ? null : current.uploadState.uploadedAt,
+        uploadedAt:
+          result.storageUploaded === false
+            ? null
+            : current.uploadState.uploadedAt,
       },
       metadata: {
         ...current.metadata,
-        uploadStatus: result.storageUploaded
-          ? "metadata_recovery"
-          : "failed",
+        uploadStatus: result.storageUploaded ? "metadata_recovery" : "failed",
         uiError: message,
         storageUploaded:
-          result.storageUploaded ??
-          current.metadata.storageUploaded,
+          result.storageUploaded ?? current.metadata.storageUploaded,
         diagnostics: buildDiagnostics(
           current,
           storagePath,
-          message.toLowerCase().includes("empty in storage") ? "storage_upload_empty" : "finalize_failed",
-          message.toLowerCase().includes("empty in storage") ? 0 : current.metadata.diagnostics?.serverObjectSize ?? null,
+          message.toLowerCase().includes("empty in storage")
+            ? "storage_upload_empty"
+            : "finalize_failed",
+          message.toLowerCase().includes("empty in storage")
+            ? 0
+            : (current.metadata.diagnostics?.serverObjectSize ?? null),
         ),
       },
     });
@@ -553,33 +622,54 @@ export async function syncCapture(record: OfflineCaptureRecord) {
   });
 
   try {
-    const verification = await verifySyncedCapture(current, result.captureItemId, storagePath);
+    const verification = await verifySyncedCapture(
+      current,
+      result.captureItemId,
+      storagePath,
+    );
     current = await updateRecord(current, {
       metadata: {
         ...current.metadata,
-        diagnostics: buildDiagnostics(current, storagePath, null, verification.serverObjectSize),
+        diagnostics: buildDiagnostics(
+          current,
+          storagePath,
+          null,
+          verification.serverObjectSize,
+        ),
       },
     });
   } catch (verificationError) {
     const message = getErrorMessage(verificationError);
-    const serverObjectSize = typeof (verificationError as { serverObjectSize?: unknown }).serverObjectSize === "number"
-      ? (verificationError as { serverObjectSize: number }).serverObjectSize
-      : null;
-    const failureStage = ((verificationError as { failureStage?: OfflineCaptureFailureStage }).failureStage ?? "verify_failed");
+    const serverObjectSize =
+      typeof (verificationError as { serverObjectSize?: unknown })
+        .serverObjectSize === "number"
+        ? (verificationError as { serverObjectSize: number }).serverObjectSize
+        : null;
+    const failureStage =
+      (verificationError as { failureStage?: OfflineCaptureFailureStage })
+        .failureStage ?? "verify_failed";
     await updateRecord(current, {
       status: "finalized_unverified",
       retryCount: current.retryCount + 1,
       lastError: message,
       uploadState: {
         ...current.uploadState,
-        uploadedAt: failureStage === "storage_upload_empty" ? null : current.uploadState.uploadedAt,
+        uploadedAt:
+          failureStage === "storage_upload_empty"
+            ? null
+            : current.uploadState.uploadedAt,
       },
       metadata: {
         ...current.metadata,
         uploadStatus: "verification_failed",
         uiError: message,
         verified: false,
-        diagnostics: buildDiagnostics(current, storagePath, failureStage, serverObjectSize),
+        diagnostics: buildDiagnostics(
+          current,
+          storagePath,
+          failureStage,
+          serverObjectSize,
+        ),
       },
     });
     throw verificationError;
@@ -601,7 +691,10 @@ export async function syncCapture(record: OfflineCaptureRecord) {
     },
   });
 
-  await recordVerifiedOfflineCapture(current.localSessionId, positiveReportOrder(current.metadata.reportOrder) ?? 1);
+  await recordVerifiedOfflineCapture(
+    current.localSessionId,
+    positiveReportOrder(current.metadata.reportOrder) ?? 1,
+  );
   await removeCapture(current.localId);
 
   return result.captureItemId;
@@ -611,8 +704,7 @@ export class OfflineSyncEngine {
   private running = false;
   private syncing = false;
   private listeners = new Set<SyncEngineListener>();
-  private unsubscribeConnectivity: (() => void) | null =
-    null;
+  private unsubscribeConnectivity: (() => void) | null = null;
   private pendingCount = 0;
   private lastError: string | null = null;
 
@@ -711,9 +803,7 @@ export class OfflineSyncEngine {
     const pending = await getPendingCaptures(userId);
     const retryable = pending
       .filter(canAutomaticallyRetry)
-      .sort((left, right) =>
-        left.createdAt.localeCompare(right.createdAt),
-      );
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 
     this.pendingCount = pending.length;
     this.emit();

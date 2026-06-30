@@ -234,7 +234,7 @@ self.addEventListener("fetch", (event) => {
   event.respondWith((async () => {
     if (!self.navigator.onLine && shouldUseOfflineShell(url)) return offlineDocument();
     try {
-      const response = await fetchWithTimeout(request, shouldUseOfflineShell(url) ? 1200 : 3000);
+      const response = await fetchWithTimeout(request, shouldUseOfflineShell(url) ? 10000 : 3000);
       if (response.ok && !response.redirected && !shouldUseOfflineShell(url)) (await caches.open(CACHE_VERSION)).put(request, response.clone());
       return response;
     } catch {

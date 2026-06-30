@@ -215,16 +215,11 @@ function isLocalUploadPending(status: UploadStatus) {
   return LOCAL_UPLOAD_PENDING_STATUSES.includes(status);
 }
 
-function mapUploadStatusToQueueStatus(
-  status: UploadStatus,
-): QueueStatus {
+function mapUploadStatusToQueueStatus(status: UploadStatus): QueueStatus {
   if (status === "saved") return "synced";
   if (status === "failed") return "failed";
 
-  if (
-    status === "metadata_recovery" ||
-    status === "needs_queue_retry"
-  ) {
+  if (status === "metadata_recovery" || status === "needs_queue_retry") {
     return "blocked";
   }
 
@@ -298,6 +293,34 @@ function getNoteSaveStatusLabel(
   return "Saved on device";
 }
 
+function isAuthFailureMessage(message: string) {
+  const normalized = message.toLowerCase();
+
+  return (
+    normalized.includes("jwt") ||
+    normalized.includes("auth") ||
+    normalized.includes("unauthorized") ||
+    normalized.includes("not authenticated") ||
+    normalized.includes("sign-in expired") ||
+    normalized.includes("sign in again") ||
+    normalized.includes("session expired") ||
+    normalized.includes("refresh token")
+  );
+}
+
+function isConnectivityFailureMessage(message: string) {
+  const normalized = message.toLowerCase();
+
+  return (
+    normalized.includes("failed to fetch") ||
+    normalized.includes("network") ||
+    normalized.includes("offline") ||
+    normalized.includes("timeout") ||
+    normalized.includes("timed out") ||
+    normalized.includes("connection")
+  );
+}
+
 function getFriendlyUploadError(message: string) {
   const normalized = message.toLowerCase();
 
@@ -315,19 +338,18 @@ function getFriendlyUploadError(message: string) {
     return "Storage limit reached";
   }
 
+  if (isAuthFailureMessage(message)) {
+    return "Sign in again to continue uploading.";
+  }
+
+  if (isConnectivityFailureMessage(message)) {
+    return "Upload failed — retry when your connection is better.";
+  }
+
   if (
-    normalized.includes("failed to fetch") ||
-    normalized.includes("network") ||
-    normalized.includes("offline")
+    normalized.includes("file type") ||
+    normalized.includes("not currently supported")
   ) {
-    return "Upload failed — bad connection";
-  }
-
-  if (normalized.includes("sign-in expired") || normalized.includes("sign in again")) {
-    return "Your sign-in expired. Sign in again, then retry.";
-  }
-
-  if (normalized.includes("file type") || normalized.includes("not currently supported")) {
     return "This file type is not currently supported.";
   }
 
@@ -335,7 +357,45 @@ function getFriendlyUploadError(message: string) {
     return "The image uploaded, but CRED could not finish saving it. Tap Retry.";
   }
 
-  return message || "Upload failed. Your file is still available to retry.";
+  return (
+    message || "Upload failed. Your file is still backed up on this device."
+  );
+}
+
+function getBatchUploadFailureMessage(
+  failedMessages: string[],
+  savedCount: number,
+) {
+  const hasAuthFailure = failedMessages.some(isAuthFailureMessage);
+  const hasConnectivityFailure = failedMessages.some(
+    isConnectivityFailureMessage,
+  );
+  const prefix = savedCount > 0 ? "Some files were saved. " : "";
+
+  if (hasAuthFailure) {
+    return `${prefix}Sign in again to continue uploading.`;
+  }
+
+  if (hasConnectivityFailure) {
+    return `${prefix}Upload failed — retry when your connection is better.`;
+  }
+
+  return `${prefix}Upload failed while saving to CRED. Your file is backed up on this device and CRED will keep retrying.`;
+}
+
+async function refreshAuthSession(supabase: ReturnType<typeof createClient>) {
+  const { data: sessionData, error: sessionError } =
+    await supabase.auth.getSession();
+
+  if (sessionError) {
+    const { error: refreshError } = await supabase.auth.refreshSession();
+    return !refreshError;
+  }
+
+  if (sessionData.session) return true;
+
+  const { error: refreshError } = await supabase.auth.refreshSession();
+  return !refreshError;
 }
 
 export function AddCaptureForm({
@@ -439,18 +499,17 @@ export function AddCaptureForm({
       ? failedFiles
       : selectedFiles.filter((file) => file.status === "queued");
 
-  async function writeUploadQueueRecord(
-    record: PersistedSelectedEvidenceFile,
-  ) {
+  async function writeUploadQueueRecord(record: PersistedSelectedEvidenceFile) {
     const existing = await getQueuedCapture(record.id);
     const timestamp = new Date().toISOString();
 
     const queuedRecord: OfflineCaptureRecord = {
       localId: record.id,
-      clientMutationId:
-        existing?.clientMutationId ?? record.id,
+      clientMutationId: existing?.clientMutationId ?? record.id,
       localSessionId: existing?.localSessionId ?? record.sessionId,
-      serverSessionId: existing?.serverSessionId ?? (record.sessionId.startsWith("offline-") ? null : record.sessionId),
+      serverSessionId:
+        existing?.serverSessionId ??
+        (record.sessionId.startsWith("offline-") ? null : record.sessionId),
       organizationId: record.organizationId,
       workspaceId: existing?.workspaceId ?? null,
       sessionId: record.sessionId,
@@ -461,8 +520,7 @@ export function AddCaptureForm({
       blob: record.file,
       metadata: {
         captureIntent,
-        manualType:
-          captureIntent === "manual" ? manualType : null,
+        manualType: captureIntent === "manual" ? manualType : null,
         guidedStep: guidedStep ?? null,
         guidedLabel: guidedLabel ?? null,
         workflow: workflow ?? null,
@@ -485,14 +543,11 @@ export function AddCaptureForm({
       lastError: record.error ?? null,
       uploadState: {
         storagePath: record.storagePath ?? null,
-        uploadedAt:
-          record.storageUploaded
-            ? existing?.uploadState.uploadedAt ?? timestamp
-            : null,
-        finalizedAt:
-          record.status === "saved" ? timestamp : null,
-        verifiedAt:
-          record.status === "saved" ? timestamp : null,
+        uploadedAt: record.storageUploaded
+          ? (existing?.uploadState.uploadedAt ?? timestamp)
+          : null,
+        finalizedAt: record.status === "saved" ? timestamp : null,
+        verifiedAt: record.status === "saved" ? timestamp : null,
       },
       serverCaptureId: record.captureItemId ?? null,
       createdAt: existing?.createdAt ?? timestamp,
@@ -514,8 +569,7 @@ export function AddCaptureForm({
       (record) =>
         record.sessionId === targetSessionId &&
         record.organizationId === organizationId &&
-        (record.userId === userId ||
-          record.userId === "current-user"),
+        (record.userId === userId || record.userId === "current-user"),
     );
 
     await Promise.all(
@@ -530,46 +584,38 @@ export function AddCaptureForm({
     );
 
     return scopedRecords.map((record) => {
-        const metadata = record.metadata;
-        const file =
-          record.blob instanceof File
-            ? record.blob
-            : new File(
-                [record.blob],
-                metadata.filename,
-                { type: metadata.mimeType },
-              );
+      const metadata = record.metadata;
+      const file =
+        record.blob instanceof File
+          ? record.blob
+          : new File([record.blob], metadata.filename, {
+              type: metadata.mimeType,
+            });
 
-        return {
-          id: record.localId,
-          file,
-          name: metadata.filename,
-          type: metadata.mimeType,
-          size: metadata.size,
-          status:
-            metadata.uploadStatus === "uploading"
-              ? "queued"
-              : ((metadata.uploadStatus ??
-                  "queued") as UploadStatus),
-          error: metadata.uiError,
-          note: metadata.technicianNote,
-          captureItemId:
-            metadata.captureItemId ??
-            record.serverCaptureId ??
-            undefined,
-          storagePath:
-            record.uploadState.storagePath ?? undefined,
-          storageUploaded:
-            metadata.storageUploaded ??
-            Boolean(record.uploadState.uploadedAt),
-          noteSaveStatus:
-            metadata.noteSaveStatus as
-              | SelectedEvidenceFile["noteSaveStatus"]
-              | undefined,
-          sessionId: record.sessionId,
-          organizationId: record.organizationId,
-        };
-      });
+      return {
+        id: record.localId,
+        file,
+        name: metadata.filename,
+        type: metadata.mimeType,
+        size: metadata.size,
+        status:
+          metadata.uploadStatus === "uploading"
+            ? "queued"
+            : ((metadata.uploadStatus ?? "queued") as UploadStatus),
+        error: metadata.uiError,
+        note: metadata.technicianNote,
+        captureItemId:
+          metadata.captureItemId ?? record.serverCaptureId ?? undefined,
+        storagePath: record.uploadState.storagePath ?? undefined,
+        storageUploaded:
+          metadata.storageUploaded ?? Boolean(record.uploadState.uploadedAt),
+        noteSaveStatus: metadata.noteSaveStatus as
+          | SelectedEvidenceFile["noteSaveStatus"]
+          | undefined,
+        sessionId: record.sessionId,
+        organizationId: record.organizationId,
+      };
+    });
   }
 
   function getMaxFileSizeForFile(file: File) {
@@ -596,9 +642,7 @@ export function AddCaptureForm({
 
   useEffect(() => {
     function handleOfflineCaptureSynced(event: Event) {
-      const detail = (
-        event as CustomEvent<OfflineCaptureSyncedDetail>
-      ).detail;
+      const detail = (event as CustomEvent<OfflineCaptureSyncedDetail>).detail;
 
       if (!detail || detail.sessionId !== sessionId) {
         return;
@@ -635,9 +679,7 @@ export function AddCaptureForm({
 
       if (matchedCapture) {
         setActionError(null);
-        setSaveMessage(
-          "Queued capture synced successfully. Ready for review.",
-        );
+        setSaveMessage("Queued capture synced successfully. Ready for review.");
       }
 
       router.refresh();
@@ -745,7 +787,9 @@ export function AddCaptureForm({
               status,
               error,
               ...(captureItemId ? { captureItemId } : {}),
-              ...(typeof storageUploaded === "boolean" ? { storageUploaded } : {}),
+              ...(typeof storageUploaded === "boolean"
+                ? { storageUploaded }
+                : {}),
             }
           : file,
       );
@@ -1110,9 +1154,10 @@ export function AddCaptureForm({
           )
           .forEach((file) => uploadStartedFileIdsRef.current.delete(file.id));
         setActionError(
-          result.savedCount > 0
-            ? "Some files were saved. Failed files are still here — retry them when your connection is better."
-            : "Upload failed — retry when your connection is better.",
+          getBatchUploadFailureMessage(
+            result.failedMessages,
+            result.savedCount,
+          ),
         );
       }
     } finally {
@@ -1171,6 +1216,32 @@ export function AddCaptureForm({
     let savedCount = 0;
     let failedCount = 0;
     let currentObservationGroupId = activeObservationGroupId;
+    const failedMessages: string[] = [];
+
+    if (!navigator.onLine) {
+      const message = "Upload failed — retry when your connection is better.";
+      filesToUpload.forEach((selectedFile) =>
+        updateSelectedFileStatus(selectedFile.id, "failed", message),
+      );
+      return {
+        savedCount,
+        failedCount: filesToUpload.length,
+        failedMessages: [message],
+      };
+    }
+
+    if (!(await refreshAuthSession(supabase))) {
+      const message = "Sign in again to continue uploading.";
+      filesToUpload.forEach((selectedFile) =>
+        updateSelectedFileStatus(selectedFile.id, "failed", message),
+      );
+      setActionError(message);
+      return {
+        savedCount,
+        failedCount: filesToUpload.length,
+        failedMessages: [message],
+      };
+    }
 
     const accessResult = await validateCaptureBillingAccess(
       sessionId,
@@ -1186,7 +1257,11 @@ export function AddCaptureForm({
         updateSelectedFileStatus(selectedFile.id, "failed", friendlyError),
       );
       setActionError(friendlyError);
-      return { savedCount, failedCount: filesToUpload.length };
+      return {
+        savedCount,
+        failedCount: filesToUpload.length,
+        failedMessages: [friendlyError],
+      };
     }
 
     for (const selectedFile of filesToUpload) {
@@ -1220,6 +1295,10 @@ export function AddCaptureForm({
 
       try {
         if (!storageUploaded) {
+          if (!(await refreshAuthSession(supabase))) {
+            throw new Error("Sign in again to continue uploading.");
+          }
+
           const { error: uploadError } = await supabase.storage
             .from("documentation-captures")
             .upload(storagePath, file, {
@@ -1239,10 +1318,44 @@ export function AddCaptureForm({
                 });
 
               if (overwriteError) {
-                throw new Error(overwriteError.message);
+                if (
+                  isAuthFailureMessage(overwriteError.message) &&
+                  (await refreshAuthSession(supabase))
+                ) {
+                  const { error: retryOverwriteError } = await supabase.storage
+                    .from("documentation-captures")
+                    .upload(storagePath, file, {
+                      cacheControl: "3600",
+                      contentType: file.type,
+                      upsert: true,
+                    });
+                  if (!retryOverwriteError) {
+                    storageUploaded = true;
+                  } else {
+                    throw new Error(retryOverwriteError.message);
+                  }
+                } else {
+                  throw new Error(overwriteError.message);
+                }
               }
             } else {
-              throw new Error(uploadError.message);
+              if (
+                isAuthFailureMessage(uploadError.message) &&
+                (await refreshAuthSession(supabase))
+              ) {
+                const { error: retryUploadError } = await supabase.storage
+                  .from("documentation-captures")
+                  .upload(storagePath, file, {
+                    cacheControl: "3600",
+                    contentType: file.type,
+                    upsert: false,
+                  });
+                if (retryUploadError) {
+                  throw new Error(retryUploadError.message);
+                }
+              } else {
+                throw new Error(uploadError.message);
+              }
             }
           }
 
@@ -1257,7 +1370,11 @@ export function AddCaptureForm({
           );
         }
 
-        const result = await createCaptureRecordFromUploadedFile({
+        if (!(await refreshAuthSession(supabase))) {
+          throw new Error("Sign in again to continue uploading.");
+        }
+
+        let result = await createCaptureRecordFromUploadedFile({
           sessionId,
           storagePath,
           filename: file.name,
@@ -1281,13 +1398,47 @@ export function AddCaptureForm({
           observationGroupId: currentObservationGroupId,
         });
 
+        if (
+          !result.ok &&
+          result.stage === "authentication" &&
+          (await refreshAuthSession(supabase))
+        ) {
+          result = await createCaptureRecordFromUploadedFile({
+            sessionId,
+            storagePath,
+            filename: file.name,
+            mimeType: file.type,
+            size: file.size,
+            captureIntent,
+            manualType: captureIntent === "manual" ? manualType : null,
+            guidedStep,
+            guidedLabel,
+            workflow,
+            technicianNote: selectedFile.note,
+            transcriptStatus,
+            noteSource,
+            reportOrder: null,
+            includeInReport: true,
+            sourceDocumentType: null,
+            sourceDocumentLabel: null,
+            diagnosticEvidenceRole: isDiagnosticProcedureAttachment
+              ? diagnosticEvidenceRole
+              : null,
+            observationGroupId: currentObservationGroupId,
+          });
+        }
+
         if (!result.ok) {
-          const message = result.message ?? result.error;
+          const message =
+            result.stage === "authentication"
+              ? "Sign in again to continue uploading."
+              : (result.message ?? result.error);
           if (result.storageUploaded || result.storagePath) {
             storageUploaded = true;
             updateSelectedFileStatus(
               selectedFile.id,
-              result.stage === "metadata" || result.code === "metadata_creation_failed"
+              result.stage === "metadata" ||
+                result.code === "metadata_creation_failed"
                 ? "metadata_recovery"
                 : "failed",
               getFriendlyUploadError(message),
@@ -1326,6 +1477,7 @@ export function AddCaptureForm({
             ? error.message
             : "Upload failed. Check your connection and retry.",
         );
+        failedMessages.push(message);
         updateSelectedFileStatus(
           selectedFile.id,
           storageUploaded ? "metadata_recovery" : "failed",
@@ -1336,7 +1488,7 @@ export function AddCaptureForm({
       }
     }
 
-    return { savedCount, failedCount };
+    return { savedCount, failedCount, failedMessages };
   }
 
   async function saveTextNoteOnly() {
@@ -1562,7 +1714,11 @@ export function AddCaptureForm({
       const result =
         filesToUpload.length > 0
           ? await uploadSelectedFiles(filesToUpload)
-          : { savedCount: (await saveTextNoteOnly()) ? 1 : 0, failedCount: 0 };
+          : {
+              savedCount: (await saveTextNoteOnly()) ? 1 : 0,
+              failedCount: 0,
+              failedMessages: [],
+            };
 
       if (result.savedCount > 0 && filesToUpload.length > 0) {
         cleanupRecognition();
@@ -1577,9 +1733,10 @@ export function AddCaptureForm({
 
       if (result.failedCount > 0) {
         setActionError(
-          result.savedCount > 0
-            ? "Some files were saved. Failed files are still here — retry them when your connection is better."
-            : "Upload failed — retry when your connection is better.",
+          getBatchUploadFailureMessage(
+            result.failedMessages,
+            result.savedCount,
+          ),
         );
         return;
       }
