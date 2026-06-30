@@ -1977,6 +1977,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const shareTokenValue = requestUrl.searchParams.get("share_token");
   const previewOnly = requestUrl.searchParams.get("preview") === "1";
   const requestedTemplateId = requestUrl.searchParams.get("template") ?? requestUrl.searchParams.get("report_template_id");
+  const studioExport = requestUrl.searchParams.get("studio_export") === "1";
   const sharedAccess = Boolean(shareTokenValue);
 
   let supabase: SupabaseClient<Database>;
@@ -2039,7 +2040,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
 
     if (sessionError || !ownedSession) notFound();
 
-    if (!previewOnly && ownedSession.review_status !== "ready_for_delivery") {
+    if (!previewOnly && !studioExport && ownedSession.review_status !== "ready_for_delivery") {
       redirect(
         `/dashboard/sessions/${id}/report?error=${encodeURIComponent("Approve this report before exporting.")}`,
       );
