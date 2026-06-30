@@ -526,7 +526,7 @@ export async function disableReportShareLink(sessionId: string, tokenId: string)
   redirect(getReportRedirectPath(session.id, { disabled: 1 }))
 }
 
-export async function saveReport(sessionId: string) {
+export async function saveReport(sessionId: string, formData?: FormData) {
   const { supabase, profile, session } = await requireOwnedSession(sessionId)
   requireReportReadyForDelivery(session.id, session)
   const billingAccess = requireActiveBillingAccess(profile)
@@ -540,7 +540,7 @@ export async function saveReport(sessionId: string) {
     export_type: 'saved_report',
     status: 'saved',
     created_by: profile.id,
-    metadata: { retention: 'indefinite_until_deleted' },
+    metadata: { retention: 'indefinite_until_deleted', report_template_id: typeof formData?.get('report_template_id') === 'string' ? String(formData.get('report_template_id')) : 'workspace-default' },
   })
   if (error) redirect(getReportRedirectPath(session.id, { error: error.message }))
   revalidatePath(`/dashboard/sessions/${session.id}`)

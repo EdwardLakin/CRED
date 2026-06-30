@@ -29,7 +29,7 @@ import {
   type EvidenceLightboxItem,
 } from "@/features/reports/review/EvidenceImageLightbox";
 import { SignatureCaptureForm } from "@/features/signatures";
-import { PendingActionButton, PendingNavigationLink } from "@/features/reports/review/PendingActionButton";
+import { PendingActionButton } from "@/features/reports/review/PendingActionButton";
 import { useSavedSignature } from "@/features/signatures/actions";
 import type { Database } from "@/lib/supabase/database.types";
 
@@ -205,6 +205,7 @@ export function DiagnosticProcedureReport({
   origin: string;
   markReviewedAction: ServerAction;
   timeZone: string | null;
+  reportTemplates?: Array<{ id: string; name: string; is_default: boolean }>;
 }) {
   const info = getDiagnosticProcedureInfo(currentReport);
   const steps = sections.filter((section) => {
@@ -537,6 +538,7 @@ export function ReportReview({
   isGenericEvidenceReport: boolean;
   reportDocument: ReturnType<typeof buildUniversalReportDocument<CaptureItem>>;
   timeZone: string | null;
+  reportTemplates?: Array<{ id: string; name: string; is_default: boolean }>;
 }) {
   const editableSections = reportSections;
   const includedEvidenceCount = [
@@ -1705,6 +1707,7 @@ export function ExportPanel({
   shareAction,
   shareTokens,
   timeZone,
+  reportTemplates = [],
 }: {
   emailAction: ServerAction;
   isReadyForExport: boolean;
@@ -1715,6 +1718,7 @@ export function ExportPanel({
   shareAction: ServerAction;
   shareTokens: ReportShareToken[];
   timeZone: string | null;
+  reportTemplates?: Array<{ id: string; name: string; is_default: boolean }>;
 }) {
   const activeShareTokens = shareTokens.filter((token) => !token.disabled_at);
 
@@ -1746,6 +1750,9 @@ export function ExportPanel({
             Approve the report before delivery options are available.
           </p>
         ) : null}
+
+
+        <div className="field-stack report-template-export-selector"><label className="label" htmlFor="report_template_id">Report Template</label><select id="report_template_id" name="report_template_id" className="input" defaultValue="workspace-default" form="print-report-form"><option value="workspace-default">Workspace default</option>{reportTemplates.map(t=><option key={t.id} value={t.id}>{t.name}{t.is_default?' — default':''}</option>)}<option value="system">System default</option></select><p className="muted">Using workspace default unless you choose a saved template or system default. Templates only change report appearance.</p></div>
 
         <div
           className="export-action-tiles"
@@ -1887,13 +1894,9 @@ export function ExportPanel({
           </details>
 
           {isReadyForExport ? (
-            <PendingNavigationLink
-              href={reportPath}
-              className="export-action-tile export-action-link"
-              target="_blank"
-              idleLabel="Preview / Print"
-              pendingLabel="Preparing report…"
-            />
+            <form id="print-report-form" action={reportPath} method="get" target="_blank" className="export-action-tile export-action-link">
+              <button className="button-link-reset" disabled={!isReadyForExport}>Preview / Print</button>
+            </form>
           ) : (
             <span
               className="export-action-tile export-action-link disabled-action"
@@ -1923,10 +1926,11 @@ export function ExportPanel({
               <strong>Save in CRED</strong>
             </summary>
             <form
+              id="save-report-form"
               action={saveAction}
               className="form-stack export-action-details"
             >
-              <p className="muted">Keep a saved copy of this report.</p>
+              <p className="muted">Keep a saved copy of this report.</p><label className="field-stack"><span className="label">Report Template</span><select name="report_template_id" className="input" defaultValue="workspace-default"><option value="workspace-default">Workspace default</option>{reportTemplates.map(t=><option key={t.id} value={t.id}>{t.name}{t.is_default?' — default':''}</option>)}<option value="system">System default</option></select></label>
               <PendingActionButton
                 className="button button-secondary touch-target"
                 disabled={!isReadyForExport}

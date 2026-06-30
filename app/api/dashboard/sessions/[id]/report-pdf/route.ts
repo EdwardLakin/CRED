@@ -2188,6 +2188,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const requestUrl = new URL(_request.url);
   const shareTokenValue = requestUrl.searchParams.get("share_token");
   const previewOnly = requestUrl.searchParams.get("preview") === "1";
+  const requestedTemplateId = requestUrl.searchParams.get("template") ?? requestUrl.searchParams.get("report_template_id");
   const sharedAccess = Boolean(shareTokenValue);
 
   let supabase: SupabaseClient<Database>;
@@ -2321,10 +2322,64 @@ export async function GET(_request: Request, { params }: RouteContext) {
     shareTokenValue,
   );
 
-  const { data: exportBranding } = await (supabase.from("workspace_brand_profiles") as any)
-    .select("*")
-    .eq("organization_id", organizationId)
-    .maybeSingle();
+  let selectedTemplateName: string | null = null;
+  let selectedTemplateId: string | null = null;
+  let exportBranding: any = null;
+  if (requestedTemplateId && requestedTemplateId !== "workspace-default" && requestedTemplateId !== "system") {
+    const { data: selectedTemplate } = await (supabase.from("workspace_report_templates") as any)
+      .select("*")
+      .eq("organization_id", organizationId)
+      .eq("id", requestedTemplateId)
+      .maybeSingle();
+    if (selectedTemplate) {
+      selectedTemplateId = selectedTemplate.id;
+      selectedTemplateName = selectedTemplate.name;
+      exportBranding = {
+        ...(selectedTemplate.identity ?? {}),
+        logo_storage_path: selectedTemplate.logo_storage_path,
+        dark_logo_storage_path: selectedTemplate.dark_logo_asset_id,
+        signature_storage_path: selectedTemplate.signature_asset_id,
+        colors: selectedTemplate.colors,
+        typography: selectedTemplate.typography,
+        header_layout: selectedTemplate.header_layout,
+        footer_layout: selectedTemplate.footer_layout,
+        report_style: selectedTemplate.report_style,
+        footer_text: selectedTemplate.footer_text,
+        show_signature_block: selectedTemplate.signature_settings?.show_signature_block ?? selectedTemplate.identity?.show_signature_block,
+      };
+    }
+  }
+  if (!exportBranding && requestedTemplateId !== "system") {
+    const { data: defaultTemplate } = await (supabase.from("workspace_report_templates") as any)
+      .select("*")
+      .eq("organization_id", organizationId)
+      .eq("is_default", true)
+      .maybeSingle();
+    if (defaultTemplate) {
+      selectedTemplateId = defaultTemplate.id;
+      selectedTemplateName = defaultTemplate.name;
+      exportBranding = {
+        ...(defaultTemplate.identity ?? {}),
+        logo_storage_path: defaultTemplate.logo_storage_path,
+        dark_logo_storage_path: defaultTemplate.dark_logo_asset_id,
+        signature_storage_path: defaultTemplate.signature_asset_id,
+        colors: defaultTemplate.colors,
+        typography: defaultTemplate.typography,
+        header_layout: defaultTemplate.header_layout,
+        footer_layout: defaultTemplate.footer_layout,
+        report_style: defaultTemplate.report_style,
+        footer_text: defaultTemplate.footer_text,
+        show_signature_block: defaultTemplate.signature_settings?.show_signature_block ?? defaultTemplate.identity?.show_signature_block,
+      };
+    }
+  }
+  if (!exportBranding && requestedTemplateId !== "system") {
+    const { data: legacyBranding } = await (supabase.from("workspace_brand_profiles") as any)
+      .select("*")
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+    exportBranding = legacyBranding;
+  }
   const branding = (exportBranding ?? null) as ExportBranding | null;
   const { data: brandLogoSigned } = branding?.logo_storage_path
     ? await supabase.storage.from("documentation-branding").createSignedUrl(branding.logo_storage_path, 60 * 10)
@@ -2363,7 +2418,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
       export_type: "printable_report_opened",
       status: "opened",
       created_by: createdBy,
-      metadata: { item_count: captureItems.length, format: "printable_html" },
+      metadata: { item_count: captureItems.length, format: "printable_html", report_template_id: selectedTemplateId, report_template_name: selectedTemplateName, report_template_snapshot: branding },
     });
     await recordUsageEvent({
       supabase,
