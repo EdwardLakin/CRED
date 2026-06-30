@@ -57,6 +57,22 @@ test('preview modes stay realistic, iPad friendly, and controls use readable lab
   assert.doesNotMatch(studio, />[a-z]+[A-Z][A-Za-z]*</)
 })
 
+
+test('v1 scope keeps only stable cover choices and defers advanced controls', () => {
+  assert.match(types, /COVER_PAGE_LAYOUTS = \['none','simple_cover','professional_cover'\]/)
+  assert.match(types, /rawCover === 'letterhead_cover'[\s\S]*'professional_cover'/)
+  assert.match(types, /rawCover === 'image_cover'[\s\S]*'simple_cover'/)
+  assert.doesNotMatch(studio, /selected_report_image/)
+  assert.doesNotMatch(studio, /show_page_number|Show page number/i)
+  assert.doesNotMatch(studio, /id="custom-fields"|Add custom field definition|Template marketplace|Brand assets library/i)
+})
+
+test('export copy avoids generated diagnostic or AI recommendation language', () => {
+  assert.doesNotMatch(route, /diagnostic procedure documentation|Diagnostic Procedure Workspace/)
+  assert.doesNotMatch(route, /AI diagnosis|AI recommendation|AI-generated diagnosis|AI-generated recommendation/i)
+  assert.doesNotMatch(studio, /AI diagnosis|AI recommendation|font upload|raw html|custom css/i)
+})
+
 test('guardrails: no prohibited feature families and existing navigation scope remains', () => {
   const combined = `${route}\n${studio}\n${types}`
   assert.doesNotMatch(combined, /social export|reel export|AI branding generation|AI diagnosis|AI recommendation|custom css|raw html|font upload/i)
