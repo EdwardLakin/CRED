@@ -1464,7 +1464,7 @@ function getDiagnosticProcedureInfo(draft: ReportDraft | null) {
     title:
       typeof procedure.title === "string"
         ? procedure.title
-        : (draft.title ?? "Diagnostic Procedure Workspace"),
+        : (draft.title ?? "Procedure Workspace"),
     manufacturer:
       typeof procedure.manufacturer === "string"
         ? procedure.manufacturer
@@ -1598,7 +1598,7 @@ function buildDiagnosticProcedureReportHtml(params: {
       value:
         info?.title ??
         params.reportDraft.title ??
-        "Diagnostic Procedure Workspace",
+        "Procedure Workspace",
     },
     { label: "Manufacturer", value: info?.manufacturer ?? "" },
     { label: "Document type", value: info?.documentType ?? "" },
@@ -1611,7 +1611,7 @@ function buildDiagnosticProcedureReportHtml(params: {
     },
     { label: "Date", value: formatDateInTimeZone(new Date(), params.timeZone) },
   ];
-  return `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(info?.title ?? params.session.title)} diagnostic procedure documentation</title><style>${REPORT_STYLES}${buildBrandCss(params.branding)}</style></head><body>${buildReportOpen({ branding: params.branding, timeZone: params.timeZone })}${toolbarHtml}<header class="header"><p class="eyebrow">Diagnostic Procedure Workspace</p><h1>${escapeHtml(info?.title ?? params.session.title)}</h1><p class="notice info"><strong>Documentation support only.</strong> Follow OEM procedure. Technician owns all conclusions and recommendations.</p>${info?.signedOff ? `<p class="notice info"><strong>Signed off by ${escapeHtml(info.signOffName ?? "technician")}</strong>${info.signedOffAt ? ` at ${escapeHtml(formatDateInTimeZone(new Date(info.signedOffAt), params.timeZone))}` : ""}. ${escapeHtml(info.signOffStatement ?? "")}</p>` : '<p class="notice warning"><strong>Technician sign-off pending.</strong></p>'}${renderDefinitionRows(details)}</header>${`<section class="item service-section"><h2>Documentation completeness summary</h2>${renderDefinitionRows(
+  return `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(info?.title ?? params.session.title)} procedure documentation</title><style>${REPORT_STYLES}${buildBrandCss(params.branding)}</style></head><body>${buildReportOpen({ branding: params.branding, timeZone: params.timeZone })}${toolbarHtml}<header class="header"><p class="eyebrow">Procedure Workspace</p><h1>${escapeHtml(info?.title ?? params.session.title)}</h1><p class="notice info"><strong>Documentation support only.</strong> Follow OEM procedure. Technician owns all conclusions and recommendations.</p>${info?.signedOff ? `<p class="notice info"><strong>Signed off by ${escapeHtml(info.signOffName ?? "technician")}</strong>${info.signedOffAt ? ` at ${escapeHtml(formatDateInTimeZone(new Date(info.signedOffAt), params.timeZone))}` : ""}. ${escapeHtml(info.signOffStatement ?? "")}</p>` : '<p class="notice warning"><strong>Technician sign-off pending.</strong></p>'}${renderDefinitionRows(details)}</header>${`<section class="item service-section"><h2>Documentation completeness summary</h2>${renderDefinitionRows(
     [
       { label: "Percent complete", value: `${progress.percentComplete}%` },
       { label: "Visible steps", value: String(progress.totalVisibleSteps) },
