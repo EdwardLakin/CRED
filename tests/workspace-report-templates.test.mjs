@@ -43,6 +43,7 @@ test('template actions create update duplicate default and guard deletion', () =
   assert.match(actions, /mode==='duplicate'/)
   assert.match(actions, /setDefaultReportTemplate/)
   assert.match(actions, /is_default:false/)
+  assert.doesNotMatch(actions, /selected_report_image/)
   assert.match(actions, /Set another template as default before deleting this default template/)
 })
 
