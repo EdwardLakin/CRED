@@ -5,8 +5,10 @@ import { readFileSync } from 'node:fs'
 const types = readFileSync('src/features/branding/types.ts','utf8')
 const studio = readFileSync('src/features/branding/components/BrandingStudio.tsx','utf8')
 const actions = readFileSync('src/features/branding/actions.ts','utf8')
-const report = readFileSync('app/api/dashboard/sessions/[id]/report-pdf/route.ts','utf8')
 const accountPage = readFileSync('app/dashboard/settings/branding/page.tsx','utf8')
+const reportCover = readFileSync('src/features/report-studio/rendering/report-cover.ts','utf8')
+const reportFooter = readFileSync('src/features/report-studio/rendering/report-footer.ts','utf8')
+const reportSignatures = readFileSync('src/features/report-studio/rendering/report-signatures.ts','utf8')
 
 test('all required palette presets exist and map full color tokens', () => {
   for (const name of ['CRED Blue','Slate Professional','Emerald Service','Copper Trade','Graphite Industrial','Safety Amber','Executive Navy','Clean Medical','Legal Classic','Property Inspection','Fleet Utility','Modern Black','Soft Neutral','High Contrast']) assert.match(types, new RegExp(`name:'${name}'`))
@@ -51,10 +53,10 @@ test('existing empty branding and saved rows remain compatible', () => {
 })
 
 test('export/report integration still tolerates missing branding assets and signature disabled', () => {
-  assert.match(report, /params\.logoUrl \? `<img class="brand-report-logo"/)
-  assert.match(report, /params\.branding\?\.show_signature_block === false/)
-  assert.match(report, /brand\?\.show_contact_info !== false/)
-  assert.match(report, /brand\?\.show_report_id !== false/)
+  assert.match(reportCover, /params\.logoUrl \? `<img class="brand-report-logo"/)
+  assert.match(reportSignatures, /params\.branding\?\.show_signature_block === false/)
+  assert.match(reportFooter, /brand\?\.show_contact_info !== false/)
+  assert.match(reportFooter, /brand\?\.show_report_id !== false/)
 })
 
 test('guardrails: offline home card remains account-scoped and prohibited features are absent', () => {
