@@ -463,16 +463,24 @@ export default async function SessionReportPreviewPage({
             {isReadyForExport ? "Ready" : "Review Required"}
           </span>
           {currentReport ? (
-            <Link
-              href={
-                isEditingReport
-                  ? `/dashboard/sessions/${session.id}/report`
-                  : `/dashboard/sessions/${session.id}/report?edit=1`
-              }
-              className="button button-secondary touch-target"
-            >
-              {isEditingReport ? "View Report" : "Edit Report"}
-            </Link>
+            <>
+              <Link
+                href={
+                  isEditingReport
+                    ? `/dashboard/sessions/${session.id}/report`
+                    : `/dashboard/sessions/${session.id}/report?edit=1`
+                }
+                className="button button-secondary touch-target"
+              >
+                {isEditingReport ? "View Report" : "Edit Report"}
+              </Link>
+              <Link
+                href={`/dashboard/settings/branding?session=${session.id}&review_output=${currentReport.id ?? session.id}`}
+                className="button button-primary touch-target"
+              >
+                Open Report Studio
+              </Link>
+            </>
           ) : null}
         </div>
       </div>
