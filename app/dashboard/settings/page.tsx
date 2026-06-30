@@ -68,6 +68,13 @@ export default async function SettingsPage() {
         {profile.default_signature_path ? <form action={clearDefaultSignature}><Button type="submit" variant="secondary">Clear Default Signature</Button></form> : null}
       </Card>
 
+
+
+      <section className="settings-link-grid settings-secondary-grid" aria-label="Workspace setup">
+        <Link href="/dashboard/settings/branding" className="card settings-link-card touch-target"><span className="eyebrow">Workspace setup</span><h2>Branding Studio</h2><p className="muted">Customize report identity, logo, colors, typography, headers, footers, signature defaults, and export presentation.</p></Link>
+        <Link href="/offline.html" className="card settings-link-card touch-target"><span className="eyebrow">Workspace setup</span><h2>Offline Home Screen app</h2><p className="muted">Add CRED to the Home Screen from the dedicated Offline Install page so Airplane Mode launches the cached offline shell.</p></Link>
+      </section>
+
       {showTeamMembers ? (
         <Card className="dashboard-card workspace-card">
           <div className="form-stack">
