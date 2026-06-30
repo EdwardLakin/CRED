@@ -1,0 +1,2 @@
+alter table public.workspace_brand_profiles drop constraint if exists workspace_brand_profiles_header_layout_check;
+alter table public.workspace_brand_profiles add constraint workspace_brand_profiles_header_layout_check check (header_layout in ('classic','compact','bold','split','minimal','classic_letterhead','compact_service','bold_banner','split_identity','report_cover','left_rail','certification_block'));
