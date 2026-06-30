@@ -71,7 +71,7 @@ export default async function SettingsPage() {
 
 
       <section className="settings-link-grid settings-secondary-grid" aria-label="Workspace setup">
-        <Link href="/dashboard/settings/branding" className="card settings-link-card touch-target"><span className="eyebrow">Workspace setup</span><h2>Branding Studio</h2><p className="muted">Customize report identity, logo, colors, typography, headers, footers, signature defaults, and export presentation.</p></Link>
+        <Link href="/dashboard/settings/branding" className="card settings-link-card touch-target"><span className="eyebrow">Workspace setup</span><h2>Report Studio</h2><p className="muted">Customize report presentation, logo, colors, typography, headers, footers, signature defaults, and export presentation.</p></Link>
         <Link href="/offline.html" className="card settings-link-card touch-target"><span className="eyebrow">Workspace setup</span><h2>Offline Home Screen app</h2><p className="muted">Add CRED to the Home Screen from the dedicated Offline Install page so Airplane Mode launches the cached offline shell.</p></Link>
       </section>
 
