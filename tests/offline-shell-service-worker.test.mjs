@@ -332,7 +332,7 @@ test('service worker does not intercept online dashboard and sign-in navigation 
   for (const source of [generator, worker]) {
     assert.match(source, /"\/sign-in"/);
     assert.match(source, /if \(!self\.navigator\.onLine && shouldUseOfflineShell\(url\)\) return offlineDocument\(\);/);
-    assert.match(source, /const response = await fetchWithTimeout\(request, shouldUseOfflineShell\(url\) \? 1200 : 3000\);/);
+    assert.match(source, /const response = await fetchWithTimeout\(request, shouldUseOfflineShell\(url\) \? 10000 : 3000\);/);
     assert.match(source, new RegExp('catch \\{\\n      if \\(shouldUseOfflineShell\\(url\\)\\) return offlineDocument\\(\\);'));
   }
 });

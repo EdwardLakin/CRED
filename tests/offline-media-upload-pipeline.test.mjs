@@ -25,7 +25,7 @@ test('iPad/Safari-style File is stored and restored as the Blob with byte metada
 
 test('sync refuses zero-byte or missing local Blobs before storage upload', () => {
   assert.match(syncEngine, /!current\.blob \|\| localBlobSize === null \|\| localBlobSize <= 0/)
-  assert.match(syncEngine, /buildDiagnostics\(current, storagePath, "local_blob_empty"\)/)
+  assert.match(syncEngine, /buildDiagnostics\(\s*current,\s*storagePath,\s*"local_blob_empty",?\s*\)/)
   assert.match(syncEngine, /Local blob missing\/empty/)
   assert.match(syncEngine, /throw new Error\(message\)/)
 })
@@ -40,8 +40,8 @@ test('sync uploads the non-zero Blob or File with content type and verifies the 
 })
 
 test('failed zero-byte storage verification retains local Blob and marks storage_upload_empty', () => {
-  assert.match(syncEngine, /message\.toLowerCase\(\)\.includes\("empty in storage"\) \? "storage_upload_empty"/)
-  assert.match(syncEngine, /uploadedAt: result\.storageUploaded === false \? null/)
+  assert.match(syncEngine, /message\.toLowerCase\(\)\.includes\("empty in storage"\)\s*\? "storage_upload_empty"/)
+  assert.match(syncEngine, /uploadedAt:\s*result\.storageUploaded === false\s*\? null/)
   assert.match(syncEngine, /await removeCapture\(current\.localId\)/)
   assert.ok(syncEngine.indexOf('await removeCapture(current.localId)') > syncEngine.indexOf('status: "synced"'))
 })
@@ -49,7 +49,7 @@ test('failed zero-byte storage verification retains local Blob and marks storage
 test('retry reuses retained local Blob and can overwrite the bad zero-byte storage object safely', () => {
   assert.match(syncEngine, /storageObjectAlreadyExists\(uploadError\.message\)/)
   assert.match(syncEngine, /upsert: true/)
-  assert.match(syncEngine, /uploadedAt: failureStage === "storage_upload_empty" \? null/)
+  assert.match(syncEngine, /uploadedAt:\s*failureStage === "storage_upload_empty"\s*\? null/)
   assert.match(syncEngine, /const file =\s*current\.blob instanceof File/)
 })
 
@@ -121,7 +121,7 @@ test('retry can verify recovered server row after legacy order normalization', (
   assert.match(captureActions, /if \(existingCapture\) \{\s*return \{ ok: true/s)
   assert.match(syncEngine, /const pendingBeforeNormalization = await getPendingCaptures\(userId\)/)
   assert.match(syncEngine, /const pending = await getPendingCaptures\(userId\)/)
-  assert.match(syncEngine, /await recordVerifiedOfflineCapture\(current\.localSessionId, positiveReportOrder\(current\.metadata\.reportOrder\) \?\? 1\)/)
+  assert.match(syncEngine, /await recordVerifiedOfflineCapture\(\s*current\.localSessionId,\s*positiveReportOrder\(current\.metadata\.reportOrder\) \?\? 1,?\s*\)/)
 })
 
 test('verification response includes expected and actual report_order details', () => {

@@ -4,8 +4,9 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "CRED",
     short_name: "CRED",
-    description: "Mobile-first evidence capture and professional documentation reports.",
-    start_url: "/offline.html",
+    description:
+      "Mobile-first evidence capture and professional documentation reports.",
+    start_url: "/",
     id: "/",
     scope: "/",
     display: "standalone",
