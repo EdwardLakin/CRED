@@ -273,6 +273,7 @@ export default async function SessionReportPreviewPage({
     : { data: [] };
 
   const reportPath = `/api/dashboard/sessions/${session.id}/report-pdf`;
+  const { data: reportTemplateRows } = await supabase.from('workspace_report_templates').select('id,name,is_default').eq('organization_id', profile.organization_id).order('is_default', { ascending: false }).order('updated_at', { ascending: false });
   const headersList = await headers();
   const origin = getReportOrigin(headersList);
   const evidence = getRequiredEvidenceCompletion(
@@ -585,6 +586,7 @@ export default async function SessionReportPreviewPage({
           shareAction={shareAction}
           shareTokens={shareTokens ?? []}
           timeZone={profile.timezone}
+          reportTemplates={reportTemplateRows ?? []}
         />
       </div>
     </main>
