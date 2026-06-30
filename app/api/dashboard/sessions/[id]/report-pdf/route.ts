@@ -29,10 +29,7 @@ import {
   stripConfidenceText,
   sanitizeCapturesForImageAiAssist,
 } from "@/features/reports/report-structure";
-import {
-  getDisplayReportTitle,
-  getReportInfoValue,
-} from "@/features/reports/report-title";
+import { getDisplayReportTitle } from "@/features/reports/report-title";
 import {
   getObservationReportTitleState,
 } from "@/features/reports/observation-titles";
@@ -54,8 +51,17 @@ import {
 } from "@/lib/date-format";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Database, Json } from "@/lib/supabase/database.types";
-import { DEFAULT_BRAND_PROFILE, TYPOGRAPHY_OPTIONS, normalizeBrandProfile, type WorkspaceBrandProfile } from "@/features/branding/types";
+import { DEFAULT_BRAND_PROFILE, normalizeBrandProfile, type WorkspaceBrandProfile } from "@/features/branding/types";
 import { normalizeReportTemplate } from "@/features/branding/templates";
+import {
+  buildBrandCss,
+} from "@/features/report-studio/rendering/report-brand-css";
+import { buildReportOpen } from "@/features/report-studio/rendering/report-shell";
+import { buildReportCoverHtml } from "@/features/report-studio/rendering/report-cover";
+import { buildPrintFooterHtml } from "@/features/report-studio/rendering/report-footer";
+import { buildApprovalHtml } from "@/features/report-studio/rendering/report-signatures";
+import { escapeHtml, escapeHtmlAttributeRaw, isRecord } from "@/features/report-studio/rendering/html";
+import type { ExportImageAsset } from "@/features/report-studio/rendering/types";
 
 export const runtime = "nodejs";
 
@@ -77,60 +83,6 @@ type ReportSession =
 type ReportPresentationMode = "gallery" | "detailed";
 type ExportBranding = WorkspaceBrandProfile;
 
-
-function getWatermarkText(branding?: ExportBranding | null) {
-  const watermark = branding?.report_style.watermark;
-  if (!watermark || watermark.option === "none") return "";
-  if (watermark.option === "custom_text") return watermark.text.trim();
-  return watermark.option.replace(/_/g, " ").toUpperCase();
-}
-
-function buildReportShellClasses(branding?: ExportBranding | null) {
-  const brand = branding ?? DEFAULT_BRAND_PROFILE;
-  return [
-    "report",
-    `theme-${brand.colors.primary.replace("#", "")}`,
-    `typography-${brand.typography.preset}`,
-    `header-${brand.header_layout}`,
-    `footer-${brand.footer_layout}`,
-    `section-${brand.report_style.sectionStyle}`,
-    `evidence-${brand.report_style.evidenceStyle}`,
-    `image-${brand.report_style.evidenceImageSize}`,
-    `signature-${brand.report_style.signatureLayout}`,
-  ].join(" ");
-}
-
-function buildBrandCss(branding?: ExportBranding | null) {
-  const brand = branding ?? DEFAULT_BRAND_PROFILE;
-  const colors = brand.colors;
-  const type = TYPOGRAPHY_OPTIONS[brand.typography.preset] ?? TYPOGRAPHY_OPTIONS.professional_sans;
-  return `
-    body{font-family:${type.bodyStack};color:${colors.accent}}
-    .report{--brand-primary:${colors.primary};--brand-accent:${colors.accent};--brand-header-bg:${colors.headerBackground};--brand-header-text:${colors.headerText};--brand-footer-bg:${colors.footerBackground};--brand-footer-text:${colors.footerText};--brand-section-heading:${colors.sectionHeading};--brand-border:${colors.border};--brand-muted-bg:${colors.mutedBackground};--brand-evidence-accent:${colors.evidenceAccent}}
-    .report h1,.report h2,.report h3{font-family:${type.headingStack};font-weight:${type.headingWeight}}
-    .cover-copy h1{font-weight:${type.titleWeight};letter-spacing:${type.titleSpacing}}
-    .eyebrow,dt,.observation-kind,.observation-number{letter-spacing:${type.sectionHeadingLetterSpacing || ".08em"}}
-  `;
-}
-
-function buildWatermarkHtml(branding?: ExportBranding | null) {
-  const text = getWatermarkText(branding);
-  if (!text) return "";
-  return `<div class="report-watermark watermark-${escapeHtmlAttributeRaw(branding?.report_style.watermark.placement ?? "diagonal")} watermark-${escapeHtmlAttributeRaw(branding?.report_style.watermark.opacity ?? "subtle")}" aria-hidden="true">${escapeHtml(text)}</div>`;
-}
-
-function buildReportOpen(params: { branding?: ExportBranding | null; timeZone: string | null }) {
-  return `<main class="${escapeHtmlAttributeRaw(buildReportShellClasses(params.branding))}" data-generated-at="${escapeHtmlAttributeRaw(formatDateTimeInTimeZone(new Date().toISOString(), params.timeZone))}">${buildWatermarkHtml(params.branding)}`;
-}
-
-function buildCustomFieldRows(branding: ExportBranding | null | undefined, draft: ReportDraft | null | undefined, placement: keyof Pick<import("@/features/branding/types").CustomReportField, "showInHeader" | "showInCover" | "showInIdentityBlock" | "showInFooter">) {
-  const source = isRecord(draft?.report_structure) && isRecord(draft?.report_structure.custom_fields) ? draft?.report_structure.custom_fields : {};
-  return (branding?.report_style.customFields ?? []).flatMap((field) => {
-    if (!field[placement]) return [];
-    const value = source[field.id] ?? source[field.label];
-    return typeof value === "string" && value.trim() ? [{ label: field.label, value: value.trim() }] : [];
-  });
-}
 
 function hasUniqueReportDetails(params: {
   reviewDocument: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>;
@@ -168,46 +120,6 @@ function getReportPresentationMode(params: {
   return "gallery";
 }
 
-type ExportImageAsset = {
-  classification: "webSafeImage" | "nonWebSafeImage";
-  mediaUrl?: string;
-  originalMediaUrl?: string;
-  reason?: string;
-};
-
-const UUID_PATTERN =
-  /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
-
-function customerText(value: unknown) {
-  return stripConfidenceText(String(value ?? ""))
-    .replace(/Capture ID\s*:?\s*/gi, "Evidence ")
-    .replace(UUID_PATTERN, "evidence item");
-}
-
-function escapeHtml(value: unknown) {
-  return customerText(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function escapeHtmlAttributeRaw(value: unknown) {
-  // Regression guard: technical attributes must preserve UUID route segments,
-  // e.g. /api/dashboard/sessions/11111111-1111-4111-8111-111111111111/evidence/22222222-2222-4222-8222-222222222222/media.
-  // Do not call customerText(), stripConfidenceText(), or UUID redaction here.
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function cleanReportTitle(
   preferred: string | null | undefined,
@@ -231,142 +143,6 @@ function getApprovalDate(
   session: ReportSession,
 ) {
   return draft?.approved_at ?? session.reviewed_at ?? null;
-}
-
-function getOrganizationDisplayName(
-  organizationName: string,
-  companyProfile?: {
-    company_name?: string | null;
-    facility_name?: string | null;
-  } | null,
-) {
-  return (
-    companyProfile?.company_name ||
-    companyProfile?.facility_name ||
-    organizationName
-  );
-}
-
-function getCoverImageHtml(
-  captures: ReportCapture[],
-  imageAssets: Record<string, ExportImageAsset>,
-  allowCoverImage: boolean,
-) {
-  // TODO: Support an explicit user-selected cover image when report settings expose one.
-  if (!allowCoverImage) return "";
-  const eligibleImages = captures.filter(
-    (capture) =>
-      isImageEvidence(capture) &&
-      imageAssets[capture.id]?.classification === "webSafeImage" &&
-      imageAssets[capture.id]?.mediaUrl,
-  );
-  if (eligibleImages.length < 3) return "";
-  const coverCapture =
-    eligibleImages.find((capture) => getUserEvidenceText(capture)) ??
-    eligibleImages[0];
-  return `<div class="cover-image">${renderExportImage(imageAssets[coverCapture.id], getPrimaryEvidenceLabel(coverCapture), "Preview unavailable in printable export. Original evidence retained.")}</div>`;
-}
-
-function buildReportCoverHtml(params: {
-  reportTitle: string;
-  reportType: string;
-  session: ReportSession;
-  draft: ReportDraft | null;
-  organizationName: string;
-  companyProfile?: {
-    company_name?: string | null;
-    facility_name?: string | null;
-  } | null;
-  captures: ReportCapture[];
-  imageAssets: Record<string, ExportImageAsset>;
-  timeZone: string | null;
-  allowCoverImage: boolean;
-  branding?: ExportBranding | null;
-  logoUrl?: string | null;
-}) {
-  const style = params.branding?.report_style ?? DEFAULT_BRAND_PROFILE.report_style;
-  if (style.coverPage === "none") return "";
-  const rows = [
-    {
-      label: "Customer / Client",
-      value:
-        getReportInfoValue(params.draft, params.session, "customer_client") ||
-        params.session.customer_name ||
-        "",
-    },
-    {
-      label: "Subject",
-      value:
-        getReportInfoValue(params.draft, params.session, "subject_name") || "",
-    },
-    {
-      label: "Asset / Equipment",
-      value:
-        getReportInfoValue(params.draft, params.session, "asset_equipment") ||
-        params.session.asset_label ||
-        params.session.unit_number ||
-        "",
-    },
-    {
-      label: "Location",
-      value: getReportInfoValue(params.draft, params.session, "location"),
-    },
-    {
-      label: "Report ID",
-      value: params.session.display_id ?? "",
-    },
-    {
-      label: "Reference / File Note",
-      value: getReportInfoValue(
-        params.draft,
-        params.session,
-        "reference_number",
-      ),
-    },
-    {
-      label: "Report Date",
-      value: formatDateTimeInTimeZone(
-        params.draft?.updated_at ??
-          params.session.updated_at ??
-          params.session.created_at,
-        params.timeZone,
-      ),
-    },
-    {
-      label: "Organization",
-      value: getOrganizationDisplayName(
-        params.organizationName,
-        params.companyProfile,
-      ),
-    },
-  ];
-  rows.push(...buildCustomFieldRows(params.branding ?? null, params.draft, "showInCover"));
-  const coverImageHtml = getCoverImageHtml(
-    params.captures,
-    params.imageAssets,
-    params.allowCoverImage && style.showCoverImage && style.coverImageSource !== "none",
-  );
-  const brand = params.branding;
-  const brandName = brand?.display_name?.trim();
-  const logoHtml = params.logoUrl ? `<img class="brand-report-logo" src="${escapeHtmlAttributeRaw(params.logoUrl)}" alt="${escapeHtmlAttributeRaw(brandName || params.organizationName)} logo" />` : "";
-  const visibleLogoHtml = style.showCoverLogo ? logoHtml : "";
-  const identityHtml = brand && style.showCoverCompanyInfo ? `<div class="brand-report-identity">${visibleLogoHtml}<div><strong>${escapeHtml(brandName || params.organizationName)}</strong>${brand.tagline ? `<p>${escapeHtml(brand.tagline)}</p>` : ""}<p>${escapeHtml([brand.phone, brand.email, brand.website].filter(Boolean).join(" · "))}</p>${brand.address ? `<p>${escapeHtml(brand.address)}</p>` : ""}</div></div>` : "";
-  return `<section class="report-cover item branded-cover branded-cover-${escapeHtmlAttributeRaw(brand?.header_layout || "classic")}${coverImageHtml ? "" : " report-cover-no-image"}"><div class="cover-copy">${identityHtml}<div class="cover-kicker"><span>Documentation Report</span><span>${escapeHtml(params.reportType)}</span></div>${style.showCoverTitle ? `<h1>${escapeHtml(params.reportTitle)}</h1>` : ""}<p class="cover-trust">${escapeHtml(brand?.tagline || "Report identity and approved customer-facing documentation.")}</p>${renderDefinitionRows(rows)}</div>${coverImageHtml}</section>`;
-}
-
-function buildPrintFooterHtml(params: { organizationName: string; reportId?: string | null; generatedAt: string; branding?: ExportBranding | null }) {
-  const brand = params.branding;
-  const reportId = params.reportId?.trim() || "Report";
-  const name = brand?.display_name?.trim() || params.organizationName;
-  const contact = [brand?.phone, brand?.email, brand?.website].filter(Boolean).join(" · ");
-  const parts = [escapeHtml(name)];
-  if (brand?.show_contact_info !== false && contact) parts.push(escapeHtml(contact));
-  if (brand?.footer_text) parts.push(escapeHtml(brand.footer_text));
-  if (brand?.show_confidentiality_note) parts.push("Confidential");
-  if (brand?.show_report_id !== false) parts.push(escapeHtml(reportId));
-  if (brand?.report_style?.showGeneratedByCred) parts.push("Generated by CRED");
-  parts.push(`Generated ${escapeHtml(params.generatedAt)}`);
-  return `<footer class="print-page-footer branded-report-footer" aria-hidden="true">${parts.map((part) => `<span>${part}</span>`).join("")}</footer>`;
 }
 
 function buildReportOverviewHtml(params: {
@@ -418,60 +194,6 @@ function buildEvidenceGalleryHtml(
       return `<article class="gallery-card"><div class="gallery-thumb">${media}</div><div class="gallery-caption"><p class="gallery-evidence-id">${escapeHtml(evidenceId)}</p><h3>${escapeHtml(label)}</h3><p>${escapeHtml(captured)}</p></div></article>`;
     })
     .join("")}</div></section>`;
-}
-
-function buildApprovalHtml(params: {
-  profile: {
-    full_name?: string | null;
-    inspector_role_or_title?: string | null;
-  } | null;
-  signatures: ReportSignature[];
-  signatureUrls: Record<string, string>;
-  draft: ReportDraft | null;
-  session: ReportSession;
-  timeZone: string | null;
-  branding?: ExportBranding | null;
-}) {
-  if (params.branding?.show_signature_block === false) return "";
-  const enabledBlocks = params.branding?.report_style.signatureBlocks?.filter((block) => block.enabled) ?? [];
-  const signature =
-    params.signatures.find((item) =>
-      /inspector|technician/i.test(item.signature_type),
-    ) ?? params.signatures[0];
-  const signatureUrl = signature
-    ? params.signatureUrls[signature.id]
-    : params.signatureUrls.__default_signature;
-  const approvedAt =
-    getApprovalDate(params.draft, params.session) ??
-    signature?.signed_at ??
-    null;
-  const rows = [
-    {
-      label: params.branding?.report_style?.reviewedByLabel || "Approved by",
-      value: signature?.signer_name || params.branding?.prepared_by_name || params.profile?.full_name || "",
-    },
-    {
-      label: "Role / Title",
-      value:
-        params.profile?.inspector_role_or_title ||
-        signature?.signature_type?.replace(/_/g, " ") ||
-        "",
-    },
-    ...(params.branding?.report_style?.signatureDate === false ? [] : [{
-      label: "Approved date / time",
-      value: approvedAt
-        ? formatDateTimeInTimeZone(approvedAt, params.timeZone)
-        : "",
-    }]),
-  ];
-  const typedSignature = params.branding?.report_style?.typedSignature?.trim();
-  const sig = signatureUrl
-    ? `<div class="signature-block approval-signature"><p class="signature-label">Signature</p><img class="signature-image" src="${escapeHtmlAttributeRaw(signatureUrl)}" alt="Approval signature" /></div>`
-    : typedSignature
-      ? `<div class="signature-block approval-signature"><p class="signature-label">Signature</p><p>${escapeHtml(typedSignature)}</p></div>`
-      : '<div class="signature-block signature-empty"><p class="signature-label">Signature</p><p class="muted">No signature captured</p></div>';
-  const blockHtml = enabledBlocks.slice(1).map((block) => `<div class="signature-block signature-empty"><p class="signature-label">${escapeHtml(block.label)}</p>${block.showSignatureLine ? `<p class="signature-line">${escapeHtml(block.typedName || "")}</p>` : ""}${block.showDate ? `<p class="muted">Date</p>` : ""}</div>`).join("");
-  return `<section class="item service-section approval-section signoff-section"><div class="section-heading"><p class="eyebrow">Formal sign-off</p><h2>Approval</h2></div><div class="approval-grid"><div>${renderDefinitionRows(rows)}</div>${sig}</div>${blockHtml}</section>`;
 }
 
 const EXPORT_LIGHTBOX_HTML = `<div class="export-lightbox" data-export-lightbox hidden aria-modal="true" role="dialog" aria-label="Expanded evidence image"><button type="button" class="export-lightbox-close" data-lightbox-close aria-label="Close expanded image">Close</button><button type="button" class="export-lightbox-prev" data-lightbox-prev aria-label="Previous image">‹</button><img data-lightbox-image alt="" /><button type="button" class="export-lightbox-next" data-lightbox-next aria-label="Next image">›</button><div class="export-lightbox-counter" data-lightbox-counter></div></div><script>(function(){var modal=document.querySelector('[data-export-lightbox]');if(!modal)return;var img=modal.querySelector('[data-lightbox-image]');var counter=modal.querySelector('[data-lightbox-counter]');var groups={};var currentGroup='';var currentIndex=0;document.querySelectorAll('[data-lightbox-group]').forEach(function(btn){var group=btn.getAttribute('data-lightbox-group')||'';(groups[group]=groups[group]||[]).push(btn);btn.addEventListener('click',function(){open(group,Number(btn.getAttribute('data-lightbox-index')||0));});});Object.keys(groups).forEach(function(group){groups[group].sort(function(a,b){return Number(a.getAttribute('data-lightbox-index')||0)-Number(b.getAttribute('data-lightbox-index')||0);});});function open(group,index){currentGroup=group;currentIndex=index;render();modal.hidden=false;document.body.style.overflow='hidden';}function close(){modal.hidden=true;document.body.style.overflow='';}function move(delta){var items=groups[currentGroup]||[];if(!items.length)return;currentIndex=(currentIndex+delta+items.length)%items.length;render();}function render(){var items=groups[currentGroup]||[];var item=items[currentIndex];if(!item)return;img.src=item.getAttribute('data-lightbox-src')||'';img.alt=item.getAttribute('data-lightbox-alt')||'';counter.textContent=(currentIndex+1)+' / '+items.length;}modal.querySelector('[data-lightbox-close]').addEventListener('click',close);modal.querySelector('[data-lightbox-prev]').addEventListener('click',function(){move(-1);});modal.querySelector('[data-lightbox-next]').addEventListener('click',function(){move(1);});modal.addEventListener('click',function(event){if(event.target===modal)close();});document.addEventListener('keydown',function(event){if(modal.hidden)return;if(event.key==='Escape')close();if(event.key==='ArrowLeft')move(-1);if(event.key==='ArrowRight')move(1);});})();</script>`;
@@ -1796,7 +1518,7 @@ function buildFieldServiceReportHtml({
     : "";
 
   return `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable field service report</title>
-  <style>${REPORT_STYLES}${buildBrandCss(branding)}</style></head><body>${buildReportOpen({ branding, timeZone })}${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, captures: captureItems, imageAssets: signedUrls, timeZone, allowCoverImage: fieldUseGalleryMode, branding, logoUrl: brandLogoUrl })}${summaryHtml}<section class="item service-section"><h2>Report Details</h2>${renderDefinitionRows(headerRows)}</section>${renderFieldServiceSection(details, "equipment")}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work Performed / Resolution</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Supporting Record</h2><p class="muted">Photos, documents, and technician notes support the work summary and findings above.</p></section>${buildFinalNotesHtml(session)}${evidenceHtml}${fieldUseGalleryMode ? buildEvidenceGalleryHtml(captureItems, signedUrls, timeZone) : ""}${appendixHtml}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges Summary</h2>${renderDefinitionRows(chargeRows)}</section>${buildInspectorFacilityHtml(null, null)}${buildApprovalHtml({ profile: null, signatures, signatureUrls, draft: reportDraft, session, timeZone, branding })}${buildPrintFooterHtml({ organizationName, reportId: session.display_id, generatedAt: formatDateTimeInTimeZone(new Date().toISOString(), timeZone), branding })}</main>${EXPORT_LIGHTBOX_HTML}</body></html>`;
+  <style>${REPORT_STYLES}${buildBrandCss(branding)}</style></head><body>${buildReportOpen({ branding, timeZone })}${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, captures: captureItems, imageAssets: signedUrls, timeZone, allowCoverImage: fieldUseGalleryMode, branding, logoUrl: brandLogoUrl, helpers: { isImageEvidence, renderDefinitionRows, renderExportImage, getUserEvidenceText, getPrimaryEvidenceLabel } })}${summaryHtml}<section class="item service-section"><h2>Report Details</h2>${renderDefinitionRows(headerRows)}</section>${renderFieldServiceSection(details, "equipment")}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work Performed / Resolution</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Supporting Record</h2><p class="muted">Photos, documents, and technician notes support the work summary and findings above.</p></section>${buildFinalNotesHtml(session)}${evidenceHtml}${fieldUseGalleryMode ? buildEvidenceGalleryHtml(captureItems, signedUrls, timeZone) : ""}${appendixHtml}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges Summary</h2>${renderDefinitionRows(chargeRows)}</section>${buildInspectorFacilityHtml(null, null)}${buildApprovalHtml({ profile: null, signatures, signatureUrls, draft: reportDraft, session, timeZone, branding, helpers: { renderDefinitionRows, getApprovalDate } })}${buildPrintFooterHtml({ organizationName, reportId: session.display_id, generatedAt: formatDateTimeInTimeZone(new Date().toISOString(), timeZone), branding })}</main>${EXPORT_LIGHTBOX_HTML}</body></html>`;
 }
 
 const REPORT_STYLES = `
@@ -2645,13 +2367,14 @@ export async function GET(_request: Request, { params }: RouteContext) {
     session,
     timeZone,
     branding,
+    helpers: { renderDefinitionRows, getApprovalDate },
   });
 
   const toolbarHtml = previewOnly
     ? ""
     : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>';
   const html = `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}${buildBrandCss(branding)}</style></head><body>${buildReportOpen({ branding, timeZone })}${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, companyProfile: reportCompanyProfile, captures: appendixCaptureItems, imageAssets: imageAssets, timeZone, allowCoverImage: useGalleryMode, branding, logoUrl: brandLogoUrl })}${summaryHtml}${observationsHtml}${unattachedHtml}${appendixHtml}${approvalHtml}${buildPrintFooterHtml({ organizationName, reportId: session.display_id, generatedAt: formatDateTimeInTimeZone(new Date().toISOString(), timeZone), branding })}</main>${EXPORT_LIGHTBOX_HTML}</body></html>`;
+  <style>${REPORT_STYLES}${buildBrandCss(branding)}</style></head><body>${buildReportOpen({ branding, timeZone })}${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, companyProfile: reportCompanyProfile, captures: appendixCaptureItems, imageAssets: imageAssets, timeZone, allowCoverImage: useGalleryMode, branding, logoUrl: brandLogoUrl, helpers: { isImageEvidence, renderDefinitionRows, renderExportImage, getUserEvidenceText, getPrimaryEvidenceLabel } })}${summaryHtml}${observationsHtml}${unattachedHtml}${appendixHtml}${approvalHtml}${buildPrintFooterHtml({ organizationName, reportId: session.display_id, generatedAt: formatDateTimeInTimeZone(new Date().toISOString(), timeZone), branding })}</main>${EXPORT_LIGHTBOX_HTML}</body></html>`;
 
   return new Response(html, {
     headers: { "Content-Type": "text/html; charset=utf-8" },
