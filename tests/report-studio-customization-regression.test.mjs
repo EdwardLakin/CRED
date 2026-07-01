@@ -13,11 +13,11 @@ test('Report Studio no longer renders blank placeholder controls or nested forms
 })
 
 test('sidebar and preview clicks select matching real editable sections', () => {
-  for (const section of ['Cover Page','Header','Report Sections','Evidence Layout','Footer','Signature','Colors & Typography','Templates']) assert.match(studio, new RegExp(section))
+  for (const section of ['Cover Page','Header','Client / Asset','Evidence','Footer','Signature','Colors & Typography','Templates']) assert.match(studio, new RegExp(section))
   assert.match(studio, /setActive\('Cover Page'\)/)
   assert.match(studio, /setActive\('Header'\)/)
-  assert.match(studio, /setActive\('Report Sections'\)/)
-  assert.match(studio, /setActive\('Evidence Layout'\)/)
+  assert.match(studio, /setActive\('Client \/ Asset'\)/)
+  assert.match(studio, /setActive\('Evidence'\)/)
   assert.match(studio, /setActive\('Footer'\)/)
   assert.match(studio, /setActive\('Signature'\)/)
 })

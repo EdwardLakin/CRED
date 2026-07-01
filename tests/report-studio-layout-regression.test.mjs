@@ -13,7 +13,7 @@ test('Report Studio desktop/tablet layout prevents horizontal clipping', () => {
   for (const token of ['report-studio-desktop-shell','report-studio-appbar','report-studio-sidebar','report-studio-split','report-live-preview-panel','minmax(0,1fr)','min-width:0','overflow:auto']) {
     assert.match(`${studio}\n${css}`, new RegExp(token.replace(/[()]/g, '\\$&')))
   }
-  assert.match(css, /@media\(max-width:1100px\)[\s\S]*\.report-studio-split\{grid-template-columns:1fr\}/)
+  assert.match(css, /@media\(max-width:900px\)[\s\S]*\.report-studio-split\{grid-template-columns:minmax\(0,1fr\)/)
 })
 
 
