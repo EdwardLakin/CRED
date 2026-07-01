@@ -41,3 +41,36 @@ test('workspace session selector includes all statuses and export uses selected 
   assert.match(studio, /template=\$\{selectedTemplateId\}/)
   assert.match(route, /studio_export/) 
 })
+
+test('preview renderer has explicit component branches for cover, sections, evidence, signature, and footer', () => {
+  for (const component of ['ReportStudioPreview','ReportStudioCoverPreview','ReportStudioHeaderPreview','ReportStudioSectionPreview','ReportStudioEvidencePreview','ReportStudioSignaturePreview','ReportStudioFooterPreview']) assert.match(studio, new RegExp(`function ${component}`))
+  assert.match(studio, /brand\.report_style\.coverPage==='none'\) return null/)
+  const css = readFileSync('app/globals.css', 'utf8')
+  assert.match(css, /cover-simple_cover/)
+  assert.match(css, /cover-professional_cover/)
+  assert.match(studio, /showCoverLogo/)
+  assert.match(studio, /showCoverReportId/)
+})
+
+test('preview renderer exposes behavior markers for section and evidence presets', () => {
+  assert.match(studio, /data-section-style=\{brand\.report_style\.sectionStyle\}/)
+  assert.match(studio, /data-section-spacing=\{brand\.report_style\.sectionSpacing\}/)
+  assert.match(studio, /data-evidence-style=\{brand\.report_style\.evidenceStyle\}/)
+  assert.match(studio, /data-evidence-image-size=\{brand\.report_style\.evidenceImageSize\}/)
+  assert.match(studio, /section-layout-\$\{rs\.sectionStyle\}/)
+  assert.match(studio, /section-spacing-\$\{rs\.sectionSpacing\}/)
+  assert.match(studio, /evidence-layout-\$\{rs\.evidenceStyle\}/)
+  assert.match(studio, /evidence-image-\$\{rs\.evidenceImageSize\}/)
+  assert.match(studio, /rs\.notes \?/) 
+  assert.match(studio, /rs\.timestamps&&/)
+  assert.match(studio, /rs\.captureMetadata&&/)
+  assert.match(studio, /selectedSession\.evidence/)
+})
+
+test('preview CSS gives every section style, spacing, evidence style, and image size visible rules', () => {
+  const css = readFileSync('app/globals.css', 'utf8')
+  for (const style of ['carded','clean_document','boxed','minimal','classic','industrial','corporate','legal','inspection','technical','clean','ruled','binder','executive']) assert.match(css, new RegExp(`section-layout-${style}`))
+  for (const spacing of ['compact','standard','spacious']) assert.match(css, new RegExp(`section-spacing-${spacing}`))
+  for (const size of ['compact','standard','large','full_width']) assert.match(css, new RegExp(`evidence-image-${size} \\.evidence-thumbnail`))
+  for (const style of ['compact_list','standard_cards','large_photo_cards','full_width_photos','two_column_photo_grid','numbered_appendix','clean_evidence_list','photo_left_notes_right','notes_first_photos_below','insurance_photo_grid','carded','clean_list','photo_grid']) assert.match(css, new RegExp(`evidence-layout-${style}`))
+})
