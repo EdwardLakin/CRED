@@ -18,7 +18,8 @@ export function ReportStudioRoute(props: ReportStudioProps) {
   const patchBrand = (next: WorkspaceBrandProfile) => { setDraftBrandProfile(normalizeBrandProfile(next)); setIsDirty(true); };
   const applyTemplate = (template: WorkspaceBrandProfile, id: string) => { patchBrand(normalizeBrandProfile(template)); setSelectedTemplateId(id); };
   const state = { draftBrandProfile, selectedSessionId, selectedTemplateId, activeSection, isDirty, selectedSession };
-  const handlers = { patchBrand, setSelectedSessionId, setSelectedTemplateId, setActiveSection, setIsDirty, applyTemplate };
+  const selectSession = (id: string) => { setSelectedSessionId(id); setIsDirty(true); };
+  const handlers = { patchBrand, setSelectedSessionId: selectSession, setSelectedTemplateId, setActiveSection, setIsDirty, applyTemplate };
   if (isPhone === null) return null;
   if (isPhone) return <ReportStudioMobileLite {...props} state={state} handlers={handlers} />;
   return <ReportStudioDesktop {...props} state={state} handlers={handlers} />;
