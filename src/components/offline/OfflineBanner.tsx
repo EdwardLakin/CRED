@@ -1,6 +1,7 @@
 "use client";
 
 import { useOffline } from "@/features/offline/OfflineProvider";
+import { SyncQueueDetails } from "./SyncQueueDetails";
 
 export function OfflineBanner() {
   const { online, syncing, pendingCaptures, lastError, syncNow } = useOffline();
@@ -28,6 +29,7 @@ export function OfflineBanner() {
           Sync now
         </button>
       ) : null}
+    <SyncQueueDetails />
     </div>
   );
 }
