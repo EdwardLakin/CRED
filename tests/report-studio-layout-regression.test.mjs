@@ -16,10 +16,28 @@ test('Report Studio desktop/tablet layout prevents horizontal clipping', () => {
   assert.match(css, /@media\(max-width:1100px\)[\s\S]*\.report-studio-split\{grid-template-columns:1fr\}/)
 })
 
+
+test('Report Studio Lite replaces desktop workbench on phone widths without horizontal overflow', () => {
+  assert.match(studio, /report-studio-lite-shell/)
+  assert.match(studio, /Lite editor on mobile\. Use desktop or tablet for full Report Studio controls\./)
+  for (const token of ['Report/session','Template','Primary color','Accent color','Cover on','Logo on','Report ID on','Evidence layout','Live Preview','Apply &amp; Export']) {
+    assert.match(studio, new RegExp(token.replace(/[()]/g, '\\$&')))
+  }
+  assert.match(css, /@media\(max-width:720px\)[\s\S]*\.report-studio-desktop-shell\{display:none\}/)
+  assert.match(css, /@media\(max-width:720px\)[\s\S]*\.report-studio-lite-shell[^{]*\{[\s\S]*overflow-x:hidden/)
+  assert.match(css, /@media\(max-width:720px\)[\s\S]*html,body\{max-width:100%;overflow-x:hidden\}/)
+  assert.match(css, /@media\(min-width:721px\)[\s\S]*\.report-studio-desktop-shell\{display:block\}/)
+})
+
 test('Report Studio does not render nested forms', () => {
   const formCount = (studio.match(/<form\b/g) ?? []).length
-  assert.equal(formCount, 2)
-  assert.doesNotMatch(studio, /<form[\s\S]*<form[\s\S]*<\/form>[\s\S]*<\/form>/)
+  assert.equal(formCount, 3)
+  const liteFormStart = studio.indexOf('<form action={saveBrandingSettings} className="report-studio-lite-form')
+  const studioFormStart = studio.indexOf('<form id="report-studio-form"')
+  const templateFormStart = studio.indexOf('<form id="save-report-template-form"')
+  assert.ok(liteFormStart !== -1 && studioFormStart !== -1 && templateFormStart !== -1)
+  assert.ok(studio.indexOf('</form>', liteFormStart) < studioFormStart)
+  assert.ok(studio.indexOf('</form>', studioFormStart) < templateFormStart)
   assert.match(studio, /form="save-report-template-form"/)
 })
 
