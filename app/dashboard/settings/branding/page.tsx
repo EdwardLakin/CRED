@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { ReportStudioPageShell } from "@/features/report-studio/components/ReportStudioPageShell";
+import { ReportStudioRoute } from "@/features/report-studio-v2/ReportStudioRoute";
 import { normalizeBrandProfile } from "@/features/branding/types";
 import { normalizeReportTemplate } from "@/features/branding/templates";
 import { requireSessionWorkspace } from "@/features/sessions/data";
@@ -103,7 +103,7 @@ export default async function BrandingStudioPage({
     signed(supabase, brand.signature_storage_path),
   ]);
   return (
-    <ReportStudioPageShell
+    <ReportStudioRoute
       profile={brand}
       templates={templates}
       sessions={sessions}
