@@ -364,9 +364,15 @@ function shouldRenderTrustedProofDetail(
 }
 
 function getPrimaryEvidenceLabel(capture: ReportCapture) {
+  const manualLabel =
+    getCaptureStringField(capture, "original_filename") ||
+    getCaptureStringField(capture, "type") ||
+    getCaptureStringField(capture, "media_kind");
   return (
     getUserEvidenceText(capture) ||
-    (getEvidenceKind(capture) === "image" ? "Supporting image" : "Observation")
+    (manualLabel && !looksLikeRawUploadFilename(manualLabel)
+      ? manualLabel
+      : "Photo evidence")
   );
 }
 
