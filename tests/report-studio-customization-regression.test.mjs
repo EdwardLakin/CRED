@@ -9,7 +9,7 @@ const types = readFileSync('src/features/branding/types.ts', 'utf8')
 
 test('Report Studio no longer renders blank placeholder controls or nested forms', () => {
   assert.doesNotMatch(studio, /<span className="palette-card" hidden|<span className="color-chip" hidden|<span className="brand-preview-panel" hidden/)
-  assert.equal((studio.match(/<form\b/g) ?? []).length, 2)
+  assert.equal((studio.match(/<form\b/g) ?? []).length, 3)
 })
 
 test('sidebar and preview clicks select matching real editable sections', () => {
