@@ -30,6 +30,13 @@ function createId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+export const ACTIONABLE_QUEUE_STATUSES: QueueStatus[] = ["local", "queued", "uploading", "creating_record", "blocked", "failed"];
+export function isActionableQueuedCapture(record: Pick<OfflineCaptureRecord, "status" | "serverCaptureId">) {
+  if (record.status === "synced") return false;
+  if ((record.status === "finalized_unverified" || record.status === "verifying") && record.serverCaptureId) return false;
+  return ACTIONABLE_QUEUE_STATUSES.includes(record.status);
+}
+
 function now() {
   return new Date().toISOString();
 }
@@ -135,7 +142,7 @@ export async function clearQueue(userId?: string) {
 export async function getPendingCaptures(userId?: string) {
   const db = await getOfflineDb();
   const records = await db.getAll("queuedCaptures");
-  const pending = records.filter((record) => record.status !== "synced");
+  const pending = records.filter(isActionableQueuedCapture);
 
   return userId ? pending.filter((record) => record.userId === userId) : pending;
 }
@@ -271,4 +278,20 @@ export async function retargetQueuedCaptures(
   );
 
   return matching.length;
+}
+
+export async function cleanupCompletedQueuedCaptures(maxAgeMs = 7 * 24 * 60 * 60 * 1000) {
+  const db = await getOfflineDb();
+  const records = await db.getAll("queuedCaptures");
+  const cutoff = Date.now() - maxAgeMs;
+  const completed = records.filter((record) => record.status === "synced" || ((record.status === "finalized_unverified" || record.status === "verifying") && record.serverCaptureId && Date.parse(record.updatedAt) < cutoff));
+  await Promise.all(completed.map((record) => db.delete("queuedCaptures", record.localId)));
+  return completed.length;
+}
+
+export async function getSyncQueueDebugItems(userId?: string) {
+  const db = await getOfflineDb();
+  const records = await db.getAll("queuedCaptures");
+  const scoped = userId ? records.filter((record) => record.userId === userId) : records;
+  return scoped.map((record) => ({ localId: record.localId, status: record.status, serverCaptureId: record.serverCaptureId, updatedAt: record.updatedAt, lastError: record.lastError, actionable: isActionableQueuedCapture(record) }));
 }
