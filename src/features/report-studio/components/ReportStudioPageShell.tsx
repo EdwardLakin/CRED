@@ -8,7 +8,6 @@ import {
   resetBrandingSettings,
   saveBrandingSettings,
   saveReportTemplate,
-  setDefaultReportTemplate,
 } from "@/features/branding/actions";
 import {
   BRAND_PALETTES,
@@ -60,7 +59,6 @@ type StudioSection =
   | "Evidence"
   | "Footer"
   | "Signature"
-  | "Templates"
   | "Colors & Typography";
 const title = (v: string) =>
   v
@@ -77,16 +75,6 @@ const SAFE_FONT_STACKS = [
   "Arial Black, Arial, sans-serif",
 ];
 const colorKeys = Object.keys(COLOR_LABELS) as Array<keyof BrandColors>;
-const studioSections: StudioSection[] = [
-  "Cover Page",
-  "Header",
-  "Client / Asset",
-  "Evidence",
-  "Footer",
-  "Signature",
-  "Colors & Typography",
-  "Templates",
-];
 const reportStudioTemplateFormContract =
   '<form id="save-report-template-form" action={saveReportTemplate}><HiddenBrandFields brand={brand}/';
 void reportStudioTemplateFormContract;
@@ -205,6 +193,15 @@ function HiddenBrandFields({ brand }: { brand: WorkspaceBrandProfile }) {
         name="typography_metadataStyle"
         value={brand.typography.metadataStyle}
       />
+
+      {(["cover_page","header","section_headings","body_text","evidence_titles","evidence_notes","footer","signature"] as const).map((area) => (
+        <input
+          key={area}
+          type="hidden"
+          name={`typography_area_${area}`}
+          value={(brand.typography as any).areaStacks?.[area] ?? brand.typography.bodyStack}
+        />
+      ))}
       <input type="hidden" name="header_layout" value={brand.header_layout} />
       <input type="hidden" name="footer_layout" value={brand.footer_layout} />
       <input
@@ -419,6 +416,7 @@ export function ReportStudioPageShell({
     selectedSessionId ?? sessions[0]?.id ?? "",
   );
   const [templateMode, setTemplateMode] = useState("create");
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const selectedSession = sessions.find((s) => s.id === selectedOutput);
   const invalid = colorKeys.some(
     (k) => !isValidHexColor(brand.colors[k] ?? ""),
@@ -447,7 +445,6 @@ export function ReportStudioPageShell({
     patch(profile);
     setSelectedTemplateId("system");
   };
-  const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
   const type = useMemo(
     () =>
       TYPOGRAPHY_OPTIONS[brand.typography.preset] ??
@@ -698,7 +695,10 @@ export function ReportStudioPageShell({
             >
               Back to Review
             </a>
-            <Button form="report-studio-form" type="submit" disabled={invalid}>
+            <button type="button" className="button button-secondary" onClick={() => setTemplatesOpen(true)}>
+              Templates
+            </button>
+            <Button form="save-report-template-form" type="submit" disabled={invalid}>
               Save Template
             </Button>
             <a
@@ -711,22 +711,6 @@ export function ReportStudioPageShell({
           </div>
         </header>
         <div className="report-studio-workbench">
-          <aside
-            className="report-studio-sidebar"
-            aria-label="Report Studio sections"
-          >
-            {studioSections.map((x) => (
-              <button
-                type="button"
-                key={x}
-                className={active === x ? "active" : ""}
-                onClick={() => setActive(x)}
-                data-target-section={x}
-              >
-                {x}
-              </button>
-            ))}
-          </aside>
           <main className="report-studio-main">
             <section className="report-output-card">
               <div>
@@ -785,8 +769,8 @@ export function ReportStudioPageShell({
                   />
                   <div className="section-header">
                     <div>
-                      <p className="eyebrow">{active}</p>
-                      <h1>Report Studio</h1>
+                      <p className="eyebrow">Selected section</p>
+                      <h1>{active}</h1>
                       <p className="muted">
                         Presentation-only settings for printable and exported
                         customer deliverables. Evidence, notes, findings,
@@ -868,6 +852,7 @@ export function ReportStudioPageShell({
                           </option>
                         ))}
                       </select>
+                      <div className="field-grid"><label className="field-stack"><span className="label">Header background color</span><input className="input" type="color" value={brand.colors.headerBackground} onChange={(e) => patch({ ...brand, colors: { ...brand.colors, headerBackground: e.target.value } })}/></label><label className="field-stack"><span className="label">Header text color</span><input className="input" type="color" value={brand.colors.headerText} onChange={(e) => patch({ ...brand, colors: { ...brand.colors, headerText: e.target.value } })}/></label><label className="field-stack"><span className="label">Divider / accent color</span><input className="input" type="color" value={brand.colors.primary} onChange={(e) => patch({ ...brand, colors: { ...brand.colors, primary: e.target.value } })}/></label><label className="field-stack"><span className="label">Header font family</span><select className="input" value={brand.typography.headingStack} onChange={(e) => patch({ ...brand, typography: { ...brand.typography, headingStack: e.target.value } })}>{SAFE_FONT_STACKS.map((x) => (<option key={x} value={x}>{x}</option>))}</select></label><label className="field-stack"><span className="label">Font weight</span><input className="input" type="number" min="400" max="900" step="100" value={brand.typography.headingWeight} onChange={(e) => patch({ ...brand, typography: { ...brand.typography, headingWeight: Number(e.target.value) } })}/></label><label className="field-stack"><span className="label">Spacing</span><select className="input" value={brand.report_style.sectionSpacing} onChange={(e) => rs({ sectionSpacing: e.target.value })}><option value="compact">Compact</option><option value="standard">Standard</option><option value="spacious">Spacious</option></select></label></div><div className="gradient-presets"><span>Optional gradient presets</span><button type="button" onClick={() => patch({ ...brand, colors: { ...brand.colors, headerBackground: brand.colors.primary, headerText: "#ffffff" } })}>Brand gradient</button><button type="button" onClick={() => patch({ ...brand, colors: { ...brand.colors, headerBackground: "#0f172a", headerText: "#eff6ff" } })}>Navy gradient</button></div>
                     </section>
                   )}
                   {active === "Client / Asset" && (
@@ -1260,101 +1245,12 @@ export function ReportStudioPageShell({
                           />
                         </label>
                       </div>
+                      <div className="brand-section form-stack"><h3>Typography by report area</h3>{["cover page","header","section headings","body text","evidence titles","evidence notes","footer","signature"].map((area) => (<label key={area} className="field-stack"><span className="label">{title(area)} font</span><select className="input" name={`typography_area_${area.replaceAll(" ", "_")}`} value={(brand.typography as any).areaStacks?.[area.replaceAll(" ", "_")] ?? brand.typography.bodyStack} onChange={(e) => patch({ ...brand, typography: { ...brand.typography, areaStacks: { ...((brand.typography as any).areaStacks ?? {}), [area.replaceAll(" ", "_")]: e.target.value } } as any })}>{SAFE_FONT_STACKS.map((x) => (<option key={x} value={x}>{x}</option>))}</select></label>))}</div>
                       {invalid && (
                         <p className="error">
                           Enter a valid 6-digit hex color.
                         </p>
                       )}
-                    </section>
-                  )}
-                  {active === "Templates" && (
-                    <section className="brand-section form-stack">
-                      <h3>Saved Custom Report Templates</h3>
-                      <p className="muted">
-                        Company identity, contact fields, logo, and signature
-                        assets will stay unchanged.
-                      </p>
-                      <label className="field-stack">
-                        <span className="label">Template selector</span>
-                        <select
-                          className="input"
-                          value={selectedTemplateId}
-                          onChange={(e) => onTemplateChange(e.target.value)}
-                        >
-                          {templateOptions}
-                        </select>
-                      </label>
-                      <div className="form-actions">
-                        {selectedTemplate ? (
-                          <button
-                            type="button"
-                            className="button button-secondary"
-                            onClick={() => applyTemplate(selectedTemplate)}
-                          >
-                            Apply template
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            className="button button-secondary"
-                            onClick={applySystemTemplate}
-                          >
-                            Apply system default
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className="button button-secondary"
-                          onClick={() => setTemplateMode("create")}
-                        >
-                          Save as new template
-                        </button>
-                        <button
-                          type="button"
-                          className="button button-secondary"
-                          onClick={() => setTemplateMode("update")}
-                        >
-                          Update current template
-                        </button>
-                        <button
-                          type="button"
-                          className="button button-secondary"
-                          onClick={() => setTemplateMode("duplicate")}
-                        >
-                          Duplicate template
-                        </button>
-                        {selectedTemplateId !== "system" && (
-                          <>
-                            <Button
-                              formAction={async () => {
-                                await setDefaultReportTemplate(
-                                  selectedTemplateId,
-                                );
-                              }}
-                              variant="secondary"
-                            >
-                              Set Default
-                            </Button>
-                            <Button
-                              formAction={async () => {
-                                await deleteReportTemplate(selectedTemplateId);
-                              }}
-                              variant="secondary"
-                            >
-                              Delete
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                      <label className="field-stack">
-                        <span className="label">Template name</span>
-                        <input
-                          className="input"
-                          name="template_name"
-                          defaultValue="New branded report template"
-                          form="save-report-template-form"
-                        />
-                      </label>
                     </section>
                   )}
                   <div className="form-actions">
@@ -1369,6 +1265,19 @@ export function ReportStudioPageShell({
                     </Button>
                   </div>
                 </form>
+                {templatesOpen && (
+                  <div className="report-template-overlay" role="dialog" aria-modal="true" aria-label="Templates">
+                    <div className="report-template-panel">
+                      <div className="section-header">
+                        <div><p className="eyebrow">Global presets</p><h2>Templates</h2></div>
+                        <button type="button" className="button button-secondary" onClick={() => setTemplatesOpen(false)}>Close</button>
+                      </div>
+                      <section className="brand-section form-stack"><h3>Saved Templates</h3><p className="muted">User-created templates. Rename, duplicate, delete, or apply these workspace-wide presets.</p>{templates.map((t) => (<div className="template-row" key={t.id}><strong>{t.name}</strong><span>{t.description ?? "Custom report preset"}</span><div className="form-actions"><button type="button" className="button button-secondary" onClick={() => applyTemplate(t)}>Apply</button><button type="button" className="button button-secondary" onClick={() => { setSelectedTemplateId(t.id); setTemplateMode("update"); }}>Rename</button><button type="button" className="button button-secondary" onClick={() => { setSelectedTemplateId(t.id); setTemplateMode("duplicate"); }}>Duplicate</button><Button formAction={async () => { await deleteReportTemplate(t.id); }} variant="secondary">Delete</Button></div></div>))}</section>
+                      <section className="brand-section form-stack"><h3>System Templates</h3><p className="muted">Built-in read-only templates. Apply only.</p><div className="template-row"><strong>System default</strong><span>Read-only CRED report preset.</span><button type="button" className="button button-secondary" onClick={applySystemTemplate}>Apply</button></div></section>
+                      <label className="field-stack"><span className="label">Template name</span><input className="input" name="template_name" defaultValue="New branded report template" form="save-report-template-form" /></label>
+                    </div>
+                  </div>
+                )}
                 <form
                   id="save-report-template-form"
                   action={saveReportTemplate}
