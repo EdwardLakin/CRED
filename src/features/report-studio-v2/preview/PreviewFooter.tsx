@@ -1,0 +1,2 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+export function PreviewFooter({brand,session,activeSection,setActiveSection}:any){return <button type="button" className={`rsv2-section rsv2-footer ${activeSection==='footer'?'active':''}`} onClick={()=>setActiveSection('footer')}><span>{brand.footer_text||'Professional documentation you can trust.'}</span>{brand.show_page_date&&<small>{new Date().toLocaleDateString()}</small>}{brand.show_report_id&&<small>{session?.display_id??'CRED-1042'}</small>}</button>}
