@@ -540,7 +540,7 @@ export function ReportStudioPageShell({
             </p>
           </div>
           <form
-            action={saveBrandingSettings}
+            action={saveBrandingSettings as (formData: FormData) => Promise<void>}
             className="report-studio-lite-form form-stack"
             encType="multipart/form-data"
           >
@@ -757,7 +757,7 @@ export function ReportStudioPageShell({
               <Card className="report-studio-config-panel">
                 <form
                   id="report-studio-form"
-                  action={saveBrandingSettings}
+                  action={saveBrandingSettings as (formData: FormData) => Promise<void>}
                   className="form-stack"
                   encType="multipart/form-data"
                 >

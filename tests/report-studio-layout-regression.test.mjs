@@ -32,7 +32,7 @@ test('Report Studio Lite replaces desktop workbench on phone widths without hori
 test('Report Studio does not render nested forms', () => {
   const formCount = (studio.match(/<form\b/g) ?? []).length
   assert.equal(formCount, 3)
-  const liteFormStart = studio.indexOf('<form action={saveBrandingSettings} className="report-studio-lite-form')
+  const liteFormStart = studio.indexOf('<form action={saveBrandingSettings')
   const studioFormStart = studio.indexOf('<form id="report-studio-form"')
   const templateFormStart = studio.indexOf('<form id="save-report-template-form"')
   assert.ok(liteFormStart !== -1 && studioFormStart !== -1 && templateFormStart !== -1)
