@@ -5709,3 +5709,21 @@ a:focus-visible {
 .rsv2-paper.evidence-compact_list .rsv2-evidence-item,.rsv2-paper.evidence-clean_list .rsv2-evidence-item{grid-template-columns:1fr;border-bottom:1px solid var(--rsv2-border);border-radius:0}.rsv2-paper.evidence-large_photo_cards .rsv2-evidence-img{height:260px}.rsv2-paper.evidence-photo_left_notes_right .rsv2-evidence-item{grid-template-columns:220px 1fr}.rsv2-paper.evidence-photo_left_notes_right .rsv2-evidence-img{order:-1}.rsv2-paper.evidence-notes_first_photos_below .rsv2-evidence-item{display:flex;flex-direction:column}.rsv2-paper.evidence-numbered_appendix .rsv2-evidence-item{border-left:8px solid var(--rsv2-evidence)}
 .rsv2-footer.footer-layout-contact_footer{justify-content:space-between}.rsv2-footer.footer-layout-legal_footer{font-family:Georgia,Times New Roman,serif}.rsv2-footer.footer-layout-report_id_footer{justify-content:flex-end}.rsv2-footer.footer-layout-split_footer{justify-content:space-between}.rsv2-footer.footer-layout-confidential_footer{text-transform:uppercase;letter-spacing:.08em}.rsv2-footer.footer-layout-signature_footer{border-top-style:dashed}
 .rsv2-signature.signature-two_signatures,.rsv2-signature.signature-three_signatures{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.rsv2-signature.signature-three_signatures{grid-template-columns:repeat(3,minmax(0,1fr))}.rsv2-signature.signature-stacked_signatures{display:grid;gap:10px}.rsv2-signature.signature-approval_panel{background:var(--rsv2-muted);border:1px solid var(--rsv2-border)}
+
+.rsv2-save-template-modal {
+  align-self: center;
+  background: #fff;
+  border: 1px solid #d8e0ec;
+  border-radius: 16px;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+  display: grid;
+  gap: 16px;
+  margin: auto;
+  max-width: calc(100vw - 32px);
+  padding: 22px;
+  width: 380px;
+}
+
+.rsv2-save-template-modal h2 {
+  margin: 0;
+}

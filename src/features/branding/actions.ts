@@ -41,7 +41,7 @@ export async function resetBrandingSettings(){ const {supabase, profile}=await r
 export async function saveReportTemplate(formData: FormData){
   const {supabase, profile}=await requireSessionWorkspace();
   try{
-    const mode=s(formData,'template_mode')||'create'; const templateId=s(formData,'template_id'); const name=s(formData,'template_name')||'Custom report template'; const description=s(formData,'template_description')||null; const makeDefault=b(formData,'template_default');
+    const mode=s(formData,'template_mode')||'create'; const templateId=s(formData,'template_id'); const name=s(formData,'template_name'); if(!name) throw new Error('Template name is required.'); const description=s(formData,'template_description')||null; const makeDefault=b(formData,'template_default');
     const brand=normalizeBrandProfile(await buildBrandingSettingsPayload(formData,profile,{logo:s(formData,'current_logo')||null,darkLogo:s(formData,'current_dark_logo')||null,icon:s(formData,'current_icon')||null,signature:s(formData,'current_signature')||null}) as any);
     if(mode==='update' && templateId){
       const payload={...templatePayloadFromBrand(brand,profile.organization_id,profile.id,name,description,makeDefault),created_by:undefined,updated_at:new Date().toISOString()};
