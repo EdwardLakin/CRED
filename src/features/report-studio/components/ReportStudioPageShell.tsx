@@ -21,6 +21,7 @@ import {
   SIGNATURE_LAYOUTS,
   TYPOGRAPHY_OPTIONS,
   WATERMARK_OPTIONS,
+  SAFE_FONT_STACKS,
   type BrandColors,
   type WorkspaceBrandProfile,
   isValidHexColor,
@@ -65,15 +66,6 @@ const title = (v: string) =>
     .split("_")
     .join(" ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
-const SAFE_FONT_STACKS = [
-  "Inter, Arial, Helvetica, sans-serif",
-  "system-ui, -apple-system, Segoe UI, sans-serif",
-  "Arial, Helvetica, sans-serif",
-  "Verdana, Geneva, sans-serif",
-  "Georgia, Times New Roman, serif",
-  "Times New Roman, Georgia, serif",
-  "Arial Black, Arial, sans-serif",
-];
 const colorKeys = Object.keys(COLOR_LABELS) as Array<keyof BrandColors>;
 const reportStudioTemplateFormContract =
   '<form id="save-report-template-form" action={saveReportTemplate}><HiddenBrandFields brand={brand}/';

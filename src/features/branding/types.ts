@@ -8,6 +8,25 @@ export const TYPOGRAPHY_PRESETS = ['professional_sans','modern_compact','editori
 export const EVIDENCE_IMAGE_SIZES = ['compact','standard','large','full_width'] as const
 export const EVIDENCE_STYLES = ['compact_list','standard_cards','large_photo_cards','full_width_photos','two_column_photo_grid','numbered_appendix','clean_evidence_list','photo_left_notes_right','notes_first_photos_below','insurance_photo_grid','carded','clean_list','photo_grid'] as const
 export const SECTION_STYLES = ['carded','clean_document','boxed','minimal','classic','industrial','corporate','legal','inspection','technical','clean','ruled','binder','executive'] as const
+export const SAFE_FONT_STACKS = [
+  'Inter, Arial, Helvetica, sans-serif',
+  'system-ui, -apple-system, "Segoe UI", sans-serif',
+  'Arial, Helvetica, sans-serif',
+  'Helvetica, Arial, sans-serif',
+  'Verdana, Geneva, sans-serif',
+  'Georgia, "Times New Roman", serif',
+  '"Times New Roman", Times, Georgia, serif',
+  '"Courier New", Courier, monospace',
+  '"Trebuchet MS", Arial, sans-serif',
+  'Tahoma, Geneva, Verdana, sans-serif',
+  '"Segoe UI", system-ui, -apple-system, sans-serif',
+  'Palatino, "Palatino Linotype", "Book Antiqua", serif',
+  'Garamond, Georgia, serif',
+  'Baskerville, "Times New Roman", serif',
+  'Avenir, "Avenir Next", system-ui, -apple-system, sans-serif',
+  'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+  'Arial Black, Arial, sans-serif',
+] as const
 export type HeaderLayout = typeof HEADER_LAYOUTS[number]
 export type CoverPageLayout = typeof COVER_PAGE_LAYOUTS[number]
 export type FooterLayout = typeof FOOTER_LAYOUTS[number]
@@ -47,6 +66,10 @@ export const BRAND_PALETTES: Array<{name:string; description:string; colors:Bran
 {name:'Construction Orange',description:'Jobsite visibility.',colors:c({primary:'#ea580c',accent:'#111827',evidenceAccent:'#f97316'})},
 {name:'Automotive OEM',description:'Fleet and dealer documentation.',colors:c({primary:'#0f172a',accent:'#b91c1c',evidenceAccent:'#b91c1c'})},
 {name:'Engineering Blue',description:'Technical engineering reports.',colors:c({primary:'#0369a1',accent:'#0c4a6e',evidenceAccent:'#0284c7'})},
+{name:'Desert Sand',description:'Warm neutral site documentation.',colors:c({primary:'#a16207',accent:'#422006',headerBackground:'#fefce8',footerBackground:'#713f12',footerText:'#fef3c7',sectionHeading:'#854d0e',border:'#fde68a',mutedBackground:'#fffbeb',evidenceAccent:'#ca8a04'})},
+{name:'Crimson Review',description:'Urgent quality and risk reviews.',colors:c({primary:'#dc2626',accent:'#7f1d1d',headerBackground:'#fef2f2',headerText:'#450a0a',footerBackground:'#7f1d1d',footerText:'#fee2e2',sectionHeading:'#991b1b',border:'#fecaca',mutedBackground:'#fff1f2',evidenceAccent:'#ef4444'})},
+{name:'Purple Executive',description:'Distinctive executive summaries.',colors:c({primary:'#7c3aed',accent:'#3b0764',headerBackground:'#faf5ff',headerText:'#2e1065',footerBackground:'#3b0764',footerText:'#ede9fe',sectionHeading:'#6d28d9',border:'#ddd6fe',mutedBackground:'#f5f3ff',evidenceAccent:'#8b5cf6'})},
+{name:'Forest Field',description:'Outdoor and environmental reports.',colors:c({primary:'#15803d',accent:'#14532d',headerBackground:'#f0fdf4',headerText:'#052e16',footerBackground:'#14532d',footerText:'#dcfce7',sectionHeading:'#166534',border:'#bbf7d0',mutedBackground:'#f7fee7',evidenceAccent:'#22c55e'})},
 ]
 const t=(preset:TypographyPreset,name:string,description:string,headingStack:string,bodyStack=headingStack,labelStyle:TypographySettings['labelStyle']='uppercase'):TypographySettings & {name:string;description:string}=>({name,description,preset,headingStack,bodyStack,labelStyle,headingWeight:700,titleWeight:800,letterSpacing:'0',titleSpacing:'-0.02em',sectionHeadingStyle:'standard',metadataStyle:'muted',sectionHeadingLetterSpacing:'0'})
 export const TYPOGRAPHY_OPTIONS: Record<TypographyPreset, TypographySettings & {name:string; description:string}> = {
