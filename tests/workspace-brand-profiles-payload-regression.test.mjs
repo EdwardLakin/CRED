@@ -3,6 +3,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 const actions = readFileSync('src/features/branding/actions.ts', 'utf8')
+const v2Fields = readFileSync('src/features/report-studio-v2/formFields.tsx', 'utf8')
 const constants = readFileSync('src/features/branding/actionConstants.ts', 'utf8')
 
 const workspaceBrandWriteMatches = [...actions.matchAll(/from\('workspace_brand_profiles'\)[\s\S]{0,120}?\.(upsert|insert)\(/g)]
@@ -23,6 +24,7 @@ test('workspace_brand_profiles write payload never includes branch_location', ()
   assert.doesNotMatch(actions, /\.upsert\(\{[\s\S]*branch_location/)
   assert.doesNotMatch(actions, /\.insert\(\{[\s\S]*branch_location/)
   assert.doesNotMatch(actions, /\.upsert\(\s*draftBrandProfile|\.insert\(\s*draftBrandProfile|\.upsert\(\s*\{\s*\.\.\.draftBrandProfile|\.insert\(\s*\{\s*\.\.\.draftBrandProfile/)
+  assert.doesNotMatch(v2Fields, /name=\{?['\"]branch_location/)
 })
 
 test('workspace_brand_profiles upsert logs the final payload before sending it to Supabase', () => {

@@ -4,14 +4,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Card } from '@/components/ui'
 import { deleteReportTemplate, resetBrandingSettings, saveBrandingSettings, saveReportTemplate, setDefaultReportTemplate } from '@/features/branding/actions'
-import { BRAND_PALETTES, COLOR_LABELS, COVER_PAGE_LAYOUTS, EVIDENCE_IMAGE_SIZES, EVIDENCE_STYLES, FOOTER_LAYOUTS, HEADER_LAYOUTS, SECTION_STYLES, SIGNATURE_LAYOUTS, TYPOGRAPHY_OPTIONS, WATERMARK_OPTIONS, type BrandColors, type WorkspaceBrandProfile, isValidHexColor } from '@/features/branding/types'
+import { BRAND_PALETTES, COLOR_LABELS, COVER_PAGE_LAYOUTS, EVIDENCE_IMAGE_SIZES, EVIDENCE_STYLES, FOOTER_LAYOUTS, HEADER_LAYOUTS, SECTION_STYLES, SIGNATURE_LAYOUTS, TYPOGRAPHY_OPTIONS, WATERMARK_OPTIONS, SAFE_FONT_STACKS, type BrandColors, type WorkspaceBrandProfile, isValidHexColor } from '@/features/branding/types'
 
 type Template = WorkspaceBrandProfile & {id:string;name:string;description:string|null;is_default:boolean;updated_at:string}
 type SessionEvidence = { id:string; label:string; note:string|null; mediaKind:string|null; thumbnailUrl:string|null; originalUrl:string|null }
 type SessionOutput = {id:string;display_id:string|null;title:string;status:string;review_status:string;updated_at:string|null; customer_name?:string|null; asset_label?:string|null; evidence?:SessionEvidence[]}
 type StudioSection='Cover Page'|'Header'|'Client / Asset'|'Evidence'|'Footer'|'Signature'|'Templates'|'Colors & Typography'
 const title=(v:string)=>v.split('_').join(' ').replace(/\b\w/g,c=>c.toUpperCase())
-const SAFE_FONT_STACKS=['Inter, Arial, Helvetica, sans-serif','system-ui, -apple-system, Segoe UI, sans-serif','Arial, Helvetica, sans-serif','Verdana, Geneva, sans-serif','Georgia, Times New Roman, serif','Times New Roman, Georgia, serif','Arial Black, Arial, sans-serif']
 const colorKeys=Object.keys(COLOR_LABELS) as Array<keyof BrandColors>
 const studioSections:StudioSection[]=['Cover Page','Header','Client / Asset','Evidence','Footer','Signature','Colors & Typography','Templates']
 const reportStudioRegressionTokens = ['Preview is using selected session:', 'selectedSession.evidence', 'thumbnailUrl', 'Template selector','Save as new template','Update current template','Duplicate template','Set Default','Delete','applyTemplate','palette-card','color-chip','brand-preview-','all workspace sessions/outputs','selected session/output','presentation-only','Company identity, contact fields, logo, and signature assets will stay unchanged','footer/signature','Saved Custom Report Templates','full sample report','brand-preview-panel','cover page','header','report section','evidence layout','footer','signature','full sample report']
