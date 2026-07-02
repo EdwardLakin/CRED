@@ -1983,7 +1983,12 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const shareTokenValue = requestUrl.searchParams.get("share_token");
   const previewOnly = requestUrl.searchParams.get("preview") === "1";
   const requestedTemplateId = requestUrl.searchParams.get("template") ?? requestUrl.searchParams.get("report_template_id");
+  const selectedSessionOutputId = requestUrl.searchParams.get("selected_session_output_id") ?? requestUrl.searchParams.get("review_output");
   const studioExport = requestUrl.searchParams.get("studio_export") === "1";
+  if (studioExport && selectedSessionOutputId && selectedSessionOutputId !== id) {
+    const safeSelectedId = encodeURIComponent(selectedSessionOutputId);
+    redirect(`/api/dashboard/sessions/${safeSelectedId}/report-pdf?review_output=${safeSelectedId}&selected_session_output_id=${safeSelectedId}&template=workspace-default&studio_export=1`);
+  }
   const sharedAccess = Boolean(shareTokenValue);
 
   let supabase: SupabaseClient<Database>;
@@ -2132,7 +2137,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
       exportBranding = normalizeReportTemplate(selectedTemplate);
     }
   }
-  if (!exportBranding && requestedTemplateId !== "system") {
+  if (!exportBranding && requestedTemplateId !== "system" && requestedTemplateId !== "workspace-default" && requestedTemplateId !== "draft") {
     const { data: defaultTemplate } = await (supabase.from("workspace_report_templates") as any)
       .select("*")
       .eq("organization_id", organizationId)
