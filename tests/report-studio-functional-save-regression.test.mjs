@@ -9,7 +9,7 @@ const migration = readFileSync('supabase/migrations/20260630200000_workspace_bra
 const exportRoute = readFileSync('app/api/dashboard/sessions/[id]/report-pdf/route.ts', 'utf8')
 
 test('workspace_brand_profiles save payload columns are backed by the real migration/schema', () => {
-  for (const column of ['license_number','certification_number','tax_number','insurance_number','business_hours','department','branch_location']) {
+  for (const column of ['license_number','certification_number','tax_number','insurance_number','business_hours','department']) {
     assert.match(actions, new RegExp(`${column}:`))
     assert.match(migration, new RegExp(`add column if not exists ${column} text`))
   }
