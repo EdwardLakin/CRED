@@ -5,12 +5,11 @@ import { revalidatePath } from 'next/cache'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { COVER_PAGE_LAYOUTS, DEFAULT_BRAND_COLORS, DEFAULT_REPORT_STYLE, EVIDENCE_IMAGE_SIZES, EVIDENCE_STYLES, FOOTER_LAYOUTS, HEADER_LAYOUTS, SECTION_STYLES, SIGNATURE_LAYOUTS, TYPOGRAPHY_PRESETS, WATERMARK_OPTIONS, isValidHexColor, normalizeBrandProfile, normalizeCoverImageSource } from './types'
 import { templatePayloadFromBrand } from './templates'
+import { WORKSPACE_BRAND_PROFILE_COLUMNS } from './actionConstants'
 
 const BUCKET='documentation-branding'
 const s=(fd:FormData,k:string)=>String(fd.get(k)??'').trim()
 const b=(fd:FormData,k:string)=>fd.get(k)==='on'||fd.get(k)==='true'
-
-export const WORKSPACE_BRAND_PROFILE_COLUMNS = ['organization_id','display_name','tagline','phone','email','website','address','license_number','certification_number','tax_number','insurance_number','business_hours','department','branch_location','prepared_by_name','prepared_by_title','logo_storage_path','dark_logo_storage_path','icon_storage_path','signature_storage_path','colors','typography','header_layout','footer_layout','report_style','footer_text','show_report_id','show_page_date','show_contact_info','show_confidentiality_note','show_signature_block','updated_by'] as const
 
 type BrandPayload = Record<(typeof WORKSPACE_BRAND_PROFILE_COLUMNS)[number], unknown>
 
