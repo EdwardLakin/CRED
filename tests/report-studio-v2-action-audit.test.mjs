@@ -52,3 +52,27 @@ test('customer-visible v2 preview/export paths do not expose ai_summary', () => 
   assert.match(pdf, /getUserEvidenceText\(capture\)/)
   assert.doesNotMatch(pdf.slice(pdf.indexOf('function getPrimaryEvidenceLabel'), pdf.indexOf('function looksLikeRawUploadFilename')), /ai_summary/)
 })
+
+test('Report Studio v2 saves fail inline without clearing draft state or redirecting early', () => {
+  assert.match(toolbar, /useActionState\(saveBrandingSettings(?: as BrandingFormAction)?, initialActionState\)/)
+  assert.match(toolbar, /useActionState\(saveBrandingAndExport(?: as BrandingFormAction)?, initialActionState\)/)
+  assert.match(toolbar, /rsv2-inline-error/) 
+  assert.match(toolbar, /role="alert"/) 
+  assert.match(toolbar, /if \(saveState\.ok\) handlers\.setIsDirty\(false\)/)
+  assert.doesNotMatch(toolbar, /setDraftBrandProfile\(props\.profile|window\.location\.assign\(exportHref/) 
+  assert.match(toolbar, /if \(exportState\.ok && exportState\.redirectTo\) window\.location\.assign\(exportState\.redirectTo\)/)
+})
+
+test('Save Template does not upsert workspace_brand_profiles before template insert', () => {
+  const saveTemplateBody = actions.slice(actions.indexOf('export async function saveReportTemplate'), actions.indexOf('export async function deleteReportTemplate'))
+  assert.doesNotMatch(saveTemplateBody, /from\('workspace_brand_profiles'\)/)
+  assert.match(saveTemplateBody, /from\('workspace_report_templates'\)/)
+  assert.match(saveTemplateBody, /buildBrandingSettingsPayload/) 
+})
+
+test('workspace_brand_profiles failures log and surface useful Supabase errors', () => {
+  assert.match(actions, /logSupabaseSaveError/) 
+  assert.match(actions, /console\.error\('\[workspace_brand_profiles save failed\]'/) 
+  for (const field of ['message','code','details','hint','status','payloadColumns']) assert.match(actions, new RegExp(field))
+  assert.match(actions, /return \{ok:false,error\}/)
+})
