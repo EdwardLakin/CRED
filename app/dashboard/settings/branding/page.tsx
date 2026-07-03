@@ -94,8 +94,11 @@ export default async function BrandingStudioPage({
     asset_label: s.asset_label ?? null,
     evidence: evidenceBySession.get(s.id) ?? [],
   }));
+  const requestedSessionId = params.session ?? params.review_output ?? null;
   const selectedSessionId =
-    params.review_output ?? params.session ?? sessions[0]?.id ?? null;
+    requestedSessionId && sessions.some((session: { id: string }) => session.id === requestedSessionId)
+      ? requestedSessionId
+      : sessions[0]?.id ?? null;
   const [logoUrl, darkLogoUrl, iconUrl, signatureUrl] = await Promise.all([
     signed(supabase, brand.logo_storage_path),
     signed(supabase, brand.dark_logo_storage_path),

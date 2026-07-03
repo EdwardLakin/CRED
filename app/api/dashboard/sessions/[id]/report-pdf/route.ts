@@ -155,6 +155,76 @@ function formatSnapshotState(value: string | null | undefined) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+async function resolveStudioExportSessionId(
+  supabase: SupabaseClient<Database>,
+  organizationId: string,
+  candidateIds: Array<string | null | undefined>,
+) {
+  const uniqueCandidateIds = Array.from(
+    new Set(candidateIds.map((value) => value?.trim()).filter(Boolean)),
+  ) as string[];
+
+  for (const candidateId of uniqueCandidateIds) {
+    const { data: draft } = await supabase
+      .from("ai_report_drafts")
+      .select("documentation_session_id")
+      .eq("id", candidateId)
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+
+    if (draft?.documentation_session_id) {
+      return draft.documentation_session_id;
+    }
+
+    const { data: draftSection } = await supabase
+      .from("ai_report_draft_sections")
+      .select("documentation_session_id")
+      .eq("id", candidateId)
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+
+    if (draftSection?.documentation_session_id) {
+      return draftSection.documentation_session_id;
+    }
+
+    const { data: capture } = await supabase
+      .from("capture_items")
+      .select("documentation_session_id")
+      .eq("id", candidateId)
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+
+    if (capture?.documentation_session_id) {
+      return capture.documentation_session_id;
+    }
+  }
+
+  return null;
+}
+
+function redirectToCanonicalStudioExport(
+  requestUrl: URL,
+  sessionId: string,
+  selectedSessionOutputId: string | null,
+) {
+  const redirectUrl = new URL(
+    `/api/dashboard/sessions/${encodeURIComponent(sessionId)}/report-pdf`,
+    requestUrl.origin,
+  );
+  requestUrl.searchParams.forEach((value, key) => {
+    redirectUrl.searchParams.append(key, value);
+  });
+  if (selectedSessionOutputId) {
+    redirectUrl.searchParams.set("review_output", selectedSessionOutputId);
+    redirectUrl.searchParams.set(
+      "selected_session_output_id",
+      selectedSessionOutputId,
+    );
+  }
+  redirectUrl.searchParams.set("studio_export", "1");
+  redirect(redirectUrl.pathname + redirectUrl.search);
+}
+
 function getDocumentedObservationCount(
   reviewDocument: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>,
 ) {
@@ -2160,28 +2230,6 @@ export async function GET(_request: Request, { params }: RouteContext) {
     requestUrl.searchParams.get("selected_session_output_id") ??
     requestUrl.searchParams.get("review_output");
   const studioExport = requestUrl.searchParams.get("studio_export") === "1";
-  if (
-    studioExport &&
-    selectedSessionOutputId &&
-    selectedSessionOutputId !== id
-  ) {
-    const safeSelectedId = encodeURIComponent(selectedSessionOutputId);
-    const redirectUrl = new URL(
-      `/api/dashboard/sessions/${safeSelectedId}/report-pdf`,
-      requestUrl.origin,
-    );
-    redirectUrl.searchParams.set("review_output", selectedSessionOutputId);
-    redirectUrl.searchParams.set(
-      "selected_session_output_id",
-      selectedSessionOutputId,
-    );
-    if (requestedTemplateId) {
-      redirectUrl.searchParams.set("template", requestedTemplateId);
-      redirectUrl.searchParams.set("report_template_id", requestedTemplateId);
-    }
-    redirectUrl.searchParams.set("studio_export", "1");
-    redirect(redirectUrl.pathname + redirectUrl.search);
-  }
   const sharedAccess = Boolean(shareTokenValue);
 
   let supabase: SupabaseClient<Database>;
@@ -2240,9 +2288,36 @@ export async function GET(_request: Request, { params }: RouteContext) {
       .select("*, organizations(name)")
       .eq("id", id)
       .eq("organization_id", organizationId)
-      .single();
+      .maybeSingle();
 
-    if (sessionError || !ownedSession) notFound();
+    if (sessionError || !ownedSession) {
+      if (studioExport) {
+        const resolvedSessionId = await resolveStudioExportSessionId(
+          supabase,
+          organizationId,
+          [selectedSessionOutputId, requestUrl.searchParams.get("review_output"), id],
+        );
+        if (resolvedSessionId && resolvedSessionId !== id) {
+          redirectToCanonicalStudioExport(
+            requestUrl,
+            resolvedSessionId,
+            selectedSessionOutputId ?? id,
+          );
+        }
+        console.error("[report-pdf studio export session resolution failed]", {
+          routeSessionId: id,
+          selectedSessionOutputId,
+          reviewOutput: requestUrl.searchParams.get("review_output"),
+          organizationId,
+          sessionError,
+        });
+        return new Response(
+          "Unable to export this Report Studio PDF because the URL does not reference a valid documentation session and the selected output could not be resolved. Return to Report Studio, select the session again, and retry the export.",
+          { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } },
+        );
+      }
+      notFound();
+    }
 
     if (
       !previewOnly &&
