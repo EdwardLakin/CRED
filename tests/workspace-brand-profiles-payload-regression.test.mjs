@@ -27,6 +27,7 @@ test('workspace_brand_profiles write payload never includes branch_location', ()
   assert.doesNotMatch(v2Fields, /name=\{?['\"]branch_location/)
 })
 
-test('workspace_brand_profiles upsert logs the final payload before sending it to Supabase', () => {
-  assert.match(actions, /console\.info\('\[workspace_brand_profiles upsert payload\]', payload\); const \{error\}=await \(supabase\.from\('workspace_brand_profiles'\) as any\)\.upsert\(payload,\{onConflict:'organization_id'\}\)/)
+test('workspace_brand_profiles upsert logs safe structured payload metadata before sending it to Supabase', () => {
+  assert.match(actions, /console\.info\('\[workspace_brand_profiles upsert payload\]', \{action,payloadColumns:Object\.keys\(payload\),organizationIdPresent:Boolean\(payload\.organization_id\)\}\); const \{error\}=await \(supabase\.from\('workspace_brand_profiles'\) as any\)\.upsert\(payload,\{onConflict:'organization_id'\}\)/)
+  assert.doesNotMatch(actions, /console\.info\('\[workspace_brand_profiles upsert payload\]', payload\)/)
 })
