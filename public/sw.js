@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cred-offline-97f0982abbe4d986";
+const CACHE_VERSION = "cred-offline-fc1f189e53beedbe";
 const OFFLINE_DOCUMENT = "/offline.html";
 const PRECACHE_ASSETS = [
   "/offline.html",
@@ -13,39 +13,39 @@ const PRECACHE_ASSETS = [
   "/icons/cred-icon.svg",
   "/icons/cred-maskable.svg",
   "/splash/cred-splash.svg",
-  "/_next/static/Jj5rxdfEIhhnpc5voPPea/_buildManifest.js",
-  "/_next/static/Jj5rxdfEIhhnpc5voPPea/_clientMiddlewareManifest.js",
-  "/_next/static/Jj5rxdfEIhhnpc5voPPea/_ssgManifest.js",
   "/_next/static/chunks/0245a4ypel7xx.js",
   "/_next/static/chunks/05-c3ty_6dwfk.js",
   "/_next/static/chunks/0cz1d0mv5g_q7.js",
-  "/_next/static/chunks/0f7sz4u6-pef_.js",
+  "/_next/static/chunks/0e64tzo5qfj1f.js",
   "/_next/static/chunks/0jr-cjjbn9cqu.js",
+  "/_next/static/chunks/0o3lf6au4mwgt.js",
   "/_next/static/chunks/0tplh5ca_wqje.js",
   "/_next/static/chunks/0zm7blno40yu7.js",
   "/_next/static/chunks/14mrh2-p_w84d.js",
+  "/_next/static/chunks/15vtsy4lj-z6w.js",
+  "/_next/static/chunks/1f4-xmbgai0yy.js",
   "/_next/static/chunks/1ldhwkdsg700d.js",
-  "/_next/static/chunks/1m695v_5zmwld.js",
-  "/_next/static/chunks/1qxxbnoqa0o2_.js",
   "/_next/static/chunks/1rxncug86bump.js",
   "/_next/static/chunks/1uxxd_8_lafly.js",
   "/_next/static/chunks/21x9obqqc2awh.js",
   "/_next/static/chunks/27jktro2p5rq9.js",
-  "/_next/static/chunks/2bm2vkwvsh2_7.js",
   "/_next/static/chunks/2cya-h6pss2j9.js",
   "/_next/static/chunks/2fkx0onbjhg49.js",
   "/_next/static/chunks/2fxatfi4xu1vg.js",
+  "/_next/static/chunks/2xto4i7c469hp.js",
+  "/_next/static/chunks/2ymwm-4_na645.js",
   "/_next/static/chunks/34a1oukrr93wj.js",
   "/_next/static/chunks/36z57ezv9m8s9.js",
   "/_next/static/chunks/3ct-0kbhmcuu4.js",
-  "/_next/static/chunks/3gre4anp4o4s5.js",
   "/_next/static/chunks/3jvkbm-wxvaor.js",
+  "/_next/static/chunks/3p3t2y0y3_e0z.js",
   "/_next/static/chunks/3sbjgay3cyx5_.css",
-  "/_next/static/chunks/3sisvs5ka0qvy.js",
-  "/_next/static/chunks/405mu0cz4q70c.js",
   "/_next/static/chunks/43cavunylurnk.js",
   "/_next/static/chunks/turbopack-3y4_9gvwbdyxg.js",
-  "/_next/static/media/favicon.2vob68tjqpejf.ico"
+  "/_next/static/media/favicon.2vob68tjqpejf.ico",
+  "/_next/static/r3sujILc3m8SAelZP9X4g/_buildManifest.js",
+  "/_next/static/r3sujILc3m8SAelZP9X4g/_clientMiddlewareManifest.js",
+  "/_next/static/r3sujILc3m8SAelZP9X4g/_ssgManifest.js"
 ];
 const NAVIGATION_PATHS = new Set(["/", "/dashboard", "/sign-in", "/offline", "/offline/capture"]);
 const INSTALL_ERROR_KEY = "/__cred_sw_last_install_error__";

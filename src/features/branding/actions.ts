@@ -6,7 +6,7 @@ import type { CurrentProfile } from '@/features/auth/server'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { createClient } from '@/lib/supabase/server'
 import { COVER_PAGE_LAYOUTS, DEFAULT_BRAND_COLORS, DEFAULT_REPORT_STYLE, EVIDENCE_IMAGE_SIZES, EVIDENCE_STYLES, FOOTER_LAYOUTS, HEADER_LAYOUTS, SECTION_STYLES, SIGNATURE_LAYOUTS, TYPOGRAPHY_PRESETS, WATERMARK_OPTIONS, SAFE_FONT_STACKS, isValidHexColor, normalizeBrandProfile, normalizeCoverImageSource } from './types'
-import { templatePayloadFromBrand } from './templates'
+import { normalizeReportTemplate, templatePayloadFromBrand } from './templates'
 import { WORKSPACE_BRAND_PROFILE_COLUMNS } from './actionConstants'
 
 const BUCKET='documentation-branding'
@@ -14,7 +14,7 @@ const s=(fd:FormData,k:string)=>String(fd.get(k)??'').trim()
 const b=(fd:FormData,k:string)=>fd.get(k)==='on'||fd.get(k)==='true'
 
 type BrandPayload = Record<(typeof WORKSPACE_BRAND_PROFILE_COLUMNS)[number], unknown>
-type BrandingActionState = { ok: boolean; error?: string; redirectTo?: string }
+type BrandingActionState = { ok: boolean; error?: string; redirectTo?: string; template?: any }
 const INITIAL_BRANDING_ACTION_STATE: BrandingActionState = { ok: false }
 
 function schemaSafeBrandPayload(payload: Record<string, unknown>): BrandPayload {
@@ -93,6 +93,7 @@ export async function resetBrandingSettings(){ const {supabase, profile}=await r
 export async function saveReportTemplateAction(previousStateOrFormData: BrandingActionState | FormData = INITIAL_BRANDING_ACTION_STATE, maybeFormData?: FormData): Promise<BrandingActionState | void>{
   const formData=getActionFormData(previousStateOrFormData,maybeFormData);
   const {supabase, profile}=await requireSessionWorkspace();
+  let savedTemplate:any=null;
   try{
     const mode=s(formData,'template_mode')||'create'; const templateId=s(formData,'template_id'); const name=s(formData,'template_name'); if(!name) throw new Error('Template name is required.'); const description=s(formData,'template_description')||null; const makeDefault=b(formData,'template_default');
     const brand=normalizeBrandProfile(await buildBrandingSettingsPayload(formData,profile,{logo:s(formData,'current_logo')||null,darkLogo:s(formData,'current_dark_logo')||null,icon:s(formData,'current_icon')||null,signature:s(formData,'current_signature')||null}) as any);
@@ -101,10 +102,10 @@ export async function saveReportTemplateAction(previousStateOrFormData: Branding
       const {error}=await (supabase.from('workspace_report_templates') as any).update(payload).eq('id',templateId).eq('organization_id',profile.organization_id); if(error) throw error;
     }else{
       const payload=templatePayloadFromBrand(brand,profile.organization_id,profile.id,mode==='duplicate'?`${name} Copy`:name,description,makeDefault);
-      const {error}=await (supabase.from('workspace_report_templates') as any).insert(payload); if(error) throw error;
+      const {data,error}=await (supabase.from('workspace_report_templates') as any).insert(payload).select('*').single(); if(error) throw error; savedTemplate = data;
     }
   }catch(e){ const error=e instanceof Error?e.message:'Unable to save template.'; if(maybeFormData) return {ok:false,error}; redirect(`/dashboard/settings/branding?error=${encodeURIComponent(error)}`)}
-  revalidatePath('/dashboard/settings/branding'); if(maybeFormData) return {ok:true}; redirect('/dashboard/settings/branding?template_saved=1')
+  revalidatePath('/dashboard/settings/branding'); if(maybeFormData) return {ok:true,template:savedTemplate ? normalizeReportTemplate(savedTemplate) : undefined}; redirect('/dashboard/settings/branding?template_saved=1')
 }
 export async function saveReportTemplate(formData: FormData): Promise<void>{ await saveReportTemplateAction(formData) }
 export async function deleteReportTemplate(templateId:string){ const {supabase, profile}=await requireSessionWorkspace(); if(!templateId) return; const {data:current}=await (supabase.from('workspace_report_templates') as any).select('id,is_default').eq('id',templateId).eq('organization_id',profile.organization_id).maybeSingle(); if(!current) redirect('/dashboard/settings/branding?error=Template not found.'); const {data:templates}=await (supabase.from('workspace_report_templates') as any).select('id').eq('organization_id',profile.organization_id); if(current.is_default && (templates??[]).length>1) redirect('/dashboard/settings/branding?error=Set another template as default before deleting this default template.'); const {error}=await (supabase.from('workspace_report_templates') as any).delete().eq('id',templateId).eq('organization_id',profile.organization_id); if(error) redirect(`/dashboard/settings/branding?error=${encodeURIComponent(error.message)}`); revalidatePath('/dashboard/settings/branding'); redirect('/dashboard/settings/branding?template_deleted=1') }
