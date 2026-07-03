@@ -18,8 +18,7 @@ const HIGH_CONFIDENCE_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\bcouldnt\b/gi, "couldn't"],
   [/\bshouldnt\b/gi, "shouldn't"],
   [/\bwouldnt\b/gi, "wouldn't"],
-  [/\bseems\b/gi, "seams"],
-  [/\bshoring\b/gi, "showing"],
+  [/\bcarpet seems are shoring\b/gi, "Carpet seams are showing"],
   [/\bmove\s+in\b/gi, "move-in"],
 ];
 
