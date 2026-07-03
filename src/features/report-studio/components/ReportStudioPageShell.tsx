@@ -457,7 +457,7 @@ export function ReportStudioPageShell({
     fontFamily: type.bodyStack,
   } as any;
   const exportHref = selectedOutput
-    ? `/api/dashboard/sessions/${selectedOutput}/report-pdf?review_output=${selectedOutput}&selected_session_output_id=${selectedOutput}&template=${selectedTemplateId}&studio_export=1`
+    ? `/api/dashboard/sessions/${selectedOutput}/report-pdf?review_output=${selectedOutput}&selected_session_output_id=${selectedOutput}&template=${selectedTemplateId}&report_template_id=${selectedTemplateId}&studio_export=1`
     : "#";
   const templateOptions = (
     <>
