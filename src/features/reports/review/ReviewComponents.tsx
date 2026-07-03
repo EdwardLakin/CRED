@@ -30,6 +30,7 @@ import {
 } from "@/features/reports/review/EvidenceImageLightbox";
 import { SignatureCaptureForm } from "@/features/signatures";
 import { PendingActionButton } from "@/features/reports/review/PendingActionButton";
+import { ReportEditAutosaveForm } from "@/features/reports/review/ReportEditAutosaveForm";
 import { useSavedSignature } from "@/features/signatures/actions";
 import type { Database } from "@/lib/supabase/database.types";
 
@@ -609,13 +610,42 @@ export function ReportReview({
     ...noteEvidence,
     ...otherEvidence,
   ].filter((item) => isCaptureIncludedInOutput(item.capture)).length;
+  const observationEntries = [
+    ...reviewDocument.findings,
+    ...reviewDocument.concerns,
+    ...reviewDocument.recommendedActionEvidence,
+    ...reviewDocument.referenceDocuments,
+    ...reviewDocument.additionalNotes,
+    ...reviewDocument.supportingEvidence,
+  ];
+  const uniqueObservationCount = new Set(
+    observationEntries.map((entry) => getObservationGroupKey(entry.capture)),
+  ).size;
+  const missingEvidenceCount = observationEntries.filter((entry) => {
+    const groupKey = getObservationGroupKey(entry.capture);
+    return !supportingEvidence.some(
+      (item) => getObservationGroupKey(item.capture) === groupKey && item.kind === "photo",
+    );
+  }).length;
+  const hasSummary = Boolean(stripConfidenceText(currentReport?.summary ?? "").trim());
+  const hasSignature = false;
+  const qualityChecks = [
+    { label: "Cover/title present", ok: Boolean(displayReportTitle.trim()) },
+    { label: "Executive summary ready", ok: hasSummary },
+    { label: `${uniqueObservationCount} observations documented`, ok: uniqueObservationCount > 0 },
+    { label: missingEvidenceCount ? `${missingEvidenceCount} observations missing photo evidence` : `${includedEvidenceCount} supporting evidence items included`, ok: missingEvidenceCount === 0 && includedEvidenceCount > 0 },
+    { label: "Technician notes present", ok: observationEntries.some((entry) => getEvidenceNote(entry.capture)) },
+    { label: "Approval complete", ok: currentReport?.status === "approved" },
+    { label: "Blank unused sections tucked away", ok: unusedReportSections.length === 0 || visibleReportSections.length > 0 },
+  ];
+  const qualityScore = Math.round((qualityChecks.filter((check) => check.ok).length / qualityChecks.length) * 100);
   const outlineItems = [
-    ["Cover", "report-cover-editor"],
-    ["Executive Summary", "report-summary-editor"],
-    ...visibleReportSections.map((section) => [getSectionDisplayTitle(section), `report-section-${section.id}`]),
-    [`Evidence (${includedEvidenceCount})`, "report-evidence-editor"],
-    ["Signature", "report-signoff-editor"],
-    ["Export", "report-export-actions"],
+    { label: "Cover", href: "report-cover-editor", ok: Boolean(displayReportTitle.trim()) },
+    { label: hasSummary ? "Executive Summary" : "Executive Summary missing", href: "report-summary-editor", ok: hasSummary },
+    { label: `Observations (${uniqueObservationCount})`, href: "report-observations-editor", ok: uniqueObservationCount > 0 },
+    { label: missingEvidenceCount ? `${missingEvidenceCount} observations missing evidence` : `Supporting Evidence (${includedEvidenceCount})`, href: "report-evidence-editor", ok: missingEvidenceCount === 0 && includedEvidenceCount > 0 },
+    { label: "Signature", href: "report-signoff-editor", ok: hasSignature },
+    { label: currentReport?.status === "approved" ? "Ready to Export" : "Not ready yet", href: "report-export-actions", ok: currentReport?.status === "approved" },
   ];
   const coverDetails = [
     ["Report Title", displayReportTitle],
@@ -735,18 +765,29 @@ export function ReportReview({
 
       {currentReport && isEditingReport && saveReportEditsAction ? (
         <>
-        <nav className="report-edit-panel report-outline-nav" aria-label="Report outline">
-          <strong>Report Outline</strong>
-          <div className="report-inline-actions">
-            {outlineItems.map(([label, href]) => (
-              <a key={href} className="status-pill neutral" href={`#${href}`}>✓ {label}</a>
-            ))}
-          </div>
-        </nav>
-        <form
-          action={saveReportEditsAction}
-          className="form-stack report-edit-form"
-        >
+        <aside className="report-studio-sidebar">
+          <nav className="report-edit-panel report-outline-nav" aria-label="Report outline">
+            <strong>Report Outline</strong>
+            <div className="report-outline-list">
+              {outlineItems.map((item) => (
+                <a key={item.href} className={item.ok ? "status-pill success" : "status-pill attention"} href={`#${item.href}`}>{item.ok ? "✓" : "⚠"} {item.label}</a>
+              ))}
+            </div>
+          </nav>
+          <section className="report-edit-panel report-quality-panel" aria-label="Report quality guidance">
+            <div>
+              <strong>Report Quality</strong>
+              <p className="report-quality-score">{qualityScore}%</p>
+              <p className="muted">Guidance only. This does not block export or change approval rules.</p>
+            </div>
+            <ul className="report-quality-list">
+              {qualityChecks.map((check) => (
+                <li key={check.label} className={check.ok ? "success" : "attention"}>{check.ok ? "✓" : "⚠"} {check.label}</li>
+              ))}
+            </ul>
+          </section>
+        </aside>
+        <ReportEditAutosaveForm action={saveReportEditsAction}>
           <details id="report-cover-editor" className="report-subsection report-edit-panel" open>
             <summary className="report-section-title-row">
               <div>
@@ -835,11 +876,12 @@ export function ReportReview({
                 defaultValue={stripConfidenceText(currentReport.summary ?? "")}
               />
             </label>
+            <AiWritingPlaceholder />
           </details>
 
-          <details className="report-subsection report-edit-panel" open>
+          <details id="report-observations-editor" className="report-subsection report-edit-panel" open>
             <summary>
-              <h3>Report</h3>
+              <h3>Documented Observations</h3>
               <p className="muted">
                 Edit the customer-facing sections detected for this report. Unused engine sections are tucked away below.
               </p>
@@ -874,6 +916,7 @@ export function ReportReview({
                         defaultValue={stripConfidenceText(section.body ?? "")}
                       />
                     </label>
+                    <AiWritingPlaceholder />
                     {normalizeDraftSections([section], []).flatMap(
                       (item) => item.fields,
                     ).length > 0 ? (
@@ -1013,10 +1056,7 @@ export function ReportReview({
             </div>
           </details>
 
-          <div id="report-export-actions" className="form-actions report-inline-actions report-primary-flow">
-            <PendingActionButton className="button button-primary touch-target" pendingLabel="Saving edits…">
-              Save Changes
-            </PendingActionButton>
+          <div className="form-actions report-inline-actions report-primary-flow">
             <Link
               href={`/dashboard/sessions/${session.id}/capture`}
               className="button button-secondary touch-target"
@@ -1024,7 +1064,7 @@ export function ReportReview({
               Continue Capturing
             </Link>
           </div>
-        </form>
+        </ReportEditAutosaveForm>
         </>
       ) : null}
 
@@ -1098,7 +1138,7 @@ export function InspectorFacilityPanel({
   ].filter(([, value]) => typeof value === "string" && value.trim());
   if (!isEditingReport) {
     return (
-      <section className="card detail-card report-command-card form-stack signature-review-panel">
+      <section id="report-signoff-editor" className="card detail-card report-command-card form-stack signature-review-panel">
         <div className="report-section-heading generated-report-heading">
           <div>
             <p className="eyebrow">Signoff</p>
@@ -1137,6 +1177,7 @@ export function InspectorFacilityPanel({
 
   return (
     <details
+      id="report-signoff-editor"
       className="card detail-card report-command-card form-stack signature-review-panel"
       open
     >
@@ -1197,6 +1238,22 @@ export function InspectorFacilityPanel({
       )}
       <SignatureCaptureForm sessionId={sessionId} />
     </details>
+  );
+}
+
+function AiWritingPlaceholder() {
+  return (
+    <div className="report-ai-writing-actions" data-no-autosave>
+      <button type="button" className="button button-secondary touch-target" disabled>
+        Improve Writing
+      </button>
+      <button type="button" className="button button-secondary touch-target" disabled>
+        Shorten
+      </button>
+      <span className="muted">
+        AI writing refinement will be available after report regeneration support is connected. Technician notes remain the source of truth.
+      </span>
+    </div>
   );
 }
 
@@ -1537,12 +1594,27 @@ function EvidenceGallery({
     return (
       <div className="review-note-list report-edit-evidence-list">
         {evidenceItems.length > 0 ? (
-          evidenceItems.map((item) => (
+          evidenceItems.map((item, index) => (
             <article
               key={item.capture.id}
               className="review-note-card report-edit-evidence-card"
               data-evidence-card
             >
+              <div className="report-observation-order-row">
+                <span className="status-pill neutral compact">Observation {String(index + 1).padStart(2, "0")}</span>
+                <span className="drag-handle" aria-hidden="true">⋮⋮</span>
+                <label className="field-stack compact-field">
+                  <span className="label">Order</span>
+                  <input
+                    className="input compact-order-input"
+                    type="number"
+                    min="1"
+                    name={`capture_report_order_${item.capture.id}`}
+                    defaultValue={item.capture.report_order ?? index + 1}
+                    aria-label={`Observation order for ${item.title}`}
+                  />
+                </label>
+              </div>
               <div className="report-edit-evidence-actions">
                 <label className="report-visibility-toggle">
                   <input

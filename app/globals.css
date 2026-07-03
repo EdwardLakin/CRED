@@ -5728,3 +5728,87 @@ a:focus-visible {
   margin: 0;
 }
 .rsv2-drawer{overflow:auto;-webkit-overflow-scrolling:touch}.rsv2-drawer-head{align-items:center;display:flex;justify-content:space-between;gap:16px;position:sticky;top:0;background:#fff;z-index:1}.rsv2-drawer-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:14px 0}.rsv2-drawer-tabs button{border:1px solid #dbe4f0;border-radius:999px;background:#f8fbff;padding:8px}.rsv2-drawer-tabs button[aria-selected="true"]{background:#17233a;color:#fff}.rsv2-template-row{align-items:start;background:#fff;border:1px solid #dbe4f0;border-radius:14px;display:grid;gap:10px;margin:10px 0;padding:12px}.rsv2-template-row span{display:block;color:#60708a}.rsv2-save-template-modal{background:#fff;border-radius:18px;box-shadow:0 24px 80px rgba(15,23,42,.24);margin:auto;max-width:480px;padding:22px;width:min(92vw,480px)}
+
+.report-studio-sidebar {
+  display: grid;
+  gap: 1rem;
+}
+
+.report-outline-list,
+.report-quality-list,
+.report-ai-writing-actions,
+.report-observation-order-row,
+.report-autosave-bar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.report-quality-score {
+  font-size: clamp(2rem, 8vw, 3.5rem);
+  font-weight: 900;
+  line-height: 1;
+  margin: 0.25rem 0;
+}
+
+.report-quality-list {
+  align-items: stretch;
+  flex-direction: column;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.report-quality-list li {
+  border-radius: 12px;
+  font-weight: 800;
+  padding: 0.5rem 0.65rem;
+}
+
+.report-quality-list li.success {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success-strong);
+}
+
+.report-quality-list li.attention {
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+  color: var(--warning-strong);
+}
+
+.report-autosave-bar {
+  background: var(--surface-muted);
+  border: 1px dashed var(--border-strong);
+  border-radius: 16px;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  position: sticky;
+  top: 0.75rem;
+  z-index: 2;
+}
+
+.report-observation-order-row {
+  justify-content: space-between;
+}
+
+.drag-handle {
+  color: var(--muted);
+  cursor: grab;
+  font-weight: 900;
+  letter-spacing: -0.2em;
+}
+
+.compact-order-input {
+  max-width: 6rem;
+}
+
+.report-ai-writing-actions {
+  border-top: 1px dashed var(--border-subtle);
+  padding-top: 0.75rem;
+}
+
+@media (min-width: 980px) {
+  .report-studio-sidebar {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 0.45fr);
+  }
+}

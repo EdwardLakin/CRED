@@ -1221,7 +1221,7 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
 
   const { data: captures, error: capturesError } = await supabase
     .from('capture_items')
-    .select('id, observation_group_id')
+    .select('id, observation_group_id, report_order')
     .eq('documentation_session_id', session.id)
     .eq('organization_id', profile.organization_id)
     .is('deleted_at', null)
@@ -1236,9 +1236,11 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
     const evidenceCategory = normalizeEvidenceCategory(getString(formData, `capture_category_${capture.id}`))
     const groupWith = getString(formData, `capture_group_with_${capture.id}`)
     const observationGroupId = groupWith && groupWith !== capture.id ? groupWith : capture.observation_group_id
+    const requestedOrder = Number(getString(formData, `capture_report_order_${capture.id}`))
+    const reportOrder = Number.isFinite(requestedOrder) && requestedOrder > 0 ? requestedOrder : capture.report_order
     const { error: captureUpdateError } = await supabase
       .from('capture_items')
-      .update({ include_in_report: includeInReport, technician_note: note, evidence_category: evidenceCategory, observation_group_id: observationGroupId || null, updated_at: now })
+      .update({ include_in_report: includeInReport, technician_note: note, evidence_category: evidenceCategory, observation_group_id: observationGroupId || null, report_order: reportOrder, updated_at: now })
       .eq('id', capture.id)
       .eq('documentation_session_id', session.id)
       .eq('organization_id', profile.organization_id)
@@ -1250,6 +1252,7 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
 
   revalidatePath(`/dashboard/sessions/${session.id}`)
   revalidatePath(`/dashboard/sessions/${session.id}/report`)
+  if (formData.get('autosave') === '1') return
   redirect(getReportRedirectPath(session.id, { edited: 1 }))
 }
 
