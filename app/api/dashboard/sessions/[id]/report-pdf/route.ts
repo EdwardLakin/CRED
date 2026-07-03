@@ -261,7 +261,10 @@ function buildReportOverviewHtml(params: {
           ? `${params.documentEvidenceCount} Supporting document${params.documentEvidenceCount === 1 ? "" : "s"}`
           : "",
     },
-    { label: "Inspection status", value: formatSnapshotState(params.reviewState) },
+    {
+      label: "Inspection status",
+      value: formatSnapshotState(params.reviewState),
+    },
     {
       label: params.timestampLabel ?? "Report timestamp",
       value: params.timestampValue ?? "",
@@ -288,7 +291,9 @@ function buildEvidenceGalleryHtml(
     .map((capture) => {
       const meta = evidenceByCaptureId.get(capture.id);
       const evidenceId = meta?.evidenceId ?? "Evidence";
-      const label = cleanCustomerFacingText(getCustomerFacingEvidenceTitle(capture, 0));
+      const label = cleanCustomerFacingText(
+        getCustomerFacingEvidenceTitle(capture, 0),
+      );
       const captured =
         meta?.capturedAtLabel ??
         formatDateTimeInTimeZone(capture.captured_at, timeZone);
@@ -397,7 +402,8 @@ function conciseHeadingFromNote(note: string) {
 
 function getCustomerFacingEvidenceTitle(capture: ReportCapture, index: number) {
   const storedTitle = getObservationReportTitleState(capture.extracted_data);
-  if (storedTitle.approved) return cleanCustomerFacingText(stripConfidenceText(storedTitle.approved));
+  if (storedTitle.approved)
+    return cleanCustomerFacingText(stripConfidenceText(storedTitle.approved));
 
   const explicitTitle =
     getCaptureStringField(capture, "title") ||
@@ -405,7 +411,8 @@ function getCustomerFacingEvidenceTitle(capture: ReportCapture, index: number) {
   if (explicitTitle && !looksLikeRawUploadFilename(explicitTitle))
     return cleanCustomerFacingText(stripConfidenceText(explicitTitle));
 
-  if (storedTitle.suggested) return cleanCustomerFacingText(stripConfidenceText(storedTitle.suggested));
+  if (storedTitle.suggested)
+    return cleanCustomerFacingText(stripConfidenceText(storedTitle.suggested));
 
   const noteHeading = conciseHeadingFromNote(
     capture.technician_note?.trim() || capture.transcript?.trim() || "",
@@ -413,7 +420,8 @@ function getCustomerFacingEvidenceTitle(capture: ReportCapture, index: number) {
   if (noteHeading && !looksLikeRawUploadFilename(noteHeading))
     return cleanCustomerFacingText(noteHeading);
   const trustedCaption = getTrustedCaption(capture);
-  if (trustedCaption) return cleanCustomerFacingText(stripConfidenceText(trustedCaption));
+  if (trustedCaption)
+    return cleanCustomerFacingText(stripConfidenceText(trustedCaption));
   const category = normalizeEvidenceCategory(capture.evidence_category);
   if (category && category !== "supporting_evidence")
     return category
@@ -1230,7 +1238,9 @@ function buildDocumentedObservationsHtml(
         if (visible) renderedText.push(value);
         return visible;
       });
-    const heading = cleanCustomerFacingText(getCustomerFacingEvidenceTitle(capture, index));
+    const heading = cleanCustomerFacingText(
+      getCustomerFacingEvidenceTitle(capture, index),
+    );
     const technicianNoteHtml = technicianNote
       ? `<div class="technician-note-block"><h4>Technician Note</h4><p>${escapeHtml(technicianNote)}</p></div>`
       : "";
@@ -2144,8 +2154,8 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const shareTokenValue = requestUrl.searchParams.get("share_token");
   const previewOnly = requestUrl.searchParams.get("preview") === "1";
   const requestedTemplateId =
-    requestUrl.searchParams.get("template") ??
-    requestUrl.searchParams.get("report_template_id");
+    requestUrl.searchParams.get("report_template_id") ??
+    requestUrl.searchParams.get("template");
   const selectedSessionOutputId =
     requestUrl.searchParams.get("selected_session_output_id") ??
     requestUrl.searchParams.get("review_output");
@@ -2156,9 +2166,21 @@ export async function GET(_request: Request, { params }: RouteContext) {
     selectedSessionOutputId !== id
   ) {
     const safeSelectedId = encodeURIComponent(selectedSessionOutputId);
-    redirect(
-      `/api/dashboard/sessions/${safeSelectedId}/report-pdf?review_output=${safeSelectedId}&selected_session_output_id=${safeSelectedId}&template=workspace-default&studio_export=1`,
+    const redirectUrl = new URL(
+      `/api/dashboard/sessions/${safeSelectedId}/report-pdf`,
+      requestUrl.origin,
     );
+    redirectUrl.searchParams.set("review_output", selectedSessionOutputId);
+    redirectUrl.searchParams.set(
+      "selected_session_output_id",
+      selectedSessionOutputId,
+    );
+    if (requestedTemplateId) {
+      redirectUrl.searchParams.set("template", requestedTemplateId);
+      redirectUrl.searchParams.set("report_template_id", requestedTemplateId);
+    }
+    redirectUrl.searchParams.set("studio_export", "1");
+    redirect(redirectUrl.pathname + redirectUrl.search);
   }
   const sharedAccess = Boolean(shareTokenValue);
 
@@ -2349,6 +2371,17 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const branding = normalizeBrandProfile(
     exportBranding ?? null,
   ) as ExportBranding;
+  const selectedTemplateExplicitlyDisablesCover =
+    Boolean(selectedTemplateId) && branding.report_style.coverPage === "none";
+  if (
+    !selectedTemplateExplicitlyDisablesCover &&
+    branding.report_style.coverPage === "none"
+  ) {
+    branding.report_style = {
+      ...branding.report_style,
+      coverPage: "simple_cover",
+    };
+  }
   const { data: brandLogoSigned } = branding?.logo_storage_path
     ? await supabase.storage
         .from("documentation-branding")
@@ -2603,8 +2636,24 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const toolbarHtml = previewOnly
     ? ""
     : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>';
-  const html = `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable report</title>
+  let html: string;
+  try {
+    html = `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable report</title>
   <style>${REPORT_STYLES}${buildBrandCss(branding)}</style></head><body>${buildReportOpen({ branding, timeZone })}${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, companyProfile: reportCompanyProfile, captures: appendixCaptureItems, imageAssets: imageAssets, timeZone, allowCoverImage: useGalleryMode, branding, logoUrl: brandLogoUrl, helpers: { isImageEvidence, renderDefinitionRows, renderExportImage, getUserEvidenceText, getPrimaryEvidenceLabel } })}${summaryHtml}${observationsHtml}${unattachedHtml}${appendixHtml}${approvalHtml}${buildPrintFooterHtml({ organizationName, reportId: session.display_id, generatedAt: formatDateTimeInTimeZone(new Date().toISOString(), timeZone), branding })}</main>${EXPORT_LIGHTBOX_HTML}</body></html>`;
+  } catch (error) {
+    console.error("[report-pdf-render-error] Failed to render report export", {
+      session_id: session.id,
+      studio_export: studioExport,
+      requested_template_id: requestedTemplateId,
+      selected_template_id: selectedTemplateId,
+      selected_session_output_id: selectedSessionOutputId,
+      error,
+    });
+    const message = studioExport
+      ? "Report Studio export could not be rendered."
+      : "Report export could not be rendered.";
+    html = `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>${escapeHtml(message)}</title></head><body><main class="report"><div class="toolbar"><button onclick="window.location.reload()">Retry export</button></div><section class="item"><h1>${escapeHtml(message)}</h1><p>Please retry the export. If this continues, contact support with report ID ${escapeHtml(session.display_id ?? session.id)}.</p></section></main></body></html>`;
+  }
 
   return new Response(html, {
     headers: { "Content-Type": "text/html; charset=utf-8" },
