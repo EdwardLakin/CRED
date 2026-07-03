@@ -59,6 +59,53 @@ function isHiddenFromReport(metadata: unknown) {
   return isRecord(metadata) && metadata.hidden_from_report === true;
 }
 
+
+function sectionHasCustomerContent(section: AiReportDraftSection) {
+  const body = stripConfidenceText(section.body ?? "").trim();
+  const fields = normalizeDraftSections([section], []).flatMap((item) => item.fields);
+  const hasFields = fields.some((field) => stripConfidenceText(String(field.value ?? "")).trim());
+  return Boolean(body || hasFields);
+}
+
+function getReportTypeHint(session: Pick<DocumentationSession, "session_type" | "asset_label" | "suggested_details">, sections: AiReportDraftSection[]) {
+  const haystack = [
+    session.session_type,
+    session.asset_label,
+    JSON.stringify(session.suggested_details ?? {}),
+    sections.map((section) => section.title).join(" "),
+  ].join(" ").toLowerCase();
+  if (/rental|property|inspection|unit|suite|tenant|landlord/.test(haystack)) return "rental";
+  if (/vehicle|automotive|diagnostic|dtc|vin|mileage|odometer|freeze frame|live data/.test(haystack)) return "automotive";
+  return "general";
+}
+
+function isApplicableReportSection(title: string, reportType: string) {
+  const normalized = title.toLowerCase();
+  if (/cover|executive|summary|concern|observation|evidence|signoff|signature|approval|recommendation/.test(normalized)) return true;
+  if (reportType === "rental") return /property|customer|documented/.test(normalized);
+  if (reportType === "automotive") return /vehicle|asset|dtc|fault|freeze|live data|measurement|functional|test|road|repair|verification/.test(normalized);
+  return !/freeze|live data|dtc|road test/.test(normalized);
+}
+
+function getSectionDisplayTitle(section: AiReportDraftSection) {
+  const title = stripConfidenceText(section.title);
+  if (/vehicle \/ asset information/i.test(title)) return "Vehicle Information";
+  if (/dtcs? \/ fault codes/i.test(title)) return "DTCs";
+  if (/freeze frame/i.test(title)) return "Freeze Frame";
+  if (/live data/i.test(title)) return "Live Data";
+  if (/technician observations/i.test(title)) return "Observations";
+  if (/evidence appendix/i.test(title)) return "Evidence";
+  return title;
+}
+
+function getFieldGroupTitle(key: string, reportType: string) {
+  const normalized = key.toLowerCase();
+  if (/vin|mileage|odometer|license|model|make|vehicle|asset|equipment|serial/.test(normalized)) return reportType === "rental" ? "Property Information" : "Vehicle Information";
+  if (/inspector|technician|prepared|certification|signature|organization|facility/.test(normalized)) return "Inspector Information";
+  if (/customer|client|location|reference|report|address|property|unit/.test(normalized)) return reportType === "automotive" ? "Customer Information" : "Property Information";
+  return "Additional Report Details";
+}
+
 function isPhotoCapture(capture: CaptureItem) {
   return (
     capture.media_kind === "image" ||
@@ -540,12 +587,36 @@ export function ReportReview({
   timeZone: string | null;
   reportTemplates?: Array<{ id: string; name: string; is_default: boolean }>;
 }) {
-  const editableSections = reportSections;
+  const reportTypeHint = getReportTypeHint(session, reportSections);
+  const visibleReportSections = reportSections.filter(
+    (section) =>
+      sectionHasCustomerContent(section) ||
+      isApplicableReportSection(section.title, reportTypeHint),
+  );
+  const unusedReportSections = reportSections.filter(
+    (section) => !visibleReportSections.some((visible) => visible.id === section.id),
+  );
+  const sourceFieldGroups = sourceFieldEntries.reduce<Record<string, [string, unknown][]>>(
+    (groups, entry) => {
+      const group = getFieldGroupTitle(entry[0], reportTypeHint);
+      groups[group] = [...(groups[group] ?? []), entry];
+      return groups;
+    },
+    {},
+  );
   const includedEvidenceCount = [
     ...photoEvidence,
     ...noteEvidence,
     ...otherEvidence,
   ].filter((item) => isCaptureIncludedInOutput(item.capture)).length;
+  const outlineItems = [
+    ["Cover", "report-cover-editor"],
+    ["Executive Summary", "report-summary-editor"],
+    ...visibleReportSections.map((section) => [getSectionDisplayTitle(section), `report-section-${section.id}`]),
+    [`Evidence (${includedEvidenceCount})`, "report-evidence-editor"],
+    ["Signature", "report-signoff-editor"],
+    ["Export", "report-export-actions"],
+  ];
   const coverDetails = [
     ["Report Title", displayReportTitle],
     ["Organization", facilityName],
@@ -663,11 +734,20 @@ export function ReportReview({
       ) : null}
 
       {currentReport && isEditingReport && saveReportEditsAction ? (
+        <>
+        <nav className="report-edit-panel report-outline-nav" aria-label="Report outline">
+          <strong>Report Outline</strong>
+          <div className="report-inline-actions">
+            {outlineItems.map(([label, href]) => (
+              <a key={href} className="status-pill neutral" href={`#${href}`}>✓ {label}</a>
+            ))}
+          </div>
+        </nav>
         <form
           action={saveReportEditsAction}
           className="form-stack report-edit-form"
         >
-          <details className="report-subsection report-edit-panel">
+          <details id="report-cover-editor" className="report-subsection report-edit-panel" open>
             <summary className="report-section-title-row">
               <div>
                 <h3>Report Details</h3>
@@ -747,7 +827,7 @@ export function ReportReview({
               <strong>{session.display_id ?? "Generated after save"}</strong>
             </div>
             <label className="field-stack">
-              <span className="label">Executive Summary</span>
+              <span id="report-summary-editor" className="label">Executive Summary</span>
               <textarea
                 className="input text-area"
                 name="report_summary"
@@ -757,32 +837,28 @@ export function ReportReview({
             </label>
           </details>
 
-          <details className="report-subsection report-edit-panel">
+          <details className="report-subsection report-edit-panel" open>
             <summary>
-              <h3>Report Sections</h3>
+              <h3>Report</h3>
               <p className="muted">
-                Edit Findings, Concerns, Recommended Actions, and Supporting
-                Evidence sections.
+                Edit the customer-facing sections detected for this report. Unused engine sections are tucked away below.
               </p>
             </summary>
             <div className="report-content-grid">
-              {editableSections.map((section) => {
+              {visibleReportSections.map((section) => {
                 const included = !isHiddenFromReport(section.metadata);
                 return (
                   <article
+                    id={`report-section-${section.id}`}
                     key={section.id}
                     className="report-edit-panel report-edit-item"
                   >
-                    <label className="report-visibility-toggle">
-                      <input
-                        type="checkbox"
-                        name={`section_include_${section.id}`}
-                        defaultChecked={included}
-                      />
-                      <span>Include in report</span>
-                    </label>
+                    <input type="hidden" name={`section_include_${section.id}`} value={included ? "on" : ""} />
+                    {included ? (
+                      <p className="muted">Included automatically because this section has report content.</p>
+                    ) : null}
                     <label className="field-stack">
-                      <span className="label">Heading</span>
+                      <span className="label">Section title</span>
                       <input
                         className="input"
                         name={`section_title_${section.id}`}
@@ -790,7 +866,7 @@ export function ReportReview({
                       />
                     </label>
                     <label className="field-stack">
-                      <span className="label">Report text</span>
+                      <span className="label">Customer-facing text</span>
                       <textarea
                         className="input text-area"
                         name={`section_body_${section.id}`}
@@ -828,14 +904,7 @@ export function ReportReview({
                                 name={`section_field_label_${section.id}_${fieldIndex}`}
                                 value={field.label}
                               />
-                              <label className="report-visibility-toggle">
-                                <input
-                                  type="checkbox"
-                                  name={`section_field_include_${section.id}_${fieldIndex}`}
-                                  defaultChecked
-                                />
-                                <span>Include in report</span>
-                              </label>
+                              <input type="hidden" name={`section_field_include_${section.id}_${fieldIndex}`} value="on" />
                               <label className="field-stack">
                                 <span className="label">{field.label}</span>
                                 <input
@@ -856,7 +925,29 @@ export function ReportReview({
             </div>
           </details>
 
-          <details className="report-subsection report-edit-panel" open>
+            {unusedReportSections.length > 0 ? (
+              <details className="report-subsection report-edit-panel">
+                <summary>
+                  <h3>Unused Report Sections ({unusedReportSections.length})</h3>
+                  <p className="muted">Available when this report needs additional specialized content.</p>
+                </summary>
+                <div className="report-content-grid">
+                  {unusedReportSections.map((section) => (
+                    <article id={`report-section-${section.id}`} key={section.id} className="report-field-card report-edit-field-card">
+                      <input type="hidden" name={`section_include_${section.id}`} value={isHiddenFromReport(section.metadata) ? "" : "on"} />
+                      <input type="hidden" name={`section_title_${section.id}`} value={stripConfidenceText(section.title)} />
+                      <input type="hidden" name={`section_body_${section.id}`} value={stripConfidenceText(section.body ?? "")} />
+                      <input type="hidden" name={`section_field_count_${section.id}`} value="0" />
+                      <strong>{getSectionDisplayTitle(section)}</strong>
+                      <span className="muted">Not detected</span>
+                      <button type="button" className="button button-secondary touch-target">Add</button>
+                    </article>
+                  ))}
+                </div>
+              </details>
+            ) : null}
+
+          <details id="report-evidence-editor" className="report-subsection report-edit-panel" open>
             <summary>
               <h3>Supporting Evidence</h3>
               <p className="muted">
@@ -873,9 +964,9 @@ export function ReportReview({
 
           <details className="report-subsection report-edit-panel">
             <summary>
-              <h3>Form fields</h3>
+              <h3>Metadata</h3>
               <p className="muted">
-                Correct form details that should appear in the report.
+                Customer, asset, inspector, organization, and source form fields grouped for review.
               </p>
             </summary>
             <input
@@ -883,9 +974,15 @@ export function ReportReview({
               name="field_count"
               value={sourceFieldEntries.length}
             />
-            <div className="report-field-grid">
+            <div className="form-stack">
               {sourceFieldEntries.length > 0 ? (
-                sourceFieldEntries.map(([key, value], index) => (
+                Object.entries(sourceFieldGroups).map(([groupTitle, entries]) => (
+                  <section key={groupTitle} className="brand-section form-stack">
+                    <h4>{groupTitle}</h4>
+                    <div className="report-field-grid">
+                      {entries.map(([key, value]) => {
+                        const index = sourceFieldEntries.findIndex(([fieldKey]) => fieldKey === key);
+                        return (
                   <div
                     key={key}
                     className="report-field-card report-edit-field-card"
@@ -895,14 +992,7 @@ export function ReportReview({
                       name={`field_key_${index}`}
                       value={key}
                     />
-                    <label className="report-visibility-toggle">
-                      <input
-                        type="checkbox"
-                        name={`field_include_${index}`}
-                        defaultChecked
-                      />
-                      <span>Include in report</span>
-                    </label>
+                    <input type="hidden" name={`field_include_${index}`} value="on" />
                     <label className="field-stack">
                       <span className="label">{key.replace(/_/g, " ")}</span>
                       <input
@@ -912,6 +1002,10 @@ export function ReportReview({
                       />
                     </label>
                   </div>
+                        );
+                      })}
+                    </div>
+                  </section>
                 ))
               ) : (
                 <p className="muted">No saved form fields yet.</p>
@@ -919,7 +1013,7 @@ export function ReportReview({
             </div>
           </details>
 
-          <div className="form-actions report-inline-actions report-primary-flow">
+          <div id="report-export-actions" className="form-actions report-inline-actions report-primary-flow">
             <PendingActionButton className="button button-primary touch-target" pendingLabel="Saving edits…">
               Save Changes
             </PendingActionButton>
@@ -931,6 +1025,7 @@ export function ReportReview({
             </Link>
           </div>
         </form>
+        </>
       ) : null}
 
       {!isEditingReport ? (
@@ -1455,7 +1550,7 @@ function EvidenceGallery({
                     name={`capture_include_${item.capture.id}`}
                     defaultChecked={item.capture.include_in_report !== false}
                   />
-                  <span>Include in report</span>
+                  <span>Show in report export</span>
                 </label>
                 <DeleteEvidenceButton
                   captureId={item.capture.id}
@@ -1479,7 +1574,7 @@ function EvidenceGallery({
                 <strong>{item.title}</strong>
               </div>
               <label className="field-stack compact-field">
-                <span className="label">Group with observation</span>
+                <span className="label">Supports</span>
                 <select
                   className="input"
                   name={`capture_group_with_${item.capture.id}`}
@@ -1488,7 +1583,7 @@ function EvidenceGallery({
                   }
                 >
                   <option value={item.capture.id}>
-                    Standalone observation
+                    Standalone
                   </option>
                   {evidenceItems
                     .filter(
