@@ -12,6 +12,7 @@ import {
   normalizeFieldServiceDetails,
 } from "@/features/field-service";
 import { normalizeEvidenceCategory } from "@/features/capture/evidence-category";
+import { cleanCustomerFacingText } from "@/features/reports/customer-facing-text";
 import { buildUniversalReportDocument } from "@/features/reports/report-document";
 import {
   buildCustomerAssetRows,
@@ -178,46 +179,89 @@ function getDocumentedObservationCount(
   return dedupedEntryCount + actionCardCount;
 }
 
+function getObservationCategorySummary(
+  reviewDocument: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>,
+) {
+  const allEntries = [
+    ...reviewDocument.findings,
+    ...reviewDocument.concerns,
+    ...reviewDocument.recommendedActionEvidence,
+    ...reviewDocument.referenceDocuments,
+    ...reviewDocument.additionalNotes,
+    ...reviewDocument.supportingEvidence,
+  ];
+  return Array.from(
+    new Set(
+      allEntries
+        .map((entry) => getObservationCategoryLabel(entry))
+        .filter(Boolean),
+    ),
+  );
+}
+
 function buildReportOverviewHtml(params: {
   summary?: string | null;
   reportTitle?: string;
   documentedObservationCount?: number;
   imageEvidenceCount?: number;
+  documentEvidenceCount?: number;
+  observationCategories?: string[];
   reviewState?: string | null;
   timestampLabel?: string | null;
   timestampValue?: string | null;
 }) {
-  const summary = stripConfidenceText(params.summary ?? "").trim();
-  const reportTitle = params.reportTitle?.trim();
+  const summary = cleanCustomerFacingText(
+    stripConfidenceText(params.summary ?? ""),
+  );
+  const reportTitle = cleanCustomerFacingText(
+    params.reportTitle?.trim() ?? "",
+  ).replace(/[.]$/, "");
   const reportSubject = reportTitle
     ? /report$/i.test(reportTitle)
       ? reportTitle
       : `${reportTitle} report`
     : "report";
-  const summaryText =
-    summary ||
-    `This ${reportSubject} documents technician observations, key concerns, supporting proof, and recommended next actions.`;
+  const categoryList = (params.observationCategories ?? [])
+    .map((category) => cleanCustomerFacingText(category).replace(/[.]$/, ""))
+    .filter(Boolean)
+    .slice(0, 4);
+  const categoryText = categoryList.length
+    ? ` Documented categories include ${categoryList.join(", ")}.`
+    : "";
+  const countText =
+    typeof params.documentedObservationCount === "number"
+      ? ` It includes ${params.documentedObservationCount} documented observation${params.documentedObservationCount === 1 ? "" : "s"}.`
+      : " It documents technician observations.";
+  const generatedSummary = `This ${reportSubject} summarizes the inspection purpose, technician-documented conditions, supporting evidence, and recommended next actions where provided.${countText}${categoryText}`;
+  const summaryText = summary || generatedSummary;
   const paragraphs = summaryText
     .split(/\n{2,}/)
-    .map((paragraph) => paragraph.trim())
+    .map((paragraph) => cleanCustomerFacingText(paragraph.trim()))
     .filter(Boolean)
-    .slice(0, 3);
+    .slice(0, 2);
   const snapshotRows = [
     {
       label: "Documented observations",
       value:
         typeof params.documentedObservationCount === "number"
-          ? String(params.documentedObservationCount)
+          ? `${params.documentedObservationCount} Documented observation${params.documentedObservationCount === 1 ? "" : "s"}`
           : "",
     },
     {
-      label: "Image evidence",
+      label: "Supporting photographs",
       value:
         typeof params.imageEvidenceCount === "number"
-          ? String(params.imageEvidenceCount)
+          ? `${params.imageEvidenceCount} Supporting photograph${params.imageEvidenceCount === 1 ? "" : "s"}`
           : "",
     },
-    { label: "Review state", value: formatSnapshotState(params.reviewState) },
+    {
+      label: "Supporting documents",
+      value:
+        typeof params.documentEvidenceCount === "number"
+          ? `${params.documentEvidenceCount} Supporting document${params.documentEvidenceCount === 1 ? "" : "s"}`
+          : "",
+    },
+    { label: "Inspection status", value: formatSnapshotState(params.reviewState) },
     {
       label: params.timestampLabel ?? "Report timestamp",
       value: params.timestampValue ?? "",
@@ -244,7 +288,7 @@ function buildEvidenceGalleryHtml(
     .map((capture) => {
       const meta = evidenceByCaptureId.get(capture.id);
       const evidenceId = meta?.evidenceId ?? "Evidence";
-      const label = getCustomerFacingEvidenceTitle(capture, 0);
+      const label = cleanCustomerFacingText(getCustomerFacingEvidenceTitle(capture, 0));
       const captured =
         meta?.capturedAtLabel ??
         formatDateTimeInTimeZone(capture.captured_at, timeZone);
@@ -264,7 +308,7 @@ function buildFinalNotesHtml(
   session: Pick<ReportSession, "final_notes" | "include_final_notes_in_export">,
 ) {
   const notes = session.include_final_notes_in_export
-    ? (session.final_notes ?? "")
+    ? cleanCustomerFacingText(session.final_notes ?? "")
     : "";
   if (!notes) return "";
   return `<section class="item service-section"><h2>Final Summary / Report Notes</h2><p>${escapeHtml(notes).replace(/\n/g, "<br />")}</p></section>`;
@@ -353,23 +397,23 @@ function conciseHeadingFromNote(note: string) {
 
 function getCustomerFacingEvidenceTitle(capture: ReportCapture, index: number) {
   const storedTitle = getObservationReportTitleState(capture.extracted_data);
-  if (storedTitle.approved) return stripConfidenceText(storedTitle.approved);
+  if (storedTitle.approved) return cleanCustomerFacingText(stripConfidenceText(storedTitle.approved));
 
   const explicitTitle =
     getCaptureStringField(capture, "title") ||
     getCaptureStringField(capture, "display_title");
   if (explicitTitle && !looksLikeRawUploadFilename(explicitTitle))
-    return stripConfidenceText(explicitTitle);
+    return cleanCustomerFacingText(stripConfidenceText(explicitTitle));
 
-  if (storedTitle.suggested) return stripConfidenceText(storedTitle.suggested);
+  if (storedTitle.suggested) return cleanCustomerFacingText(stripConfidenceText(storedTitle.suggested));
 
   const noteHeading = conciseHeadingFromNote(
     capture.technician_note?.trim() || capture.transcript?.trim() || "",
   );
   if (noteHeading && !looksLikeRawUploadFilename(noteHeading))
-    return noteHeading;
+    return cleanCustomerFacingText(noteHeading);
   const trustedCaption = getTrustedCaption(capture);
-  if (trustedCaption) return stripConfidenceText(trustedCaption);
+  if (trustedCaption) return cleanCustomerFacingText(stripConfidenceText(trustedCaption));
   const category = normalizeEvidenceCategory(capture.evidence_category);
   if (category && category !== "supporting_evidence")
     return category
@@ -857,7 +901,7 @@ function buildFindingCardsHtml(
             observation.includes(detail.value),
           ),
       );
-      return `<article class="finding-card">${imageHtml}<div class="finding-content"><p class="eyebrow">Finding ${index + 1}</p><h3>${escapeHtml(finding.title)}</h3><h4>Observation / Condition</h4>${finding.observations.length ? finding.observations.map((item) => `<p>${escapeHtml(item)}</p>`).join("") : '<p class="muted">Condition documented in the supporting record.</p>'}${details.length ? `<h4>Supporting Details</h4>${renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value })))}` : ""}<h4>Recommended Action</h4>${finding.recommendations.length ? `<ul>${finding.recommendations.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : '<p class="muted">No specific recommended action was documented.</p>'}</div></article>`;
+      return `<article class="finding-card">${imageHtml}<div class="finding-content"><p class="eyebrow">Finding ${index + 1}</p><h3>${escapeHtml(cleanCustomerFacingText(finding.title))}</h3><h4>Observation / Condition</h4>${finding.observations.length ? finding.observations.map((item) => `<p>${escapeHtml(cleanCustomerFacingText(item))}</p>`).join("") : '<p class="muted">Condition documented in the supporting record.</p>'}${details.length ? `<h4>Supporting Details</h4>${renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value })))}` : ""}<h4>Recommended Action</h4>${finding.recommendations.length ? `<ul>${finding.recommendations.map((item) => `<li>${escapeHtml(cleanCustomerFacingText(item))}</li>`).join("")}</ul>` : '<p class="muted">No specific recommended action was documented.</p>'}</div></article>`;
     })
     .join("")}</section>`;
 }
@@ -867,7 +911,7 @@ function buildRecommendedActionsHtml(
 ) {
   const actions = getNormalizedRecommendedActions(findings);
   if (!actions.length) return "";
-  return `<section class="item service-section"><h2>Recommended Actions</h2><table><thead><tr><th>Priority</th><th>Action</th></tr></thead><tbody>${actions.map((item) => `<tr><td>${escapeHtml(item.priority)}</td><td>${escapeHtml(item.action)}</td></tr>`).join("")}</tbody></table></section>`;
+  return `<section class="item service-section"><h2>Recommended Actions</h2><table><thead><tr><th>Priority</th><th>Action</th></tr></thead><tbody>${actions.map((item) => `<tr><td>${escapeHtml(item.priority)}</td><td>${escapeHtml(cleanCustomerFacingText(item.action))}</td></tr>`).join("")}</tbody></table></section>`;
 }
 
 function isTrueReferenceDocument(capture: ReportCapture) {
@@ -951,10 +995,10 @@ function buildEvidenceItemsHtml(
               ? "video"
               : "image");
       const evidenceTitle = getPrimaryEvidenceLabel(capture);
-      const title = evidenceTitle;
+      const title = cleanCustomerFacingText(evidenceTitle);
       const mediaHtml =
         mediaKind === "note"
-          ? `<div class="video-still">${escapeHtml(stripConfidenceText(capture.technician_note || capture.transcript || "Technician Note"))}</div>`
+          ? `<div class="video-still">${escapeHtml(cleanCustomerFacingText(stripConfidenceText(capture.technician_note || capture.transcript || "Technician Note")))}</div>`
           : mediaKind === "image"
             ? renderExportImage(
                 imageAsset,
@@ -991,7 +1035,7 @@ function buildEvidenceItemsHtml(
         );
       recs.forEach((value) => renderedText.push(value));
       const recommendationsHtml = recs.length
-        ? `<section class="finding"><h3>Recommendations</h3><ul>${recs.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul></section>`
+        ? `<section class="finding"><h3>Recommendations</h3><ul>${recs.map((value) => `<li>${escapeHtml(cleanCustomerFacingText(value))}</li>`).join("")}</ul></section>`
         : "";
       return `<article class="item">
       <h2>${escapeHtml(title)}</h2>
@@ -1078,13 +1122,13 @@ function buildFormStructuredReportHtml(
             ? `<br><span class="muted">Choices: ${escapeHtml(field.status_choices.join(", "))}</span>`
             : "";
           const notes = field.notes
-            ? `<br><span class="muted">${escapeHtml(stripConfidenceText(field.notes))}</span>`
+            ? `<br><span class="muted">${escapeHtml(cleanCustomerFacingText(stripConfidenceText(field.notes)))}</span>`
             : "";
           return `<tr><th>${escapeHtml(field.label)}</th><td>${escapeHtml(stripConfidenceText(valueParts) || "Not captured")}${choices}${notes}${evidenceFor(section.key, field.key)}</td></tr>`;
         })
         .join("");
       const sectionEvidence = evidenceFor(section.key, null);
-      return `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2>${section.body ? `<p>${escapeHtml(stripConfidenceText(section.body))}</p>` : ""}${rows ? `<table class="checklist-table"><tbody>${rows}</tbody></table>` : `<p class="muted">No captured fields in this section.</p>`}${sectionEvidence}</section>`;
+      return `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2>${section.body ? `<p>${escapeHtml(cleanCustomerFacingText(stripConfidenceText(section.body)))}</p>` : ""}${rows ? `<table class="checklist-table"><tbody>${rows}</tbody></table>` : `<p class="muted">No captured fields in this section.</p>`}${sectionEvidence}</section>`;
     })
     .join("")}`;
 }
@@ -1159,8 +1203,8 @@ function buildDocumentedObservationsHtml(
       ? `<div class="supporting-evidence-panel"><div class="supporting-evidence-heading"><strong>Additional supporting photos</strong><span>${supportingImageAssets.length} photo${supportingImageAssets.length === 1 ? "" : "s"}</span></div><div class="supporting-export-grid" data-count="${supportingImageAssets.length}">${supportingImageAssets.map(({ capture: groupCapture, asset }) => `<div class="supporting-export-item">${renderExportImage(asset, getPrimaryEvidenceLabel(groupCapture), "Preview unavailable in printable export. Original evidence retained.", getLightboxOptions(groupCapture.id))}</div>`).join("")}</div></div>`
       : "";
     const renderedText: string[] = [];
-    const technicianNote = stripConfidenceText(
-      capture.technician_note || capture.transcript || "",
+    const technicianNote = cleanCustomerFacingText(
+      stripConfidenceText(capture.technician_note || capture.transcript || ""),
     );
     if (technicianNote) renderedText.push(technicianNote);
     const details = dedupeEvidenceDetails(entry.group.details).filter(
@@ -1186,20 +1230,20 @@ function buildDocumentedObservationsHtml(
         if (visible) renderedText.push(value);
         return visible;
       });
-    const heading = getCustomerFacingEvidenceTitle(capture, index);
+    const heading = cleanCustomerFacingText(getCustomerFacingEvidenceTitle(capture, index));
     const technicianNoteHtml = technicianNote
       ? `<div class="technician-note-block"><h4>Technician Note</h4><p>${escapeHtml(technicianNote)}</p></div>`
       : "";
     const hasPhotoEvidence = groupImageAssets.length > 0;
     const evidenceHtml =
       isDocument || details.length || hasPhotoEvidence
-        ? `<div class="proof-block"><h4>Evidence</h4>${isDocument ? `<p class="proof-line"><strong>Supporting document:</strong> ${escapeHtml(getCustomerFacingEvidenceTitle(capture, index))}</p>` : ""}${!isDocument && hasPhotoEvidence ? '<p class="proof-line">Supporting photo included with this observation.</p>' : ""}${details.length ? renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value }))) : ""}</div>`
+        ? `<div class="proof-block"><h4>Evidence</h4>${isDocument ? `<p class="proof-line">✓ Supporting document attached.</p>` : ""}${!isDocument && hasPhotoEvidence ? '<p class="proof-line">✓ Supporting photographic evidence attached.</p>' : ""}${details.length ? renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value }))) : ""}</div>`
         : "";
-    return `<article class="finding-card observation-card"><div class="observation-main">${mediaHtml}<div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">${String(index + 1).padStart(2, "0")}</span><span class="observation-kind">${escapeHtml(getObservationCategoryLabel(entry))}</span></div><div class="condition-block"><h4>Condition</h4><h3>${escapeHtml(heading)}</h3></div>${evidenceHtml}${technicianNoteHtml}${recommendations.length ? `<div class="proof-block"><h4>Recommended Action</h4><ul>${recommendations.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul></div>` : ""}</div></div>${supportingImagesHtml}</article>`;
+    return `<article class="finding-card observation-card"><div class="observation-main">${mediaHtml}<div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">${String(index + 1).padStart(2, "0")}</span><span class="observation-kind">${escapeHtml(getObservationCategoryLabel(entry))}</span></div><div class="condition-block"><h4>Condition</h4><h3>${escapeHtml(heading)}</h3></div>${evidenceHtml}${technicianNoteHtml}${recommendations.length ? `<div class="proof-block"><h4>Recommended Action</h4><ul>${recommendations.map((value) => `<li>${escapeHtml(cleanCustomerFacingText(value))}</li>`).join("")}</ul></div>` : ""}</div></div>${supportingImagesHtml}</article>`;
   });
   const actionEntryCards = actionCards.map(
     (action, index) =>
-      `<article class="finding-card observation-card"><div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">${String(entries.length + index + 1).padStart(2, "0")}</span><span class="observation-kind">Recommended Action</span></div><div class="condition-block"><h4>Condition</h4><h3>Recommended Action</h3></div><div class="proof-block"><h4>Recommended Action</h4><p>${escapeHtml(stripConfidenceText(action.action))}</p></div></div></article>`,
+      `<article class="finding-card observation-card"><div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">${String(entries.length + index + 1).padStart(2, "0")}</span><span class="observation-kind">Recommended Action</span></div><div class="condition-block"><h4>Condition</h4><h3>Recommended Action</h3></div><div class="proof-block"><h4>Recommended Action</h4><p>${escapeHtml(cleanCustomerFacingText(stripConfidenceText(action.action)))}</p></div></div></article>`,
   );
   const observationCards = [...entryCards, ...actionEntryCards];
   const [firstObservationHtml = "", ...remainingObservationHtml] =
@@ -1559,6 +1603,10 @@ function buildFieldServiceReportHtml({
     reportTitle,
     documentedObservationCount: getDocumentedObservationCount(reviewDocument),
     imageEvidenceCount: fieldAppendixCaptures.filter(isImageEvidence).length,
+    documentEvidenceCount: fieldAppendixCaptures.filter(
+      (capture) => getEvidenceKind(capture) === "document",
+    ).length,
+    observationCategories: getObservationCategorySummary(reviewDocument),
     reviewState: reportDraft?.status ?? session.review_status,
     timestampLabel: approvalDate ? "Approved" : "Generated",
     timestampValue: snapshotTimestamp
@@ -2493,6 +2541,10 @@ export async function GET(_request: Request, { params }: RouteContext) {
     reportTitle,
     documentedObservationCount: getDocumentedObservationCount(reviewDocument),
     imageEvidenceCount: imageCount,
+    documentEvidenceCount: appendixCaptureItems.filter(
+      (capture) => getEvidenceKind(capture) === "document",
+    ).length,
+    observationCategories: getObservationCategorySummary(reviewDocument),
     reviewState: reportDraft?.status ?? session.review_status,
     timestampLabel: approvalDate ? "Approved" : "Generated",
     timestampValue: snapshotTimestamp
