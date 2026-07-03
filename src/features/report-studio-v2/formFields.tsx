@@ -1,13 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { WorkspaceBrandProfile } from "@/features/branding/types";
 const areas = ["cover_page","header","section_headings","body_text","evidence_titles","evidence_notes","footer","signature"];
-export function ReportStudioHiddenFields({ brand, selectedSessionId }: { brand: WorkspaceBrandProfile; selectedSessionId: string | null }) {
+export function ReportStudioHiddenFields({ brand, selectedSessionId, selectedTemplateId }: { brand: WorkspaceBrandProfile; selectedSessionId: string | null; selectedTemplateId?: string | null }) {
   const rs = brand.report_style;
   const bools: Record<string, boolean | undefined> = {
     evidence_numbering: rs.evidenceNumbering, evidence_appendix: rs.evidenceAppendix, timestamps: rs.timestamps, capture_metadata: rs.captureMetadata, evidence_notes: rs.notes, evidence_location: rs.location, evidence_ids: rs.evidenceIds, section_grouping: rs.sectionGrouping, show_report_date: rs.showReportDate, show_prepared_by: rs.showPreparedBy, show_page_number: rs.showPageNumber, show_generated_by_cred: rs.showGeneratedByCred, showCoverLogo: rs.showCoverLogo, showCoverCompanyInfo: rs.showCoverCompanyInfo, showCoverTitle: rs.showCoverTitle, showCoverClient: rs.showCoverClient, showCoverAsset: rs.showCoverAsset, showCoverLocation: rs.showCoverLocation, showCoverPreparedBy: rs.showCoverPreparedBy, showCoverDate: rs.showCoverDate, showCoverReportId: rs.showCoverReportId, showCoverImage: rs.showCoverImage, showConfidentialityLabel: rs.showConfidentialityLabel, showSectionLabels: rs.showSectionLabels, showSectionDividers: rs.showSectionDividers, showSectionNumbers: rs.showSectionNumbers, signature_date: rs.signatureDate, approval_block: rs.approvalBlock, header_gradient_preset: rs.headerOptions?.gradientPreset, show_report_id: brand.show_report_id, show_page_date: brand.show_page_date, show_contact_info: brand.show_contact_info, show_confidentiality_note: brand.show_confidentiality_note, show_signature_block: brand.show_signature_block,
   };
   return <>
     <input type="hidden" name="selected_session_output_id" value={selectedSessionId ?? ""} />
+    <input type="hidden" name="selected_template_id" value={selectedTemplateId ?? ""} />
     {(["display_name","tagline","phone","email","website","address","license_number","certification_number","tax_number","insurance_number","business_hours","department","prepared_by_name","prepared_by_title","footer_text"] as const).map((k)=><input key={k} type="hidden" name={k} value={(brand[k] as string | null) ?? ""} />)}
     {(["logo","dark_logo","icon","signature"] as const).map((k)=><input key={k} type="hidden" name={`current_${k}`} value={(k==="logo"?brand.logo_storage_path:k==="dark_logo"?brand.dark_logo_storage_path:k==="icon"?brand.icon_storage_path:brand.signature_storage_path) ?? ""} />)}
     {Object.entries(brand.colors).map(([k,v])=><input key={k} type="hidden" name={`color_${k}`} value={v} />)}
