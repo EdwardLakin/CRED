@@ -33,10 +33,10 @@ test('palette list has at least 20 full-token palettes', () => {
 })
 
 test('palette apply changes draft color tokens independently from template layout', () => {
-  assert.match(drawer, /<h2>Color Palettes<\/h2>/)
+  assert.match(drawer, /title = drawerMode === 'palettes' \? 'Color Palettes' : 'Templates'/)
   assert.match(drawer, /onApplyPalette\(p\.name,p\.colors\)/)
   assert.match(route, /applyPalette = \(name: string, colors: WorkspaceBrandProfile\["colors"\]\) => \{ patchBrand\(\{ \.\.\.draftBrandProfile, colors \}\)/)
-  assert.match(route, /const currentColors = draftBrandProfile\.colors; const next = normalizeBrandProfile\(template\); patchBrand\(\{ \.\.\.next, colors: currentColors \}\)/)
+  assert.match(route, /isSystemTemplate \? \{ \.\.\.next, colors: currentColors \} : next/)
   assert.match(drawer, /Applying a template changes layout only/)
   assert.match(drawer, /Apply default palette/)
 })

@@ -17,7 +17,7 @@ export function ReportStudioRoute(props: ReportStudioProps) {
   useEffect(() => { const mq = window.matchMedia("(max-width: 720px)"); const sync=()=>setIsPhone(mq.matches); sync(); mq.addEventListener("change", sync); return()=>mq.removeEventListener("change", sync); }, []);
   const selectedSession = useMemo(() => props.sessions.find((s) => s.id === selectedSessionId) ?? props.sessions[0] ?? null, [props.sessions, selectedSessionId]);
   const patchBrand = (next: WorkspaceBrandProfile) => { setDraftBrandProfile(normalizeBrandProfile(next)); setIsDirty(true); };
-  const applyTemplate = (template: WorkspaceBrandProfile, id: string) => { const currentColors = draftBrandProfile.colors; const next = normalizeBrandProfile(template); patchBrand({ ...next, colors: currentColors }); setSelectedTemplateId(id); };
+  const applyTemplate = (template: WorkspaceBrandProfile, id: string) => { const currentColors = draftBrandProfile.colors; const next = normalizeBrandProfile(template); const isSystemTemplate = id.startsWith("system:"); patchBrand(isSystemTemplate ? { ...next, colors: currentColors } : next); setSelectedTemplateId(id); if (!isSystemTemplate) setSelectedPaletteName(null); };
   const applyTemplateDefaultPalette = (template: WorkspaceBrandProfile, id: string) => { patchBrand(normalizeBrandProfile(template)); setSelectedTemplateId(id); setSelectedPaletteName(null); };
   const applyPalette = (name: string, colors: WorkspaceBrandProfile["colors"]) => { patchBrand({ ...draftBrandProfile, colors }); setSelectedPaletteName(name); };
   const state = { draftBrandProfile, selectedSessionId, selectedTemplateId, selectedPaletteName, activeSection, isDirty, selectedSession };
