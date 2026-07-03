@@ -1190,9 +1190,10 @@ function buildDocumentedObservationsHtml(
     const technicianNoteHtml = technicianNote
       ? `<div class="technician-note-block"><h4>Technician Note</h4><p>${escapeHtml(technicianNote)}</p></div>`
       : "";
+    const hasPhotoEvidence = groupImageAssets.length > 0;
     const evidenceHtml =
-      isDocument || details.length
-        ? `<div class="proof-block"><h4>Evidence</h4>${isDocument ? `<p class="proof-line"><strong>Supporting document:</strong> ${escapeHtml(getCustomerFacingEvidenceTitle(capture, index))}</p>` : ""}${details.length ? renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value }))) : ""}</div>`
+      isDocument || details.length || hasPhotoEvidence
+        ? `<div class="proof-block"><h4>Evidence</h4>${isDocument ? `<p class="proof-line"><strong>Supporting document:</strong> ${escapeHtml(getCustomerFacingEvidenceTitle(capture, index))}</p>` : ""}${!isDocument && hasPhotoEvidence ? '<p class="proof-line">Supporting photo included with this observation.</p>' : ""}${details.length ? renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value }))) : ""}</div>`
         : "";
     return `<article class="finding-card observation-card"><div class="observation-main">${mediaHtml}<div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">${String(index + 1).padStart(2, "0")}</span><span class="observation-kind">${escapeHtml(getObservationCategoryLabel(entry))}</span></div><div class="condition-block"><h4>Condition</h4><h3>${escapeHtml(heading)}</h3></div>${evidenceHtml}${technicianNoteHtml}${recommendations.length ? `<div class="proof-block"><h4>Recommended Action</h4><ul>${recommendations.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul></div>` : ""}</div></div>${supportingImagesHtml}</article>`;
   });
@@ -1634,6 +1635,12 @@ const REPORT_STYLES = `
 
 .report-snapshot dl div{
   background:white;
+}
+
+@media (max-width:800px){
+  .report-snapshot dl{
+    grid-template-columns:1fr;
+  }
 }
 
 
