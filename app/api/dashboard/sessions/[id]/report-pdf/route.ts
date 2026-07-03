@@ -30,9 +30,7 @@ import {
   sanitizeCapturesForImageAiAssist,
 } from "@/features/reports/report-structure";
 import { getDisplayReportTitle } from "@/features/reports/report-title";
-import {
-  getObservationReportTitleState,
-} from "@/features/reports/observation-titles";
+import { getObservationReportTitleState } from "@/features/reports/observation-titles";
 import {
   getObservationGroupKey,
   getOrderedObservationGroupCaptures,
@@ -51,16 +49,22 @@ import {
 } from "@/lib/date-format";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Database, Json } from "@/lib/supabase/database.types";
-import { DEFAULT_BRAND_PROFILE, normalizeBrandProfile, type WorkspaceBrandProfile } from "@/features/branding/types";
-import { normalizeReportTemplate } from "@/features/branding/templates";
 import {
-  buildBrandCss,
-} from "@/features/report-studio/rendering/report-brand-css";
+  DEFAULT_BRAND_PROFILE,
+  normalizeBrandProfile,
+  type WorkspaceBrandProfile,
+} from "@/features/branding/types";
+import { normalizeReportTemplate } from "@/features/branding/templates";
+import { buildBrandCss } from "@/features/report-studio/rendering/report-brand-css";
 import { buildReportOpen } from "@/features/report-studio/rendering/report-shell";
 import { buildReportCoverHtml } from "@/features/report-studio/rendering/report-cover";
 import { buildPrintFooterHtml } from "@/features/report-studio/rendering/report-footer";
 import { buildApprovalHtml } from "@/features/report-studio/rendering/report-signatures";
-import { escapeHtml, escapeHtmlAttributeRaw, isRecord } from "@/features/report-studio/rendering/html";
+import {
+  escapeHtml,
+  escapeHtmlAttributeRaw,
+  isRecord,
+} from "@/features/report-studio/rendering/html";
 import type { ExportImageAsset } from "@/features/report-studio/rendering/types";
 
 export const runtime = "nodejs";
@@ -82,7 +86,6 @@ type ReportSession =
 
 type ReportPresentationMode = "gallery" | "detailed";
 type ExportBranding = WorkspaceBrandProfile;
-
 
 function hasUniqueReportDetails(params: {
   reviewDocument: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>;
@@ -120,7 +123,6 @@ function getReportPresentationMode(params: {
   return "gallery";
 }
 
-
 function cleanReportTitle(
   preferred: string | null | undefined,
   session: ReportSession,
@@ -145,9 +147,45 @@ function getApprovalDate(
   return draft?.approved_at ?? session.reviewed_at ?? null;
 }
 
+function formatSnapshotState(value: string | null | undefined) {
+  if (!value) return "";
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function getDocumentedObservationCount(
+  reviewDocument: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>,
+) {
+  const allEntries = [
+    ...reviewDocument.findings,
+    ...reviewDocument.concerns,
+    ...reviewDocument.recommendedActionEvidence,
+    ...reviewDocument.referenceDocuments,
+    ...reviewDocument.additionalNotes,
+    ...reviewDocument.supportingEvidence,
+  ];
+  const renderedIds = new Set<string>();
+  const dedupedEntryCount = allEntries.filter((entry) => {
+    const groupKey = getObservationGroupKey(entry.capture);
+    if (renderedIds.has(groupKey)) return false;
+    renderedIds.add(groupKey);
+    return true;
+  }).length;
+  const actionCardCount = reviewDocument.categorizedRecommendedActions.filter(
+    (item) => item.action.trim(),
+  ).length;
+  return dedupedEntryCount + actionCardCount;
+}
+
 function buildReportOverviewHtml(params: {
   summary?: string | null;
   reportTitle?: string;
+  documentedObservationCount?: number;
+  imageEvidenceCount?: number;
+  reviewState?: string | null;
+  timestampLabel?: string | null;
+  timestampValue?: string | null;
 }) {
   const summary = stripConfidenceText(params.summary ?? "").trim();
   const reportTitle = params.reportTitle?.trim();
@@ -164,7 +202,31 @@ function buildReportOverviewHtml(params: {
     .map((paragraph) => paragraph.trim())
     .filter(Boolean)
     .slice(0, 3);
-  return `<section class="item service-section overview-section"><div class="section-heading"><p class="eyebrow">Report Overview</p><h2>Executive Summary</h2></div><div class="summary-panel">${paragraphs.map((paragraph) => `<p class="summary-lead">${escapeHtml(paragraph)}</p>`).join("")}<p class="summary-trust">Technician-approved summary. Supporting proof is organized under Documented Observations.</p></div></section>`;
+  const snapshotRows = [
+    {
+      label: "Documented observations",
+      value:
+        typeof params.documentedObservationCount === "number"
+          ? String(params.documentedObservationCount)
+          : "",
+    },
+    {
+      label: "Image evidence",
+      value:
+        typeof params.imageEvidenceCount === "number"
+          ? String(params.imageEvidenceCount)
+          : "",
+    },
+    { label: "Review state", value: formatSnapshotState(params.reviewState) },
+    {
+      label: params.timestampLabel ?? "Report timestamp",
+      value: params.timestampValue ?? "",
+    },
+  ].filter((row) => row.value);
+  const snapshotHtml = snapshotRows.length
+    ? `<div class="report-snapshot"><h3>Report Snapshot</h3><dl>${snapshotRows.map((row) => `<div><dt>${escapeHtml(row.label)}</dt><dd>${escapeHtml(row.value)}</dd></div>`).join("")}</dl></div>`
+    : "";
+  return `<section class="item service-section overview-section"><div class="section-heading"><p class="eyebrow">Report Overview</p><h2>Executive Summary</h2></div><div class="summary-panel">${paragraphs.map((paragraph) => `<p class="summary-lead">${escapeHtml(paragraph)}</p>`).join("")}${snapshotHtml}<p class="summary-trust">Organized for readability. Technician-approved content remains the source of truth.</p></div></section>`;
 }
 
 function buildEvidenceGalleryHtml(
@@ -299,8 +361,7 @@ function getCustomerFacingEvidenceTitle(capture: ReportCapture, index: number) {
   if (explicitTitle && !looksLikeRawUploadFilename(explicitTitle))
     return stripConfidenceText(explicitTitle);
 
-  if (storedTitle.suggested)
-    return stripConfidenceText(storedTitle.suggested);
+  if (storedTitle.suggested) return stripConfidenceText(storedTitle.suggested);
 
   const noteHeading = conciseHeadingFromNote(
     capture.technician_note?.trim() || capture.transcript?.trim() || "",
@@ -624,7 +685,10 @@ function getDetailValue(details: Record<string, unknown>, fieldName: string) {
 function getProfessionalRows(rows: Array<{ label: string; value: string }>) {
   const visibleRows = rows.filter((row) => row.value.trim());
   const captured = visibleRows.filter(
-    (row) => !/^(not captured|pending|unknown|none|n\/a|not applicable)$/i.test(row.value.trim()),
+    (row) =>
+      !/^(not captured|pending|unknown|none|n\/a|not applicable)$/i.test(
+        row.value.trim(),
+      ),
   );
   return captured.length > 0 ? captured : visibleRows.slice(0, 4);
 }
@@ -952,10 +1016,14 @@ function getObservationCategoryLabel(
   if (entry.purpose === "reference_document") {
     if (getEvidenceKind(entry.capture) === "document")
       return "Reference Document";
-    return getUserEvidenceText(entry.capture) ? "Observation" : "Photo Evidence";
+    return getUserEvidenceText(entry.capture)
+      ? "Observation"
+      : "Photo Evidence";
   }
   if (entry.purpose === "supporting_evidence")
-    return getUserEvidenceText(entry.capture) ? "Observation" : "Photo Evidence";
+    return getUserEvidenceText(entry.capture)
+      ? "Observation"
+      : "Photo Evidence";
   return "Observation";
 }
 
@@ -1046,90 +1114,91 @@ function buildDocumentedObservationsHtml(
   if (entries.length === 0 && actionCards.length === 0)
     return '<section class="item service-section"><h2>Documented Observations</h2><p class="muted">No documented observations added yet.</p></section>';
   const entryCards = entries.map((entry, index) => {
-      const capture = entry.capture;
-      const groupCaptures = getOrderedObservationGroupCaptures(
-        capture,
-        allEntries.map((candidate) => candidate.capture),
+    const capture = entry.capture;
+    const groupCaptures = getOrderedObservationGroupCaptures(
+      capture,
+      allEntries.map((candidate) => candidate.capture),
+    );
+    const primaryImageCapture =
+      groupCaptures.find((groupCapture) => groupCapture.id === capture.id) ??
+      groupCaptures[0] ??
+      capture;
+    const imageAsset = imageAssets[primaryImageCapture.id];
+    const kind = getEvidenceKind(capture);
+    const isDocument = kind === "document" || capture.media_kind === "document";
+    const groupImageAssets = groupCaptures
+      .filter((groupCapture) => getEvidenceKind(groupCapture) === "image")
+      .map((groupCapture) => ({
+        capture: groupCapture,
+        asset: imageAssets[groupCapture.id],
+      }))
+      .filter(
+        ({ asset }) =>
+          asset?.classification === "webSafeImage" && asset.mediaUrl,
       );
-      const primaryImageCapture =
-        groupCaptures.find((groupCapture) => groupCapture.id === capture.id) ??
-        groupCaptures[0] ??
-        capture;
-      const imageAsset = imageAssets[primaryImageCapture.id];
-      const kind = getEvidenceKind(capture);
-      const isDocument =
-        kind === "document" || capture.media_kind === "document";
-      const groupImageAssets = groupCaptures
-        .filter((groupCapture) => getEvidenceKind(groupCapture) === "image")
-        .map((groupCapture) => ({
-          capture: groupCapture,
-          asset: imageAssets[groupCapture.id],
-        }))
-        .filter(
-          ({ asset }) =>
-            asset?.classification === "webSafeImage" && asset.mediaUrl,
-        );
-      const primaryImageAsset = groupImageAssets.find(
-        ({ capture: groupCapture }) =>
-          groupCapture.id === primaryImageCapture.id,
-      );
-      const supportingImageAssets = groupImageAssets.filter(
-        ({ capture: groupCapture }) =>
-          groupCapture.id !== primaryImageCapture.id,
-      );
-      const lightboxGroup = `observation-${index}`;
-      const getLightboxOptions = (captureId: string) => ({
-        group: lightboxGroup,
-        index: groupImageAssets.findIndex(
-          ({ capture: groupCapture }) => groupCapture.id === captureId,
-        ),
-        total: groupImageAssets.length,
-      });
-      const mediaHtml = primaryImageAsset
-        ? `<div class="media">${renderExportImage(primaryImageAsset.asset, getPrimaryEvidenceLabel(primaryImageAsset.capture), "Preview unavailable in printable export. Original evidence retained.", getLightboxOptions(primaryImageAsset.capture.id))}</div>`
-        : imageAsset?.originalMediaUrl
-          ? `<p class="original-link"><a href="${escapeHtmlAttributeRaw(imageAsset.originalMediaUrl)}">Open supporting ${isDocument ? "document" : "file"}</a></p>`
-          : "";
-      const supportingImagesHtml = supportingImageAssets.length
-        ? `<div class="supporting-evidence-panel"><div class="supporting-evidence-heading"><strong>Additional supporting photos</strong><span>${supportingImageAssets.length} photo${supportingImageAssets.length === 1 ? "" : "s"}</span></div><div class="supporting-export-grid" data-count="${supportingImageAssets.length}">${supportingImageAssets.map(({ capture: groupCapture, asset }) => `<div class="supporting-export-item">${renderExportImage(asset, getPrimaryEvidenceLabel(groupCapture), "Preview unavailable in printable export. Original evidence retained.", getLightboxOptions(groupCapture.id))}</div>`).join("")}</div></div>`
-        : "";
-      const renderedText: string[] = [];
-      const technicianNote = stripConfidenceText(
-        capture.technician_note || capture.transcript || "",
-      );
-      if (technicianNote) renderedText.push(technicianNote);
-      const details = dedupeEvidenceDetails(entry.group.details).filter(
-        (detail) => {
-          if (!shouldRenderTrustedProofDetail(capture, detail)) return false;
-          const visible = shouldRenderDetail(
-            detail.label,
-            detail.value,
-            renderedText,
-          );
-          if (visible) renderedText.push(detail.value);
-          return visible;
-        },
-      );
-      const recommendations = entry.group.recommendations
-        .flatMap(splitRecommendationText)
-        .filter((value) => {
-          const visible = shouldRenderDetail(
-            "Recommendation",
-            value,
-            renderedText,
-          );
-          if (visible) renderedText.push(value);
-          return visible;
-        });
-      const heading = getCustomerFacingEvidenceTitle(capture, index);
-      const technicianNoteHtml = technicianNote
-        ? `<div class="technician-note-block"><h4>Technician Note</h4><p>${escapeHtml(technicianNote)}</p></div>`
-        : "";
-      return `<article class="finding-card observation-card"><div class="observation-main">${mediaHtml}<div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">${String(index + 1).padStart(2, "0")}</span><span class="observation-kind">${escapeHtml(getObservationCategoryLabel(entry))}</span></div><h3>${escapeHtml(heading)}</h3>${technicianNoteHtml}${isDocument ? `<p class="proof-line"><strong>Supporting document:</strong> ${escapeHtml(getCustomerFacingEvidenceTitle(capture, index))}</p>` : ""}${details.length ? `<div class="proof-block"><h4>Verified details</h4>${renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value })))}</div>` : ""}${recommendations.length ? `<div class="proof-block"><h4>Recommended Action</h4><ul>${recommendations.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul></div>` : ""}</div></div>${supportingImagesHtml}</article>`;
+    const primaryImageAsset = groupImageAssets.find(
+      ({ capture: groupCapture }) => groupCapture.id === primaryImageCapture.id,
+    );
+    const supportingImageAssets = groupImageAssets.filter(
+      ({ capture: groupCapture }) => groupCapture.id !== primaryImageCapture.id,
+    );
+    const lightboxGroup = `observation-${index}`;
+    const getLightboxOptions = (captureId: string) => ({
+      group: lightboxGroup,
+      index: groupImageAssets.findIndex(
+        ({ capture: groupCapture }) => groupCapture.id === captureId,
+      ),
+      total: groupImageAssets.length,
     });
+    const mediaHtml = primaryImageAsset
+      ? `<div class="media">${renderExportImage(primaryImageAsset.asset, getPrimaryEvidenceLabel(primaryImageAsset.capture), "Preview unavailable in printable export. Original evidence retained.", getLightboxOptions(primaryImageAsset.capture.id))}</div>`
+      : imageAsset?.originalMediaUrl
+        ? `<p class="original-link"><a href="${escapeHtmlAttributeRaw(imageAsset.originalMediaUrl)}">Open supporting ${isDocument ? "document" : "file"}</a></p>`
+        : "";
+    const supportingImagesHtml = supportingImageAssets.length
+      ? `<div class="supporting-evidence-panel"><div class="supporting-evidence-heading"><strong>Additional supporting photos</strong><span>${supportingImageAssets.length} photo${supportingImageAssets.length === 1 ? "" : "s"}</span></div><div class="supporting-export-grid" data-count="${supportingImageAssets.length}">${supportingImageAssets.map(({ capture: groupCapture, asset }) => `<div class="supporting-export-item">${renderExportImage(asset, getPrimaryEvidenceLabel(groupCapture), "Preview unavailable in printable export. Original evidence retained.", getLightboxOptions(groupCapture.id))}</div>`).join("")}</div></div>`
+      : "";
+    const renderedText: string[] = [];
+    const technicianNote = stripConfidenceText(
+      capture.technician_note || capture.transcript || "",
+    );
+    if (technicianNote) renderedText.push(technicianNote);
+    const details = dedupeEvidenceDetails(entry.group.details).filter(
+      (detail) => {
+        if (!shouldRenderTrustedProofDetail(capture, detail)) return false;
+        const visible = shouldRenderDetail(
+          detail.label,
+          detail.value,
+          renderedText,
+        );
+        if (visible) renderedText.push(detail.value);
+        return visible;
+      },
+    );
+    const recommendations = entry.group.recommendations
+      .flatMap(splitRecommendationText)
+      .filter((value) => {
+        const visible = shouldRenderDetail(
+          "Recommendation",
+          value,
+          renderedText,
+        );
+        if (visible) renderedText.push(value);
+        return visible;
+      });
+    const heading = getCustomerFacingEvidenceTitle(capture, index);
+    const technicianNoteHtml = technicianNote
+      ? `<div class="technician-note-block"><h4>Technician Note</h4><p>${escapeHtml(technicianNote)}</p></div>`
+      : "";
+    const evidenceHtml =
+      isDocument || details.length
+        ? `<div class="proof-block"><h4>Evidence</h4>${isDocument ? `<p class="proof-line"><strong>Supporting document:</strong> ${escapeHtml(getCustomerFacingEvidenceTitle(capture, index))}</p>` : ""}${details.length ? renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value }))) : ""}</div>`
+        : "";
+    return `<article class="finding-card observation-card"><div class="observation-main">${mediaHtml}<div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">${String(index + 1).padStart(2, "0")}</span><span class="observation-kind">${escapeHtml(getObservationCategoryLabel(entry))}</span></div><div class="condition-block"><h4>Condition</h4><h3>${escapeHtml(heading)}</h3></div>${evidenceHtml}${technicianNoteHtml}${recommendations.length ? `<div class="proof-block"><h4>Recommended Action</h4><ul>${recommendations.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul></div>` : ""}</div></div>${supportingImagesHtml}</article>`;
+  });
   const actionEntryCards = actionCards.map(
     (action, index) =>
-      `<article class="finding-card observation-card"><div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">${String(entries.length + index + 1).padStart(2, "0")}</span><span class="observation-kind">Recommended Action</span></div><h3>Recommended Action</h3><div class="technician-note-block"><h4>Technician Note</h4><p>${escapeHtml(stripConfidenceText(action.action))}</p></div></div></article>`,
+      `<article class="finding-card observation-card"><div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">${String(entries.length + index + 1).padStart(2, "0")}</span><span class="observation-kind">Recommended Action</span></div><div class="condition-block"><h4>Condition</h4><h3>Recommended Action</h3></div><div class="proof-block"><h4>Recommended Action</h4><p>${escapeHtml(stripConfidenceText(action.action))}</p></div></div></article>`,
   );
   const observationCards = [...entryCards, ...actionEntryCards];
   const [firstObservationHtml = "", ...remainingObservationHtml] =
@@ -1152,10 +1221,15 @@ function buildEvidenceAppendixHtml(
   captures: ReportCapture[],
   imageAssets: Record<string, ExportImageAsset>,
   timeZone: string | null,
-  options: { showDebugDetails?: boolean; renderImages?: boolean; branding?: ExportBranding | null } = {},
+  options: {
+    showDebugDetails?: boolean;
+    renderImages?: boolean;
+    branding?: ExportBranding | null;
+  } = {},
 ) {
   if (options.branding?.report_style.evidenceAppendix === false) return "";
-  const style = options.branding?.report_style ?? DEFAULT_BRAND_PROFILE.report_style;
+  const style =
+    options.branding?.report_style ?? DEFAULT_BRAND_PROFILE.report_style;
   if (captures.length === 0)
     return '<section class="item service-section"><h2>Evidence Appendix</h2><p class="muted">No included evidence selected for this report.</p></section>';
   const reportDocument = buildUniversalReportDocument({ captures, timeZone });
@@ -1323,10 +1397,7 @@ function buildDiagnosticProcedureReportHtml(params: {
     { label: "Session", value: params.session.title },
     {
       label: "Procedure",
-      value:
-        info?.title ??
-        params.reportDraft.title ??
-        "Procedure Workspace",
+      value: info?.title ?? params.reportDraft.title ?? "Procedure Workspace",
     },
     { label: "Manufacturer", value: info?.manufacturer ?? "" },
     { label: "Document type", value: info?.documentType ?? "" },
@@ -1479,11 +1550,20 @@ function buildFieldServiceReportHtml({
     session,
     reportDraft,
   );
+  const approvalDate = getApprovalDate(reportDraft, session);
+  const snapshotTimestamp = approvalDate ?? reportDraft?.generated_at ?? null;
+  const fieldAppendixCaptures = getAppendixCaptures(captureItems).captures;
   const summaryHtml = buildReportOverviewHtml({
     summary: reportDraft?.summary,
     reportTitle,
+    documentedObservationCount: getDocumentedObservationCount(reviewDocument),
+    imageEvidenceCount: fieldAppendixCaptures.filter(isImageEvidence).length,
+    reviewState: reportDraft?.status ?? session.review_status,
+    timestampLabel: approvalDate ? "Approved" : "Generated",
+    timestampValue: snapshotTimestamp
+      ? formatDateTimeInTimeZone(snapshotTimestamp, timeZone)
+      : null,
   });
-  const fieldAppendixCaptures = getAppendixCaptures(captureItems).captures;
   const fieldUseGalleryMode =
     fieldAppendixCaptures.filter(isImageEvidence).length >= 6;
   const appendixHtml = buildEvidenceAppendixHtml(
@@ -1529,6 +1609,32 @@ function buildFieldServiceReportHtml({
 
 const REPORT_STYLES = `
     :root{color-scheme:light}*{box-sizing:border-box}html{background:#eef2f7}body{font-family:Inter,Arial,Helvetica,sans-serif;background:#eef2f7;color:#18243a;margin:0;padding:36px;line-height:1.45}.report{max-width:1040px;margin:0 auto}.toolbar{align-items:center;background:#13213a;border-radius:16px;color:white;display:flex;justify-content:space-between;margin:0 0 18px;padding:14px 16px}.toolbar button{background:white;border:0;border-radius:999px;color:#13213a;cursor:pointer;font-weight:800;padding:10px 16px}.print-help{color:#dbe7ff;font-size:13px;margin:0}.header,.item{background:white;border:1px solid #d9e2ee;border-radius:18px;box-shadow:0 10px 28px rgba(24,36,58,.055);margin-bottom:12px;padding:18px}.report-cover{display:grid;gap:0;grid-template-columns:minmax(0,1.5fr) minmax(220px,.55fr);overflow:hidden;padding:0;min-height:0}.report-cover-no-image{display:block}.cover-copy{display:flex;flex-direction:column;justify-content:flex-start;padding:26px 30px}.brand-report-identity{align-items:center;display:flex;gap:12px;margin-bottom:12px}.brand-report-logo{max-height:64px;max-width:180px;object-fit:contain}.branded-cover-bold .cover-copy{background:#13213a;color:white}.branded-cover-minimal{box-shadow:none}.cover-copy h1{font-size:clamp(30px,5vw,44px);letter-spacing:-.045em;line-height:1.04;margin:24px 0 12px;max-width:24ch;text-wrap:balance;overflow-wrap:anywhere}.cover-trust{border-left:4px solid var(--brand-primary,#155dfc);color:#4c5d75;font-size:15px;margin:0 0 22px;padding-left:14px}.cover-image{background:#f7f9fc;overflow:hidden}.cover-image img{display:block;height:100%;max-height:360px;object-fit:contain;width:100%}.eyebrow{color:var(--brand-primary,#155dfc);font-size:11px;font-weight:900;letter-spacing:.16em;text-transform:uppercase}.cover-kicker{align-items:center;color:#155dfc;display:flex;font-size:11px;font-weight:900;gap:8px;justify-content:space-between;letter-spacing:.14em;text-transform:uppercase}.section-heading{margin-bottom:10px}.section-heading .eyebrow{margin:0 0 4px}.summary-panel{background:linear-gradient(180deg,#f8fbff,#fff);border:1px solid #e0e8f4;border-radius:14px;padding:12px 14px}.section-intro{font-size:13px;margin:-2px 0 10px}.observation-card{background:linear-gradient(180deg,#fff,#fbfdff);display:block;padding:10px}.observation-main{align-items:start;display:grid;gap:12px;grid-template-columns:minmax(190px,38%) minmax(0,1fr)}.observation-main>.media{align-self:start}.observation-content h3{font-size:18px;letter-spacing:-.015em;line-height:1.2;margin:6px 0 10px}.observation-content h4{color:#3d4f67;font-size:11px;letter-spacing:.1em;margin:0 0 5px;text-transform:uppercase}.observation-content p{margin:0 0 8px}.observation-heading{align-items:center;display:flex;gap:8px}.observation-number{background:#13213a;border-radius:999px;color:white;font-size:11px;font-weight:900;letter-spacing:.08em;padding:5px 8px}.observation-kind{background:#eef4ff;border:1px solid #cfddf4;border-radius:999px;color:#14315f;font-size:11px;font-weight:900;letter-spacing:.08em;padding:4px 8px;text-transform:uppercase}.technician-note-block{border-left:3px solid var(--brand-evidence-accent,#155dfc);margin:8px 0 8px;padding-left:10px}.proof-line{background:#f8fafc;border:1px solid #e2e9f2;border-radius:9px;color:#62728a;font-size:12px;padding:7px 9px}.proof-block{margin-top:8px}.supporting-evidence-panel{background:#f8fafc;border:1px solid #e2e9f2;border-radius:12px;break-inside:avoid;margin-top:12px;max-width:100%;overflow:hidden;padding:10px;page-break-inside:avoid}.supporting-evidence-heading{align-items:center;display:flex;gap:8px;justify-content:space-between;margin:0 0 8px}.supporting-evidence-heading strong{color:#3d4f67;font-size:11px;letter-spacing:.1em;text-transform:uppercase}.supporting-evidence-heading span{color:#62728a;font-size:12px;font-weight:800}.supporting-export-grid{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));max-width:100%;overflow:hidden}.supporting-export-item{break-inside:avoid;min-width:0;page-break-inside:avoid}.supporting-export-grid img{background:white;border:1px solid #d8e2ef;border-radius:10px;break-inside:avoid;display:block;height:140px;max-height:140px;max-width:100%;object-fit:contain;overflow:hidden;page-break-inside:avoid;width:100%}.supporting-export-grid .media-fallback{break-inside:avoid;min-height:120px;page-break-inside:avoid}.approval-grid{align-items:end;display:grid;gap:14px;grid-template-columns:minmax(0,1fr) auto}.signature-label{color:#5a6a81;font-size:10px;font-weight:900;letter-spacing:.12em;margin:0 0 6px;text-transform:uppercase}.meta,.muted{color:#62728a}.service-section h2{border-bottom:1px solid var(--brand-border,#e3eaf3);color:var(--brand-section-heading,#18243a);font-size:21px;letter-spacing:-.025em;line-height:1.15;margin:0;padding-bottom:9px}dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:9px 0 0}dl div{background:#f8fafc;border:1px solid #e2e9f2;border-radius:9px;padding:7px 9px}dt{color:#5a6a81;font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}dd{font-weight:750;margin:4px 0 0;overflow-wrap:anywhere}a,a:visited{color:#18243a;text-decoration:none}.original-link{font-size:12px;margin-top:8px;opacity:.55}.original-link a{text-decoration:underline;text-underline-offset:2px}.media{position:relative;border-radius:14px;overflow:hidden;background:#f8fafc;border:1px solid #d8e2ef}.media img{display:block;width:100%;max-height:300px;object-fit:contain;background:white}.export-image-expand{background:transparent;border:0;color:inherit;cursor:zoom-in;display:block;font:inherit;margin:0;padding:0;position:relative;width:100%}.export-image-expand img{pointer-events:none}.expand-affordance{align-items:center;background:rgba(19,33,58,.82);border-radius:999px;color:white;display:flex;font-size:13px;font-weight:900;height:28px;justify-content:center;position:absolute;right:8px;top:8px;width:28px}.export-lightbox[hidden]{display:none}.export-lightbox{align-items:center;background:rgba(10,18,32,.92);bottom:0;display:flex;flex-direction:column;gap:12px;justify-content:center;left:0;padding:22px;position:fixed;right:0;top:0;z-index:9999}.export-lightbox img{max-height:82vh;max-width:92vw;object-fit:contain}.export-lightbox-close,.export-lightbox-prev,.export-lightbox-next{background:rgba(255,255,255,.95);border:0;border-radius:999px;color:#13213a;cursor:pointer;font-weight:900;padding:10px 14px}.export-lightbox-close{position:absolute;right:18px;top:18px}.export-lightbox-prev,.export-lightbox-next{position:absolute;top:50%;transform:translateY(-50%)}.export-lightbox-prev{left:18px}.export-lightbox-next{right:18px}.export-lightbox-counter{color:white;font-size:13px;font-weight:900}.media-fallback{align-items:center;aspect-ratio:4/3;background:#f8fafc;border:1px dashed #cbd6e5;color:#697890;display:flex;font-size:14px;font-weight:800;justify-content:center;padding:18px;text-align:center}.video-still{align-items:center;aspect-ratio:16/9;background:#eef4ff;color:#13213a;display:flex;font-size:18px;font-weight:800;justify-content:center;padding:16px;text-align:center}.finding{margin-top:10px}.finding-card,.reference-card{border:1px solid #d8e2ef;border-radius:14px;margin:8px 0;padding:10px}.finding-image{align-self:start;background:#f8fafc;border:1px solid #d8e2ef;border-radius:12px;overflow:hidden}.finding-image img{display:block;width:100%;max-height:250px;object-fit:contain}.gallery-grid{display:grid;gap:10px;grid-template-columns:repeat(2,minmax(0,1fr))}.gallery-card{background:#fff;border:1px solid #d8e2ef;border-radius:16px;break-inside:avoid;overflow:hidden}.gallery-thumb{background:#f8fafc}.gallery-thumb img{display:block;height:210px;object-fit:cover;width:100%}.gallery-caption{padding:12px 14px}.gallery-caption h3{font-size:17px;margin:2px 0 0}.gallery-caption p{color:#62728a;font-size:13px;margin:4px 0 0}.gallery-evidence-id{color:#155dfc!important;font-size:11px!important;font-weight:900;letter-spacing:.12em;margin:0!important;text-transform:uppercase}.summary-lead{color:#26364d;font-size:16px;line-height:1.55;margin:0 0 10px}.summary-trust{border-top:1px solid #e3eaf3;color:#62728a;font-size:12px;font-weight:800;margin:12px 0 0;padding-top:10px}.summary-chip-row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 14px}.summary-chip-row span{background:#eef4ff;border:1px solid #cfe0ff;border-radius:999px;color:#14315f;font-size:12px;font-weight:800;padding:6px 10px}.evidence-grid{display:grid;gap:10px;grid-template-columns:1fr}.evidence-card{align-items:start;border:1px solid #d8e2ef;border-radius:16px;display:grid;gap:14px;grid-template-columns:220px minmax(0,1fr);padding:14px;break-inside:avoid;page-break-inside:avoid}.evidence-card h3{font-size:17px;margin:0 0 8px}.evidence-card p{margin:0 0 10px}.evidence-media img{height:170px;max-height:170px;object-fit:contain}.evidence-copy dl{grid-template-columns:repeat(3,minmax(0,1fr))}.evidence-copy dl div{padding:8px}.severity,.evidence-pill{background:#f8fafc;border:1px solid #d8e2ef;border-radius:999px;display:inline-block;font-size:11px;font-weight:900;padding:6px 9px}.evidence-pill-row{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}.signature-block{background:#f8fafc;border:1px solid #d8e2ef;border-radius:12px;margin-top:0;padding:10px}.signoff-section{box-shadow:0 6px 18px rgba(24,36,58,.04);padding:18px}.signoff-section dl{grid-template-columns:repeat(2,minmax(0,1fr))}.signoff-section dl div{padding:8px 10px}.signature-image{background:white;border:1px solid #d8e2ef;border-radius:8px;display:block;max-height:82px;max-width:260px;object-fit:contain;padding:6px}.approval-signature{display:inline-block;min-width:260px}.signature-empty{color:#62728a;font-weight:800}table{border-collapse:collapse;width:100%}td,th{border:1px solid #d8e2ef;padding:6px 8px;text-align:left;vertical-align:top;overflow-wrap:anywhere}th{background:#f1f5fb}.evidence-appendix,.evidence-index{font-size:11px}.appendix-thumb{width:70px}.appendix-thumb img{display:block;height:44px;max-width:60px;object-fit:cover;border-radius:5px}.appendix-thumb .media-fallback{aspect-ratio:auto;min-height:44px;padding:4px;font-size:9px}.appendix-kind{color:#62728a;font-size:11px;font-weight:800}.report-watermark{color:var(--brand-accent,#13213a);font-size:clamp(48px,12vw,120px);font-weight:900;left:50%;letter-spacing:.14em;opacity:.08;pointer-events:none;position:fixed;text-transform:uppercase;top:48%;transform:translate(-50%,-50%) rotate(-28deg);z-index:0}.watermark-standard{opacity:.14}.watermark-strong{opacity:.22}.watermark-center{transform:translate(-50%,-50%)}.watermark-footer_stamp{bottom:34px;font-size:28px;top:auto;transform:translateX(-50%)}.print-page-footer{display:none}@media (max-width:800px){body{padding:14px}.report-cover,.evidence-card,.observation-main,.approval-grid{grid-template-columns:1fr}.cover-copy{padding:22px}.brand-report-identity{align-items:center;display:flex;gap:12px;margin-bottom:12px}.brand-report-logo{max-height:64px;max-width:180px;object-fit:contain}.branded-cover-bold .cover-copy{background:#13213a;color:white}.branded-cover-minimal{box-shadow:none}.cover-copy h1{font-size:30px}dl,.gallery-grid,.evidence-copy dl{grid-template-columns:1fr}.header,.item{border-radius:16px;padding:18px}.toolbar{align-items:flex-start;flex-direction:column;gap:8px}.gallery-thumb img{height:230px}}@media print{@page{margin:13mm 12mm;@bottom-center{content:counter(page);font-size:9px;color:#62728a}}html,body{background:white}body{padding:0}.report{max-width:none}.toolbar,.print-help,.original-link,.expand-affordance,.export-lightbox,.export-image-expand:after{display:none!important}.header,.item,.finding-card,.reference-card,.evidence-card,.gallery-card{box-shadow:none}.finding-card,.reference-card,.evidence-card,.gallery-card{break-inside:avoid;page-break-inside:avoid}.signoff-section{break-inside:avoid;page-break-inside:avoid}.report-cover{break-before:auto}.gallery-section,.org-section,.approval-section,.evidence-appendix-section{break-before:auto;page-break-before:auto}.service-section h2,.section-heading{break-after:avoid;page-break-after:avoid}.observation-card{break-inside:avoid;page-break-inside:avoid}.approval-section{break-inside:avoid;page-break-inside:avoid}.media img,.export-image-expand img,.evidence-media img,.signature-image,.finding-image img,.gallery-thumb img,.supporting-export-grid img{break-inside:avoid;page-break-inside:avoid;visibility:visible}.note{position:static;background:#14213d}a,a:visited{color:#18243a!important;text-decoration:none!important}.report{color:#18243a;-webkit-text-size-adjust:100%;print-color-adjust:exact;-webkit-print-color-adjust:exact}.overview-section,.summary-panel,.report-cover dl,.supporting-evidence-panel,.approval-grid{break-inside:avoid;page-break-inside:avoid}.observation-main{grid-template-columns:minmax(170px,36%) minmax(0,1fr)}.media img{max-height:260px}.supporting-export-grid img{height:115px;max-height:115px}.print-page-footer{align-items:center;border-top:1px solid #d8e2ef;bottom:0;color:#62728a;display:flex;font-size:9px;gap:8px;justify-content:space-between;left:0;position:fixed;right:0}}}
+
+
+.report-snapshot{
+  background:#f8fafc;
+  border:1px solid #e2e9f2;
+  border-radius:12px;
+  margin:10px 0 2px;
+  padding:10px;
+}
+
+.report-snapshot h3{
+  color:#18243a;
+  font-size:13px;
+  letter-spacing:.04em;
+  margin:0 0 8px;
+  text-transform:uppercase;
+}
+
+.report-snapshot dl{
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  margin:0;
+}
+
+.report-snapshot dl div{
+  background:white;
+}
 
 
 /* Browser-friendly mobile report layout. Print rules below remain authoritative. */
@@ -1982,12 +2088,22 @@ export async function GET(_request: Request, { params }: RouteContext) {
   const requestUrl = new URL(_request.url);
   const shareTokenValue = requestUrl.searchParams.get("share_token");
   const previewOnly = requestUrl.searchParams.get("preview") === "1";
-  const requestedTemplateId = requestUrl.searchParams.get("template") ?? requestUrl.searchParams.get("report_template_id");
-  const selectedSessionOutputId = requestUrl.searchParams.get("selected_session_output_id") ?? requestUrl.searchParams.get("review_output");
+  const requestedTemplateId =
+    requestUrl.searchParams.get("template") ??
+    requestUrl.searchParams.get("report_template_id");
+  const selectedSessionOutputId =
+    requestUrl.searchParams.get("selected_session_output_id") ??
+    requestUrl.searchParams.get("review_output");
   const studioExport = requestUrl.searchParams.get("studio_export") === "1";
-  if (studioExport && selectedSessionOutputId && selectedSessionOutputId !== id) {
+  if (
+    studioExport &&
+    selectedSessionOutputId &&
+    selectedSessionOutputId !== id
+  ) {
     const safeSelectedId = encodeURIComponent(selectedSessionOutputId);
-    redirect(`/api/dashboard/sessions/${safeSelectedId}/report-pdf?review_output=${safeSelectedId}&selected_session_output_id=${safeSelectedId}&template=workspace-default&studio_export=1`);
+    redirect(
+      `/api/dashboard/sessions/${safeSelectedId}/report-pdf?review_output=${safeSelectedId}&selected_session_output_id=${safeSelectedId}&template=workspace-default&studio_export=1`,
+    );
   }
   const sharedAccess = Boolean(shareTokenValue);
 
@@ -2051,7 +2167,11 @@ export async function GET(_request: Request, { params }: RouteContext) {
 
     if (sessionError || !ownedSession) notFound();
 
-    if (!previewOnly && !studioExport && ownedSession.review_status !== "ready_for_delivery") {
+    if (
+      !previewOnly &&
+      !studioExport &&
+      ownedSession.review_status !== "ready_for_delivery"
+    ) {
       redirect(
         `/dashboard/sessions/${id}/report?error=${encodeURIComponent("Approve this report before exporting.")}`,
       );
@@ -2125,8 +2245,14 @@ export async function GET(_request: Request, { params }: RouteContext) {
   let selectedTemplateName: string | null = null;
   let selectedTemplateId: string | null = null;
   let exportBranding: any = null;
-  if (requestedTemplateId && requestedTemplateId !== "workspace-default" && requestedTemplateId !== "system") {
-    const { data: selectedTemplate } = await (supabase.from("workspace_report_templates") as any)
+  if (
+    requestedTemplateId &&
+    requestedTemplateId !== "workspace-default" &&
+    requestedTemplateId !== "system"
+  ) {
+    const { data: selectedTemplate } = await (
+      supabase.from("workspace_report_templates") as any
+    )
       .select("*")
       .eq("organization_id", organizationId)
       .eq("id", requestedTemplateId)
@@ -2137,8 +2263,15 @@ export async function GET(_request: Request, { params }: RouteContext) {
       exportBranding = normalizeReportTemplate(selectedTemplate);
     }
   }
-  if (!exportBranding && requestedTemplateId !== "system" && requestedTemplateId !== "workspace-default" && requestedTemplateId !== "draft") {
-    const { data: defaultTemplate } = await (supabase.from("workspace_report_templates") as any)
+  if (
+    !exportBranding &&
+    requestedTemplateId !== "system" &&
+    requestedTemplateId !== "workspace-default" &&
+    requestedTemplateId !== "draft"
+  ) {
+    const { data: defaultTemplate } = await (
+      supabase.from("workspace_report_templates") as any
+    )
       .select("*")
       .eq("organization_id", organizationId)
       .eq("is_default", true)
@@ -2150,15 +2283,21 @@ export async function GET(_request: Request, { params }: RouteContext) {
     }
   }
   if (!exportBranding && requestedTemplateId !== "system") {
-    const { data: legacyBranding } = await (supabase.from("workspace_brand_profiles") as any)
+    const { data: legacyBranding } = await (
+      supabase.from("workspace_brand_profiles") as any
+    )
       .select("*")
       .eq("organization_id", organizationId)
       .maybeSingle();
     exportBranding = normalizeBrandProfile(legacyBranding as any);
   }
-  const branding = normalizeBrandProfile(exportBranding ?? null) as ExportBranding;
+  const branding = normalizeBrandProfile(
+    exportBranding ?? null,
+  ) as ExportBranding;
   const { data: brandLogoSigned } = branding?.logo_storage_path
-    ? await supabase.storage.from("documentation-branding").createSignedUrl(branding.logo_storage_path, 60 * 10)
+    ? await supabase.storage
+        .from("documentation-branding")
+        .createSignedUrl(branding.logo_storage_path, 60 * 10)
     : { data: null };
   const brandLogoUrl = brandLogoSigned?.signedUrl ?? null;
 
@@ -2194,7 +2333,13 @@ export async function GET(_request: Request, { params }: RouteContext) {
       export_type: "printable_report_opened",
       status: "opened",
       created_by: createdBy,
-      metadata: { item_count: captureItems.length, format: "printable_html", report_template_id: selectedTemplateId, report_template_name: selectedTemplateName, report_template_snapshot: branding },
+      metadata: {
+        item_count: captureItems.length,
+        format: "printable_html",
+        report_template_id: selectedTemplateId,
+        report_template_name: selectedTemplateName,
+        report_template_snapshot: branding,
+      },
     });
     await recordUsageEvent({
       supabase,
@@ -2334,11 +2479,25 @@ export async function GET(_request: Request, { params }: RouteContext) {
     hasDetailedContent,
   });
   const useGalleryMode = presentationMode === "gallery";
+  const approvalDate = getApprovalDate(reportDraft, session);
+  const snapshotTimestamp = approvalDate ?? reportDraft?.generated_at ?? null;
   const summaryHtml = buildReportOverviewHtml({
     summary: reportDraft?.summary,
     reportTitle,
+    documentedObservationCount: getDocumentedObservationCount(reviewDocument),
+    imageEvidenceCount: imageCount,
+    reviewState: reportDraft?.status ?? session.review_status,
+    timestampLabel: approvalDate ? "Approved" : "Generated",
+    timestampValue: snapshotTimestamp
+      ? formatDateTimeInTimeZone(snapshotTimestamp, timeZone)
+      : null,
   });
-  const appendixHtml = buildEvidenceAppendixHtml(appendixCaptureItems, imageAssets, timeZone, { renderImages: !useGalleryMode, branding });
+  const appendixHtml = buildEvidenceAppendixHtml(
+    appendixCaptureItems,
+    imageAssets,
+    timeZone,
+    { renderImages: !useGalleryMode, branding },
+  );
   const draftReferencedCaptureCount = new Set(
     visibleReportSections
       .flatMap((section) => section.source_capture_ids ?? [])
