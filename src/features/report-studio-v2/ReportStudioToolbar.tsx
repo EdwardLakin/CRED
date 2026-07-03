@@ -23,7 +23,8 @@ export function ReportStudioToolbar({ props, state, handlers, onTemplates }: { p
   useEffect(() => { if (exportState.ok && exportState.redirectTo) window.location.assign(exportState.redirectTo); }, [exportState.ok, exportState.redirectTo]);
   useEffect(() => { if (templateState.ok) window.location.replace(window.location.pathname + "?template_saved=1"); }, [templateState.ok]);
   const exportHref = state.selectedSessionId ? `/api/dashboard/sessions/${encodeURIComponent(state.selectedSessionId)}/report-pdf?review_output=${encodeURIComponent(state.selectedSessionId)}&selected_session_output_id=${encodeURIComponent(state.selectedSessionId)}&template=${encodeURIComponent(state.selectedTemplateId ?? "workspace-default")}&studio_export=1` : "#";
-  const status = saveState.error || exportState.error ? "Save failed" : state.isDirty ? "Saving" : "Saved";
+  const inlineError = saveState.error || exportState.error;
+  const status = inlineError ? "Save failed" : state.isDirty ? "Saving" : "Saved";
   return <>
     <header className="rsv2-toolbar" data-report-studio-v2-action-map="back session-selector template-selector palette-selector autosave-status export-report save-template-modal inline-save-error">
       <div className="rsv2-brand"><strong>CRED</strong><nav>Report Studio</nav></div>
@@ -35,7 +36,7 @@ export function ReportStudioToolbar({ props, state, handlers, onTemplates }: { p
       <span className={state.isDirty?"rsv2-dirty is-dirty":"rsv2-dirty"}>{status}</span>
       <button className="button button-secondary" type="button" onClick={()=>setSaveTemplateOpen(true)}>Save as Template</button>
       <form id="report-studio-export-form" action={exportAction}><ReportStudioHiddenFields brand={state.draftBrandProfile} selectedSessionId={state.selectedSessionId} selectedTemplateId={state.selectedTemplateId}/><button className="button button-primary" type="submit" disabled={!state.selectedSessionId} formAction={exportAction}>Export Report</button><a className="sr-only" href={exportHref}>Direct report export fallback</a></form>
-      {(saveState.error || exportState.error)&&<p className="rsv2-inline-error" role="alert">{saveState.error || exportState.error}</p>}
+      {inlineError&&<p className="rsv2-inline-error" role="alert">{inlineError}</p>}
     </header>
     {saveTemplateOpen&&<div className="rsv2-drawer-backdrop" role="dialog" aria-modal="true" aria-labelledby="report-studio-save-template-title"><form id="report-studio-save-template-form" action={templateAction} className="rsv2-save-template-modal"><ReportStudioHiddenFields brand={state.draftBrandProfile} selectedSessionId={state.selectedSessionId} selectedTemplateId={state.selectedTemplateId}/><input type="hidden" name="template_mode" value="create"/><h2 id="report-studio-save-template-title">Save as Template</h2><label className="rsv2-field"><span>Template name</span><input className="input" name="template_name" type="text" required minLength={1} autoFocus /></label><label className="rsv2-field"><span>Description <em>(optional)</em></span><textarea className="input" name="template_description" rows={3} /></label>{templateState.error&&<p className="rsv2-inline-error" role="alert">{templateState.error}</p>}<div className="form-actions"><button className="button button-primary" type="submit">Save</button><button className="button button-secondary" type="button" onClick={()=>setSaveTemplateOpen(false)}>Cancel</button></div></form></div>}
   </>;
