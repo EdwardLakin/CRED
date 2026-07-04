@@ -2,6 +2,8 @@
 
 import { useEffect, useId, useMemo, useState } from "react";
 
+import { improveReportSummaryAction, regenerateReportSummaryAction } from "@/features/reports/actions";
+
 type SaveState = "saved" | "saving" | "failed" | "unsaved";
 type SummarySource = "original" | "manual" | "ai-generated" | "ai-improved";
 
@@ -25,13 +27,15 @@ function statusClassName(state: SaveState) {
   return "status-pill neutral compact";
 }
 
-export function SummaryAssistantEditor({ initialSummary }: { initialSummary: string }) {
+export function SummaryAssistantEditor({ initialSummary, sessionId }: { initialSummary: string; sessionId: string }) {
   const textareaId = useId();
   const descriptionId = useId();
   const [summary, setSummary] = useState(initialSummary);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [source, setSource] = useState<SummarySource>(initialSummary.trim() ? "original" : "manual");
   const [assistantMessage, setAssistantMessage] = useState<string | null>(null);
+  const [assistantError, setAssistantError] = useState<string | null>(null);
+  const [assistantBusy, setAssistantBusy] = useState<"improving" | "generating" | null>(null);
   const originalSummary = useMemo(() => initialSummary, [initialSummary]);
   const hasOriginal = originalSummary.trim().length > 0;
 
@@ -56,6 +60,7 @@ export function SummaryAssistantEditor({ initialSummary }: { initialSummary: str
     setSummary(value);
     setSource(value === originalSummary ? "original" : "manual");
     setAssistantMessage(null);
+    setAssistantError(null);
   }
 
   function restoreOriginal() {
@@ -68,9 +73,40 @@ export function SummaryAssistantEditor({ initialSummary }: { initialSummary: str
     }
     setSummary(originalSummary);
     setSource("original");
+    setAssistantError(null);
     setAssistantMessage("Original summary restored. Review the editable summary field before saving completes.");
     dispatchAutosave(originalSummary);
   }
+
+  async function runAssistant(kind: "improve" | "regenerate") {
+    if (assistantBusy) return;
+    if (kind === "regenerate") {
+      const confirmed = window.confirm(
+        "Regenerate Executive Summary?\nThis will replace the current editable summary with a new AI-generated summary from the documented observations already loaded for this report.",
+      );
+      if (!confirmed) return;
+    }
+    setAssistantBusy(kind === "improve" ? "improving" : "generating");
+    setAssistantError(null);
+    setAssistantMessage(null);
+    const formData = new FormData();
+    formData.set("session_id", sessionId);
+    formData.set("report_summary", summary);
+    const result = kind === "improve"
+      ? await improveReportSummaryAction({ ok: false }, formData)
+      : await regenerateReportSummaryAction({ ok: false }, formData);
+    setAssistantBusy(null);
+    if (!result.ok || !result.summary) {
+      setAssistantError(result.error ?? "AI summary tool failed. Please try again.");
+      return;
+    }
+    setSummary(result.summary);
+    setSource(kind === "improve" ? "ai-improved" : "ai-generated");
+    setAssistantMessage(kind === "improve" ? "Writing improved. Review the editable summary field before saving completes." : "Summary regenerated. Review the editable summary field before saving completes.");
+    dispatchAutosave(result.summary);
+  }
+
+  const assistantDisabled = assistantBusy !== null;
 
   return (
     <div className="summary-editor-stack">
@@ -104,20 +140,18 @@ export function SummaryAssistantEditor({ initialSummary }: { initialSummary: str
           <button
             type="button"
             className="button button-secondary touch-target"
-            disabled
-            aria-describedby="summary-assistant-disabled-reason"
-            title="AI summary tools are not connected yet."
+            disabled={assistantDisabled || !summary.trim()}
+            onClick={() => runAssistant("improve")}
           >
-            Improve Writing
+            {assistantBusy === "improving" ? "Improving…" : "Improve Writing"}
           </button>
           <button
             type="button"
             className="button button-secondary touch-target"
-            disabled
-            aria-describedby="summary-assistant-disabled-reason"
-            title="AI summary tools are not connected yet."
+            disabled={assistantDisabled}
+            onClick={() => runAssistant("regenerate")}
           >
-            Regenerate Summary
+            {assistantBusy === "generating" ? "Generating…" : "Regenerate Summary"}
           </button>
           <button
             type="button"
@@ -129,10 +163,8 @@ export function SummaryAssistantEditor({ initialSummary }: { initialSummary: str
             Restore Original
           </button>
         </div>
-        <p id="summary-assistant-disabled-reason" className="muted compact-review-summary">
-          AI summary tools are not connected yet.
-        </p>
         {!hasOriginal ? <p id="summary-restore-disabled-reason" className="muted compact-review-summary">Restore Original is disabled because this report did not load with an original summary.</p> : null}
+        {assistantError ? <p className="rsv2-inline-error" role="alert">{assistantError}</p> : null}
         {assistantMessage ? <p className="rsv2-inline-success" role="status">{assistantMessage}</p> : null}
       </section>
     </div>

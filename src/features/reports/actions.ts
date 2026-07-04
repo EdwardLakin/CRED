@@ -13,6 +13,7 @@ import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import { ReportEmailError, sendReportEmail, validateReportEmailRecipients } from '@/lib/email/reports'
 import { FINAL_NOTES_MODEL, FINAL_NOTES_PROMPT_VERSION, generateFinalNotes } from '@/lib/openai/final-notes-generator'
 import { AI_REPORT_DRAFT_MODEL, AI_REPORT_DRAFT_PROMPT_VERSION, generateReportDraft } from '@/lib/openai/report-draft-generator'
+import { improveReportSummaryWriting, regenerateReportSummaryFromEvidence } from '@/lib/openai/report-summary-assistant'
 import {
   generateObservationTitles,
   OBSERVATION_TITLE_MODEL,
@@ -175,6 +176,39 @@ function requireReportReadyForDelivery(sessionId: string, session: { review_stat
 
 
 
+
+export type SummaryAssistantActionState = { ok: boolean; error?: string; summary?: string }
+
+function getSummaryAssistantErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message === 'OPENAI_API_KEY_MISSING') return 'AI summary tools are not configured for this workspace.'
+  return error instanceof Error && error.message ? error.message : 'AI summary tool failed. Please try again.'
+}
+
+async function requireSummaryAssistantAllowance(workspace: Awaited<ReturnType<typeof requireSessionWorkspace>>) {
+  const billingAccess = requireActiveBillingAccess(workspace.profile)
+  if (!billingAccess.ok) return { ok: false as const, error: billingAccess.message }
+  const aiAllowance = await requireUsageAllowance({
+    supabase: workspace.supabase,
+    organizationId: workspace.profile.organization_id,
+    plan: billingAccess.access.plan,
+    eventType: 'ai_report_draft_generation',
+  })
+  if (!aiAllowance.ok) return { ok: false as const, error: aiAllowance.message }
+  return { ok: true as const, plan: billingAccess.access.plan }
+}
+
+async function getActiveSummaryDraft(workspace: Awaited<ReturnType<typeof requireSessionWorkspace>>, sessionId: string) {
+  const { data: drafts, error } = await workspace.supabase
+    .from('ai_report_drafts')
+    .select('id, status, summary, generated_at, created_at')
+    .eq('documentation_session_id', sessionId)
+    .eq('organization_id', workspace.profile.organization_id)
+    .order('generated_at', { ascending: false })
+    .order('created_at', { ascending: false })
+  if (error) throw new Error(error.message)
+  return (drafts ?? []).find((item) => item.status === 'approved') ?? (drafts ?? []).find((item) => item.status !== 'superseded') ?? drafts?.[0] ?? null
+}
+
 export type SaveReportSummaryState = { ok: boolean; error?: string; summary?: string }
 
 export async function saveReportSummaryFromStudio(_state: SaveReportSummaryState, formData: FormData): Promise<SaveReportSummaryState> {
@@ -209,6 +243,82 @@ export async function saveReportSummaryFromStudio(_state: SaveReportSummaryState
   revalidatePath(`/dashboard/sessions/${sessionId}/report`)
   revalidatePath('/dashboard/settings/branding')
   return { ok: true, summary }
+}
+
+
+export async function improveReportSummaryAction(_state: SummaryAssistantActionState, formData: FormData): Promise<SummaryAssistantActionState> {
+  const workspace = await requireSessionWorkspace()
+  const sessionId = getString(formData, 'session_id')
+  const currentSummary = getString(formData, 'report_summary').slice(0, 1200)
+  if (!sessionId) return { ok: false, error: 'Select a session before improving the summary.' }
+  if (!currentSummary) return { ok: false, error: 'Enter a summary before improving writing.' }
+
+  const allowance = await requireSummaryAssistantAllowance(workspace)
+  if (!allowance.ok) return { ok: false, error: allowance.error }
+
+  try {
+    const summary = await improveReportSummaryWriting(currentSummary)
+    await recordUsageEvent({
+      supabase: workspace.supabase,
+      organizationId: workspace.profile.organization_id,
+      eventType: 'ai_report_draft_generation',
+      quantity: 1,
+      metadata: { session_id: sessionId, operation: 'summary_improve_writing' },
+    })
+    return { ok: true, summary }
+  } catch (error) {
+    return { ok: false, error: getSummaryAssistantErrorMessage(error) }
+  }
+}
+
+export async function regenerateReportSummaryAction(_state: SummaryAssistantActionState, formData: FormData): Promise<SummaryAssistantActionState> {
+  const workspace = await requireSessionWorkspace()
+  const sessionId = getString(formData, 'session_id')
+  if (!sessionId) return { ok: false, error: 'Select a session before regenerating the summary.' }
+
+  const allowance = await requireSummaryAssistantAllowance(workspace)
+  if (!allowance.ok) return { ok: false, error: allowance.error }
+
+  try {
+    const draft = await getActiveSummaryDraft(workspace, sessionId)
+    if (!draft) return { ok: false, error: 'Generate a report draft before regenerating the executive summary.' }
+
+    const { data: session, error: sessionError } = await workspace.supabase
+      .from('documentation_sessions')
+      .select('title')
+      .eq('id', sessionId)
+      .eq('organization_id', workspace.profile.organization_id)
+      .single()
+    if (sessionError) return { ok: false, error: sessionError.message }
+
+    const { data: sections, error: sectionsError } = await workspace.supabase
+      .from('ai_report_draft_sections')
+      .select('title, body, status, source_capture_ids, sort_order')
+      .eq('ai_report_draft_id', draft.id)
+      .eq('organization_id', workspace.profile.organization_id)
+      .order('sort_order', { ascending: true })
+    if (sectionsError) return { ok: false, error: sectionsError.message }
+
+    const summary = await regenerateReportSummaryFromEvidence({
+      sessionTitle: session?.title ?? null,
+      evidence: (sections ?? []).map((section) => ({
+        title: section.title,
+        body: stripConfidenceText(section.body ?? ''),
+        status: section.status,
+        source_capture_ids: Array.isArray(section.source_capture_ids) ? section.source_capture_ids.filter((id): id is string => typeof id === 'string') : [],
+      })),
+    })
+    await recordUsageEvent({
+      supabase: workspace.supabase,
+      organizationId: workspace.profile.organization_id,
+      eventType: 'ai_report_draft_generation',
+      quantity: 1,
+      metadata: { session_id: sessionId, draft_id: draft.id, operation: 'summary_regenerate' },
+    })
+    return { ok: true, summary }
+  } catch (error) {
+    return { ok: false, error: getSummaryAssistantErrorMessage(error) }
+  }
 }
 
 export async function saveFinalNotes(sessionId: string, formData: FormData) {
