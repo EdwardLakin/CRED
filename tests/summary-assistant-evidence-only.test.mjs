@@ -5,8 +5,12 @@ import test from 'node:test'
 const assistant = readFileSync('src/lib/openai/report-summary-assistant.ts', 'utf8')
 
 test('summary assistant prompt is evidence-only and forbids unsupported action language', () => {
-  assert.match(assistant, /Summarize documented observations only/)
+  assert.match(assistant, /opening paragraph of a professional engineering-style report/)
+  assert.match(assistant, /not to create a condensed observation list/)
+  assert.match(assistant, /100–140 words/)
   assert.match(assistant, /Do not add recommendations, repair instructions, replacement instructions, remediation language, severity, urgency, hazard, liability language/)
+  assert.match(assistant, /Never invent observations/)
+  assert.match(assistant, /Never speculate/)
   assert.match(assistant, /Do not use words such as recommend, recommended, repair, replacement, remediate, remediation, required, requires, severe, severity, urgent, hazard, or liability unless those words already appear/)
 })
 
