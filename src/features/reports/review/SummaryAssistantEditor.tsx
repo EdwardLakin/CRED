@@ -6,6 +6,7 @@ import { improveReportSummaryAction, regenerateReportSummaryAction } from "@/fea
 
 type SaveState = "saved" | "saving" | "failed" | "unsaved";
 type SummarySource = "original" | "manual" | "ai-generated" | "ai-improved";
+type SummaryStyle = "concise" | "professional" | "detailed";
 
 const SAVE_LABELS: Record<SaveState, string> = {
   saved: "Saved",
@@ -13,6 +14,12 @@ const SAVE_LABELS: Record<SaveState, string> = {
   failed: "Failed to save",
   unsaved: "Unsaved changes",
 };
+
+const SUMMARY_STYLE_OPTIONS: Array<{ value: SummaryStyle; label: string; description: string }> = [
+  { value: "concise", label: "Concise", description: "One short paragraph, about 60–100 words." },
+  { value: "professional", label: "Professional", description: "Default polished paragraph, about 100–160 words." },
+  { value: "detailed", label: "Detailed", description: "Two short paragraphs, about 160–220 words." },
+];
 
 const SOURCE_LABELS: Record<SummarySource, string> = {
   original: "Original saved summary",
@@ -30,12 +37,14 @@ function statusClassName(state: SaveState) {
 export function SummaryAssistantEditor({ initialSummary, sessionId }: { initialSummary: string; sessionId: string }) {
   const textareaId = useId();
   const descriptionId = useId();
+  const styleSelectId = useId();
   const [summary, setSummary] = useState(initialSummary);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [source, setSource] = useState<SummarySource>(initialSummary.trim() ? "original" : "manual");
   const [assistantMessage, setAssistantMessage] = useState<string | null>(null);
   const [assistantError, setAssistantError] = useState<string | null>(null);
   const [assistantBusy, setAssistantBusy] = useState<"improving" | "generating" | null>(null);
+  const [summaryStyle, setSummaryStyle] = useState<SummaryStyle>("professional");
   const originalSummary = useMemo(() => initialSummary, [initialSummary]);
   const hasOriginal = originalSummary.trim().length > 0;
 
@@ -92,6 +101,7 @@ export function SummaryAssistantEditor({ initialSummary, sessionId }: { initialS
     const formData = new FormData();
     formData.set("session_id", sessionId);
     formData.set("report_summary", summary);
+    if (kind === "regenerate") formData.set("summary_style", summaryStyle);
     const result = kind === "improve"
       ? await improveReportSummaryAction({ ok: false }, formData)
       : await regenerateReportSummaryAction({ ok: false }, formData);
@@ -135,6 +145,23 @@ export function SummaryAssistantEditor({ initialSummary, sessionId }: { initialS
           <p className="muted">
             Use these tools to refine the Executive Summary. Suggestions appear in the editable summary field before saving.
           </p>
+        </div>
+        <div className="field-stack summary-style-selector">
+          <label className="label" htmlFor={styleSelectId}>Summary Style</label>
+          <select
+            id={styleSelectId}
+            className="input"
+            value={summaryStyle}
+            disabled={assistantDisabled}
+            onChange={(event) => setSummaryStyle(event.target.value as SummaryStyle)}
+          >
+            {SUMMARY_STYLE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          <span className="muted compact-review-summary">
+            {SUMMARY_STYLE_OPTIONS.find((option) => option.value === summaryStyle)?.description}
+          </span>
         </div>
         <div className="report-ai-writing-actions">
           <button

@@ -2,6 +2,11 @@ import { AI_REPORT_DRAFT_MODEL } from "@/lib/openai/report-draft-generator";
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const MAX_SUMMARY_LENGTH = 1200;
+const UNSUPPORTED_PROCESS_PATTERNS = [
+  /\b(?:technician notes?|supporting photographic evidence|photographic evidence provided|evidence provided|based on .*evidence|source material|provided in the report)\b/i,
+  /\b(?:observations are based on|findings are based on)\b/i,
+] as const;
+
 const UNSUPPORTED_ACTION_TERMS = [
   "recommend",
   "recommended",
@@ -17,6 +22,8 @@ const UNSUPPORTED_ACTION_TERMS = [
   "hazard",
   "liability",
 ] as const;
+
+export type SummaryStyle = "concise" | "professional" | "detailed";
 
 export type SummaryAssistantEvidence = {
   title: string | null;
@@ -64,8 +71,10 @@ function extractOutputText(body: unknown): string | null {
 function sanitizeSummary(value: unknown) {
   if (typeof value !== "string") return "";
   return value
-    .replace(/\n+/g, " ")
+    .replace(/\r\n/g, "\n")
     .replace(/[ \t]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
     .trim()
     .slice(0, MAX_SUMMARY_LENGTH);
 }
@@ -93,9 +102,20 @@ function getUnsupportedActionTerms(summary: string, sourceText: string) {
   );
 }
 
+function removeUnsupportedProcessLanguage(summary: string) {
+  const sentences = sanitizeSummary(summary)
+    .match(/[^.!?]+[.!?]+|[^.!?]+$/g)
+    ?.map((sentence) => sentence.trim()) ?? [summary];
+  return sanitizeSummary(
+    sentences
+      .filter((sentence) => !UNSUPPORTED_PROCESS_PATTERNS.some((pattern) => pattern.test(sentence)))
+      .join(" "),
+  );
+}
+
 function removeUnsupportedActionLanguage(summary: string, sourceText: string) {
   const unsupportedTerms = getUnsupportedActionTerms(summary, sourceText);
-  if (!unsupportedTerms.length) return sanitizeSummary(summary);
+  if (!unsupportedTerms.length) return removeUnsupportedProcessLanguage(summary);
 
   const unsafePatterns = unsupportedTerms.map(actionTermPattern);
   const sentences = summary
@@ -104,7 +124,7 @@ function removeUnsupportedActionLanguage(summary: string, sourceText: string) {
   const safeSentences = sentences.filter(
     (sentence) => !unsafePatterns.some((pattern) => pattern.test(sentence)),
   );
-  return sanitizeSummary(safeSentences.join(" "));
+  return removeUnsupportedProcessLanguage(safeSentences.join(" "));
 }
 
 function pushText(target: string[], value: unknown) {
@@ -182,39 +202,71 @@ function getLocationHint(reportContext?: Record<string, unknown> | null) {
   );
 }
 
+function normalizeSummaryStyle(value: unknown): SummaryStyle {
+  return value === "concise" || value === "detailed" ? value : "professional";
+}
+
+function getObservationCount(input: { captures?: SummaryAssistantCaptureEvidence[]; evidence: SummaryAssistantEvidence[] }) {
+  const groupIds = new Set<string>();
+  for (const capture of input.captures ?? []) {
+    if (capture.observation_group_id) groupIds.add(capture.observation_group_id);
+  }
+  if (groupIds.size) return groupIds.size;
+  return uniquePhrases([
+    ...(input.captures ?? []).map((capture) => cleanObservationPhrase(capture.technician_note ?? capture.transcript ?? capture.caption ?? capture.title)),
+    ...input.evidence.map((item) => cleanObservationPhrase(item.body ?? item.title)),
+  ].filter(Boolean)).length;
+}
+
+function themeLabel(value: string) {
+  const text = value.toLowerCase();
+  if (/floor|carpet|vinyl|tile|hardwood|baseboard/.test(text)) return "flooring damage";
+  if (/water|leak|moisture|intrusion|stain/.test(text)) return "water intrusion";
+  if (/mold|mould|mildew/.test(text)) return "mold";
+  if (/appliance|fridge|refrigerator|stove|oven|dishwasher|washer|dryer/.test(text)) return "appliance condition";
+  if (/mechanical|hvac|furnace|plumbing|electrical|heater|boiler/.test(text)) return "mechanical deficiencies";
+  if (/wall|ceiling|drywall|paint/.test(text)) return "interior finish conditions";
+  if (/door|window|lock|hardware/.test(text)) return "door and window conditions";
+  if (/roof|gutter|siding|exterior/.test(text)) return "exterior conditions";
+  return sanitizeSummary(value).toLowerCase().slice(0, 60);
+}
+
+function getThemePhrases(input: { captures?: SummaryAssistantCaptureEvidence[]; evidence: SummaryAssistantEvidence[] }) {
+  const raw = [
+    ...(input.captures ?? []).flatMap((capture) => [capture.evidence_category, capture.title, capture.technician_note ?? capture.transcript ?? capture.caption]),
+    ...input.evidence.flatMap((item) => [item.title, item.body]),
+  ];
+  return uniquePhrases(raw.map((item) => themeLabel(String(item ?? ""))).filter((item) => item && item !== "null" && item !== "undefined")).slice(0, 6);
+}
+
+function countWord(count: number) {
+  const words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+  return words[count] ?? String(count);
+}
+
 function deterministicEvidenceOnlySummary(input: {
   sessionTitle: string | null;
   reportContext?: Record<string, unknown> | null;
   captures?: SummaryAssistantCaptureEvidence[];
   evidence: SummaryAssistantEvidence[];
+  style?: SummaryStyle;
 }) {
-  const observations = uniquePhrases(
-    [
-      ...(input.captures ?? []).map((capture) =>
-        cleanObservationPhrase(
-          capture.technician_note ??
-            capture.transcript ??
-            capture.caption ??
-            capture.title,
-        ),
-      ),
-      ...input.evidence.map((item) =>
-        cleanObservationPhrase(item.body ?? item.title),
-      ),
-    ].filter(Boolean),
-  ).slice(0, 12);
-
-  const subject =
-    sanitizeSummary(input.sessionTitle) || "the documented subject";
+  const count = getObservationCount(input);
+  const themes = getThemePhrases(input);
+  const subject = sanitizeSummary(input.sessionTitle) || "the documented subject";
   const location = getLocationHint(input.reportContext);
+  const countText = count ? `${countWord(count)} documented observation${count === 1 ? "" : "s"}` : "documented observations";
   const opening = location
-    ? `This report documents observed conditions at ${location}.`
-    : `This report documents observed conditions for ${subject}.`;
+    ? `This report documents ${countText} at ${location}.`
+    : `This report documents ${countText} for ${subject}.`;
+  if (!themes.length) return opening;
+  const themeSentence = `The documented findings primarily relate to ${formatPhraseList(themes)}.`;
+  const detailSentence = "Individual observations are detailed in the sections that follow.";
+  if (input.style === "concise") return sanitizeSummary(`${opening} ${themeSentence}`);
+  if (input.style === "detailed") return sanitizeSummary(`${opening} ${themeSentence}
 
-  if (!observations.length) return opening;
-  return sanitizeSummary(
-    `${opening} Documented conditions include ${formatPhraseList(observations)}.`,
-  );
+${detailSentence}`);
+  return sanitizeSummary(`${opening} ${themeSentence} ${detailSentence}`);
 }
 
 async function requestSummaryAssistant(systemPrompt: string, userText: string) {
@@ -289,6 +341,7 @@ ${currentSummary}`,
 
 export async function regenerateReportSummaryFromEvidence(input: {
   sessionTitle: string | null;
+  style?: SummaryStyle;
   reportContext?: Record<string, unknown> | null;
   captures?: SummaryAssistantCaptureEvidence[];
   evidenceGroups?: unknown;
@@ -330,12 +383,20 @@ export async function regenerateReportSummaryFromEvidence(input: {
       reportContext: input.reportContext,
       captures,
       evidence,
+      style: normalizeSummaryStyle(input.style),
     }),
     sourceText,
   );
 
+  const style = normalizeSummaryStyle(input.style);
+  const styleInstruction = style === "concise"
+    ? "Concise style: write one short paragraph, about 60–100 words."
+    : style === "detailed"
+      ? "Detailed style: write 2 short paragraphs, about 160–220 words."
+      : "Professional style: write one polished paragraph, about 100–160 words.";
+
   const summary = await requestSummaryAssistant(
-    `You write a customer-facing CRED executive summary from already documented report observations/evidence. Return JSON only. Treat included_capture_items as the primary customer-facing source of truth. Technician notes are more authoritative than transcripts, and transcripts are more authoritative than AI captions/summaries. Use approved/suggested observation titles only when supported by the note/caption. Summarize documented observations only. Do not add recommendations, repair instructions, replacement instructions, remediation language, severity, urgency, hazard, liability language, causes, dates, names, numbers, measurements, IDs, VINs, codes, or technical values unless that exact concept is explicitly present in the provided documented text. Do not use words such as recommend, recommended, repair, replacement, remediate, remediation, required, requires, severe, severity, urgent, hazard, or liability unless those words already appear in the documented source text. Use neutral wording such as This report documents and Documented conditions include. If captures are provided, mention the documented observations rather than saying there is no evidence. Preserve source limitations.`,
+    `${styleInstruction} Write a professional executive summary for a customer-facing inspection report. Summarize the report; do not rewrite every observation. Mention the number of documented observations when available. Identify major themes/categories rather than every individual defect unless there are only a few observations. Leave item-specific details for the Documented Observations section. Never invent findings. Never invent severity. Never invent recommendations. Never invent causes. Never assign liability. Never mention repairs unless explicitly documented. Do not include source/process language such as references to technician notes, supporting photographic evidence, source material, or evidence provided in the report. Sound like a professional inspector, not ChatGPT. Keep concise. Return JSON only. Treat included_capture_items as the primary customer-facing source of truth. Technician notes are more authoritative than transcripts, and transcripts are more authoritative than AI captions/summaries. Use approved/suggested observation titles only when supported by the note/caption. Do not add dates, names, numbers, measurements, IDs, VINs, codes, or technical values unless that exact concept is explicitly present in the provided documented text. Do not use words such as recommend, recommended, repair, replacement, remediate, remediation, required, requires, severe, severity, urgent, hazard, or liability unless those words already appear in the documented source text.`,
     `Report title: ${input.sessionTitle ?? "Untitled report"}
 Report context JSON:
 ${JSON.stringify(input.reportContext ?? {})}
@@ -347,8 +408,9 @@ Report sections JSON (secondary source; ignore blank/informational sections that
 ${JSON.stringify(evidence).slice(0, 12000)}`,
   );
   const cleaned = removeUnsupportedActionLanguage(summary, sourceText);
+  const processLanguageRemoved = cleaned !== sanitizeSummary(summary);
   return (
-    cleaned ||
+    (!processLanguageRemoved && cleaned) ||
     fallbackSummary ||
     "This report documents observed conditions from the included evidence."
   );
