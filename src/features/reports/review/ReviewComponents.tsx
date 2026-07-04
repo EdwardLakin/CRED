@@ -887,7 +887,7 @@ export function ReportReview({
               <span>Report ID</span>
               <strong>{session.display_id ?? "Generated after save"}</strong>
             </div>
-            <SummaryAssistantEditor initialSummary={stripConfidenceText(currentReport.summary ?? "")} />
+            <SummaryAssistantEditor initialSummary={stripConfidenceText(currentReport.summary ?? "")} sessionId={session.id} />
           </details>
 
           <details id="report-observations-editor" className="report-subsection report-edit-panel" open>
