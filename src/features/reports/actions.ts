@@ -13,7 +13,7 @@ import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import { ReportEmailError, sendReportEmail, validateReportEmailRecipients } from '@/lib/email/reports'
 import { FINAL_NOTES_MODEL, FINAL_NOTES_PROMPT_VERSION, generateFinalNotes } from '@/lib/openai/final-notes-generator'
 import { AI_REPORT_DRAFT_MODEL, AI_REPORT_DRAFT_PROMPT_VERSION, generateReportDraft } from '@/lib/openai/report-draft-generator'
-import { improveReportSummaryWriting, regenerateReportSummaryFromEvidence } from '@/lib/openai/report-summary-assistant'
+import { improveReportSummaryWriting, regenerateReportSummaryFromEvidence, type SummaryStyle } from '@/lib/openai/report-summary-assistant'
 import {
   generateObservationTitles,
   OBSERVATION_TITLE_MODEL,
@@ -215,6 +215,10 @@ function requireReportReadyForDelivery(sessionId: string, session: { review_stat
 
 export type SummaryAssistantActionState = { ok: boolean; error?: string; summary?: string }
 
+function getSummaryStyle(value: FormDataEntryValue | null): SummaryStyle {
+  return value === 'concise' || value === 'detailed' ? value : 'professional'
+}
+
 function getSummaryAssistantErrorMessage(error: unknown) {
   if (error instanceof Error && error.message === 'OPENAI_API_KEY_MISSING') return 'AI summary tools are not configured for this workspace.'
   return error instanceof Error && error.message ? error.message : 'AI summary tool failed. Please try again.'
@@ -310,6 +314,7 @@ export async function improveReportSummaryAction(_state: SummaryAssistantActionS
 export async function regenerateReportSummaryAction(_state: SummaryAssistantActionState, formData: FormData): Promise<SummaryAssistantActionState> {
   const workspace = await requireSessionWorkspace()
   const sessionId = getString(formData, 'session_id')
+  const summaryStyle = getSummaryStyle(formData.get('summary_style'))
   if (!sessionId) return { ok: false, error: 'Select a session before regenerating the summary.' }
 
   const allowance = await requireSummaryAssistantAllowance(workspace)
@@ -383,6 +388,7 @@ export async function regenerateReportSummaryAction(_state: SummaryAssistantActi
       },
       captures: captureEvidence,
       evidenceGroups: isRecord(draft.report_structure) ? draft.report_structure.evidence_groups : null,
+      style: summaryStyle,
       evidence: (sections ?? []).map((section) => ({
         title: section.title,
         body: stripConfidenceText(section.body ?? ''),
@@ -395,7 +401,7 @@ export async function regenerateReportSummaryAction(_state: SummaryAssistantActi
       organizationId: workspace.profile.organization_id,
       eventType: 'ai_report_draft_generation',
       quantity: 1,
-      metadata: { session_id: sessionId, draft_id: draft.id, operation: 'summary_regenerate' },
+      metadata: { session_id: sessionId, draft_id: draft.id, operation: 'summary_regenerate', summary_style: summaryStyle },
     })
     return { ok: true, summary }
   } catch (error) {
