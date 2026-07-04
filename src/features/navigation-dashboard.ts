@@ -1,6 +1,6 @@
 export type ProfileRole = 'owner' | 'admin' | 'inspector' | 'reviewer'
 
-export type DashboardDestinationSurface = 'technician' | 'admin' | 'account' | 'session'
+export type DashboardDestinationSurface = 'technician' | 'admin' | 'account' | 'session' | 'studio'
 
 export type DashboardNavigationDestination = {
   href: string
@@ -12,6 +12,7 @@ export type DashboardNavigationDestination = {
 export const dashboardNavigationDestinations: DashboardNavigationDestination[] = [
   { href: '/dashboard', label: 'Dashboard', description: 'Start or resume', surface: 'technician' },
   { href: '/dashboard/sessions', label: 'Recent', description: 'Recent work', surface: 'technician' },
+  { href: '/dashboard/settings/branding', label: 'Report Studio', description: 'Templates and export style', surface: 'studio' },
   { href: '/dashboard/settings', label: 'Account', description: 'Your workspace', surface: 'account' },
   { href: '/dashboard/billing', label: 'Workspace', description: 'Plan and usage', surface: 'admin' },
 ]
