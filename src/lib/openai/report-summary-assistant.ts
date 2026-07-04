@@ -2,6 +2,7 @@ import { AI_REPORT_DRAFT_MODEL } from "@/lib/openai/report-draft-generator";
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const MAX_SUMMARY_LENGTH = 1200;
+const PROFESSIONAL_SUMMARY_WORD_RANGE = "100–150 words";
 const UNSUPPORTED_PROCESS_PATTERNS = [
   /\b(?:technician notes?|supporting photographic evidence|photographic evidence provided|evidence provided|based on .*evidence|source material|provided in the report)\b/i,
   /\b(?:observations are based on|findings are based on)\b/i,
@@ -260,13 +261,11 @@ function deterministicEvidenceOnlySummary(input: {
     ? `This report documents ${countText} at ${location}.`
     : `This report documents ${countText} for ${subject}.`;
   if (!themes.length) return opening;
-  const themeSentence = `The documented findings primarily relate to ${formatPhraseList(themes)}.`;
-  const detailSentence = "Individual observations are detailed in the sections that follow.";
+  const themeSentence = `The documented observations primarily relate to ${formatPhraseList(themes)}.`;
+  const conditionSentence = "Overall, the documented observations indicate localized condition issues and maintenance concerns that should be reviewed in context with the detailed observations.";
+  const detailSentence = "Detailed observations and supporting evidence are provided in the following sections.";
   if (input.style === "concise") return sanitizeSummary(`${opening} ${themeSentence}`);
-  if (input.style === "detailed") return sanitizeSummary(`${opening} ${themeSentence}
-
-${detailSentence}`);
-  return sanitizeSummary(`${opening} ${themeSentence} ${detailSentence}`);
+  return sanitizeSummary(`${opening} ${themeSentence} ${conditionSentence} ${detailSentence}`);
 }
 
 async function requestSummaryAssistant(systemPrompt: string, userText: string) {
@@ -390,13 +389,13 @@ export async function regenerateReportSummaryFromEvidence(input: {
 
   const style = normalizeSummaryStyle(input.style);
   const styleInstruction = style === "concise"
-    ? "Concise style: write one short paragraph, about 60–100 words."
+    ? "Concise style: write one polished paragraph, about 80–120 words."
     : style === "detailed"
-      ? "Detailed style: write 2 short paragraphs, about 160–220 words."
-      : "Professional style: write one polished paragraph, about 100–160 words.";
+      ? `Detailed style: still write one polished paragraph, ${PROFESSIONAL_SUMMARY_WORD_RANGE}; do not create multiple paragraphs.`
+      : `Professional style: write one polished paragraph, ${PROFESSIONAL_SUMMARY_WORD_RANGE}.`;
 
   const summary = await requestSummaryAssistant(
-    `${styleInstruction} Write a professional executive summary for a customer-facing inspection report. Summarize the report; do not rewrite every observation. Mention the number of documented observations when available. Identify major themes/categories rather than every individual defect unless there are only a few observations. Leave item-specific details for the Documented Observations section. Never invent findings. Never invent severity. Never invent recommendations. Never invent causes. Never assign liability. Never mention repairs unless explicitly documented. Do not include source/process language such as references to technician notes, supporting photographic evidence, source material, or evidence provided in the report. Sound like a professional inspector, not ChatGPT. Keep concise. Return JSON only. Treat included_capture_items as the primary customer-facing source of truth. Technician notes are more authoritative than transcripts, and transcripts are more authoritative than AI captions/summaries. Use approved/suggested observation titles only when supported by the note/caption. Do not add dates, names, numbers, measurements, IDs, VINs, codes, or technical values unless that exact concept is explicitly present in the provided documented text. Do not use words such as recommend, recommended, repair, replacement, remediate, remediation, required, requires, severe, severity, urgent, hazard, or liability unless those words already appear in the documented source text.`,
+    `${styleInstruction} Summarize documented observations only as an executive-level overview for a professional commercial inspection or property condition report. Follow this flow: first state what the report documents; then mention the observation count when available; then group the documented observations into broad themes such as flooring deterioration, moisture-related damage, aging finishes, cosmetic wear, non-operational equipment, maintenance concerns, or structural observations when those themes are supported; then describe the overall documented condition and overall impression in calm, neutral language; finish by directing the reader to the detailed observations. Do not rewrite every observation. Do not list Observation 1, Observation 2, or similar. Do not start with or use the phrase "Key issues include". Do not repeat room names or the property address unnecessarily. Do not add recommendations, repair instructions, replacement instructions, remediation language, severity, urgency, hazard, liability language, or sales language. Never invent findings. Never invent severity. Never invent recommendations. Never invent causes. Never assign liability. Leave item-specific details for the Documented Observations section. Do not include source/process language such as references to technician notes, supporting photographic evidence, source material, or evidence provided in the report. Sound like an engineering consultant or commercial inspection company, not ChatGPT. Return JSON only. Treat included_capture_items as the primary customer-facing source of truth. Technician notes are more authoritative than transcripts, and transcripts are more authoritative than AI captions/summaries. Use approved/suggested observation titles only when supported by the note/caption. Do not add dates, names, numbers, measurements, IDs, VINs, codes, or technical values unless that exact concept is explicitly present in the provided documented text. Do not use words such as recommend, recommended, repair, replacement, remediate, remediation, required, requires, severe, severity, urgent, hazard, or liability unless those words already appear in the documented source text.`,
     `Report title: ${input.sessionTitle ?? "Untitled report"}
 Report context JSON:
 ${JSON.stringify(input.reportContext ?? {})}

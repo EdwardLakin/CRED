@@ -1,7 +1,7 @@
 import type { Json } from '@/lib/supabase/database.types'
 
 export const AI_REPORT_DRAFT_MODEL = 'gpt-4.1-mini'
-export const AI_REPORT_DRAFT_PROMPT_VERSION = 'form-evidence-report-v5'
+export const AI_REPORT_DRAFT_PROMPT_VERSION = 'form-evidence-report-v6'
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const MAX_SECTIONS = 24
@@ -181,6 +181,10 @@ Technicians capture evidence naturally; synthesize technician-captured evidence 
 Do not invent unsupported facts.
 Executive summary rules are strict:
 - Summarize only technician-authored notes, voice transcripts, verified user-entered fields, and explicit source-document text.
+- Write one calm, objective, professional paragraph of 100–150 words that reads like a commercial inspection or property condition report.
+- Start by stating what the report documents and mention the observation count when available.
+- Group observations into broad documented themes instead of rewriting each defect; do not create Observation 1 / Observation 2 lists and do not use the phrase "Key issues include".
+- Describe overall condition and overall impression neutrally, then direct the reader to the detailed observations.
 - Do not say recommendations, repairs, replacement, monitoring, corrective actions, severity, urgency, diagnosis, conclusions, or follow-up are provided unless those ideas are explicitly present in technician-authored or verified source text.
 - Do not claim that visual evidence independently proves, confirms, diagnoses, or establishes a condition.
 - Use neutral wording such as documents, records, includes, and technician observed.
