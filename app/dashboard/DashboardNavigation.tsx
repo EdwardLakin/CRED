@@ -34,12 +34,13 @@ export function DashboardNavigation({ destinations }: { destinations: DashboardN
   }
 
   const technicianItems = getDestinationsBySurface(destinations, 'technician')
+  const studioItems = destinations.filter((item) => item.surface === 'studio')
   const accountItems = destinations.filter((item) => item.surface === 'account' || item.surface === 'admin')
 
   return (
     <nav className="dashboard-navigation" aria-label="Dashboard navigation">
       <div className="dashboard-nav-group" aria-label="Capture navigation">
-        {technicianItems.map((item) => (
+        {[...technicianItems, ...studioItems].map((item) => (
           <NavigationLink key={item.href} item={item} />
         ))}
       </div>
