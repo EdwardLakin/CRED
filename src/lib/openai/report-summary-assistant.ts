@@ -2,7 +2,7 @@ import { AI_REPORT_DRAFT_MODEL } from "@/lib/openai/report-draft-generator";
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const MAX_SUMMARY_LENGTH = 1200;
-const PROFESSIONAL_SUMMARY_WORD_RANGE = "100–150 words";
+const PROFESSIONAL_SUMMARY_WORD_RANGE = "100–140 words";
 const UNSUPPORTED_PROCESS_PATTERNS = [
   /\b(?:technician notes?|supporting photographic evidence|photographic evidence provided|evidence provided|based on .*evidence|source material|provided in the report)\b/i,
   /\b(?:observations are based on|findings are based on)\b/i,
@@ -221,14 +221,14 @@ function getObservationCount(input: { captures?: SummaryAssistantCaptureEvidence
 
 function themeLabel(value: string) {
   const text = value.toLowerCase();
-  if (/floor|carpet|vinyl|tile|hardwood|baseboard/.test(text)) return "flooring damage";
-  if (/water|leak|moisture|intrusion|stain/.test(text)) return "water intrusion";
+  if (/floor|carpet|vinyl|tile|hardwood|baseboard/.test(text)) return "flooring deterioration";
+  if (/water|leak|moisture|intrusion|stain/.test(text)) return "moisture-related deterioration";
   if (/mold|mould|mildew/.test(text)) return "mold";
-  if (/appliance|fridge|refrigerator|stove|oven|dishwasher|washer|dryer/.test(text)) return "appliance condition";
+  if (/appliance|fridge|refrigerator|stove|oven|dishwasher|washer|dryer/.test(text)) return "mechanical or equipment deficiencies";
   if (/mechanical|hvac|furnace|plumbing|electrical|heater|boiler/.test(text)) return "mechanical deficiencies";
-  if (/wall|ceiling|drywall|paint/.test(text)) return "interior finish conditions";
-  if (/door|window|lock|hardware/.test(text)) return "door and window conditions";
-  if (/roof|gutter|siding|exterior/.test(text)) return "exterior conditions";
+  if (/wall|ceiling|drywall|paint/.test(text)) return "interior finish damage";
+  if (/door|window|lock|hardware/.test(text)) return "interior component wear";
+  if (/roof|gutter|siding|exterior/.test(text)) return "exterior maintenance concerns";
   return sanitizeSummary(value).toLowerCase().slice(0, 60);
 }
 
@@ -262,9 +262,10 @@ function deterministicEvidenceOnlySummary(input: {
     : `This report documents ${countText} for ${subject}.`;
   if (!themes.length) return opening;
   const themeSentence = `The documented observations primarily relate to ${formatPhraseList(themes)}.`;
-  const conditionSentence = "Overall, the documented observations indicate localized condition issues and maintenance concerns that should be reviewed in context with the detailed observations.";
+  const conditionSentence = themes.some((theme) => /moisture/i.test(theme))
+    ? "Overall, the documented observations indicate a combination of aging materials, moisture-related deterioration, and maintenance concerns affecting several interior components."
+    : "Overall, the documented observations indicate a combination of aging materials and maintenance concerns affecting several documented components.";
   const detailSentence = "Detailed observations and supporting evidence are provided in the following sections.";
-  if (input.style === "concise") return sanitizeSummary(`${opening} ${themeSentence}`);
   return sanitizeSummary(`${opening} ${themeSentence} ${conditionSentence} ${detailSentence}`);
 }
 
@@ -389,13 +390,13 @@ export async function regenerateReportSummaryFromEvidence(input: {
 
   const style = normalizeSummaryStyle(input.style);
   const styleInstruction = style === "concise"
-    ? "Concise style: write one polished paragraph, about 80–120 words."
+    ? `Concise style: write one polished paragraph, ${PROFESSIONAL_SUMMARY_WORD_RANGE}; do not create multiple paragraphs.`
     : style === "detailed"
       ? `Detailed style: still write one polished paragraph, ${PROFESSIONAL_SUMMARY_WORD_RANGE}; do not create multiple paragraphs.`
-      : `Professional style: write one polished paragraph, ${PROFESSIONAL_SUMMARY_WORD_RANGE}.`;
+      : `Professional style: write one polished paragraph, ${PROFESSIONAL_SUMMARY_WORD_RANGE}; do not create multiple paragraphs.`;
 
   const summary = await requestSummaryAssistant(
-    `${styleInstruction} Summarize documented observations only as an executive-level overview for a professional commercial inspection or property condition report. Follow this flow: first state what the report documents; then mention the observation count when available; then group the documented observations into broad themes such as flooring deterioration, moisture-related damage, aging finishes, cosmetic wear, non-operational equipment, maintenance concerns, or structural observations when those themes are supported; then describe the overall documented condition and overall impression in calm, neutral language; finish by directing the reader to the detailed observations. Do not rewrite every observation. Do not list Observation 1, Observation 2, or similar. Do not start with or use the phrase "Key issues include". Do not repeat room names or the property address unnecessarily. Do not add recommendations, repair instructions, replacement instructions, remediation language, severity, urgency, hazard, liability language, or sales language. Never invent findings. Never invent severity. Never invent recommendations. Never invent causes. Never assign liability. Leave item-specific details for the Documented Observations section. Do not include source/process language such as references to technician notes, supporting photographic evidence, source material, or evidence provided in the report. Sound like an engineering consultant or commercial inspection company, not ChatGPT. Return JSON only. Treat included_capture_items as the primary customer-facing source of truth. Technician notes are more authoritative than transcripts, and transcripts are more authoritative than AI captions/summaries. Use approved/suggested observation titles only when supported by the note/caption. Do not add dates, names, numbers, measurements, IDs, VINs, codes, or technical values unless that exact concept is explicitly present in the provided documented text. Do not use words such as recommend, recommended, repair, replacement, remediate, remediation, required, requires, severe, severity, urgent, hazard, or liability unless those words already appear in the documented source text.`,
+    `${styleInstruction} Write the Executive Summary as the opening paragraph of a professional engineering-style report for executives, customers, landlords, insurance adjusters, and property owners. Its purpose is to give a high-level understanding of the report before the detailed observations, not to create a condensed observation list. Use this priority order: identify the report type; state how many observations were documented when available; group the documented observations into broad categories such as flooring deterioration, moisture intrusion, interior finish damage, cosmetic wear, mechanical deficiencies, maintenance concerns, or safety concerns only when explicitly documented; summarize the overall condition suggested by the observations; and direct the reader to the detailed observations below. Do not attempt to reference every room, component, photograph, or individual finding. If many similar defects exist, summarize them as a broad theme, for example multiple flooring defects throughout the property or moisture-related damage in several interior areas. Avoid repeatedly naming individual rooms unless one room is the primary focus of the report. Do not use phrases such as "Key issues include", "Notable findings include", "Additionally", or "Further observations". Do not call out item-specific examples such as fireplaces, stoves, humidifiers, or similar components unless they are the primary report focus. Prefer this type of ending when supported by the documented themes: "Overall, the documented observations indicate a combination of aging materials, moisture-related deterioration, and maintenance concerns affecting several interior components. Detailed observations and supporting evidence are provided in the following sections." Do not add recommendations, repair instructions, replacement instructions, remediation language, severity, urgency, hazard, liability language, or sales language. Never invent observations. Never invent findings. Never invent severity. Never invent recommendations. Never invent causes. Never speculate. Never assign liability. Use only documented evidence. Leave item-specific details for the Documented Observations section. Do not include source/process language such as references to technician notes, supporting photographic evidence, source material, or evidence provided in the report. Sound like an engineering consultant or commercial inspection company, not ChatGPT. Return JSON only. Treat included_capture_items as the primary customer-facing source of truth. Technician notes are more authoritative than transcripts, and transcripts are more authoritative than AI captions/summaries. Use approved/suggested observation titles only when supported by the note/caption. Do not add dates, names, numbers, measurements, IDs, VINs, codes, or technical values unless that exact concept is explicitly present in the provided documented text. Do not use words such as recommend, recommended, repair, replacement, remediate, remediation, required, requires, severe, severity, urgent, hazard, or liability unless those words already appear in the documented source text.`,
     `Report title: ${input.sessionTitle ?? "Untitled report"}
 Report context JSON:
 ${JSON.stringify(input.reportContext ?? {})}
