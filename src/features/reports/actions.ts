@@ -1144,13 +1144,20 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
   Object.entries(reportInfoFields).forEach(([key, value]) => { if (value) editedHeaderFields[key] = value })
 
   const reportTitle = sanitizeReportText(formData.get('report_title'), 180) || draft.title || session.asset_label || session.customer_name || 'Professional Evidence Report'
+  const includeEvidenceAppendix = formData.get('include_evidence_appendix') === 'on'
+  const baseSessionMetadata = sessionMetadataToJson(reportInfoFields)
+  const reportOptions = {
+    ...(isRecord(session.session_metadata) && isRecord(session.session_metadata.report_options) ? session.session_metadata.report_options : {}),
+    includeEvidenceAppendix,
+  }
+  const sessionMetadata = { ...(isRecord(baseSessionMetadata) ? baseSessionMetadata : {}), report_options: reportOptions } as Json
   const now = new Date().toISOString()
   const { error: updateSessionError } = await supabase
     .from('documentation_sessions')
     .update({
       title: reportTitle,
       session_type: normalizeReportType(session.session_type || DEFAULT_REPORT_TYPE),
-      session_metadata: sessionMetadataToJson(reportInfoFields),
+      session_metadata: sessionMetadata,
       customer_name: reportInfoFields.customer_client || session.customer_name,
       asset_label: reportInfoFields.asset_equipment || reportInfoFields.subject_name || session.asset_label,
       suggested_details: { ...((session.suggested_details && typeof session.suggested_details === 'object' && !Array.isArray(session.suggested_details)) ? session.suggested_details : {}), report_information: reportInfoFields } as Json,

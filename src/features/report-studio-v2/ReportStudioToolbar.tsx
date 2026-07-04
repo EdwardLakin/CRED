@@ -21,7 +21,7 @@ export function ReportStudioToolbar({ props, state, handlers, onTemplates, onPal
   const [templateState, templateAction] = useActionState(saveReportTemplate as BrandingFormAction, initialActionState);
   useEffect(() => { if (!state.isDirty) return; const timer = window.setTimeout(() => { const form = document.getElementById("report-studio-save-form") as HTMLFormElement | null; form?.requestSubmit(); }, 900); return () => window.clearTimeout(timer); }, [state.draftBrandProfile, state.selectedSessionId, state.isDirty]);
   useEffect(() => { if (saveState.ok) handlers.setIsDirty(false); }, [saveState.ok, handlers]);
-  useEffect(() => { if (exportState.ok && exportState.redirectTo) window.location.assign(exportState.redirectTo); }, [exportState.ok, exportState.redirectTo]);
+  useEffect(() => { if (exportState.ok && exportState.redirectTo) window.open(exportState.redirectTo, "_blank", "noopener,noreferrer"); }, [exportState.ok, exportState.redirectTo]);
   useEffect(() => { if (!templateState.ok) return; const timer = window.setTimeout(() => { if (templateState.template) onTemplateSaved?.(templateState.template); setSaveTemplateOpen(false); }, 0); return () => window.clearTimeout(timer); }, [templateState.ok, templateState.template, onTemplateSaved]);
   const exportHref = state.selectedSessionId ? `/api/dashboard/sessions/${encodeURIComponent(state.selectedSessionId)}/report-pdf?review_output=${encodeURIComponent(state.selectedSessionId)}&selected_session_output_id=${encodeURIComponent(state.selectedSessionId)}&template=${encodeURIComponent(state.selectedTemplateId ?? "workspace-default")}&studio_export=1` : "#";
   const inlineError = saveState.error || exportState.error;
@@ -36,7 +36,7 @@ export function ReportStudioToolbar({ props, state, handlers, onTemplates, onPal
       <form id="report-studio-save-form" action={saveAction} className="sr-only"><ReportStudioHiddenFields brand={state.draftBrandProfile} selectedSessionId={state.selectedSessionId} selectedTemplateId={state.selectedTemplateId}/><button type="submit">Save changes</button></form>
       <span className={state.isDirty?"rsv2-dirty is-dirty":"rsv2-dirty"}>{status}</span>
       <button className="button button-secondary" type="button" onClick={()=>setSaveTemplateOpen(true)}>Save as Template</button>
-      <form id="report-studio-export-form" action={exportAction}><ReportStudioHiddenFields brand={state.draftBrandProfile} selectedSessionId={state.selectedSessionId} selectedTemplateId={state.selectedTemplateId}/><button className="button button-primary" type="submit" disabled={!state.selectedSessionId} formAction={exportAction}>Export Report</button><a className="sr-only" href={exportHref}>Direct report export fallback</a></form>
+      <form id="report-studio-export-form" action={exportAction}><ReportStudioHiddenFields brand={state.draftBrandProfile} selectedSessionId={state.selectedSessionId} selectedTemplateId={state.selectedTemplateId}/><a className="button button-primary" href={exportHref} target="_blank" rel="noopener noreferrer" aria-disabled={!state.selectedSessionId} onClick={(event)=>{ if(!state.selectedSessionId) event.preventDefault(); }}>Export Report</a><button className="sr-only" type="submit" disabled={!state.selectedSessionId} formAction={exportAction}>Save and open export</button></form>
       {templateState.ok&&<p className="rsv2-inline-success" role="status">Template saved</p>}
       {inlineError&&<p className="rsv2-inline-error" role="alert">{inlineError}</p>}
     </header>

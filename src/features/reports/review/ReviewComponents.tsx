@@ -68,6 +68,14 @@ function sectionHasCustomerContent(section: AiReportDraftSection) {
   return Boolean(body || hasFields);
 }
 
+
+function getIncludeEvidenceAppendixDefault(session: Pick<DocumentationSession, "session_metadata">) {
+  const metadata = isRecord(session.session_metadata) ? session.session_metadata : null;
+  const options = metadata && isRecord(metadata.report_options) ? metadata.report_options : null;
+  return typeof options?.includeEvidenceAppendix === "boolean"
+    ? options.includeEvidenceAppendix
+    : true;
+}
 function getReportTypeHint(session: Pick<DocumentationSession, "session_type" | "asset_label" | "suggested_details">, sections: AiReportDraftSection[]) {
   const haystack = [
     session.session_type,
@@ -805,6 +813,17 @@ export function ReportReview({
                 defaultValue={displayReportTitle}
               />
             </label>
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                name="include_evidence_appendix"
+                defaultChecked={getIncludeEvidenceAppendixDefault(session)}
+              />
+              Include Evidence Appendix
+            </label>
+            <p className="muted">
+              This report-level setting overrides the workspace/template appendix default for this report only.
+            </p>
             <div className="report-field-grid">
               <label className="field-stack">
                 <span className="label">Subject Name</span>
@@ -1251,7 +1270,7 @@ function AiWritingPlaceholder() {
         Shorten
       </button>
       <span className="muted">
-        AI writing refinement will be available after report regeneration support is connected. Technician notes remain the source of truth.
+Writing refinement is limited to grammar, punctuation, clarity, and concise customer-facing wording.
       </span>
     </div>
   );

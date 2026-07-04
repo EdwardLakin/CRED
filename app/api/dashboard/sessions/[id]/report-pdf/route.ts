@@ -148,7 +148,8 @@ function getApprovalDate(
   return draft?.approved_at ?? session.reviewed_at ?? null;
 }
 
-function formatSnapshotState(value: string | null | undefined) {
+function formatSnapshotState(value: string | null | undefined, approved = false) {
+  if (approved) return "Approved";
   if (!value) return "";
   return value
     .replace(/_/g, " ")
@@ -225,6 +226,20 @@ function redirectToCanonicalStudioExport(
   redirect(redirectUrl.pathname + redirectUrl.search);
 }
 
+
+function getReportLevelAppendixPreference(session: ReportSession) {
+  const metadata = isRecord(session.session_metadata) ? session.session_metadata : null;
+  const options = metadata && isRecord(metadata.report_options) ? metadata.report_options : null;
+  return typeof options?.includeEvidenceAppendix === "boolean"
+    ? options.includeEvidenceAppendix
+    : null;
+}
+
+function shouldIncludeEvidenceAppendix(session: ReportSession, branding: ExportBranding | null | undefined) {
+  const reportPreference = getReportLevelAppendixPreference(session);
+  if (reportPreference !== null) return reportPreference;
+  return branding?.report_style.evidenceAppendix !== false;
+}
 function getDocumentedObservationCount(
   reviewDocument: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>,
 ) {
@@ -277,6 +292,7 @@ function buildReportOverviewHtml(params: {
   documentEvidenceCount?: number;
   observationCategories?: string[];
   reviewState?: string | null;
+  approved?: boolean;
   timestampLabel?: string | null;
   timestampValue?: string | null;
 }) {
@@ -332,8 +348,8 @@ function buildReportOverviewHtml(params: {
           : "",
     },
     {
-      label: "Inspection status",
-      value: formatSnapshotState(params.reviewState),
+      label: "Status",
+      value: formatSnapshotState(params.reviewState, Boolean(params.approved)),
     },
     {
       label: params.timestampLabel ?? "Report timestamp",
@@ -343,7 +359,7 @@ function buildReportOverviewHtml(params: {
   const snapshotHtml = snapshotRows.length
     ? `<div class="report-snapshot"><h3>Report Snapshot</h3><dl>${snapshotRows.map((row) => `<div><dt>${escapeHtml(row.label)}</dt><dd>${escapeHtml(row.value)}</dd></div>`).join("")}</dl></div>`
     : "";
-  return `<section class="item service-section overview-section"><div class="section-heading"><p class="eyebrow">Report Overview</p><h2>Executive Summary</h2></div><div class="summary-panel">${paragraphs.map((paragraph) => `<p class="summary-lead">${escapeHtml(paragraph)}</p>`).join("")}${snapshotHtml}<p class="summary-trust">Organized for readability. Technician-approved content remains the source of truth.</p></div></section>`;
+  return `<section class="item service-section overview-section"><div class="section-heading"><p class="eyebrow">Report Overview</p><h2>Executive Summary</h2></div><div class="summary-panel">${paragraphs.map((paragraph) => `<p class="summary-lead">${escapeHtml(paragraph)}</p>`).join("")}${snapshotHtml}</div></section>`;
 }
 
 function buildEvidenceGalleryHtml(
@@ -1311,24 +1327,20 @@ function buildDocumentedObservationsHtml(
     const heading = cleanCustomerFacingText(
       getCustomerFacingEvidenceTitle(capture, index),
     );
-    const technicianNoteHtml = technicianNote
-      ? `<div class="technician-note-block"><h4>Technician Note</h4><p>${escapeHtml(technicianNote)}</p></div>`
-      : "";
-    const hasPhotoEvidence = groupImageAssets.length > 0;
     const evidenceHtml =
-      isDocument || details.length || hasPhotoEvidence
-        ? `<div class="proof-block"><h4>Evidence</h4>${isDocument ? `<p class="proof-line">✓ Supporting document attached.</p>` : ""}${!isDocument && hasPhotoEvidence ? '<p class="proof-line">✓ Supporting photographic evidence attached.</p>' : ""}${details.length ? renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value }))) : ""}</div>`
+      isDocument || details.length
+        ? `<div class="proof-block">${isDocument ? `<p class="proof-line">Supporting document</p>` : ""}${details.length ? renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value }))) : ""}</div>`
         : "";
-    return `<article class="finding-card observation-card"><div class="observation-main">${mediaHtml}<div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">${String(index + 1).padStart(2, "0")}</span><span class="observation-kind">${escapeHtml(getObservationCategoryLabel(entry))}</span></div><div class="condition-block"><h4>Condition</h4><h3>${escapeHtml(heading)}</h3></div>${evidenceHtml}${technicianNoteHtml}${recommendations.length ? `<div class="proof-block"><h4>Recommended Action</h4><ul>${recommendations.map((value) => `<li>${escapeHtml(cleanCustomerFacingText(value))}</li>`).join("")}</ul></div>` : ""}</div></div>${supportingImagesHtml}</article>`;
+    return `<article class="finding-card observation-card"><div class="observation-main">${mediaHtml}<div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">Observation ${String(index + 1).padStart(2, "0")}</span><span class="observation-kind">${escapeHtml(getObservationCategoryLabel(entry))}</span></div><h3>${escapeHtml(heading)}</h3>${technicianNote ? `<p>${escapeHtml(technicianNote)}</p>` : ""}${evidenceHtml}${recommendations.length ? `<div class="proof-block"><h4>Recommended Action</h4><ul>${recommendations.map((value) => `<li>${escapeHtml(cleanCustomerFacingText(value))}</li>`).join("")}</ul></div>` : ""}</div></div>${supportingImagesHtml}</article>`;
   });
   const actionEntryCards = actionCards.map(
     (action, index) =>
-      `<article class="finding-card observation-card"><div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">${String(entries.length + index + 1).padStart(2, "0")}</span><span class="observation-kind">Recommended Action</span></div><div class="condition-block"><h4>Condition</h4><h3>Recommended Action</h3></div><div class="proof-block"><h4>Recommended Action</h4><p>${escapeHtml(cleanCustomerFacingText(stripConfidenceText(action.action)))}</p></div></div></article>`,
+      `<article class="finding-card observation-card"><div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">Observation ${String(entries.length + index + 1).padStart(2, "0")}</span><span class="observation-kind">Recommended Action</span></div><h3>Recommended Action</h3><p>${escapeHtml(cleanCustomerFacingText(stripConfidenceText(action.action)))}</p></div></article>`,
   );
   const observationCards = [...entryCards, ...actionEntryCards];
   const [firstObservationHtml = "", ...remainingObservationHtml] =
     observationCards;
-  return `<section class="item service-section findings-section documented-observations"><div class="documented-observations-lead"><div class="section-heading"><p class="eyebrow">Technician says this. Here’s the proof.</p><h2>Documented Observations</h2></div><p class="muted section-intro">Technician notes are the source of truth. Each supporting photo or document appears once with the observation it supports.</p>${firstObservationHtml}</div>${remainingObservationHtml.join("")}</section>`;
+  return `<section class="item service-section findings-section documented-observations"><div class="documented-observations-lead"><div class="section-heading"><p class="eyebrow">Documented Observations</p><h2>Documented Observations</h2></div><p class="muted section-intro">Each observation below includes the documented condition and supporting image where available.</p>${firstObservationHtml}</div>${remainingObservationHtml.join("")}</section>`;
 }
 
 function buildEvidenceSectionHtml(
@@ -1352,7 +1364,6 @@ function buildEvidenceAppendixHtml(
     branding?: ExportBranding | null;
   } = {},
 ) {
-  if (options.branding?.report_style.evidenceAppendix === false) return "";
   const style =
     options.branding?.report_style ?? DEFAULT_BRAND_PROFILE.report_style;
   if (captures.length === 0)
@@ -1688,6 +1699,7 @@ function buildFieldServiceReportHtml({
     ).length,
     observationCategories: getObservationCategorySummary(reviewDocument),
     reviewState: reportDraft?.status ?? session.review_status,
+    approved: Boolean(approvalDate || reportDraft?.status === "approved" || session.review_status === "reviewed"),
     timestampLabel: approvalDate ? "Approved" : "Generated",
     timestampValue: snapshotTimestamp
       ? formatDateTimeInTimeZone(snapshotTimestamp, timeZone)
@@ -1695,12 +1707,15 @@ function buildFieldServiceReportHtml({
   });
   const fieldUseGalleryMode =
     fieldAppendixCaptures.filter(isImageEvidence).length >= 6;
-  const appendixHtml = buildEvidenceAppendixHtml(
-    fieldAppendixCaptures,
-    signedUrls,
-    timeZone,
-    { renderImages: !fieldUseGalleryMode, branding },
-  );
+  const includeAppendix = shouldIncludeEvidenceAppendix(session, branding);
+  const appendixHtml = includeAppendix
+    ? buildEvidenceAppendixHtml(
+        fieldAppendixCaptures,
+        signedUrls,
+        timeZone,
+        { renderImages: !fieldUseGalleryMode, branding },
+      )
+    : "";
   const findingModels = reviewDocument.findingModels;
   const evidenceHtml = [
     buildFindingCardsHtml(reviewDocument.findings, signedUrls),
@@ -1733,7 +1748,7 @@ function buildFieldServiceReportHtml({
     : "";
 
   return `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable field service report</title>
-  <style>${REPORT_STYLES}${buildBrandCss(branding)}</style></head><body>${buildReportOpen({ branding, timeZone })}${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, captures: captureItems, imageAssets: signedUrls, timeZone, allowCoverImage: fieldUseGalleryMode, branding, logoUrl: brandLogoUrl, helpers: { isImageEvidence, renderDefinitionRows, renderExportImage, getUserEvidenceText, getPrimaryEvidenceLabel } })}${summaryHtml}<section class="item service-section"><h2>Report Details</h2>${renderDefinitionRows(headerRows)}</section>${renderFieldServiceSection(details, "equipment")}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work Performed / Resolution</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Supporting Record</h2><p class="muted">Photos, documents, and technician notes support the work summary and findings above.</p></section>${buildFinalNotesHtml(session)}${evidenceHtml}${fieldUseGalleryMode ? buildEvidenceGalleryHtml(captureItems, signedUrls, timeZone) : ""}${appendixHtml}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges Summary</h2>${renderDefinitionRows(chargeRows)}</section>${buildInspectorFacilityHtml(null, null)}${buildApprovalHtml({ profile: null, signatures, signatureUrls, draft: reportDraft, session, timeZone, branding, helpers: { renderDefinitionRows, getApprovalDate } })}${buildPrintFooterHtml({ organizationName, reportId: session.display_id, generatedAt: formatDateTimeInTimeZone(new Date().toISOString(), timeZone), branding })}</main>${EXPORT_LIGHTBOX_HTML}</body></html>`;
+  <style>${REPORT_STYLES}${buildBrandCss(branding)}</style></head><body>${buildReportOpen({ branding, timeZone })}${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, captures: captureItems, imageAssets: signedUrls, timeZone, allowCoverImage: fieldUseGalleryMode, branding, logoUrl: brandLogoUrl, helpers: { isImageEvidence, renderDefinitionRows, renderExportImage, getUserEvidenceText, getPrimaryEvidenceLabel } })}${summaryHtml}<section class="item service-section"><h2>Report Details</h2>${renderDefinitionRows(headerRows)}</section>${renderFieldServiceSection(details, "equipment")}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work Performed / Resolution</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Supporting Record</h2><p class="muted">Photos, documents, and notes support the work summary and findings above.</p></section>${buildFinalNotesHtml(session)}${evidenceHtml}${fieldUseGalleryMode ? buildEvidenceGalleryHtml(captureItems, signedUrls, timeZone) : ""}${appendixHtml}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges Summary</h2>${renderDefinitionRows(chargeRows)}</section>${buildInspectorFacilityHtml(null, null)}${buildApprovalHtml({ profile: null, signatures, signatureUrls, draft: reportDraft, session, timeZone, branding, helpers: { renderDefinitionRows, getApprovalDate } })}${buildPrintFooterHtml({ organizationName, reportId: session.display_id, generatedAt: formatDateTimeInTimeZone(new Date().toISOString(), timeZone), branding })}</main>${EXPORT_LIGHTBOX_HTML}</body></html>`;
 }
 
 const REPORT_STYLES = `
@@ -2654,17 +2669,21 @@ export async function GET(_request: Request, { params }: RouteContext) {
     ).length,
     observationCategories: getObservationCategorySummary(reviewDocument),
     reviewState: reportDraft?.status ?? session.review_status,
+    approved: Boolean(approvalDate || reportDraft?.status === "approved" || session.review_status === "reviewed"),
     timestampLabel: approvalDate ? "Approved" : "Generated",
     timestampValue: snapshotTimestamp
       ? formatDateTimeInTimeZone(snapshotTimestamp, timeZone)
       : null,
   });
-  const appendixHtml = buildEvidenceAppendixHtml(
-    appendixCaptureItems,
-    imageAssets,
-    timeZone,
-    { renderImages: !useGalleryMode, branding },
-  );
+  const includeAppendix = shouldIncludeEvidenceAppendix(session, branding);
+  const appendixHtml = includeAppendix
+    ? buildEvidenceAppendixHtml(
+        appendixCaptureItems,
+        imageAssets,
+        timeZone,
+        { renderImages: !useGalleryMode, branding },
+      )
+    : "";
   const draftReferencedCaptureCount = new Set(
     visibleReportSections
       .flatMap((section) => section.source_capture_ids ?? [])
