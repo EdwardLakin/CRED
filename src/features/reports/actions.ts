@@ -21,12 +21,14 @@ import {
 } from '@/lib/openai/observation-title-generator'
 import {
   getObservationReportTitleState,
+  getStoredObservationTitle,
   mergeSuggestedObservationTitle,
 } from '@/features/reports/observation-titles'
 import type { OrganizationPlan } from '@/lib/stripe'
 import { buildEvidenceGroups, buildEvidencePackages,
   sanitizeReportStructureForSession, buildNormalizedReportFields, deriveFormSectionsFromCaptures, extractFormBlueprint, mapEvidenceToFormBlueprint, scoreFormReferenceCapture, selectPrimaryFormCaptures, stripConfidenceText, GENERIC_REPORT_SECTION_TITLES, getReportStructureSourceMetadata, sanitizeCapturesForImageAiAssist, getFormStructureReliability } from '@/features/reports/report-structure'
 import { buildSafeReportTitle, isPlaceholderReportTitle } from '@/features/reports/report-title'
+import { isCaptureIncludedInOutput } from '@/features/reports/capture-inclusion'
 import type { Json } from '@/lib/supabase/database.types'
 
 const REPORT_SHARE_EXPIRATION_DAYS = 30
@@ -119,6 +121,40 @@ function getString(formData: FormData, field: string) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function getSummaryAssistantCaptureText(value: unknown, keys: string[] = ['caption', 'note', 'notes', 'observation', 'observed_condition', 'finding', 'description', 'summary']) {
+  if (!value || typeof value !== 'object') return null
+  const stack = [value]
+  while (stack.length) {
+    const current = stack.shift()
+    if (!current || typeof current !== 'object' || Array.isArray(current)) continue
+    for (const [key, nested] of Object.entries(current)) {
+      if (typeof nested === 'string' && keys.includes(key.toLowerCase()) && nested.trim()) return nested.trim()
+      if (nested && typeof nested === 'object') stack.push(nested)
+    }
+  }
+  return null
+}
+
+function getReportLocationHint(session: { suggested_details?: Json | null; session_metadata?: Json | null }) {
+  const candidates = [session.suggested_details, session.session_metadata]
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue
+    const record = candidate as Record<string, unknown>
+    const direct = ['location', 'property_address', 'address', 'site_address']
+      .map((key) => record[key])
+      .find((value): value is string => typeof value === 'string' && Boolean(value.trim()))
+    if (direct) return direct.trim()
+    const reportInfo = record.report_information
+    if (reportInfo && typeof reportInfo === 'object' && !Array.isArray(reportInfo)) {
+      const nested = ['location', 'property_address', 'address', 'site_address']
+        .map((key) => (reportInfo as Record<string, unknown>)[key])
+        .find((value): value is string => typeof value === 'string' && Boolean(value.trim()))
+      if (nested) return nested.trim()
+    }
+  }
+  return null
+}
+
 function getRecipients(formData: FormData) {
   return getString(formData, 'recipients')
 }
@@ -200,7 +236,7 @@ async function requireSummaryAssistantAllowance(workspace: Awaited<ReturnType<ty
 async function getActiveSummaryDraft(workspace: Awaited<ReturnType<typeof requireSessionWorkspace>>, sessionId: string) {
   const { data: drafts, error } = await workspace.supabase
     .from('ai_report_drafts')
-    .select('id, status, summary, generated_at, created_at')
+    .select('id, status, summary, title, header_fields, report_structure, generated_at, created_at')
     .eq('documentation_session_id', sessionId)
     .eq('organization_id', workspace.profile.organization_id)
     .order('generated_at', { ascending: false })
@@ -285,7 +321,7 @@ export async function regenerateReportSummaryAction(_state: SummaryAssistantActi
 
     const { data: session, error: sessionError } = await workspace.supabase
       .from('documentation_sessions')
-      .select('title')
+      .select('title, customer_name, asset_label, unit_number, suggested_details, session_metadata')
       .eq('id', sessionId)
       .eq('organization_id', workspace.profile.organization_id)
       .single()
@@ -299,8 +335,54 @@ export async function regenerateReportSummaryAction(_state: SummaryAssistantActi
       .order('sort_order', { ascending: true })
     if (sectionsError) return { ok: false, error: sectionsError.message }
 
+    const { data: captures, error: capturesError } = await workspace.supabase
+      .from('capture_items')
+      .select('id, type, media_kind, captured_at, technician_note, transcript, ai_summary, ocr_text, extracted_data, capture_ai_analysis, evidence_category, include_in_report, evidence_review_status, deleted_at, source_kind, source_metadata, observation_group_id, group_order')
+      .eq('documentation_session_id', sessionId)
+      .eq('organization_id', workspace.profile.organization_id)
+      .is('deleted_at', null)
+      .order('report_order', { ascending: true, nullsFirst: false })
+      .order('captured_at', { ascending: true })
+    if (capturesError) return { ok: false, error: capturesError.message }
+
+    const includedCaptures = (captures ?? []).filter(isCaptureIncludedInOutput)
+    const captureEvidence = includedCaptures.map((capture) => {
+      const technicianText = capture.technician_note?.trim() || capture.transcript?.trim() || null
+      return {
+        source: 'included_capture_item' as const,
+        capture_id: capture.id,
+        observation_group_id: capture.observation_group_id,
+        group_order: capture.group_order,
+        title: getStoredObservationTitle(capture.extracted_data),
+        technician_note: capture.technician_note?.trim() || null,
+        transcript: !capture.technician_note?.trim() ? capture.transcript?.trim() || null : null,
+        caption: technicianText ?? getSummaryAssistantCaptureText(capture.extracted_data) ?? getSummaryAssistantCaptureText(capture.capture_ai_analysis) ?? capture.ai_summary?.trim() ?? null,
+        evidence_category: normalizeEvidenceCategory(capture.evidence_category),
+        media_kind: capture.media_kind,
+        captured_at: capture.captured_at,
+      }
+    }).filter((item) => item.caption || item.technician_note || item.transcript || item.title)
+
+    if (includedCaptures.length > 0 && captureEvidence.length === 0) {
+      console.warn('[summary-assistant] Included capture items found but no observation text was extracted for regeneration.', {
+        session_id: sessionId,
+        draft_id: draft.id,
+        included_capture_count: includedCaptures.length,
+      })
+    }
+
     const summary = await regenerateReportSummaryFromEvidence({
       sessionTitle: session?.title ?? null,
+      reportContext: {
+        title: draft.title ?? session?.title ?? null,
+        customer: session?.customer_name ?? null,
+        asset: session?.asset_label ?? null,
+        unit: session?.unit_number ?? null,
+        location: getReportLocationHint(session ?? {}),
+        header_fields: draft.header_fields,
+      },
+      captures: captureEvidence,
+      evidenceGroups: isRecord(draft.report_structure) ? draft.report_structure.evidence_groups : null,
       evidence: (sections ?? []).map((section) => ({
         title: section.title,
         body: stripConfidenceText(section.body ?? ''),
