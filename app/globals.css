@@ -5816,3 +5816,33 @@ a:focus-visible {
 .rsv2-cover{position:relative;overflow:hidden;place-items:stretch;background:var(--rsv2-cover-bg,#fff);border-color:color-mix(in srgb,var(--rsv2-cover-accent,var(--rsv2-primary)) 25%,transparent)}
 .rsv2-cover-copy{display:grid;gap:10px;align-content:center;min-height:320px;padding:36px;position:relative;z-index:1}.rsv2-cover h1{color:var(--rsv2-cover-text,var(--rsv2-accent));font-size:clamp(2rem,5vw,4rem);line-height:.98;margin:.1rem 0}.rsv2-cover p{color:var(--rsv2-cover-accent,var(--rsv2-primary));font-weight:900;letter-spacing:.14em;text-transform:uppercase}.rsv2-cover-meta{display:grid;gap:4px;color:var(--rsv2-cover-text,#64748b);font-weight:750}.rsv2-cover.logo-small img{max-height:48px}.rsv2-cover.logo-large img{max-height:112px;max-width:280px}.rsv2-cover-photo{align-content:center;background:linear-gradient(135deg,#dbeafe,#f8fafc);border:1px dashed var(--rsv2-border);border-radius:18px;color:#475569;display:grid;min-height:170px;padding:24px;text-align:center}.rsv2-cover.cover-minimal_cover{box-shadow:none;background:#fff;border-top:8px solid var(--rsv2-cover-accent,var(--rsv2-primary))}.rsv2-cover.cover-classic_cover{background:linear-gradient(180deg,#fff,var(--rsv2-cover-bg,#f8fafc));border:1px solid #cbd5e1}.rsv2-cover.cover-classic_cover:before{content:"";position:absolute;inset:18px;border:2px solid var(--rsv2-cover-accent,var(--rsv2-primary));opacity:.35}.rsv2-cover.cover-modern_gradient_cover{background-color:var(--rsv2-cover-bg,#fff);background-image:linear-gradient(135deg,var(--rsv2-cover-grad-a,#eff6ff),var(--rsv2-cover-accent,var(--rsv2-primary)) 52%,var(--rsv2-cover-grad-b,#fff))}.rsv2-cover.cover-full_color_cover{background:var(--rsv2-cover-bg,var(--rsv2-cover-accent,var(--rsv2-primary)));color:var(--rsv2-cover-text,#fff)}.rsv2-cover.cover-full_color_cover h1,.rsv2-cover.cover-full_color_cover p,.rsv2-cover.cover-full_color_cover .rsv2-cover-meta{color:var(--rsv2-cover-text,#fff)}.rsv2-cover.cover-split_panel_cover{display:grid;grid-template-columns:1.2fr .8fr}.rsv2-cover.cover-split_panel_cover:after{content:"";background:linear-gradient(135deg,var(--rsv2-cover-grad-a,#eff6ff),var(--rsv2-cover-grad-b,#dbeafe));min-height:100%;display:block}.rsv2-cover.cover-photo_cover{display:grid;grid-template-columns:1fr .9fr}.rsv2-cover.cover-industrial_bold_cover{background:#111827;color:#fff;border-left:28px solid var(--rsv2-cover-accent,#f97316);text-transform:uppercase}.rsv2-cover.cover-industrial_bold_cover h1,.rsv2-cover.cover-industrial_bold_cover p,.rsv2-cover.cover-industrial_bold_cover .rsv2-cover-meta{color:#fff}.rsv2-editing-note{color:#64748b;font-size:.85rem;margin:0 auto 10px;max-width:980px}
 .report-cover{background:var(--cover-bg,#fff)}.report-cover .cover-copy{background:transparent}.report-cover.cover-minimal_cover{box-shadow:none;border-top:8px solid var(--cover-accent,var(--brand-primary))}.report-cover.cover-classic_cover{border:1px solid #cbd5e1}.report-cover.cover-modern_gradient_cover{background-color:var(--cover-bg,#fff);background-image:linear-gradient(135deg,var(--cover-grad-a,#eff6ff),var(--cover-accent,var(--brand-primary)) 52%,var(--cover-grad-b,#fff))}.report-cover.cover-full_color_cover{background:var(--cover-bg,var(--cover-accent,var(--brand-primary)));color:var(--cover-text,#fff)}.report-cover.cover-full_color_cover .cover-trust,.report-cover.cover-full_color_cover .cover-kicker{color:var(--cover-text,#fff)}.report-cover.cover-split_panel_cover{grid-template-columns:minmax(0,1.1fr) minmax(220px,.9fr)}.report-cover.cover-split_panel_cover.report-cover-no-image:after{content:"";display:block;background:linear-gradient(135deg,var(--cover-grad-a,#eff6ff),var(--cover-grad-b,#fff));min-height:320px}.report-cover.cover-industrial_bold_cover{background:#111827;color:#fff;border-left:24px solid var(--cover-accent,#f97316);text-transform:uppercase}.report-cover.cover-industrial_bold_cover .cover-trust,.report-cover.cover-industrial_bold_cover .cover-kicker{color:var(--cover-text,#fff)}.report-cover.logo-small .brand-report-logo{max-height:42px}.report-cover.logo-large .brand-report-logo{max-height:96px;max-width:260px}
+
+.summary-editor-stack {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.summary-editor-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.summary-assistant-panel {
+  background: color-mix(in srgb, var(--surface-muted) 78%, white);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.summary-assistant-panel h4 {
+  margin: 0 0 0.25rem;
+}
+
+.summary-assistant-panel .report-ai-writing-actions {
+  border-top: 0;
+  padding-top: 0;
+}

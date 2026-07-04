@@ -20,6 +20,10 @@ export function ReportEditAutosaveForm({
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
+    document.dispatchEvent(new CustomEvent("report-autosave-status", { detail: { state } }));
+  }, [state]);
+
+  useEffect(() => {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
@@ -76,13 +80,14 @@ export function ReportEditAutosaveForm({
     >
       <div className="report-autosave-bar" aria-live="polite">
         <span className={className}>{label}</span>
-        <span className="muted">Autosaves text and section settings. Use explicit controls for approval, export, signatures, and deletes.</span>
+        <span className="muted">Autosaves text, the executive summary, and section settings. Use explicit controls for approval, export, signatures, and deletes.</span>
       </div>
       {children}
-      <div id="report-export-actions" className="form-actions report-inline-actions report-primary-flow">
+      <div id="report-export-actions" className="form-actions report-inline-actions report-primary-flow report-manual-save-fallback">
         <PendingActionButton className="button button-secondary touch-target" pendingLabel="Saving edits…">
           Save now
         </PendingActionButton>
+        <span className="muted">Manual fallback if autosave cannot complete.</span>
       </div>
     </form>
   );

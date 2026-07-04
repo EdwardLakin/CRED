@@ -31,6 +31,7 @@ import {
 import { SignatureCaptureForm } from "@/features/signatures";
 import { PendingActionButton } from "@/features/reports/review/PendingActionButton";
 import { ReportEditAutosaveForm } from "@/features/reports/review/ReportEditAutosaveForm";
+import { SummaryAssistantEditor } from "@/features/reports/review/SummaryAssistantEditor";
 import { useSavedSignature } from "@/features/signatures/actions";
 import type { Database } from "@/lib/supabase/database.types";
 
@@ -886,16 +887,7 @@ export function ReportReview({
               <span>Report ID</span>
               <strong>{session.display_id ?? "Generated after save"}</strong>
             </div>
-            <label className="field-stack">
-              <span id="report-summary-editor" className="label">Executive Summary</span>
-              <textarea
-                className="input text-area"
-                name="report_summary"
-                rows={5}
-                defaultValue={stripConfidenceText(currentReport.summary ?? "")}
-              />
-            </label>
-            <AiWritingPlaceholder />
+            <SummaryAssistantEditor initialSummary={stripConfidenceText(currentReport.summary ?? "")} />
           </details>
 
           <details id="report-observations-editor" className="report-subsection report-edit-panel" open>
