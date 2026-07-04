@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @next/next/no-img-element */
 export function PreviewCover({brand,session,activeSection,setActiveSection,assets}:any){
   const rs=brand.report_style;if(rs.coverPage==='none')return null;
-  const style:any={"--rsv2-cover-bg":rs.coverBackgroundColor,"--rsv2-cover-grad-a":rs.coverGradientStart,"--rsv2-cover-grad-b":rs.coverGradientEnd,"--rsv2-cover-accent":rs.coverAccentColor,textAlign:rs.coverTitleAlignment??'left'};
+  const coverText=/^#[0-9A-Fa-f]{6}$/.test(rs.coverTextColor ?? '') ? rs.coverTextColor : undefined;
+  const style:any={"--rsv2-cover-bg":rs.coverBackgroundColor,"--rsv2-cover-grad-a":rs.coverGradientStart,"--rsv2-cover-grad-b":rs.coverGradientEnd,"--rsv2-cover-accent":rs.coverAccentColor,"--rsv2-cover-text":coverText,textAlign:rs.coverTitleAlignment??'left'};
   return <button type="button" className={`rsv2-section rsv2-cover cover-${rs.coverPage} logo-${rs.coverLogoSize??'medium'} ${activeSection==='cover'?'active':''}`} style={style} onClick={()=>setActiveSection('cover')} data-edit-key="cover">
     <div className="rsv2-cover-copy">
       {rs.showCoverLogo&&(assets.logoUrl?<img src={assets.logoUrl} alt="Logo"/>:<b>{brand.display_name??'Your Company'}</b>)}

@@ -1465,6 +1465,15 @@ function ReportStudioCoverPreview({
 }) {
   const e = selectedSession?.evidence?.find((x) => x.thumbnailUrl);
   if (brand.report_style.coverPage === "none") return null;
+  const coverText = /^#[0-9A-Fa-f]{6}$/.test(brand.report_style.coverTextColor ?? "") ? brand.report_style.coverTextColor : undefined;
+  const coverStyle = {
+    "--cover-bg": brand.report_style.coverBackgroundColor,
+    "--cover-grad-a": brand.report_style.coverGradientStart,
+    "--cover-grad-b": brand.report_style.coverGradientEnd,
+    "--cover-accent": brand.report_style.coverAccentColor,
+    "--cover-text": coverText,
+    textAlign: brand.report_style.coverTitleAlignment,
+  } as React.CSSProperties;
   const reportId = selectedSession?.display_id ?? "CRED-1042";
   const common = (
     <>
@@ -1500,6 +1509,7 @@ function ReportStudioCoverPreview({
       {...anchorProps}
       data-preview-component="ReportStudioCoverPreview"
       className={`report-cover-preview cover-${brand.report_style.coverPage} ${selected}`}
+      style={coverStyle}
       onClick={() => setActive("Cover Page")}
     >
       {brand.report_style.coverPage === "professional_cover" ? (

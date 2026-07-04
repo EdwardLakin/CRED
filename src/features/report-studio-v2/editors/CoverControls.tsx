@@ -15,7 +15,13 @@ const coverOptions = [
 ];
 
 function Color({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return <label className="rsv2-field rsv2-color-field"><span>{label}</span><input type="color" value={value} onChange={(e)=>onChange(e.target.value)}/><input value={value} onChange={(e)=>onChange(e.target.value)}/></label>;
+  const safeValue = /^#[0-9A-Fa-f]{6}$/.test(value) ? value : '#ffffff';
+  return <label className="rsv2-field rsv2-color-field"><span>{label}</span><input type="color" value={safeValue} aria-label={`${label} picker`} onChange={(e)=>onChange(e.target.value)}/><input aria-label={`${label} hex value`} placeholder="#000000" value={value} onChange={(e)=>onChange(e.target.value)}/></label>;
+}
+
+function CoverTextColor({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const normalized = value && value !== 'auto' ? value : '#ffffff';
+  return <div className="rsv2-field"><span>Cover text color</span><select value={value ?? 'auto'} onChange={(e)=>onChange(e.target.value)}><option value="auto">Auto / default</option><option value="#000000">Black</option><option value="#ffffff">White</option></select><label className="rsv2-color-field rsv2-inline-color"><input type="color" value={/^#[0-9A-Fa-f]{6}$/.test(normalized) ? normalized : '#ffffff'} aria-label="Custom cover text color picker" onChange={(e)=>onChange(e.target.value)}/><input aria-label="Custom cover text hex value" placeholder="#111827" value={value === 'auto' ? '' : value} onChange={(e)=>onChange(e.target.value || 'auto')}/></label></div>;
 }
 
 export function CoverControls({brand,patch}:any){
@@ -26,6 +32,7 @@ export function CoverControls({brand,patch}:any){
     <Color label="Gradient start" value={rs.coverGradientStart ?? brand.colors.primary} onChange={(v)=>p({coverGradientStart:v})}/>
     <Color label="Gradient end" value={rs.coverGradientEnd ?? '#ffffff'} onChange={(v)=>p({coverGradientEnd:v})}/>
     <Color label="Accent color" value={rs.coverAccentColor ?? brand.colors.primary} onChange={(v)=>p({coverAccentColor:v})}/>
+    <CoverTextColor value={rs.coverTextColor ?? 'auto'} onChange={(v)=>p({coverTextColor:v})}/>
     <Select label="Title alignment" value={rs.coverTitleAlignment ?? 'left'} onChange={(v:string)=>p({coverTitleAlignment:v})}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></Select>
     <Select label="Logo size" value={rs.coverLogoSize ?? 'medium'} onChange={(v:string)=>p({coverLogoSize:v})}><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></Select>
     <Check label="Show logo" checked={rs.showCoverLogo} onChange={(v:boolean)=>p({showCoverLogo:v})}/>
