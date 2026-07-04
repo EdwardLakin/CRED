@@ -174,6 +174,43 @@ function requireReportReadyForDelivery(sessionId: string, session: { review_stat
 }
 
 
+
+export type SaveReportSummaryState = { ok: boolean; error?: string; summary?: string }
+
+export async function saveReportSummaryFromStudio(_state: SaveReportSummaryState, formData: FormData): Promise<SaveReportSummaryState> {
+  const workspace = await requireSessionWorkspace()
+  const { supabase, profile } = workspace
+  const sessionId = getString(formData, 'session_id')
+  if (!sessionId) return { ok: false, error: 'Select a session before saving the summary.' }
+
+  const { data: drafts, error: draftError } = await supabase
+    .from('ai_report_drafts')
+    .select('id, status, generated_at, created_at')
+    .eq('documentation_session_id', sessionId)
+    .eq('organization_id', profile.organization_id)
+    .order('generated_at', { ascending: false })
+    .order('created_at', { ascending: false })
+
+  if (draftError) return { ok: false, error: draftError.message }
+  const draft = (drafts ?? []).find((item) => item.status === 'approved') ?? (drafts ?? []).find((item) => item.status !== 'superseded') ?? drafts?.[0] ?? null
+  if (!draft) return { ok: false, error: 'Generate a report draft before editing the executive summary.' }
+
+  const summary = getString(formData, 'report_summary').slice(0, 1200)
+  const now = new Date().toISOString()
+  // Canonical customer-facing report summary: ai_report_drafts.summary.
+  // Review, Report Studio preview, and PDF export all read this field before using any deterministic fallback.
+  const { error } = await supabase
+    .from('ai_report_drafts')
+    .update({ summary: summary || null, updated_at: now })
+    .eq('id', draft.id)
+    .eq('organization_id', profile.organization_id)
+  if (error) return { ok: false, error: error.message }
+
+  revalidatePath(`/dashboard/sessions/${sessionId}/report`)
+  revalidatePath('/dashboard/settings/branding')
+  return { ok: true, summary }
+}
+
 export async function saveFinalNotes(sessionId: string, formData: FormData) {
   const { supabase, profile, session } = await requireOwnedSession(sessionId)
   const finalNotes = getString(formData, 'final_notes').slice(0, 6000)
