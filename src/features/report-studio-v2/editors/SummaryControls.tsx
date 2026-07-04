@@ -44,6 +44,7 @@ function SummaryControlsInner({ session, onSaved }: { session: ReportStudioSessi
   const [source, setSource] = useState<SummarySource>(originalSummary.trim() ? "original" : "manual");
   const [error, setError] = useState<string | null>(null);
   const [showSavedMessage, setShowSavedMessage] = useState(false);
+  const [assistantMessage, setAssistantMessage] = useState<string | null>(null);
   const hasSession = Boolean(session?.id);
   const hasOriginal = originalSummary.trim().length > 0;
 
@@ -89,13 +90,14 @@ function SummaryControlsInner({ session, onSaved }: { session: ReportStudioSessi
     setSummary(value);
     setSource(value === originalSummary ? "original" : "manual");
     setError(null);
+    setAssistantMessage(null);
     onSaved?.(value);
     scheduleAutosave(value);
   }
 
   function restoreOriginal() {
     if (!hasOriginal) return;
-    if (saveState === "unsaved") {
+    if (summary !== originalSummary) {
       const confirmed = window.confirm(
         "Restore Original Executive Summary?\nThis will replace your unsaved edits with the summary that was loaded when you opened the editor.",
       );
@@ -104,6 +106,7 @@ function SummaryControlsInner({ session, onSaved }: { session: ReportStudioSessi
     setSummary(originalSummary);
     setSource("original");
     setError(null);
+    setAssistantMessage("Original summary restored. Review the editable summary field before saving completes.");
     onSaved?.(originalSummary);
     saveSummary(originalSummary);
   }
@@ -138,14 +141,16 @@ function SummaryControlsInner({ session, onSaved }: { session: ReportStudioSessi
     <section className="summary-assistant-panel" aria-labelledby="summary-assistant-heading">
       <div>
         <h4 id="summary-assistant-heading">Summary Assistant</h4>
-        <p className="muted">Uses the editable Executive Summary as the canonical report summary for preview, Review, and PDF export.</p>
+        <p className="muted">Use these tools to refine the Executive Summary. Suggestions appear in the editable summary field before saving.</p>
       </div>
       <div className="report-ai-writing-actions">
-        <button type="button" className="button button-secondary touch-target" disabled>Improve Writing</button>
-        <button type="button" className="button button-secondary touch-target" disabled>Regenerate Summary</button>
-        <button type="button" className="button button-secondary touch-target" disabled={!hasOriginal} onClick={restoreOriginal}>Restore Original</button>
+        <button type="button" className="button button-secondary touch-target" disabled aria-describedby="summary-assistant-disabled-reason">Improve Writing</button>
+        <button type="button" className="button button-secondary touch-target" disabled aria-describedby="summary-assistant-disabled-reason">Regenerate Summary</button>
+        <button type="button" className="button button-secondary touch-target" disabled={!hasOriginal} aria-describedby={!hasOriginal ? "summary-restore-disabled-reason" : undefined} onClick={restoreOriginal}>Restore Original</button>
       </div>
-      <p className="muted compact-review-summary">Improve Writing and Regenerate Summary are disabled until AI actions are connected. Restore Original is available when the loaded report has an original saved summary.</p>
+      <p id="summary-assistant-disabled-reason" className="muted compact-review-summary">AI summary tools are not connected yet.</p>
+      {!hasOriginal ? <p id="summary-restore-disabled-reason" className="muted compact-review-summary">Restore Original is disabled because this report did not load with an original summary.</p> : null}
+      {assistantMessage ? <p className="rsv2-inline-success" role="status">{assistantMessage}</p> : null}
     </section>
   </section>;
 }
