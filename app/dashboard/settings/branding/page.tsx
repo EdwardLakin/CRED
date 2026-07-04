@@ -55,6 +55,21 @@ export default async function BrandingStudioPage({
     .order("updated_at", { ascending: false })
     .limit(100);
   const sessionIds = (sessionRows ?? []).map((s: any) => s.id);
+  const { data: draftRows } = sessionIds.length
+    ? await (supabase.from("ai_report_drafts") as any)
+        .select("id,documentation_session_id,status,summary,generated_at,created_at")
+        .eq("organization_id", profile.organization_id)
+        .in("documentation_session_id", sessionIds)
+        .order("generated_at", { ascending: false })
+        .order("created_at", { ascending: false })
+    : { data: [] };
+  const canonicalDraftBySession = new Map<string, any>();
+  for (const draft of draftRows ?? []) {
+    const current = canonicalDraftBySession.get(draft.documentation_session_id);
+    if (!current || draft.status === "approved" || current.status === "superseded") {
+      canonicalDraftBySession.set(draft.documentation_session_id, draft);
+    }
+  }
   const { data: captureRows } = sessionIds.length
     ? await (supabase.from("capture_items") as any)
         .select(
@@ -92,6 +107,8 @@ export default async function BrandingStudioPage({
     updated_at: s.updated_at,
     customer_name: s.customer_name ?? null,
     asset_label: s.asset_label ?? null,
+    report_draft_id: canonicalDraftBySession.get(s.id)?.id ?? null,
+    report_summary: canonicalDraftBySession.get(s.id)?.summary ?? null,
     evidence: evidenceBySession.get(s.id) ?? [],
   }));
   const requestedSessionId = params.session ?? params.review_output ?? null;
