@@ -4,79 +4,70 @@ import test from 'node:test'
 
 const assistant = readFileSync('src/lib/openai/report-summary-assistant.ts', 'utf8')
 
-test('regenerate summary extracts universal structured inputs and renders deterministic template', () => {
-  assert.match(assistant, /Return structured JSON only; do not write the final Executive Summary paragraph/)
-  assert.match(assistant, /name: "report_summary_inputs"/)
-  assert.match(assistant, /reportIntent: \{ type: "string" \}/)
-  assert.match(assistant, /subjectLabel: \{ type: "string" \}/)
-  assert.match(assistant, /primaryThemes: \{ type: "array"/)
-  assert.match(assistant, /overallSummary: \{ type: "string" \}/)
-  assert.doesNotMatch(assistant, /propertyType: \{ type: "string" \}/)
-  assert.match(assistant, /This report summarizes documented observations for the \$\{openingNoun\}/)
-  assert.match(assistant, /The documentation primarily relates to \$\{formatPhraseList\(themes\)\} captured during review/)
-  assert.match(assistant, /Detailed observations and supporting evidence are provided in the following sections/)
-})
-
-test('summary assistant normalizes rental/property-style evidence into broad neutral themes', () => {
-  assert.match(assistant, /condition concerns/)
-  assert.match(assistant, /material deterioration/)
-  assert.match(assistant, /moisture-related observations/)
-  assert.match(assistant, /maintenance-related observations/)
-  assert.match(assistant, /function normalizeTheme/)
-  assert.doesNotMatch(assistant, /linoleum and carpet map to flooring deterioration/)
-  assert.doesNotMatch(assistant, /fireplace, humidifier, and stove map to equipment or fixture deficiencies/)
-  assert.doesNotMatch(assistant, /bathroom ceiling, kitchen ceiling, and basement floor map/)
-  assert.doesNotMatch(assistant, /flooring deterioration/)
-})
-
-test('summary assistant supports automotive and heavy-duty evidence without over-specific component lists', () => {
-  assert.match(assistant, /vehicle\|truck\|trailer\|fleet\|automotive/)
-  assert.match(assistant, /return "inspected vehicle"/)
-  assert.match(assistant, /mechanical concerns/)
-  assert.match(assistant, /fluid\/leak-related observations/)
-  for (const term of ['brake', 'engine', 'transmission', 'dpf', 'tire', 'vin']) {
-    assert.match(assistant, new RegExp(`"${term}"`))
+test('executive summary pipeline is staged with typed structured outputs', () => {
+  for (const fn of ['understandReport', 'understandEvidence', 'generateExecutiveSummary', 'improveExecutiveSummary']) {
+    assert.match(assistant, new RegExp(`export async function ${fn}\\(`))
   }
-  assert.match(assistant, /Do not return room names, component names, photo captions, VINs, IDs, codes, or individual defects as themes/)
+  assert.match(assistant, /export type ReportUnderstanding = \{[\s\S]*reportType: string;[\s\S]*documentationMode: DocumentationMode;[\s\S]*confidence: ConfidenceLevel;/)
+  assert.match(assistant, /export type EvidenceUnderstanding = \{[\s\S]*majorThemes: string\[\];[\s\S]*summaryFacts: string\[\];[\s\S]*unsupportedOrWeakAreas: string\[\];/)
+  assert.match(assistant, /"report_understanding"/)
+  assert.match(assistant, /"evidence_understanding"/)
+  assert.match(assistant, /"executive_summary"/)
 })
 
-test('summary assistant supports field-service and equipment evidence without assuming property', () => {
-  assert.match(assistant, /service visit documentation/)
-  assert.match(assistant, /return "documented equipment"/)
-  assert.match(assistant, /return "service visit"/)
-  assert.match(assistant, /operational issues/)
-  assert.match(assistant, /electrical concerns/)
-  for (const term of ['pump', 'compressor', 'boiler', 'furnace', 'humidifier']) {
-    assert.match(assistant, new RegExp(`"${term}"`))
+test('tool inventory reports are treated as inventory records, not inspections or deficiencies', () => {
+  for (const term of ['Ratchets', '18Volt', '12V', 'Sockets', 'Tool box', 'Tool cart']) {
+    assert.match(assistant, new RegExp(term, 'i'))
   }
-  assert.doesNotMatch(assistant, /This report summarizes the documented condition of the \$\{propertyType\}/)
+  assert.match(assistant, /documentationMode === "inventory"/)
+  assert.match(assistant, /This report documents an inventory record for \$\{subject\}/)
+  assert.match(assistant, /calls an inventory an inspection/)
+  assert.match(assistant, /calls inventory items deficiencies/)
+  assert.match(assistant, /electrical deficiencies/)
+  assert.match(assistant, /deteriorat/)
+})
+
+test('rental and property condition reports can mention property only when context supports it', () => {
+  assert.match(assistant, /function hasPropertySignals/)
+  assert.match(assistant, /property\|rental\|tenant\|unit\|home\|house\|building\|flooring\|fixture\|interior\|exterior\|room\|kitchen\|bathroom/)
+  assert.match(assistant, /condition assessment/)
+  assert.match(assistant, /!hasPropertySignals\(`\$\{report\.subject\} \$\{report\.reportType\} \$\{sourceText\}`\) && \/\\bproperty\\b\/i\.test\(summary\)/)
+  assert.match(assistant, /over-lists individual observations/)
+})
+
+test('generic evidence reports use a safe industry-neutral fallback', () => {
+  assert.match(assistant, /This report summarizes the documented evidence for \$\{subjectLabel\}/)
+  assert.match(assistant, /This report summarizes the documented evidence captured for review/)
+  assert.match(assistant, /items, observations, or conditions captured during the documentation process/)
+  assert.match(assistant, /general documentation/)
+  assert.doesNotMatch(assistant, /return "inspected subject"/)
   assert.doesNotMatch(assistant, /property located at/)
 })
 
-test('generic evidence reports stay neutral when subject type is unknown', () => {
-  assert.match(assistant, /return "inspected subject"/)
-  assert.match(assistant, /Do not assume industry/)
-  assert.match(assistant, /Use the report context to infer the domain only when obvious/)
-  assert.match(assistant, /Domain-specific words may help classify a theme, but must not force property-only, vehicle-only, or equipment-only output/)
-  assert.match(assistant, /documentation of existing conditions/)
+test('diagnostic and service reports use supported diagnostic or service language without property assumptions', () => {
+  assert.match(assistant, /diagnostic/)
+  assert.match(assistant, /fault code\|test reading\|scan\|diagnosis/)
+  assert.match(assistant, /service documentation/)
+  assert.match(assistant, /work performed\|parts used\|work order\|field service/)
+  assert.match(assistant, /Do not mention property unless the report is actually about property/)
+  assert.match(assistant, /Do not assume inspection, defects, deficiencies, property, equipment failure/)
 })
 
-test('summary assistant guards final text against component-heavy language and unsupported actions', () => {
-  assert.match(assistant, /OVER_SPECIFIC_COMPONENT_TERMS = \[/)
-  for (const term of ['linoleum', 'carpet', 'bathroom', 'kitchen', 'basement', 'brake', 'engine', 'transmission', 'pump', 'compressor']) {
-    assert.match(assistant, new RegExp(`"${term}"`))
-  }
-  assert.match(assistant, /countOverSpecificTerms\(summary\) > 1/)
-  assert.match(assistant, /Do not include observation counts, recommendations, severity, urgency, liability language, repair instructions, replacement instructions, remediation language, or unsupported conclusions/)
-  assert.match(assistant, /removeUnsupportedActionLanguage\(rendered, sourceText\)/)
+test('improve writing preserves facts and blocks unsupported recommendations or severity', () => {
+  assert.match(assistant, /Do not regenerate from scratch/)
+  assert.match(assistant, /Preserve all factual meaning and user edits/)
+  assert.match(assistant, /Do not add facts, recommendations, severity, urgency, liability, repairs, replacement, or remediation/)
+  assert.match(assistant, /Do not change the documentation mode unless the current text clearly supports it/)
+  assert.match(assistant, /return validation\.valid \? cleaned : currentSummary/)
 })
 
-test('improve writing remains industry-neutral and falls back when over-specific', () => {
-  assert.match(assistant, /Write one paragraph/)
-  assert.match(assistant, /professional, customer-facing evidence documentation report across any industry/)
-  assert.match(assistant, /do not assume property, vehicle, equipment, or any other industry unless the current text clearly says so/)
-  assert.match(assistant, /Avoid individual component lists; consolidate component-heavy language into broad themes/)
-  assert.match(assistant, /may appear only when already present in the current summary/)
-  assert.match(assistant, /countOverSpecificTerms\(cleaned\) > 1/)
-  assert.match(assistant, /deterministicEvidenceOnlySummary/)
+test('validation retries once and then falls back safely', () => {
+  assert.match(assistant, /validateSummary/)
+  assert.match(assistant, /retryReasons/)
+  assert.match(assistant, /Previous validation failed for:/)
+  assert.match(assistant, /const firstValidation = validateSummary/)
+  assert.match(assistant, /const secondValidation = validateSummary/)
+  assert.match(assistant, /return deterministicValidation\.valid \? deterministic : safeFallbackSummary/)
+  assert.match(assistant, /placeholder caption used as theme/)
+  assert.match(assistant, /irrelevant hardcoded industry language/)
 })
