@@ -245,28 +245,21 @@ function getObservationAssistantText(value: unknown, keys: string[] = ['caption'
 export async function runObservationWritingAction(_state: ObservationWritingActionState, formData: FormData): Promise<ObservationWritingActionState> {
   const workspace = await requireSessionWorkspace()
   const sessionId = getString(formData, 'session_id')
-  const sectionId = getString(formData, 'section_id')
+  const captureId = getString(formData, 'capture_id')
   const action = getObservationWritingAction(getString(formData, 'action'))
-  if (!sessionId || !sectionId || !action) return { ok: false, error: 'Select an observation before using the writing assistant.' }
+  if (!sessionId || !captureId || !action) return { ok: false, error: 'Select one evidence capture before using the writing assistant.' }
 
   const allowance = await requireSummaryAssistantAllowance(workspace)
   if (!allowance.ok) return { ok: false, error: allowance.error }
 
   try {
-    const { data: section, error: sectionError } = await workspace.supabase
-      .from('ai_report_draft_sections')
-      .select('id, title, body, source_capture_ids, metadata, ai_report_draft_id, documentation_session_id')
-      .eq('id', sectionId)
-      .eq('documentation_session_id', sessionId)
-      .eq('organization_id', workspace.profile.organization_id)
-      .single()
-    if (sectionError || !section) return { ok: false, error: sectionError?.message ?? 'Observation section not found.' }
-
     const { data: draft } = await workspace.supabase
       .from('ai_report_drafts')
       .select('id, title, header_fields, report_structure')
-      .eq('id', section.ai_report_draft_id)
+      .eq('documentation_session_id', sessionId)
       .eq('organization_id', workspace.profile.organization_id)
+      .order('updated_at', { ascending: false })
+      .limit(1)
       .maybeSingle()
 
     const { data: session } = await workspace.supabase
@@ -278,7 +271,7 @@ export async function runObservationWritingAction(_state: ObservationWritingActi
 
     const { data: captures, error: capturesError } = await workspace.supabase
       .from('capture_items')
-      .select('id, type, media_kind, captured_at, technician_note, transcript, ai_summary, ocr_text, extracted_data, capture_ai_analysis, evidence_category, observation_group_id, group_order, include_in_report, deleted_at')
+      .select('id, type, media_kind, captured_at, technician_note, customer_facing_observation, original_technician_note, last_ai_observation, transcript, ai_summary, ocr_text, extracted_data, capture_ai_analysis, evidence_category, observation_group_id, group_order, include_in_report, deleted_at')
       .eq('documentation_session_id', sessionId)
       .eq('organization_id', workspace.profile.organization_id)
       .is('deleted_at', null)
@@ -286,21 +279,24 @@ export async function runObservationWritingAction(_state: ObservationWritingActi
       .order('captured_at', { ascending: true })
     if (capturesError) return { ok: false, error: capturesError.message }
 
-    const sourceIds = Array.isArray(section.source_capture_ids) ? section.source_capture_ids.filter((id): id is string => typeof id === 'string') : []
     const includedCaptures = (captures ?? []).filter(isCaptureIncludedInOutput)
-    const directCaptures = includedCaptures.filter((capture) => sourceIds.includes(capture.id))
-    const groupKeys = new Set(directCaptures.map((capture) => capture.observation_group_id ?? capture.id))
-    const observationCaptures = includedCaptures.filter((capture) => sourceIds.includes(capture.id) || groupKeys.has(capture.observation_group_id ?? capture.id))
+    const primary = includedCaptures.find((capture) => capture.id === captureId)
+    if (!primary) return { ok: false, error: 'Evidence capture not found.' }
+    const supportsCapture = primary.observation_group_id
+      ? includedCaptures.find((capture) => capture.id === primary.observation_group_id)
+      : null
     const nearbyObservations = includedCaptures
-      .filter((capture) => !observationCaptures.some((current) => current.id === capture.id))
+      .filter((capture) => capture.id !== primary.id)
+      .slice(Math.max(0, includedCaptures.findIndex((capture) => capture.id === primary.id) - 2), includedCaptures.findIndex((capture) => capture.id === primary.id) + 3)
+      .filter((capture) => capture.id !== primary.id)
       .slice(0, 4)
       .map((capture) => ({
         title: getStoredObservationTitle(capture.extracted_data),
         classification: normalizeEvidenceCategory(capture.evidence_category),
-        text: capture.technician_note?.trim() || capture.transcript?.trim() || getObservationAssistantText(capture.extracted_data) || capture.ai_summary?.trim() || null,
+        text: capture.customer_facing_observation?.trim() || capture.technician_note?.trim() || capture.transcript?.trim() || getObservationAssistantText(capture.extracted_data) || capture.ai_summary?.trim() || null,
       }))
 
-    const supportingImages = observationCaptures.map((capture) => ({
+    const supportingImages = [primary].map((capture) => ({
       id: capture.id,
       title: getStoredObservationTitle(capture.extracted_data),
       technicianNote: capture.technician_note?.trim() || capture.transcript?.trim() || null,
@@ -308,22 +304,22 @@ export async function runObservationWritingAction(_state: ObservationWritingActi
       detectedObjects: isRecord(capture.capture_ai_analysis) ? capture.capture_ai_analysis.detected_objects ?? capture.capture_ai_analysis.objects ?? null : null,
       extractedMetadata: capture.extracted_data ?? null,
     }))
-    const primary = observationCaptures[0]
-    const currentText = getString(formData, 'current_text').slice(0, 4000) || section.body || null
+    const currentText = getString(formData, 'current_text').slice(0, 4000) || primary.customer_facing_observation || primary.technician_note || null
     const classification = getString(formData, 'classification') || normalizeEvidenceCategory(primary?.evidence_category)
-    const technicianNote = observationCaptures.map((capture) => capture.technician_note?.trim() || capture.transcript?.trim()).filter(Boolean).join('\n') || null
+    const technicianNote = primary.technician_note?.trim() || primary.transcript?.trim() || null
     const generated = await generateObservationWriting({
       action,
       classification,
       currentText,
-      observationTitle: getString(formData, 'observation_title') || section.title,
+      observationTitle: getString(formData, 'observation_title') || getStoredObservationTitle(primary.extracted_data),
       technicianNote,
       observationType: primary?.type ?? null,
       concern: classification === 'concern' ? currentText : null,
-      observation: classification === 'observation' ? currentText : section.body ?? null,
+      observation: classification === 'observation' ? currentText : primary.customer_facing_observation ?? null,
       supportingEvidence: supportingImages.map((item) => [item.title, item.aiDescription].filter(Boolean).join(': ')).filter(Boolean).join('\n') || null,
       recommendedAction: classification === 'recommended_action' ? currentText : null,
       supportingImages,
+      supportsRelationship: supportsCapture ? `Supports ${getStoredObservationTitle(supportsCapture.extracted_data) || supportsCapture.technician_note?.slice(0, 120) || supportsCapture.id}` : 'Standalone',
       sessionContext: {
         reportTitle: draft?.title ?? session?.title ?? null,
         assetType: session?.asset_label ?? null,
@@ -337,7 +333,7 @@ export async function runObservationWritingAction(_state: ObservationWritingActi
       organizationId: workspace.profile.organization_id,
       eventType: 'ai_report_draft_generation',
       quantity: 1,
-      metadata: { session_id: sessionId, section_id: sectionId, operation: 'observation_writing', action },
+      metadata: { session_id: sessionId, capture_id: captureId, operation: 'capture_observation_writing', action },
     })
     return { ok: true, text: generated }
   } catch (error) {
@@ -1595,7 +1591,7 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
 
   const { data: captures, error: capturesError } = await supabase
     .from('capture_items')
-    .select('id, observation_group_id, report_order')
+    .select('id, observation_group_id, report_order, technician_note, original_technician_note')
     .eq('documentation_session_id', session.id)
     .eq('organization_id', profile.organization_id)
     .is('deleted_at', null)
@@ -1607,6 +1603,9 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
   for (const capture of captures ?? []) {
     const includeInReport = formData.get(`capture_include_${capture.id}`) === 'on'
     const note = sanitizeReportText(formData.get(`capture_note_${capture.id}`), 2000)
+    const customerObservation = sanitizeReportText(formData.get(`capture_customer_observation_${capture.id}`), 4000)
+    const originalTechnicianNote = sanitizeReportText(formData.get(`capture_original_technician_note_${capture.id}`), 2000) || capture.original_technician_note || capture.technician_note
+    const lastAiObservation = sanitizeReportText(formData.get(`capture_last_ai_observation_${capture.id}`), 4000)
     const evidenceCategory = normalizeEvidenceCategory(getString(formData, `capture_category_${capture.id}`))
     const groupWith = getString(formData, `capture_group_with_${capture.id}`)
     const observationGroupId = groupWith && groupWith !== capture.id ? groupWith : capture.observation_group_id
@@ -1614,7 +1613,7 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
     const reportOrder = Number.isFinite(requestedOrder) && requestedOrder > 0 ? requestedOrder : capture.report_order
     const { error: captureUpdateError } = await supabase
       .from('capture_items')
-      .update({ include_in_report: includeInReport, technician_note: note, evidence_category: evidenceCategory, observation_group_id: observationGroupId || null, report_order: reportOrder, updated_at: now })
+      .update({ include_in_report: includeInReport, technician_note: note, customer_facing_observation: customerObservation, original_technician_note: originalTechnicianNote, last_ai_observation: lastAiObservation, evidence_category: evidenceCategory, observation_group_id: observationGroupId || null, report_order: reportOrder, updated_at: now })
       .eq('id', capture.id)
       .eq('documentation_session_id', session.id)
       .eq('organization_id', profile.organization_id)

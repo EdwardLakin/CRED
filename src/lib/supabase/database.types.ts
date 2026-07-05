@@ -643,6 +643,9 @@ export interface Database {
           group_order: number | null
           evidence_event_id: string | null
           technician_note: string | null
+          customer_facing_observation: string | null
+          original_technician_note: string | null
+          last_ai_observation: string | null
           transcript: string | null
           transcript_status: string
           note_source: string
@@ -690,6 +693,9 @@ export interface Database {
           group_order?: number | null
           evidence_event_id?: string | null
           technician_note?: string | null
+          customer_facing_observation?: string | null
+          original_technician_note?: string | null
+          last_ai_observation?: string | null
           transcript?: string | null
           transcript_status?: string
           note_source?: string
@@ -737,6 +743,9 @@ export interface Database {
           group_order?: number | null
           evidence_event_id?: string | null
           technician_note?: string | null
+          customer_facing_observation?: string | null
+          original_technician_note?: string | null
+          last_ai_observation?: string | null
           transcript?: string | null
           transcript_status?: string
           note_source?: string
