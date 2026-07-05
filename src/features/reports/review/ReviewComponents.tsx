@@ -32,6 +32,7 @@ import { SignatureCaptureForm } from "@/features/signatures";
 import { PendingActionButton } from "@/features/reports/review/PendingActionButton";
 import { ReportEditAutosaveForm } from "@/features/reports/review/ReportEditAutosaveForm";
 import { SummaryAssistantEditor } from "@/features/reports/review/SummaryAssistantEditor";
+import { ObservationAssistantEditor } from "@/features/reports/review/ObservationAssistantEditor";
 import { useSavedSignature } from "@/features/signatures/actions";
 import type { Database } from "@/lib/supabase/database.types";
 
@@ -918,16 +919,21 @@ export function ReportReview({
                         defaultValue={stripConfidenceText(section.title)}
                       />
                     </label>
-                    <label className="field-stack">
-                      <span className="label">Customer-facing text</span>
-                      <textarea
-                        className="input text-area"
-                        name={`section_body_${section.id}`}
-                        rows={5}
-                        defaultValue={stripConfidenceText(section.body ?? "")}
-                      />
-                    </label>
-                    <AiWritingPlaceholder />
+                    <div className="field-stack">
+                      <span className="label">Technician Notes</span>
+                      <div className="report-field-card observation-technician-notes">
+                        {getSectionTechnicianNotes(section, supportingEvidence) || "No technician notes linked to this observation."}
+                      </div>
+                    </div>
+                    <ObservationAssistantEditor
+                      sectionId={section.id}
+                      sessionId={session.id}
+                      textareaName={`section_body_${section.id}`}
+                      titleName={`section_title_${section.id}`}
+                      initialTitle={stripConfidenceText(section.title)}
+                      initialText={stripConfidenceText(section.body ?? "")}
+                      classification={getSectionObservationClassification(section, supportingEvidence)}
+                    />
                     {normalizeDraftSections([section], []).flatMap(
                       (item) => item.fields,
                     ).length > 0 ? (
@@ -1252,20 +1258,24 @@ export function InspectorFacilityPanel({
   );
 }
 
-function AiWritingPlaceholder() {
-  return (
-    <div className="report-ai-writing-actions" data-no-autosave>
-      <button type="button" className="button button-secondary touch-target" disabled>
-        Improve Writing
-      </button>
-      <button type="button" className="button button-secondary touch-target" disabled>
-        Shorten
-      </button>
-      <span className="muted">
-Writing refinement is limited to grammar, punctuation, clarity, and concise customer-facing wording.
-      </span>
-    </div>
-  );
+function getSectionTechnicianNotes(section: AiReportDraftSection, supportingEvidence: SupportingEvidenceItem[]) {
+  const ids = new Set(Array.isArray(section.source_capture_ids) ? section.source_capture_ids.filter((id): id is string => typeof id === "string") : []);
+  const notes = supportingEvidence
+    .filter((item) => ids.has(item.capture.id))
+    .map((item) => stripConfidenceText(item.capture.technician_note?.trim() || item.capture.transcript?.trim() || item.note || ""))
+    .filter(Boolean);
+  return Array.from(new Set(notes)).join("\n");
+}
+
+function getSectionObservationClassification(section: AiReportDraftSection, supportingEvidence: SupportingEvidenceItem[]) {
+  const ids = new Set(Array.isArray(section.source_capture_ids) ? section.source_capture_ids.filter((id): id is string => typeof id === "string") : []);
+  const item = supportingEvidence.find((candidate) => ids.has(candidate.capture.id));
+  if (item) return EVIDENCE_CATEGORY_LABELS[normalizeEvidenceCategory(item.capture.evidence_category)];
+  const title = section.title.toLowerCase();
+  if (title.includes("concern")) return "Concern";
+  if (title.includes("recommend")) return "Recommended Action";
+  if (title.includes("evidence")) return "Supporting Evidence";
+  return "Observation";
 }
 
 function getObservationCategoryLabel(
