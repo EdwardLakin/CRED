@@ -407,11 +407,14 @@ ${JSON.stringify(input.evidenceGroups ?? null).slice(0, 6000)}
 Report sections JSON (secondary source; ignore blank/informational sections that conflict with included captures):
 ${JSON.stringify(evidence).slice(0, 12000)}`,
   );
+  // CRED owns the final Executive Summary structure.
+  // Free-form AI summaries tend to over-list individual observations instead of
+  // producing an executive-level overview, so regeneration now prefers the
+  // deterministic theme-based summary assembled from the same evidence source.
   const cleaned = removeUnsupportedActionLanguage(summary, sourceText);
-  const processLanguageRemoved = cleaned !== sanitizeSummary(summary);
   return (
-    (!processLanguageRemoved && cleaned) ||
     fallbackSummary ||
+    cleaned ||
     "This report documents observed conditions from the included evidence."
   );
 }
