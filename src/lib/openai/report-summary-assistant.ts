@@ -181,67 +181,69 @@ function formatPhraseList(values: string[]) {
   return `${values.slice(0, -1).join(", ")}, and ${values.at(-1)}`;
 }
 
-function getLocationHint(reportContext?: Record<string, unknown> | null) {
-  const candidates: string[] = [];
-  collectStringValues(reportContext?.header_fields ?? null, candidates);
-  collectStringValues(reportContext ?? null, candidates);
-  return (
-    candidates.find((value) =>
-      /\b(?:located at|\d+\s+[A-Za-z].*(?:close|street|st\.?|avenue|ave\.?|road|rd\.?|drive|dr\.?|se|sw|ne|nw))\b/i.test(
-        value,
-      ),
-    ) ?? null
-  );
-}
-
 function normalizeSummaryStyle(value: unknown): SummaryStyle {
   return value === "concise" || value === "detailed" ? value : "professional";
 }
 
 const OVER_SPECIFIC_COMPONENT_TERMS = [
-  "linoleum",
-  "carpet",
-  "fireplace",
-  "stove",
-  "humidifier",
   "bedroom",
   "bathroom",
   "kitchen",
   "basement",
-  "ceiling",
-  "door",
+  "linoleum",
+  "carpet",
+  "brake",
+  "engine",
+  "transmission",
+  "dpf",
+  "tire",
+  "vin",
+  "pump",
+  "compressor",
+  "boiler",
+  "furnace",
+  "humidifier",
 ] as const;
 
 const ALLOWED_THEME_FALLBACK = "documentation of existing conditions";
 const ALLOWED_THEMES = [
-  "flooring deterioration",
-  "moisture-related conditions",
-  "interior finish wear",
+  "condition concerns",
+  "operational issues",
   "cosmetic wear",
-  "equipment or fixture deficiencies",
-  "plumbing concerns",
-  "electrical deficiencies",
-  "exterior maintenance concerns",
+  "material deterioration",
+  "moisture-related observations",
+  "mechanical concerns",
+  "electrical concerns",
+  "fluid/leak-related observations",
   ALLOWED_THEME_FALLBACK,
+  "supporting reference material",
+  "customer-relevant observations",
+  "maintenance-related observations",
+  "safety-related observations",
 ] as const;
 
 type SummaryInputs = {
-  propertyType: string;
-  themes: string[];
-  overallCondition: string;
+  reportIntent: string;
+  subjectLabel: string;
+  primaryThemes: string[];
+  overallSummary: string;
 };
 
 function normalizeTheme(value: unknown) {
   const text = sanitizeSummary(value).toLowerCase();
   if (!text) return null;
-  if (/linoleum|carpet|floor|flooring|vinyl|tile|hardwood|basement floor/.test(text)) return "flooring deterioration";
-  if (/moisture|water|leak|intrusion|stain|bathroom ceiling|kitchen ceiling|basement|mold|mould|mildew/.test(text)) return "moisture-related conditions";
-  if (/ceiling|wall|drywall|paint|finish|trim|cabinet|counter|aging interior/.test(text)) return "interior finish wear";
-  if (/cosmetic|wear|scuff|scratch|mark|stain/.test(text)) return "cosmetic wear";
-  if (/fireplace|humidifier|stove|fixture|equipment|appliance|oven|dishwasher|furnace|hvac|heater|mechanical/.test(text)) return "equipment or fixture deficiencies";
-  if (/plumbing|pipe|drain|faucet|toilet|sink/.test(text)) return "plumbing concerns";
-  if (/electrical|outlet|switch|breaker|wiring|light/.test(text)) return "electrical deficiencies";
-  if (/exterior|roof|gutter|siding|deck|porch|yard|driveway/.test(text)) return "exterior maintenance concerns";
+  if (/safety|unsafe|protective|ppe|guard|blocked exit|trip|slip|fall|fire|smoke|alarm/.test(text)) return "safety-related observations";
+  if (/leak|fluid|oil|coolant|fuel|hydraulic|water intrusion|moisture|mold|mould|mildew|stain|wet|damp/.test(text)) return "fluid/leak-related observations";
+  if (/moisture|water|humidity|condensation/.test(text)) return "moisture-related observations";
+  if (/electrical|voltage|outlet|switch|breaker|wiring|light|battery|alternator|circuit|sensor|code/.test(text)) return "electrical concerns";
+  if (/mechanical|engine|transmission|brake|bearing|pump|compressor|boiler|furnace|motor|hydraulic|pneumatic|hvac|equipment|machine|vehicle|asset|operat/.test(text)) return "mechanical concerns";
+  if (/operate|function|performance|service|diagnostic|fault|failure|intermittent|inoperable|issue|concern/.test(text)) return "operational issues";
+  if (/deteriorat|corrosion|rust|rot|crack|delaminat|worn|wear|damage|degrad|aged|aging|floor|surface|material/.test(text)) return "material deterioration";
+  if (/cosmetic|scuff|scratch|dent|mark|finish|paint|appearance|stain/.test(text)) return "cosmetic wear";
+  if (/maintenance|service interval|cleaning|filter|lubrication|upkeep/.test(text)) return "maintenance-related observations";
+  if (/photo|image|caption|reference|supporting|document|evidence|record|existing condition/.test(text)) return ALLOWED_THEME_FALLBACK;
+  if (/customer|client|tenant|operator|driver|owner|user/.test(text)) return "customer-relevant observations";
+  if (/condition|observation|inspection|review|assessment|finding/.test(text)) return "condition concerns";
   return ALLOWED_THEMES.includes(text as (typeof ALLOWED_THEMES)[number]) ? text : null;
 }
 
@@ -249,7 +251,8 @@ function normalizeThemes(values: unknown[]) {
   const normalized = uniquePhrases(
     values
       .map((value) => normalizeTheme(value))
-      .filter((value): value is string => Boolean(value)),
+      .filter((value): value is string => Boolean(value))
+      .filter((value) => value !== "safety-related observations" || values.some((raw) => /safety|unsafe|hazard|protective|ppe|guard|blocked exit|trip|slip|fall|fire|smoke|alarm/i.test(sanitizeSummary(raw)))),
   );
   return (normalized.length ? normalized : [ALLOWED_THEME_FALLBACK]).slice(0, 4);
 }
@@ -262,25 +265,37 @@ function getThemePhrases(input: { captures?: SummaryAssistantCaptureEvidence[]; 
   return normalizeThemes(raw);
 }
 
-function normalizePropertyType(value: unknown, sessionTitle: string | null) {
-  const text = sanitizeSummary(value).replace(/^(?:the|a|an)\s+/i, "");
-  if (/rental/i.test(text) || /rental/i.test(sessionTitle ?? "")) return "Rental property";
-  if (/commercial/i.test(text) || /commercial/i.test(sessionTitle ?? "")) return "Commercial property";
-  if (/residential|home|house/i.test(text) || /residential|home|house/i.test(sessionTitle ?? "")) return "Residential property";
-  if (/property|building|unit|suite/i.test(text)) return text.slice(0, 80);
-  return "property";
+function normalizeReportIntent(value: unknown) {
+  const text = sanitizeSummary(value).toLowerCase();
+  if (/service visit|field service/.test(text)) return "service visit documentation";
+  if (/diagnostic|diagnosis/.test(text)) return "diagnostic documentation";
+  if (/insurance|claim/.test(text)) return "insurance documentation";
+  if (/restoration/.test(text)) return "restoration documentation";
+  if (/safety/.test(text)) return "safety documentation";
+  if (/inspection|inspect/.test(text)) return "inspection documentation";
+  if (/evidence|document|review|report/.test(text)) return "evidence documentation";
+  return "inspection documentation";
 }
 
-function normalizeOverallCondition(value: unknown, themes: string[]) {
+function normalizeSubjectLabel(value: unknown, sessionTitle: string | null, reportContext?: Record<string, unknown> | null) {
+  const source = `${sanitizeSummary(value)} ${sanitizeSummary(sessionTitle)} ${sanitizeSummary(reportContext?.subject)} ${sanitizeSummary(reportContext?.asset)} ${sanitizeSummary(reportContext?.vehicle)} ${sanitizeSummary(reportContext?.equipment)}`.toLowerCase();
+  if (/vehicle|truck|trailer|fleet|automotive|vin\b|engine|transmission/.test(source)) return "inspected vehicle";
+  if (/equipment|machine|asset|pump|compressor|boiler|generator/.test(source)) return "documented equipment";
+  if (/service visit|work order|field service/.test(source)) return "service visit";
+  if (/claim|loss|insurance/.test(source)) return "documented claim";
+  if (/property|building|unit|site|facility|home|house|rental/.test(source)) return "inspected subject";
+  const text = sanitizeSummary(value).replace(/^(?:the|a|an)\s+/i, "").toLowerCase();
+  if (text && !hasOverSpecificComponentLanguage(text) && !/property|house|rental/.test(text)) return text.slice(0, 80);
+  return "inspected subject";
+}
+
+function normalizeOverallSummary(value: unknown, themes: string[]) {
   const text = sanitizeSummary(value).toLowerCase();
-  if (text && !hasOverSpecificComponentLanguage(text) && !/repair|replace|recommend|severe|urgent|hazard|liability/.test(text)) {
-    return text.slice(0, 140);
+  if (text && !hasOverSpecificComponentLanguage(text) && !/repair|replace|recommend|severe|urgent|hazard|liability|requires attention/.test(text)) {
+    return text.slice(0, 160);
   }
-  if (themes.includes("moisture-related conditions") && themes.includes("flooring deterioration")) {
-    return "localized interior condition concerns";
-  }
-  if (themes.includes(ALLOWED_THEME_FALLBACK)) return "documented existing conditions";
-  return "condition concerns within the documented scope";
+  if (themes.includes(ALLOWED_THEME_FALLBACK)) return "a factual record of documented conditions at the time of capture";
+  return "multiple observed conditions requiring review";
 }
 
 function countOverSpecificTerms(value: string) {
@@ -300,15 +315,16 @@ function deterministicEvidenceOnlySummary(input: {
   summaryInputs?: Partial<SummaryInputs> | null;
 }) {
   const themes = normalizeThemes([
-    ...(input.summaryInputs?.themes ?? []),
+    ...(input.summaryInputs?.primaryThemes ?? []),
     ...getThemePhrases(input),
   ]).slice(0, 4);
-  const propertyType = normalizePropertyType(input.summaryInputs?.propertyType, input.sessionTitle);
-  const location = sanitizeSummary(getLocationHint(input.reportContext) ?? input.reportContext?.location) || "the documented location";
-  const overallCondition = normalizeOverallCondition(input.summaryInputs?.overallCondition, themes);
-  const summary = `This report summarizes the documented condition of the ${propertyType} located at ${location}. The inspection identified documented conditions primarily related to ${formatPhraseList(themes)}. Overall, the documentation reflects ${overallCondition}. Detailed observations and supporting photographic evidence are provided in the following sections.`;
+  const reportIntent = normalizeReportIntent(input.summaryInputs?.reportIntent ?? input.sessionTitle);
+  const subjectLabel = normalizeSubjectLabel(input.summaryInputs?.subjectLabel, input.sessionTitle, input.reportContext);
+  const overallSummary = normalizeOverallSummary(input.summaryInputs?.overallSummary, themes);
+  const openingNoun = reportIntent.includes("service visit") ? "service visit" : subjectLabel;
+  const summary = `This report summarizes documented observations for the ${openingNoun}. The documentation primarily relates to ${formatPhraseList(themes)} captured during review. Overall, the report provides ${overallSummary}. Detailed observations and supporting evidence are provided in the following sections.`;
   if (countOverSpecificTerms(summary) > 1) {
-    return `This report summarizes the documented condition of the property located at ${location}. The inspection identified documented conditions primarily related to ${formatPhraseList(themes)}. Overall, the documentation reflects ${overallCondition}. Detailed observations and supporting photographic evidence are provided in the following sections.`;
+    return `This report summarizes documented observations for the inspected subject. The documentation primarily relates to ${formatPhraseList(themes)} captured during review. Overall, the report provides ${overallSummary}. Detailed observations and supporting evidence are provided in the following sections.`;
   }
   return sanitizeSummary(summary);
 }
@@ -396,11 +412,12 @@ async function requestSummaryInputs(systemPrompt: string, userText: string): Pro
             type: "object",
             additionalProperties: false,
             properties: {
-              propertyType: { type: "string" },
-              themes: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 4 },
-              overallCondition: { type: "string" },
+              reportIntent: { type: "string" },
+              subjectLabel: { type: "string" },
+              primaryThemes: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 4 },
+              overallSummary: { type: "string" },
             },
-            required: ["propertyType", "themes", "overallCondition"],
+            required: ["reportIntent", "subjectLabel", "primaryThemes", "overallSummary"],
           },
         },
       },
@@ -424,9 +441,10 @@ async function requestSummaryInputs(systemPrompt: string, userText: string): Pro
   const parsed = JSON.parse(outputText) as unknown;
   if (!isRecord(parsed)) throw new Error("AI summary assistant returned invalid summary inputs.");
   return {
-    propertyType: typeof parsed.propertyType === "string" ? parsed.propertyType : undefined,
-    themes: Array.isArray(parsed.themes) ? parsed.themes.filter((theme): theme is string => typeof theme === "string") : undefined,
-    overallCondition: typeof parsed.overallCondition === "string" ? parsed.overallCondition : undefined,
+    reportIntent: typeof parsed.reportIntent === "string" ? parsed.reportIntent : undefined,
+    subjectLabel: typeof parsed.subjectLabel === "string" ? parsed.subjectLabel : undefined,
+    primaryThemes: Array.isArray(parsed.primaryThemes) ? parsed.primaryThemes.filter((theme): theme is string => typeof theme === "string") : undefined,
+    overallSummary: typeof parsed.overallSummary === "string" ? parsed.overallSummary : undefined,
   };
 }
 
@@ -435,7 +453,7 @@ export async function improveReportSummaryWriting(summary: string) {
   if (!currentSummary)
     throw new Error("Enter a summary before improving writing.");
   const improved = await requestSummaryAssistant(
-    `You improve a CRED report Executive Summary so it reads like the opening paragraph of a professional property inspection, commercial engineering, insurance documentation, or forensic investigation report. Return JSON only. The Executive Summary must prepare the customer for the documented observations, not compress every individual finding. Write one paragraph, ${PROFESSIONAL_SUMMARY_WORD_RANGE}. Answer only these four questions when the current text supports them: what was inspected; the primary broad themes; the overall condition those themes suggest; and where the reader can find the details. Think like an editor: determine the report type, the collective story, and the overall documented condition before writing. Reorganize and consolidate factual content into broad themes such as flooring deterioration, moisture intrusion, aging finishes, cosmetic wear, mechanical deficiencies, documentation of existing conditions, exterior damage, or electrical deficiencies. Do not mention every finding. Only mention a specific component when the entire summary is about that component. Do not use phrases such as "Key findings include", "Notable observations include", "Additionally", "Further observations include", "The inspection identified", "The report found", or "The technician observed". Do not add findings, recommendations, severity, urgency, causes, liability language, repair instructions, replacement instructions, remediation language, dates, names, numbers, measurements, IDs, VINs, codes, or technical values. Avoid individual component lists; consolidate component-heavy language into broad themes. Do not remove factual qualifiers or source limitations. Words such as recommend, recommended, repair, replacement, remediate, remediation, required, requires, severe, severity, urgent, hazard, and liability may appear only when already present in the current summary.`,
+    `You improve a CRED report Executive Summary so it reads like the opening paragraph of a professional, customer-facing evidence documentation report across any industry. Return JSON only. The Executive Summary must prepare the customer for the documented observations, not compress every individual finding. Write one paragraph, ${PROFESSIONAL_SUMMARY_WORD_RANGE}. Answer only these four questions when the current text supports them: what subject, asset, visit, or evidence set is documented; the primary broad themes; the overall documented condition; and where the reader can find the details. Think like an editor: determine the report type, the collective story, and the overall documented condition before writing, but do not assume property, vehicle, equipment, or any other industry unless the current text clearly says so. Reorganize and consolidate factual content into broad themes such as condition concerns, operational issues, cosmetic wear, material deterioration, moisture-related observations, mechanical concerns, electrical concerns, fluid/leak-related observations, documentation of existing conditions, supporting reference material, customer-relevant observations, and maintenance-related observations. Do not mention every finding. Only mention a specific component when the entire summary is about that component. Do not use phrases such as "Key findings include", "Notable observations include", "Additionally", "Further observations include", "The inspection identified", "The report found", or "The technician observed". Do not add findings, recommendations, severity, urgency, causes, liability language, repair instructions, replacement instructions, remediation language, dates, names, numbers, measurements, IDs, VINs, codes, or technical values. Avoid individual component lists; consolidate component-heavy language into broad themes. Do not remove factual qualifiers or source limitations. Words such as recommend, recommended, repair, replacement, remediate, remediation, required, requires, severe, severity, urgent, hazard, and liability may appear only when already present in the current summary.`,
     `Improve this executive summary by reorganizing and consolidating the existing factual content without adding action language:
 ${currentSummary}`,
   );
@@ -444,7 +462,7 @@ ${currentSummary}`,
     return deterministicEvidenceOnlySummary({
       sessionTitle: null,
       evidence: [{ title: null, body: currentSummary }],
-      summaryInputs: { themes: getThemePhrases({ evidence: [{ title: null, body: currentSummary }] }) },
+      summaryInputs: { primaryThemes: getThemePhrases({ evidence: [{ title: null, body: currentSummary }] }) },
     });
   }
   return cleaned || currentSummary;
@@ -500,7 +518,7 @@ export async function regenerateReportSummaryFromEvidence(input: {
   );
 
   const summaryInputs = await requestSummaryInputs(
-    `Extract structured inputs for a CRED Executive Summary. Return structured JSON only; do not write the final paragraph. Classify the evidence into broad customer-facing categories only. Allowed theme examples include: flooring deterioration, moisture-related conditions, interior finish wear, cosmetic wear, equipment or fixture deficiencies, plumbing concerns, electrical deficiencies, exterior maintenance concerns, and documentation of existing conditions. Map specific components into broad themes: linoleum and carpet map to flooring deterioration; fireplace, humidifier, and stove map to equipment or fixture deficiencies; bathroom ceiling, kitchen ceiling, and basement floor map to moisture-related conditions, interior finish wear, or flooring deterioration as supported. Do not return room names or individual component names as themes unless the whole report is specifically room-focused. Do not include observation counts, repairs, replacement, recommendations, severity, urgency, hazard, liability language, or unsupported facts.`,
+    `Extract structured inputs for a CRED Executive Summary. Identify report intent, subject label, broad themes, and overall documented condition. Return structured JSON only; do not write the final Executive Summary paragraph. Do not assume industry. Use the report context to infer the domain only when obvious. Classify evidence into broad customer-facing categories only; use broad categories, not individual defects. Allowed theme examples include: condition concerns, operational issues, cosmetic wear, material deterioration, moisture-related observations, mechanical concerns, electrical concerns, fluid/leak-related observations, documentation of existing conditions, supporting reference material, customer-relevant observations, maintenance-related observations, and safety-related observations only if explicitly documented. Domain-specific words may help classify a theme, but must not force property-only, vehicle-only, or equipment-only output. Do not return room names, component names, photo captions, VINs, IDs, codes, or individual defects as themes unless the whole report is specifically about one component. Do not include observation counts, recommendations, severity, urgency, liability language, repair instructions, replacement instructions, remediation language, or unsupported conclusions.`,
     `Report title: ${input.sessionTitle ?? "Untitled report"}
 Report context JSON:
 ${JSON.stringify(input.reportContext ?? {})}
