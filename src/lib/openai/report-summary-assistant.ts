@@ -411,10 +411,50 @@ ${JSON.stringify(evidence).slice(0, 12000)}`,
   // Free-form AI summaries tend to over-list individual observations instead of
   // producing an executive-level overview, so regeneration now prefers the
   // deterministic theme-based summary assembled from the same evidence source.
-  const cleaned = removeUnsupportedActionLanguage(summary, sourceText);
+  
+const cleaned = removeUnsupportedActionLanguage(summary, sourceText);
+
+try {
+  const parsed = JSON.parse(cleaned);
+
+  const property =
+    typeof parsed.propertyType === "string" && parsed.propertyType.trim()
+      ? parsed.propertyType.trim()
+      : sanitizeSummary(input.sessionTitle) || "property";
+
+  const location =
+    getLocationHint(input.reportContext) ||
+    (typeof input.reportContext?.location === "string"
+      ? input.reportContext.location
+      : null);
+
+  const themes = Array.isArray(parsed.themes)
+    ? parsed.themes
+        .filter((theme: unknown): theme is string => typeof theme === "string" && Boolean(theme.trim()))
+        .map((theme: string) => sanitizeSummary(theme))
+        .slice(0, 4)
+    : [];
+
+  const intro =
+    `This report summarizes the documented condition of the ${property}` +
+    (location ? ` located at ${location}.` : ".");
+
+  const body =
+    themes.length
+      ? ` The inspection identified documented conditions primarily related to ${themes.join(", ")}.`
+      : "";
+
+  return (
+    intro +
+    body +
+    " Supporting observations and photographic evidence for each documented condition are provided throughout the remainder of this report."
+  );
+} catch {
   return (
     fallbackSummary ||
     cleaned ||
     "This report documents observed conditions from the included evidence."
   );
 }
+}
+
