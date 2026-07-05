@@ -14,6 +14,7 @@ import { ReportEmailError, sendReportEmail, validateReportEmailRecipients } from
 import { FINAL_NOTES_MODEL, FINAL_NOTES_PROMPT_VERSION, generateFinalNotes } from '@/lib/openai/final-notes-generator'
 import { AI_REPORT_DRAFT_MODEL, AI_REPORT_DRAFT_PROMPT_VERSION, generateReportDraft } from '@/lib/openai/report-draft-generator'
 import { improveReportSummaryWriting, regenerateReportSummaryFromEvidence, type SummaryStyle } from '@/lib/openai/report-summary-assistant'
+import { generateObservationWriting, type ObservationWritingAction } from '@/lib/openai/observation-writing-assistant'
 import {
   generateObservationTitles,
   OBSERVATION_TITLE_MODEL,
@@ -212,6 +213,137 @@ function requireReportReadyForDelivery(sessionId: string, session: { review_stat
 
 
 
+
+
+export type ObservationWritingActionState = { ok: boolean; error?: string; text?: string }
+
+function getObservationAssistantErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message === 'OPENAI_API_KEY_MISSING') return 'AI observation writing tools are not configured for this workspace.'
+  return error instanceof Error && error.message ? error.message : 'AI observation writing tool failed. Please try again.'
+}
+
+function getObservationWritingAction(value: string): ObservationWritingAction | null {
+  const allowed: ObservationWritingAction[] = ['improve_writing', 'rewrite_for_customer', 'make_more_technical', 'make_more_concise', 'expand_description', 'generate_observation', 'generate_recommendation', 'explain_clearly']
+  return allowed.includes(value as ObservationWritingAction) ? value as ObservationWritingAction : null
+}
+
+function getObservationAssistantText(value: unknown, keys: string[] = ['caption', 'description', 'summary', 'generated_note', 'generated_observation', 'detected_objects', 'objects', 'metadata', 'ocr_text', 'extracted_text']) {
+  if (!value || typeof value !== 'object') return null
+  const found: string[] = []
+  const stack = [value]
+  while (stack.length && found.join(' ').length < 2000) {
+    const current = stack.shift()
+    if (!current || typeof current !== 'object' || Array.isArray(current)) continue
+    for (const [key, nested] of Object.entries(current)) {
+      if (typeof nested === 'string' && keys.includes(key.toLowerCase()) && nested.trim()) found.push(nested.trim())
+      if (nested && typeof nested === 'object') stack.push(nested)
+    }
+  }
+  return found.length ? found.join(' | ').slice(0, 2000) : null
+}
+
+export async function runObservationWritingAction(_state: ObservationWritingActionState, formData: FormData): Promise<ObservationWritingActionState> {
+  const workspace = await requireSessionWorkspace()
+  const sessionId = getString(formData, 'session_id')
+  const sectionId = getString(formData, 'section_id')
+  const action = getObservationWritingAction(getString(formData, 'action'))
+  if (!sessionId || !sectionId || !action) return { ok: false, error: 'Select an observation before using the writing assistant.' }
+
+  const allowance = await requireSummaryAssistantAllowance(workspace)
+  if (!allowance.ok) return { ok: false, error: allowance.error }
+
+  try {
+    const { data: section, error: sectionError } = await workspace.supabase
+      .from('ai_report_draft_sections')
+      .select('id, title, body, source_capture_ids, metadata, ai_report_draft_id, documentation_session_id')
+      .eq('id', sectionId)
+      .eq('documentation_session_id', sessionId)
+      .eq('organization_id', workspace.profile.organization_id)
+      .single()
+    if (sectionError || !section) return { ok: false, error: sectionError?.message ?? 'Observation section not found.' }
+
+    const { data: draft } = await workspace.supabase
+      .from('ai_report_drafts')
+      .select('id, title, header_fields, report_structure')
+      .eq('id', section.ai_report_draft_id)
+      .eq('organization_id', workspace.profile.organization_id)
+      .maybeSingle()
+
+    const { data: session } = await workspace.supabase
+      .from('documentation_sessions')
+      .select('title, session_type, customer_name, asset_label, suggested_details, session_metadata')
+      .eq('id', sessionId)
+      .eq('organization_id', workspace.profile.organization_id)
+      .single()
+
+    const { data: captures, error: capturesError } = await workspace.supabase
+      .from('capture_items')
+      .select('id, type, media_kind, captured_at, technician_note, transcript, ai_summary, ocr_text, extracted_data, capture_ai_analysis, evidence_category, observation_group_id, group_order, include_in_report, deleted_at')
+      .eq('documentation_session_id', sessionId)
+      .eq('organization_id', workspace.profile.organization_id)
+      .is('deleted_at', null)
+      .order('report_order', { ascending: true, nullsFirst: false })
+      .order('captured_at', { ascending: true })
+    if (capturesError) return { ok: false, error: capturesError.message }
+
+    const sourceIds = Array.isArray(section.source_capture_ids) ? section.source_capture_ids.filter((id): id is string => typeof id === 'string') : []
+    const includedCaptures = (captures ?? []).filter(isCaptureIncludedInOutput)
+    const directCaptures = includedCaptures.filter((capture) => sourceIds.includes(capture.id))
+    const groupKeys = new Set(directCaptures.map((capture) => capture.observation_group_id ?? capture.id))
+    const observationCaptures = includedCaptures.filter((capture) => sourceIds.includes(capture.id) || groupKeys.has(capture.observation_group_id ?? capture.id))
+    const nearbyObservations = includedCaptures
+      .filter((capture) => !observationCaptures.some((current) => current.id === capture.id))
+      .slice(0, 4)
+      .map((capture) => ({
+        title: getStoredObservationTitle(capture.extracted_data),
+        classification: normalizeEvidenceCategory(capture.evidence_category),
+        text: capture.technician_note?.trim() || capture.transcript?.trim() || getObservationAssistantText(capture.extracted_data) || capture.ai_summary?.trim() || null,
+      }))
+
+    const supportingImages = observationCaptures.map((capture) => ({
+      id: capture.id,
+      title: getStoredObservationTitle(capture.extracted_data),
+      technicianNote: capture.technician_note?.trim() || capture.transcript?.trim() || null,
+      aiDescription: getObservationAssistantText(capture.capture_ai_analysis) || getObservationAssistantText(capture.extracted_data) || capture.ai_summary?.trim() || capture.ocr_text?.trim() || null,
+      detectedObjects: isRecord(capture.capture_ai_analysis) ? capture.capture_ai_analysis.detected_objects ?? capture.capture_ai_analysis.objects ?? null : null,
+      extractedMetadata: capture.extracted_data ?? null,
+    }))
+    const primary = observationCaptures[0]
+    const currentText = getString(formData, 'current_text').slice(0, 4000) || section.body || null
+    const classification = getString(formData, 'classification') || normalizeEvidenceCategory(primary?.evidence_category)
+    const technicianNote = observationCaptures.map((capture) => capture.technician_note?.trim() || capture.transcript?.trim()).filter(Boolean).join('\n') || null
+    const generated = await generateObservationWriting({
+      action,
+      classification,
+      currentText,
+      observationTitle: getString(formData, 'observation_title') || section.title,
+      technicianNote,
+      observationType: primary?.type ?? null,
+      concern: classification === 'concern' ? currentText : null,
+      observation: classification === 'observation' ? currentText : section.body ?? null,
+      supportingEvidence: supportingImages.map((item) => [item.title, item.aiDescription].filter(Boolean).join(': ')).filter(Boolean).join('\n') || null,
+      recommendedAction: classification === 'recommended_action' ? currentText : null,
+      supportingImages,
+      sessionContext: {
+        reportTitle: draft?.title ?? session?.title ?? null,
+        assetType: session?.asset_label ?? null,
+        customerType: session?.customer_name ? 'customer' : null,
+        industry: typeof session?.session_type === 'string' ? session.session_type : null,
+      },
+      nearbyObservations,
+    })
+    await recordUsageEvent({
+      supabase: workspace.supabase,
+      organizationId: workspace.profile.organization_id,
+      eventType: 'ai_report_draft_generation',
+      quantity: 1,
+      metadata: { session_id: sessionId, section_id: sectionId, operation: 'observation_writing', action },
+    })
+    return { ok: true, text: generated }
+  } catch (error) {
+    return { ok: false, error: getObservationAssistantErrorMessage(error) }
+  }
+}
 
 export type SummaryAssistantActionState = { ok: boolean; error?: string; summary?: string }
 
