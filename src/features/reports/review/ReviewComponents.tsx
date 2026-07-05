@@ -32,7 +32,6 @@ import { SignatureCaptureForm } from "@/features/signatures";
 import { PendingActionButton } from "@/features/reports/review/PendingActionButton";
 import { ReportEditAutosaveForm } from "@/features/reports/review/ReportEditAutosaveForm";
 import { SummaryAssistantEditor } from "@/features/reports/review/SummaryAssistantEditor";
-import { ObservationAssistantEditor } from "@/features/reports/review/ObservationAssistantEditor";
 import { useSavedSignature } from "@/features/signatures/actions";
 import type { Database } from "@/lib/supabase/database.types";
 
@@ -925,15 +924,15 @@ export function ReportReview({
                         {getSectionTechnicianNotes(section, supportingEvidence) || "No technician notes linked to this observation."}
                       </div>
                     </div>
-                    <ObservationAssistantEditor
-                      sectionId={section.id}
-                      sessionId={session.id}
-                      textareaName={`section_body_${section.id}`}
-                      titleName={`section_title_${section.id}`}
-                      initialTitle={stripConfidenceText(section.title)}
-                      initialText={stripConfidenceText(section.body ?? "")}
-                      classification={getSectionObservationClassification(section, supportingEvidence)}
-                    />
+                    <label className="field-stack">
+                      <span className="label">Customer Facing Report Text</span>
+                      <textarea
+                        className="input text-area"
+                        name={`section_body_${section.id}`}
+                        rows={5}
+                        defaultValue={stripConfidenceText(section.body ?? "")}
+                      />
+                    </label>
                     {normalizeDraftSections([section], []).flatMap(
                       (item) => item.fields,
                     ).length > 0 ? (
@@ -1265,17 +1264,6 @@ function getSectionTechnicianNotes(section: AiReportDraftSection, supportingEvid
     .map((item) => stripConfidenceText(item.capture.technician_note?.trim() || item.capture.transcript?.trim() || item.note || ""))
     .filter(Boolean);
   return Array.from(new Set(notes)).join("\n");
-}
-
-function getSectionObservationClassification(section: AiReportDraftSection, supportingEvidence: SupportingEvidenceItem[]) {
-  const ids = new Set(Array.isArray(section.source_capture_ids) ? section.source_capture_ids.filter((id): id is string => typeof id === "string") : []);
-  const item = supportingEvidence.find((candidate) => ids.has(candidate.capture.id));
-  if (item) return EVIDENCE_CATEGORY_LABELS[normalizeEvidenceCategory(item.capture.evidence_category)];
-  const title = section.title.toLowerCase();
-  if (title.includes("concern")) return "Concern";
-  if (title.includes("recommend")) return "Recommended Action";
-  if (title.includes("evidence")) return "Supporting Evidence";
-  return "Observation";
 }
 
 function getObservationCategoryLabel(

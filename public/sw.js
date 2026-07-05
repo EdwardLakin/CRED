@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cred-offline-8cb52ef1bc45097a";
+const CACHE_VERSION = "cred-offline-f095aa5a2cc82b8b";
 const OFFLINE_DOCUMENT = "/offline.html";
 const PRECACHE_ASSETS = [
   "/offline.html",
@@ -16,37 +16,37 @@ const PRECACHE_ASSETS = [
   "/_next/static/chunks/02-blbd0utox5.css",
   "/_next/static/chunks/0245a4ypel7xx.js",
   "/_next/static/chunks/05-c3ty_6dwfk.js",
-  "/_next/static/chunks/07p3voyc8jo5_.js",
   "/_next/static/chunks/0cz1d0mv5g_q7.js",
   "/_next/static/chunks/0jr-cjjbn9cqu.js",
   "/_next/static/chunks/0tplh5ca_wqje.js",
   "/_next/static/chunks/0zm7blno40yu7.js",
-  "/_next/static/chunks/1-hpquxxw_wjk.js",
+  "/_next/static/chunks/13lag3sfpzzdn.js",
   "/_next/static/chunks/14mrh2-p_w84d.js",
-  "/_next/static/chunks/1dld-je1un7e7.js",
   "/_next/static/chunks/1ldhwkdsg700d.js",
   "/_next/static/chunks/1ripxx8ef1fx-.js",
   "/_next/static/chunks/1rxncug86bump.js",
   "/_next/static/chunks/1uxxd_8_lafly.js",
   "/_next/static/chunks/21x9obqqc2awh.js",
-  "/_next/static/chunks/251_eb2u7kltd.js",
   "/_next/static/chunks/27jktro2p5rq9.js",
+  "/_next/static/chunks/2_vm9ek2xppya.js",
   "/_next/static/chunks/2cya-h6pss2j9.js",
+  "/_next/static/chunks/2fb2xt3raq_26.js",
   "/_next/static/chunks/2fkx0onbjhg49.js",
   "/_next/static/chunks/2fxatfi4xu1vg.js",
-  "/_next/static/chunks/2iwy-lo2cdysu.js",
-  "/_next/static/chunks/2y15_fmb814pm.js",
-  "/_next/static/chunks/331c6sro3sop4.js",
+  "/_next/static/chunks/2o4qmxwr9mpqe.js",
+  "/_next/static/chunks/2ts8gkti0yxgn.js",
+  "/_next/static/chunks/2x3s5nye0tzds.js",
   "/_next/static/chunks/34a1oukrr93wj.js",
   "/_next/static/chunks/36z57ezv9m8s9.js",
-  "/_next/static/chunks/3aubsnvnpa7gm.js",
+  "/_next/static/chunks/3_ifmjbv3xoxb.js",
   "/_next/static/chunks/3jvkbm-wxvaor.js",
+  "/_next/static/chunks/41-parxnl30ml.js",
   "/_next/static/chunks/43cavunylurnk.js",
   "/_next/static/chunks/turbopack-3y4_9gvwbdyxg.js",
   "/_next/static/media/favicon.2vob68tjqpejf.ico",
-  "/_next/static/n8Cgm4cu30olz28CCRKXo/_buildManifest.js",
-  "/_next/static/n8Cgm4cu30olz28CCRKXo/_clientMiddlewareManifest.js",
-  "/_next/static/n8Cgm4cu30olz28CCRKXo/_ssgManifest.js"
+  "/_next/static/zn8MXvLu0Oqr9zHffeIC0/_buildManifest.js",
+  "/_next/static/zn8MXvLu0Oqr9zHffeIC0/_clientMiddlewareManifest.js",
+  "/_next/static/zn8MXvLu0Oqr9zHffeIC0/_ssgManifest.js"
 ];
 const NAVIGATION_PATHS = new Set(["/", "/dashboard", "/sign-in", "/offline", "/offline/capture"]);
 const INSTALL_ERROR_KEY = "/__cred_sw_last_install_error__";
