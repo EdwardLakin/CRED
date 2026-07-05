@@ -431,9 +431,12 @@ function isImageEvidence(capture: ReportCapture) {
   return getEvidenceKind(capture) === "image";
 }
 
+function getCustomerObservationText(capture: ReportCapture) {
+  return capture.customer_facing_observation?.trim() || capture.technician_note?.trim() || capture.transcript?.trim() || "";
+}
+
 function getUserEvidenceText(capture: ReportCapture) {
-  const userText =
-    capture.technician_note?.trim() || capture.transcript?.trim();
+  const userText = getCustomerObservationText(capture);
   return userText && !looksLikeRawUploadFilename(userText) ? userText : "";
 }
 
@@ -501,7 +504,7 @@ function getCustomerFacingEvidenceTitle(capture: ReportCapture, index: number) {
     return cleanCustomerFacingText(stripConfidenceText(storedTitle.suggested));
 
   const noteHeading = conciseHeadingFromNote(
-    capture.technician_note?.trim() || capture.transcript?.trim() || "",
+    getCustomerObservationText(capture),
   );
   if (noteHeading && !looksLikeRawUploadFilename(noteHeading))
     return cleanCustomerFacingText(noteHeading);
@@ -1092,7 +1095,7 @@ function buildEvidenceItemsHtml(
       const title = cleanCustomerFacingText(evidenceTitle);
       const mediaHtml =
         mediaKind === "note"
-          ? `<div class="video-still">${escapeHtml(cleanCustomerFacingText(stripConfidenceText(capture.technician_note || capture.transcript || "Technician Note")))}</div>`
+          ? `<div class="video-still">${escapeHtml(cleanCustomerFacingText(stripConfidenceText(getCustomerObservationText(capture) || "Technician Note")))}</div>`
           : mediaKind === "image"
             ? renderExportImage(
                 imageAsset,
@@ -1298,7 +1301,7 @@ function buildDocumentedObservationsHtml(
       : "";
     const renderedText: string[] = [];
     const technicianNote = cleanCustomerFacingText(
-      stripConfidenceText(capture.technician_note || capture.transcript || ""),
+      stripConfidenceText(getCustomerObservationText(capture)),
     );
     if (technicianNote) renderedText.push(technicianNote);
     const details = dedupeEvidenceDetails(entry.group.details).filter(
@@ -1592,6 +1595,10 @@ function buildFieldServiceReportHtml({
   branding?: ExportBranding | null;
   brandLogoUrl?: string | null;
 }) {
+  const exportCaptureItems: ReportCapture[] = captureItems.map((capture) => ({
+    ...capture,
+    technician_note: capture.customer_facing_observation?.trim() || capture.technician_note,
+  }));
   const details = normalizeFieldServiceDetails(session.field_service_details);
   const headerRows = [
     { label: "Report ID", value: session.display_id ?? "" },
@@ -1675,7 +1682,7 @@ function buildFieldServiceReportHtml({
     value: getDetailValue(details, fieldName),
   }));
   const reviewDocument = buildNormalizedReportModel({
-    captures: captureItems,
+    captures: exportCaptureItems,
     sections: [],
     draftSections: reportSections,
     measurements: reportDraft?.measurements ?? [],
@@ -1688,7 +1695,7 @@ function buildFieldServiceReportHtml({
   );
   const approvalDate = getApprovalDate(reportDraft, session);
   const snapshotTimestamp = approvalDate ?? reportDraft?.generated_at ?? null;
-  const fieldAppendixCaptures = getAppendixCaptures(captureItems).captures;
+  const fieldAppendixCaptures = getAppendixCaptures(exportCaptureItems).captures;
   const summaryHtml = buildReportOverviewHtml({
     summary: reportDraft?.summary,
     reportTitle,
@@ -1726,8 +1733,7 @@ function buildFieldServiceReportHtml({
       reviewDocument.additionalNotes.filter((entry) =>
         isMeaningfulCustomerReportText(
           [
-            entry.capture.technician_note,
-            entry.capture.transcript,
+            getCustomerObservationText(entry.capture),
             ...entry.group.findings,
             ...entry.group.recommendations,
           ]
@@ -1748,7 +1754,7 @@ function buildFieldServiceReportHtml({
     : "";
 
   return `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable field service report</title>
-  <style>${REPORT_STYLES}${buildBrandCss(branding)}</style></head><body>${buildReportOpen({ branding, timeZone })}${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, captures: captureItems, imageAssets: signedUrls, timeZone, allowCoverImage: fieldUseGalleryMode, branding, logoUrl: brandLogoUrl, helpers: { isImageEvidence, renderDefinitionRows, renderExportImage, getUserEvidenceText, getPrimaryEvidenceLabel } })}${summaryHtml}<section class="item service-section"><h2>Report Details</h2>${renderDefinitionRows(headerRows)}</section>${renderFieldServiceSection(details, "equipment")}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work Performed / Resolution</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Supporting Record</h2><p class="muted">Photos, documents, and notes support the work summary and findings above.</p></section>${buildFinalNotesHtml(session)}${evidenceHtml}${fieldUseGalleryMode ? buildEvidenceGalleryHtml(captureItems, signedUrls, timeZone) : ""}${appendixHtml}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges Summary</h2>${renderDefinitionRows(chargeRows)}</section>${buildInspectorFacilityHtml(null, null)}${buildApprovalHtml({ profile: null, signatures, signatureUrls, draft: reportDraft, session, timeZone, branding, helpers: { renderDefinitionRows, getApprovalDate } })}${buildPrintFooterHtml({ organizationName, reportId: session.display_id, generatedAt: formatDateTimeInTimeZone(new Date().toISOString(), timeZone), branding })}</main>${EXPORT_LIGHTBOX_HTML}</body></html>`;
+  <style>${REPORT_STYLES}${buildBrandCss(branding)}</style></head><body>${buildReportOpen({ branding, timeZone })}${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, captures: exportCaptureItems, imageAssets: signedUrls, timeZone, allowCoverImage: fieldUseGalleryMode, branding, logoUrl: brandLogoUrl, helpers: { isImageEvidence, renderDefinitionRows, renderExportImage, getUserEvidenceText, getPrimaryEvidenceLabel } })}${summaryHtml}<section class="item service-section"><h2>Report Details</h2>${renderDefinitionRows(headerRows)}</section>${renderFieldServiceSection(details, "equipment")}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work Performed / Resolution</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Supporting Record</h2><p class="muted">Photos, documents, and notes support the work summary and findings above.</p></section>${buildFinalNotesHtml(session)}${evidenceHtml}${fieldUseGalleryMode ? buildEvidenceGalleryHtml(exportCaptureItems, signedUrls, timeZone) : ""}${appendixHtml}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges Summary</h2>${renderDefinitionRows(chargeRows)}</section>${buildInspectorFacilityHtml(null, null)}${buildApprovalHtml({ profile: null, signatures, signatureUrls, draft: reportDraft, session, timeZone, branding, helpers: { renderDefinitionRows, getApprovalDate } })}${buildPrintFooterHtml({ organizationName, reportId: session.display_id, generatedAt: formatDateTimeInTimeZone(new Date().toISOString(), timeZone), branding })}</main>${EXPORT_LIGHTBOX_HTML}</body></html>`;
 }
 
 const REPORT_STYLES = `
@@ -2361,18 +2367,22 @@ export async function GET(_request: Request, { params }: RouteContext) {
     captures ?? [],
     true,
   ) as ReportCapture[];
-  const appendixCaptureResult = getAppendixCaptures(captureItems);
+  const exportCaptureItems = captureItems.map((capture) => ({
+    ...capture,
+    technician_note: capture.customer_facing_observation?.trim() || capture.technician_note,
+  }));
+  const appendixCaptureResult = getAppendixCaptures(exportCaptureItems);
   const appendixCaptureItems = appendixCaptureResult.captures;
   logExportIntegrity({
     session,
-    includedCaptures: captureItems,
+    includedCaptures: exportCaptureItems,
     appendixCaptures: appendixCaptureItems,
     duplicateCaptureIds: appendixCaptureResult.duplicateCaptureIds,
     finalNotesSource: "documentation_sessions.final_notes",
   });
   const imageAssets = buildCaptureImageUrls(
     session.id,
-    captureItems,
+    exportCaptureItems,
     shareTokenValue,
   );
 
@@ -2543,7 +2553,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
       organizationName,
       reportDraft,
       reportSections,
-      captureItems,
+      captureItems: exportCaptureItems,
       signedUrls: imageAssets,
       showToolbar: !previewOnly,
       timeZone,
@@ -2562,7 +2572,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     const html = buildFieldServiceReportHtml({
       session,
       organizationName,
-      captureItems,
+      captureItems: exportCaptureItems,
       signedUrls: imageAssets,
       signatures: reportSignatures,
       signatureUrls,
@@ -2584,12 +2594,12 @@ export async function GET(_request: Request, { params }: RouteContext) {
 
   const documentSections = normalizeDraftSections(
     visibleReportSections,
-    captureItems,
+    exportCaptureItems,
   );
   const derivedFormSections = deriveFormSectionsFromCaptures(captureItems);
   const blueprintSections = normalizeFormBlueprintSections(
     reportDraft?.report_structure ?? null,
-    captureItems,
+    exportCaptureItems,
     visibleReportSections,
   );
   const formSections =
@@ -2624,7 +2634,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     reportDraft?.report_structure ?? null,
   );
   const reviewDocument = buildNormalizedReportModel({
-    captures: captureItems,
+    captures: exportCaptureItems,
     sections: formSections,
     draftSections: visibleReportSections,
     measurements: reportDraft?.measurements ?? [],
@@ -2709,7 +2719,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
       ? buildFormStructuredReportHtml(
           blueprintSections,
           reportDraft?.report_structure ?? null,
-          captureItems,
+          exportCaptureItems,
           imageAssets,
         )
       : "";

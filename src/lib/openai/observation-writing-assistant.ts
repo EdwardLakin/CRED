@@ -38,6 +38,7 @@ export type ObservationWritingInput = {
     customerType: string | null
     industry: string | null
   }
+  supportsRelationship: string | null
   nearbyObservations: Array<{ title: string | null; classification: string | null; text: string | null }>
 }
 

@@ -32,6 +32,7 @@ import { SignatureCaptureForm } from "@/features/signatures";
 import { PendingActionButton } from "@/features/reports/review/PendingActionButton";
 import { ReportEditAutosaveForm } from "@/features/reports/review/ReportEditAutosaveForm";
 import { SummaryAssistantEditor } from "@/features/reports/review/SummaryAssistantEditor";
+import { EvidenceObservationAssistant } from "@/features/reports/review/EvidenceObservationAssistant";
 import { useSavedSignature } from "@/features/signatures/actions";
 import type { Database } from "@/lib/supabase/database.types";
 
@@ -1719,6 +1720,23 @@ function EvidenceGallery({
                   defaultValue={stripConfidenceText(item.note ?? "")}
                 />
               </label>
+              <input
+                type="hidden"
+                name={`capture_original_technician_note_${item.capture.id}`}
+                value={item.capture.original_technician_note ?? item.capture.technician_note ?? ""}
+                readOnly
+              />
+              <EvidenceObservationAssistant
+                captureId={item.capture.id}
+                sessionId={item.capture.documentation_session_id}
+                textareaName={`capture_customer_observation_${item.capture.id}`}
+                lastAiName={`capture_last_ai_observation_${item.capture.id}`}
+                initialText={stripConfidenceText(item.capture.customer_facing_observation ?? "")}
+                originalTechnicianNote={stripConfidenceText(item.capture.original_technician_note ?? item.capture.technician_note ?? item.note ?? "")}
+                lastAiText={stripConfidenceText(item.capture.last_ai_observation ?? "")}
+                classification={normalizeEvidenceCategory(item.capture.evidence_category)}
+                observationTitle={item.title}
+              />
             </article>
           ))
         ) : (
