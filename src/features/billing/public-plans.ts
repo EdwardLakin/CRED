@@ -1,6 +1,7 @@
 import { BILLING_PLANS, type BillingPlan } from '@/lib/stripe'
 import { CRED_TIER_LABELS, canUseFeature, type CredTier, type FeatureKey } from '@/features/billing/feature-gates'
 import { getIncludedSeats } from '@/features/billing/seat-entitlements'
+import { formatBytes, getPlanLimits } from '@/features/billing/limits'
 
 export type PublicCredPlan = {
   billingKey: BillingPlan
@@ -117,6 +118,38 @@ export const PUBLIC_FEATURE_COMPARISON: PublicFeatureComparisonRow[] = [
       essentials: String(getIncludedSeats('individual')),
       professional: String(getIncludedSeats('team')),
       investigation: String(getIncludedSeats('shop')),
+    },
+  },
+  {
+    label: 'Storage',
+    values: {
+      essentials: formatBytes(getPlanLimits('individual').storageBytes),
+      professional: formatBytes(getPlanLimits('team').storageBytes),
+      investigation: formatBytes(getPlanLimits('shop').storageBytes),
+    },
+  },
+  {
+    label: 'AI actions / month',
+    values: {
+      essentials: getPlanLimits('individual').aiActionsPerMonth.toLocaleString('en-US'),
+      professional: getPlanLimits('team').aiActionsPerMonth.toLocaleString('en-US'),
+      investigation: getPlanLimits('shop').aiActionsPerMonth.toLocaleString('en-US'),
+    },
+  },
+  {
+    label: 'Report emails / month',
+    values: {
+      essentials: getPlanLimits('individual').emailSendsPerMonth.toLocaleString('en-US'),
+      professional: getPlanLimits('team').emailSendsPerMonth.toLocaleString('en-US'),
+      investigation: getPlanLimits('shop').emailSendsPerMonth.toLocaleString('en-US'),
+    },
+  },
+  {
+    label: 'Active secure links',
+    values: {
+      essentials: getPlanLimits('individual').activeShareLinks.toLocaleString('en-US'),
+      professional: getPlanLimits('team').activeShareLinks.toLocaleString('en-US'),
+      investigation: getPlanLimits('shop').activeShareLinks.toLocaleString('en-US'),
     },
   },
 ]

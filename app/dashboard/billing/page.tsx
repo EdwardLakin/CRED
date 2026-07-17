@@ -1,10 +1,14 @@
+import { redirect } from 'next/navigation'
+
 import { Card } from '@/components/ui'
 import { BILLING_PLANS, getOrganizationBillingAccess, getPlanDisplayName, parseBillingPlan } from '@/features/billing'
 import { getEffectiveSeatLimit } from '@/features/team'
 import { BillingCheckoutButton } from '@/features/billing/components/BillingCheckoutButton'
+import { BillingPortalButton } from '@/features/billing/components/BillingPortalButton'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { UsageSummaryCard } from '@/features/usage'
 import { formatDateInTimeZone } from '@/lib/date-format'
+import { canUseWorkspaceAdmin } from '@/features/navigation-dashboard'
 
 interface BillingPageProps {
   searchParams: Promise<{ billing?: string; checkout?: string; error?: string }>
@@ -14,12 +18,13 @@ export default async function BillingPage({ searchParams }: BillingPageProps) {
   const params = await searchParams
   const checkoutPlan = parseBillingPlan(params.checkout) ?? undefined
   const { supabase, profile } = await requireSessionWorkspace()
+  if (!canUseWorkspaceAdmin(profile)) redirect('/dashboard')
   const billingAccess = getOrganizationBillingAccess(profile.organization)
   const billingPlan = parseBillingPlan(billingAccess.plan) ?? 'individual'
-  const currentPlan = getPlanDisplayName(profile.organization.plan) ?? 'Individual'
+  const currentPlan = getPlanDisplayName(profile.organization.plan) ?? 'CRED Essentials'
   const subscriptionStatus = profile.organization.subscription_status ?? 'not started'
+  const hasStripeSubscription = Boolean(profile.organization.stripe_subscription_id)
   const selectedCheckoutPlan = checkoutPlan ?? billingPlan
-  const billingButtonLabel = subscriptionStatus === 'active' ? 'Manage Billing' : 'Subscribe Now'
   const trialEndsAt = profile.organization.trial_ends_at
     ? formatDateInTimeZone(profile.organization.trial_ends_at, profile.timezone)
     : 'Expired'
@@ -70,13 +75,11 @@ export default async function BillingPage({ searchParams }: BillingPageProps) {
             <p className="muted">{billingAccess.hasAccess ? 'Active' : 'Checkout required'}</p>
           </div>
           <div className="workspace-actions">
-            {subscriptionStatus === 'active' ? (
-              <button type="button" className="button button-secondary billing-manage-button" disabled>
-                {billingButtonLabel}
-              </button>
+            {hasStripeSubscription ? (
+              <BillingPortalButton className="button button-secondary billing-manage-button" />
             ) : (
               <BillingCheckoutButton plan={selectedCheckoutPlan} className="button button-secondary billing-manage-button">
-                {billingButtonLabel}
+                Subscribe Now
               </BillingCheckoutButton>
             )}
           </div>
@@ -100,10 +103,14 @@ export default async function BillingPage({ searchParams }: BillingPageProps) {
               <p className="plan-price">{details.price}</p>
               <p className="muted">{getEffectiveSeatLimit(plan)} users included. Additional users can be added as paid seat expansions.</p>
             </div>
-            {subscriptionStatus === 'active' && plan === billingPlan ? (
+            {hasStripeSubscription && plan === billingPlan ? (
               <button type="button" className="button button-secondary touch-target" disabled>
-                Active Plan
+                Current Plan
               </button>
+            ) : hasStripeSubscription ? (
+              <BillingPortalButton className="button button-primary touch-target">
+                Change to {details.name}
+              </BillingPortalButton>
             ) : (
               <BillingCheckoutButton plan={parseBillingPlan(plan) ?? 'individual'} className="button button-primary touch-target">
                 Choose {details.name}

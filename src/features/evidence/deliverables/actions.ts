@@ -10,8 +10,9 @@ import { parseDeliverableSourceSelection, parseDeliverableType } from './validat
 type QueryBuilder = { select: (columns: string) => QueryBuilder; eq: (column: string, value: string) => QueryBuilder; is: (column: string, value: null) => QueryBuilder; single: () => Promise<{ data: unknown; error: unknown }> }
 type SupabaseLike = { from: (table: string) => QueryBuilder }
 
-function assertFeatureAccess(profile: { organization: { plan?: string | null } }) {
+function assertFeatureAccess(profile: { organization: { plan?: string | null } }, type?: string) {
   if (!canUseFeature(profile, 'deliverables')) throw new Error('This feature is not available on your current CRED tier.')
+  if (type === 'relationship_map' && !canUseFeature(profile, 'investigation_deliverables')) throw new Error('Relationship Map deliverables require CRED Investigation.')
 }
 type ShareTokenMutationResult = { data: { id: string } | null; error: { message: string } | null }
 type ShareTokenUpdateBuilder = {
@@ -49,7 +50,7 @@ export async function generateEvidenceDeliverable(sessionId: string, formData: F
     const type = parseDeliverableType(formData.get('deliverable_type'))
     const sourceSelection = parseDeliverableSourceSelection(formData)
     const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
-  assertFeatureAccess(profile)
+    assertFeatureAccess(profile, type)
     const supabase = rawSupabase as unknown as SupabaseLike
     await assertSession(supabase, sessionId, profile.organization_id)
     await createDeliverableRecord(rawSupabase as never, sessionId, profile.organization_id, profile.id, type, sourceSelection)

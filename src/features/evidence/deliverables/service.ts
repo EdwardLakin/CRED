@@ -37,7 +37,8 @@ export function generateDeliverable(type: DeliverableType, data: DeliverableSour
   const scopedData = applyDeliverableSourceSelection(data, sourceSelection)
   if (type === 'chronology') return generateChronology(scopedData, sourceSelection)
   if (type === 'evidence_index') return generateEvidenceIndex(scopedData, sourceSelection)
-  return generateObservationSummary(scopedData, sourceSelection)
+  if (type === 'observation_summary') return generateObservationSummary(scopedData, sourceSelection)
+  return generateRelationshipMap(scopedData, sourceSelection)
 }
 
 export function generateChronology(data: DeliverableSourceData, sourceSelection: DeliverableSourceSelection = defaultDeliverableSourceSelection): GeneratedDeliverable {
@@ -91,6 +92,28 @@ export function generateObservationSummary(data: DeliverableSourceData, sourceSe
   })
   const sourceIds = collectSourceIds(data)
   return { title: 'Observation Summary', summary: `${observations.length} factual observations summarized with supporting and contradicting evidence counts.`, content: { type: 'observation_summary', observations }, source_ids: sourceIds, provenance: deliverableProvenance('observation_summary', sourceIds, sourceSelection) }
+}
+
+export function generateRelationshipMap(data: DeliverableSourceData, sourceSelection: DeliverableSourceSelection = defaultDeliverableSourceSelection): GeneratedDeliverable {
+  const relationships = filterVerifiedRelationships(data.relationships).map((relationship) => ({
+    relationship_id: relationship.id,
+    relationship_type: relationship.relationship_type,
+    source_type: relationship.source_type,
+    source_id: relationship.source_id,
+    source_label: sourceLabel(data, relationship.source_type, relationship.source_id),
+    target_type: relationship.target_type,
+    target_id: relationship.target_id,
+    target_label: sourceLabel(data, relationship.target_type, relationship.target_id),
+    review_status: relationship.review_status,
+  }))
+  const sourceIds = collectSourceIds(data)
+  return {
+    title: 'Relationship Map',
+    summary: `${relationships.length} verified relationships across evidence, events, entities, and factual observations.`,
+    content: { type: 'relationship_map', relationships },
+    source_ids: sourceIds,
+    provenance: deliverableProvenance('relationship_map', sourceIds, sourceSelection),
+  }
 }
 
 export function applyDeliverableSourceSelection(data: DeliverableSourceData, sourceSelection: DeliverableSourceSelection = defaultDeliverableSourceSelection): DeliverableSourceData {
@@ -186,4 +209,15 @@ function uniqueSortedIds(ids: string[]) {
 
 function collectSourceIds(data: DeliverableSourceData): Record<string, string[]> {
   return { evidence_item_ids: uniqueSortedIds(data.evidenceItems.map((item) => item.id)), timeline_event_ids: uniqueSortedIds(data.timelineEvents.map((event) => event.id)), entity_ids: uniqueSortedIds(data.entities.map((entity) => entity.id)), assertion_ids: uniqueSortedIds(data.assertions.map((assertion) => assertion.id)), relationship_ids: uniqueSortedIds(data.relationships.map((relationship) => relationship.id)) }
+}
+
+function sourceLabel(data: DeliverableSourceData, type: string, id: string) {
+  if (type === 'capture_item') {
+    const item = data.evidenceItems.find((row) => row.id === id)
+    return item?.original_filename ?? item?.technician_note ?? item?.ai_summary ?? 'Evidence item'
+  }
+  if (type === 'timeline_event') return data.timelineEvents.find((row) => row.id === id)?.title ?? 'Timeline event'
+  if (type === 'entity') return data.entities.find((row) => row.id === id)?.display_name ?? 'Entity'
+  if (type === 'assertion') return data.assertions.find((row) => row.id === id)?.statement ?? 'Factual observation'
+  return id
 }

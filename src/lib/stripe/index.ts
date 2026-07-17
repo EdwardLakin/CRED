@@ -9,9 +9,9 @@ export const BILLING_PLANS: Record<
   BillingPlan,
   { name: string; price: string; envKey: StripePriceEnvKey }
 > = {
-  individual: { name: 'Individual', price: '$39/month', envKey: 'STRIPE_PRICE_INDIVIDUAL' },
-  team: { name: 'Team', price: '$129/month', envKey: 'STRIPE_PRICE_TEAM' },
-  shop: { name: 'Shop', price: '$249/month', envKey: 'STRIPE_PRICE_SHOP' },
+  individual: { name: 'CRED Essentials', price: '$39/month', envKey: 'STRIPE_PRICE_INDIVIDUAL' },
+  team: { name: 'CRED Professional', price: '$129/month', envKey: 'STRIPE_PRICE_TEAM' },
+  shop: { name: 'CRED Investigation', price: '$249/month', envKey: 'STRIPE_PRICE_SHOP' },
 }
 
 const LEGACY_PLAN_MAP: Record<LegacyBillingPlan, BillingPlan> = {
@@ -180,6 +180,13 @@ export async function createSubscriptionCheckoutSession(input: {
     'metadata[plan]': input.plan,
     'subscription_data[metadata][organization_id]': input.organizationId,
     'subscription_data[metadata][plan]': input.plan,
+  })
+}
+
+export async function createBillingPortalSession(input: { customerId: string; returnUrl: string }) {
+  return stripeRequest<{ id: string; url: string }>('billing_portal/sessions', {
+    customer: input.customerId,
+    return_url: input.returnUrl,
   })
 }
 

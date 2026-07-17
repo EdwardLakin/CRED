@@ -37,6 +37,8 @@ test('feature comparison derives booleans from centralized gates', () => {
   assert.match(publicPlans, /canUseFeature\('team', feature\)/)
   assert.match(publicPlans, /canUseFeature\('shop', feature\)/)
   assert.match(publicPlans, /Investigation deliverables/)
+  assert.match(publicPlans, /label: 'Storage'/)
+  assert.match(publicPlans, /label: 'AI actions \/ month'/)
 })
 
 test('checkout buttons retain valid legacy plan keys and no unsupported seat-pack checkout is rendered', () => {

@@ -1,6 +1,6 @@
 import type { Json } from '@/lib/supabase/database.types'
 
-export const DELIVERABLE_TYPES = ['chronology', 'evidence_index', 'observation_summary'] as const
+export const DELIVERABLE_TYPES = ['chronology', 'evidence_index', 'observation_summary', 'relationship_map'] as const
 export type DeliverableType = (typeof DELIVERABLE_TYPES)[number]
 
 export type DeliverableSourceSelection = {
