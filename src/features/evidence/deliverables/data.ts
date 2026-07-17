@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 
+import { canUseFeature } from '@/features/billing/feature-gates'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import type { Database, Json } from '@/lib/supabase/database.types'
 import type { DeliverableSourceSelection, DeliverableType } from './validation'
@@ -11,12 +12,13 @@ export type DeliverableShareToken = Tables['report_share_tokens']['Row']
 type QueryBuilder = { select: (columns: string, options?: { count?: 'exact'; head?: boolean }) => QueryBuilder; eq: (column: string, value: string) => QueryBuilder; is: (column: string, value: null) => QueryBuilder; order: (column: string, options?: { ascending?: boolean; nullsFirst?: boolean }) => QueryBuilder; single: () => Promise<{ data: unknown; error: unknown }>; insert: (values: Record<string, unknown>) => { select: (columns: string) => { single: () => Promise<{ data: unknown; error: unknown }> } }; update: (values: Record<string, unknown>) => QueryBuilder; then: Promise<{ data: unknown; error: unknown; count?: number | null }>['then'] }
 export type DeliverableImportBatch = DeliverableAssemblyBatch
 type SupabaseLike = { from: (table: string) => QueryBuilder; rpc?: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string } | null }> }
-export type DeliverablesWorkspace = { supabase: unknown; profile: { id?: string | null; organization_id: string; timezone?: string | null } }
+export type DeliverablesWorkspace = { supabase: unknown; profile: { id?: string | null; organization_id: string; timezone?: string | null; organization: { plan?: string | null } } }
 
 export const deliverableTypeCards = [
   { type: 'chronology', title: 'Chronology', description: 'Timeline events with linked evidence counts, entities, and factual observations.' },
   { type: 'evidence_index', title: 'Evidence Index', description: 'Evidence item identifiers, source dates, review status, and include-in-outputs state.' },
   { type: 'observation_summary', title: 'Observation Summary', description: 'Factual observations with supporting, contradicting, entity, and event links.' },
+  { type: 'relationship_map', title: 'Relationship Map', description: 'Investigation-tier map of verified links across evidence, events, entities, and observations.', requiredFeature: 'investigation_deliverables' },
 ] as const
 
 export async function getDeliverablesData(sessionId: string, workspace?: DeliverablesWorkspace) {
@@ -32,7 +34,8 @@ export async function getDeliverablesData(sessionId: string, workspace?: Deliver
     loadDeliverableSourceData(supabase, sessionId, profile.organization_id),
   ])
 
-  return { session: session as Tables['documentation_sessions']['Row'], deliverables: (deliverables ?? []) as EvidenceDeliverable[], shareTokens: (shareTokens ?? []) as DeliverableShareToken[], availableTypes: deliverableTypeCards, previewSources: applyDeliverableSourceSelection(sourceData), assemblySources: sourceData, sourceCounts: getDeliverableSourceCounts(applyDeliverableSourceSelection(sourceData)), timeZone: profile.timezone ?? null }
+  const availableTypes = deliverableTypeCards.filter((card) => !('requiredFeature' in card) || canUseFeature(profile, card.requiredFeature))
+  return { session: session as Tables['documentation_sessions']['Row'], deliverables: (deliverables ?? []) as EvidenceDeliverable[], shareTokens: (shareTokens ?? []) as DeliverableShareToken[], availableTypes, previewSources: applyDeliverableSourceSelection(sourceData), assemblySources: sourceData, sourceCounts: getDeliverableSourceCounts(applyDeliverableSourceSelection(sourceData)), timeZone: profile.timezone ?? null }
 }
 
 export async function loadDeliverableSourceData(supabase: SupabaseLike, sessionId: string, organizationId: string): Promise<DeliverableSourceData> {
@@ -80,6 +83,7 @@ export function summarizeDeliverableContent(content: Json) {
   if (Array.isArray(record.events)) return `${record.events.length} chronology rows`
   if (Array.isArray(record.items)) return `${record.items.length} evidence index rows`
   if (Array.isArray(record.observations)) return `${record.observations.length} observation rows`
+  if (Array.isArray(record.relationships)) return `${record.relationships.length} verified relationship rows`
   return 'Generated preview'
 }
 
@@ -99,6 +103,7 @@ export async function validateDeliverableAccess(sessionId: string, deliverableId
 
   const { data: deliverable, error: deliverableError } = await supabase.from('evidence_deliverables').select('*').eq('id', deliverableId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).is('deleted_at', null).single()
   if (deliverableError || !deliverable) notFound()
+  if ((deliverable as EvidenceDeliverable).deliverable_type === 'relationship_map' && !canUseFeature(profile, 'investigation_deliverables')) notFound()
 
   const { data: shareTokens } = await supabase.from('report_share_tokens').select('*').eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).eq('deliverable_id', deliverableId).eq('link_kind', 'deliverable').order('created_at', { ascending: false })
   return { session: session as Tables['documentation_sessions']['Row'], deliverable: deliverable as EvidenceDeliverable, shareTokens: (shareTokens ?? []) as DeliverableShareToken[], timeZone: profile.timezone ?? null }

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { getCurrentProfile, getCurrentUser } from '@/features/auth/server'
+import { canUseWorkspaceAdmin } from '@/features/navigation-dashboard'
 import {
   createStripeCustomer,
   createSubscriptionCheckoutSession,
@@ -64,6 +65,17 @@ export async function POST(request: Request) {
 
   if (!profile) {
     return NextResponse.json({ error: 'Complete onboarding before starting checkout.' }, { status: 409 })
+  }
+
+  if (!canUseWorkspaceAdmin(profile)) {
+    return NextResponse.json({ error: 'Workspace owner or admin access required.' }, { status: 403 })
+  }
+
+  if (profile.organization.subscription_status === 'active' || profile.organization.stripe_subscription_id) {
+    return NextResponse.json(
+      { error: 'Manage an existing subscription through the billing portal.' },
+      { status: 409 },
+    )
   }
 
   const body = (await request.json().catch(() => null)) as { plan?: unknown } | null
