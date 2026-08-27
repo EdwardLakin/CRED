@@ -6,6 +6,10 @@ import path from 'node:path';
 let server: http.Server;
 let baseURL = '';
 let reachability = { ok: true, status: 'ready', userId: 'user-mobile', organizationId: 'org-mobile' };
+const ONE_PIXEL_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  'base64',
+);
 
 async function readStatic(pathname: string) {
   if (pathname.startsWith('/_next/static/')) {
@@ -94,13 +98,17 @@ async function registerServiceWorker(page: import('@playwright/test').Page) {
 }
 
 async function createSessionWithCapture(page: import('@playwright/test').Page, name: string, note: string) {
+  await expect(page.locator('#dashboard')).toBeVisible();
   await page.getByRole('button', { name: 'Start New Session' }).click();
+  await expect(page.locator('#workspace')).toBeVisible();
   const captures = page.locator('.capture');
-  const previousCount = await captures.count();
-  await page.locator('#galleryInput').setInputFiles({ name: `${name}.jpg`, mimeType: 'image/jpeg', buffer: Buffer.from(name) });
-  await expect(captures).toHaveCount(previousCount + 1);
+  await expect(captures).toHaveCount(0);
+  await page.locator('#galleryInput').setInputFiles({ name: `${name}.png`, mimeType: 'image/png', buffer: ONE_PIXEL_PNG });
+  await expect(captures).toHaveCount(1);
   await captures.last().getByLabel('Technician notes').fill(note);
   await page.getByRole('button', { name: /Offline dashboard/ }).click();
+  await expect(page.locator('#dashboard')).toBeVisible();
+  await expect(page.locator('#workspace')).toBeHidden();
 }
 
 async function queuedCaptureCount(page: import('@playwright/test').Page) {
@@ -169,6 +177,13 @@ test('offline install page self-registers service worker and survives offline re
   });
   await page.goto(`${baseURL}/offline.html`, { waitUntil: 'load' });
 
+  await expect.poll(
+    () => page.evaluate(async () => Boolean((await navigator.serviceWorker.getRegistration('/'))?.active)),
+    { timeout: 10000 },
+  ).toBe(true);
+  if (!(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)))) {
+    await page.reload({ waitUntil: 'load' });
+  }
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)), { timeout: 10000 }).toBe(true);
   await expect(page.locator('#offlineReady .status')).toHaveText('Offline Ready', { timeout: 10000 });
 
