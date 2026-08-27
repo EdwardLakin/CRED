@@ -259,27 +259,38 @@ export async function archiveDocumentationSession(sessionId: string) {
   revalidatePath(`/dashboard/sessions/${sessionId}`)
 }
 
-export async function deleteDocumentationSession(sessionId: string) {
+export async function deleteDocumentationSession(
+  sessionId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const { supabase, profile } = await requireSessionWorkspace()
-  const billingAccess = requireActiveBillingAccess(profile)
 
-  if (!billingAccess.ok) {
-    redirect(`/dashboard?error=${encodeURIComponent(billingAccess.message)}`)
-  }
-
-  const { error } = await supabase
+  const deletedAt = new Date().toISOString()
+  const { data: deletedSession, error } = await supabase
     .from('documentation_sessions')
-    .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .update({ deleted_at: deletedAt, updated_at: deletedAt })
     .eq('id', sessionId)
     .eq('organization_id', profile.organization_id)
+    .is('deleted_at', null)
+    .select('id')
+    .maybeSingle()
 
   if (error) {
-    redirect(`/dashboard?error=${encodeURIComponent(error.message)}`)
+    console.error('Unable to delete documentation session.', {
+      code: error.code,
+      sessionId,
+    })
+    return { ok: false, error: 'Unable to delete the session. Try again.' }
+  }
+
+  if (!deletedSession) {
+    return { ok: false, error: 'Session not found or already deleted.' }
   }
 
   revalidatePath('/dashboard')
   revalidatePath('/dashboard/sessions')
   revalidatePath('/dashboard/settings/archived-sessions')
+
+  return { ok: true }
 }
 
 export async function restoreDocumentationSession(sessionId: string) {
