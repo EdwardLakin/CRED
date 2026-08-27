@@ -12,9 +12,10 @@ const captureActions = readFileSync('src/features/capture/actions.ts', 'utf8')
 
 test('iPad/Safari-style File is stored and restored as the Blob with byte metadata and object URL previews', () => {
   assert.match(store, /export async function addCapture\([\s\S]*session: OfflineLocalSession,[\s\S]*file: File,[\s\S]*order: number/)
-  assert.match(store, /const fileBytes = await file\.arrayBuffer\(\)/)
-  assert.match(store, /blob: new Blob\(\[fileBytes\]/)
-  assert.doesNotMatch(store, /new Blob\(\[file\]/)
+  assert.match(store, /const blobBytes = await prepared\.blob\.arrayBuffer\(\)/)
+  assert.match(store, /put<PersistedOfflineCaptureRecord>\('queuedCaptures', \{ \.\.\.prepared, blob: blobBytes \}\)/)
+  assert.match(store, /source instanceof ArrayBuffer[\s\S]*new Blob\(\[source\]/)
+  assert.doesNotMatch(store, /put\('queuedCaptures', prepared\)/)
   assert.match(store, /normalizeCaptureForIndexedDb/)
   assert.match(store, /IndexedDB queued capture write failed while preparing Blob data/)
   assert.match(store, /filename: file\.name \|\|/)

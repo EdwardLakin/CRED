@@ -22,9 +22,11 @@ export function getOfflineIdentity() {
 }
 async function normalizeCaptureForIndexedDb(record) {
     const source = record.blob;
-    if (!(source instanceof Blob))
-        throw new Error('IndexedDB capture record does not contain Blob data.');
-    const blob = source instanceof File ? new Blob([await source.arrayBuffer()], { type: record.metadata.mimeType || source.type || 'application/octet-stream' }) : source;
+    if (!(source instanceof Blob) && !(source instanceof ArrayBuffer))
+        throw new Error('IndexedDB capture record does not contain media byte data.');
+    const blob = source instanceof ArrayBuffer
+        ? new Blob([source], { type: record.metadata.mimeType || 'application/octet-stream' })
+        : source;
     const legacyMetadata = record.metadata;
     const clientItemId = typeof legacyMetadata.clientItemId === 'string' && legacyMetadata.clientItemId.trim() ? legacyMetadata.clientItemId.trim().slice(0, 160) : record.localId;
     const documentationItemId = typeof legacyMetadata.documentationItemId === 'string' && legacyMetadata.documentationItemId.trim() ? legacyMetadata.documentationItemId.trim() : null;
@@ -51,7 +53,9 @@ async function normalizeCaptureForIndexedDb(record) {
 async function putQueuedCapture(record) {
     try {
         const prepared = await normalizeCaptureForIndexedDb(record);
-        return put('queuedCaptures', prepared);
+        const blobBytes = await prepared.blob.arrayBuffer();
+        await put('queuedCaptures', { ...prepared, blob: blobBytes });
+        return prepared;
     }
     catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -153,9 +157,6 @@ export async function addCapture(session, file, order, item = {
     const timestamp = now();
     const localId = createId();
     const serverSessionId = session.serverSessionId || null;
-    // WebKit can reject a Blob that directly wraps a File when IndexedDB prepares
-    // it for storage. Materialize the bytes first so every engine stores a plain Blob.
-    const fileBytes = await file.arrayBuffer();
     const record = {
         localId,
         localSessionId: session.localSessionId,
@@ -165,7 +166,7 @@ export async function addCapture(session, file, order, item = {
         workspaceId: null,
         sessionId: serverSessionId || session.localSessionId,
         userId: session.userId,
-        blob: new Blob([fileBytes], { type: file.type || 'application/octet-stream' }),
+        blob: file,
         metadata: {
             clientItemId: item.clientItemId, documentationItemId: null, attachmentOrder: item.attachmentOrder,
             sourceKind: 'observation', attachmentKind: item.attachmentOrder === 1 ? 'primary' : 'supporting',

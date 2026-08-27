@@ -2,6 +2,8 @@ import type { OfflineCaptureRecord, OfflineIdentity, OfflineLocalSession, Sessio
 import { createId, createOfflineSessionIdempotencyKey, DEFAULT_CAPTURE_LIMIT, DEFAULT_VIDEO_LIMIT, now, SESSION_STATUSES } from './contracts.js';
 import { getAll, put, remove } from './db.js';
 
+type PersistedOfflineCaptureRecord = Omit<OfflineCaptureRecord, 'blob'> & { blob: Blob | ArrayBuffer };
+
 export function getOfflineIdentity(): OfflineIdentity | null {
   const userId = localStorage.getItem('cred-offline-user-id');
   const organizationId = localStorage.getItem('cred-offline-organization-id');
@@ -19,10 +21,12 @@ export function getOfflineIdentity(): OfflineIdentity | null {
   };
 }
 
-async function normalizeCaptureForIndexedDb(record: OfflineCaptureRecord): Promise<OfflineCaptureRecord> {
+async function normalizeCaptureForIndexedDb(record: PersistedOfflineCaptureRecord): Promise<OfflineCaptureRecord> {
   const source = record.blob;
-  if (!(source instanceof Blob)) throw new Error('IndexedDB capture record does not contain Blob data.');
-  const blob = source instanceof File ? new Blob([await source.arrayBuffer()], { type: record.metadata.mimeType || source.type || 'application/octet-stream' }) : source;
+  if (!(source instanceof Blob) && !(source instanceof ArrayBuffer)) throw new Error('IndexedDB capture record does not contain media byte data.');
+  const blob = source instanceof ArrayBuffer
+    ? new Blob([source], { type: record.metadata.mimeType || 'application/octet-stream' })
+    : source;
   const legacyMetadata = record.metadata as OfflineCaptureRecord['metadata'] & {
     clientItemId?: unknown;
     documentationItemId?: unknown;
@@ -58,7 +62,9 @@ async function normalizeCaptureForIndexedDb(record: OfflineCaptureRecord): Promi
 async function putQueuedCapture(record: OfflineCaptureRecord): Promise<OfflineCaptureRecord> {
   try {
     const prepared = await normalizeCaptureForIndexedDb(record);
-    return put('queuedCaptures', prepared);
+    const blobBytes = await prepared.blob.arrayBuffer();
+    await put<PersistedOfflineCaptureRecord>('queuedCaptures', { ...prepared, blob: blobBytes });
+    return prepared;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`IndexedDB queued capture write failed while preparing Blob data: ${message}`);
@@ -131,8 +137,8 @@ export async function saveSession(session: OfflineLocalSession, patch: Partial<O
 }
 
 export async function capturesForSession(localSessionId: string, identity: OfflineIdentity | null = getOfflineIdentity()): Promise<OfflineCaptureRecord[]> {
-  const stored = await getAll('queuedCaptures') as OfflineCaptureRecord[];
-  const scoped = stored.filter((capture: OfflineCaptureRecord) => capture.localSessionId === localSessionId && (!identity || (capture.userId === identity.userId && capture.organizationId === identity.organizationId)));
+  const stored = await getAll('queuedCaptures') as PersistedOfflineCaptureRecord[];
+  const scoped = stored.filter((capture: PersistedOfflineCaptureRecord) => capture.localSessionId === localSessionId && (!identity || (capture.userId === identity.userId && capture.organizationId === identity.organizationId)));
   const normalized = await Promise.all(scoped.map(normalizeCaptureForIndexedDb));
   await Promise.all(normalized.map(putQueuedCapture));
   return normalized.sort((a: OfflineCaptureRecord, b: OfflineCaptureRecord) => (a.metadata.reportOrder ?? 999999) - (b.metadata.reportOrder ?? 999999) || a.createdAt.localeCompare(b.createdAt));
@@ -171,9 +177,6 @@ export async function addCapture(
   const timestamp = now();
   const localId = createId();
   const serverSessionId = session.serverSessionId || null;
-  // WebKit can reject a Blob that directly wraps a File when IndexedDB prepares
-  // it for storage. Materialize the bytes first so every engine stores a plain Blob.
-  const fileBytes = await file.arrayBuffer();
   const record: OfflineCaptureRecord = {
     localId,
     localSessionId: session.localSessionId,
@@ -183,7 +186,7 @@ export async function addCapture(
     workspaceId: null,
     sessionId: serverSessionId || session.localSessionId,
     userId: session.userId,
-    blob: new Blob([fileBytes], { type: file.type || 'application/octet-stream' }),
+    blob: file,
     metadata: {
       clientItemId: item.clientItemId, documentationItemId: null, attachmentOrder: item.attachmentOrder,
       sourceKind: 'observation', attachmentKind: item.attachmentOrder === 1 ? 'primary' : 'supporting',
