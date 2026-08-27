@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cred-offline-27f1b4d376ed9a45";
+const CACHE_VERSION = "cred-offline-bfd5ba95f2fd7c94";
 const OFFLINE_DOCUMENT = "/offline.html";
 const PRECACHE_ASSETS = [
   "/offline.html",

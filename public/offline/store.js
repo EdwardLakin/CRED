@@ -153,6 +153,9 @@ export async function addCapture(session, file, order, item = {
     const timestamp = now();
     const localId = createId();
     const serverSessionId = session.serverSessionId || null;
+    // WebKit can reject a Blob that directly wraps a File when IndexedDB prepares
+    // it for storage. Materialize the bytes first so every engine stores a plain Blob.
+    const fileBytes = await file.arrayBuffer();
     const record = {
         localId,
         localSessionId: session.localSessionId,
@@ -162,7 +165,7 @@ export async function addCapture(session, file, order, item = {
         workspaceId: null,
         sessionId: serverSessionId || session.localSessionId,
         userId: session.userId,
-        blob: new Blob([file], { type: file.type || 'application/octet-stream' }),
+        blob: new Blob([fileBytes], { type: file.type || 'application/octet-stream' }),
         metadata: {
             clientItemId: item.clientItemId, documentationItemId: null, attachmentOrder: item.attachmentOrder,
             sourceKind: 'observation', attachmentKind: item.attachmentOrder === 1 ? 'primary' : 'supporting',

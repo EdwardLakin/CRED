@@ -73,6 +73,10 @@ test.afterAll(async () => {
 
 test.beforeEach(async ({ context, page }) => {
   reachability = { ok: true, status: 'ready', userId: 'user-mobile', organizationId: 'org-mobile' };
+  await page.addInitScript(() => {
+    const key = 'cred-playwright-document-loads';
+    sessionStorage.setItem(key, String(Number(sessionStorage.getItem(key) || '0') + 1));
+  });
   page.on('pageerror', (error) => console.error('[offline-shell pageerror]', error));
   page.on('console', (message) => {
     if (message.type() === 'error') console.error('[offline-shell console]', message.text());
@@ -131,6 +135,21 @@ async function queuedCaptureCount(page: import('@playwright/test').Page) {
   });
 }
 
+async function documentLoadCount(page: import('@playwright/test').Page) {
+  return page.evaluate(() => Number(sessionStorage.getItem('cred-playwright-document-loads') || '0'));
+}
+
+async function navigateInPage(page: import('@playwright/test').Page, url?: string) {
+  const previousCount = await documentLoadCount(page);
+  await page.evaluate((nextUrl) => {
+    window.setTimeout(() => {
+      if (nextUrl) window.location.href = nextUrl;
+      else window.location.reload();
+    }, 0);
+  }, url);
+  await expect.poll(() => documentLoadCount(page), { timeout: 10000 }).toBeGreaterThan(previousCount);
+}
+
 test('mobile browser tab keeps three offline sessions isolated across reload and handoff', async ({ page, context }) => {
   await provision(page);
   await registerServiceWorker(page);
@@ -143,7 +162,8 @@ test('mobile browser tab keeps three offline sessions isolated across reload and
   await expect(page.getByText('3 capture(s)')).toHaveCount(0);
 
   await context.setOffline(true);
-  await page.goto(`${baseURL}/dashboard`);
+  await navigateInPage(page, `${baseURL}/dashboard`);
+  await expect(page).toHaveURL(`${baseURL}/dashboard`);
   await expect(page.getByText('Offline Dashboard')).toBeVisible();
   await expect(page.locator('.session-card')).toHaveCount(3);
 
@@ -192,7 +212,7 @@ test('offline install page self-registers service worker and survives offline re
   await expect(page.locator('#offlineReady .status')).toHaveText('Offline Ready', { timeout: 10000 });
 
   await context.setOffline(true);
-  await page.reload({ waitUntil: 'load' });
+  await navigateInPage(page);
   await expect(page.getByText('Offline Dashboard')).toBeVisible();
   await expect(page.locator('#offlineReady .status')).toHaveText('Offline Ready');
 });
