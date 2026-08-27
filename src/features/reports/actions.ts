@@ -6,6 +6,10 @@ import { redirect } from 'next/navigation'
 
 import { requireActiveBillingAccess } from '@/features/billing'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import {
+  invalidateReportApproval,
+  reportIsReadyForDelivery,
+} from '@/features/reports/approval-state'
 import { normalizeEvidenceCategory } from '@/features/capture/evidence-category'
 import { DEFAULT_REPORT_TYPE, SESSION_METADATA_FIELDS, normalizeReportType, normalizeSessionMetadata, sessionMetadataToJson } from '@/features/sessions/report-types'
 import { appendDiagnosticReportApprovedAuditEvent } from '@/features/diagnostic-procedures/actions'
@@ -206,47 +210,6 @@ async function requireOwnedSession(sessionId: string) {
     .single()
   if (error || !session) redirect(getReportRedirectPath(sessionId, { error: 'Documentation session not found.' }))
   return { ...workspace, session }
-}
-
-function reportIsReadyForDelivery(session: { review_status?: string | null; status?: string | null }) {
-  return session.review_status === 'ready_for_delivery' || session.status === 'finalized'
-}
-
-async function invalidateReportApproval(
-  supabase: Awaited<ReturnType<typeof requireSessionWorkspace>>['supabase'],
-  organizationId: string,
-  session: { id: string; review_status?: string | null; status?: string | null },
-) {
-  if (!reportIsReadyForDelivery(session)) return null
-
-  const now = new Date().toISOString()
-  const { error: sessionError } = await supabase
-    .from('documentation_sessions')
-    .update({
-      status: session.status === 'finalized' ? 'review' : session.status ?? 'review',
-      review_status: 'draft',
-      reviewed_at: null,
-      reviewed_by: null,
-      updated_at: now,
-    })
-    .eq('id', session.id)
-    .eq('organization_id', organizationId)
-
-  if (sessionError) return sessionError.message
-
-  const { error: draftError } = await supabase
-    .from('ai_report_drafts')
-    .update({
-      status: 'needs_review',
-      approved_at: null,
-      approved_by: null,
-      updated_at: now,
-    })
-    .eq('documentation_session_id', session.id)
-    .eq('organization_id', organizationId)
-    .neq('status', 'superseded')
-
-  return draftError?.message ?? null
 }
 
 function requireReportReadyForDelivery(

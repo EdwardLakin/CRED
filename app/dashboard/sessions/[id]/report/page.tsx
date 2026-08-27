@@ -454,6 +454,7 @@ export default async function SessionReportPreviewPage({
         origin={origin}
         markReviewedAction={markReviewedAction}
         showApprovalAction={flowStep === "approve"}
+        isReadyForExport={isReadyForExport}
         timeZone={profile.timezone}
       />
     );

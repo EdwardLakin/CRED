@@ -250,6 +250,7 @@ export function DiagnosticProcedureReport({
   origin,
   markReviewedAction,
   showApprovalAction,
+  isReadyForExport,
   timeZone,
 }: {
   session: Pick<
@@ -264,6 +265,7 @@ export function DiagnosticProcedureReport({
   origin: string;
   markReviewedAction: ServerAction;
   showApprovalAction: boolean;
+  isReadyForExport: boolean;
   timeZone: string | null;
   reportTemplates?: Array<{ id: string; name: string; is_default: boolean }>;
 }) {
@@ -286,7 +288,9 @@ export function DiagnosticProcedureReport({
     <main className="page-shell dashboard-shell report-preview-shell report-review-shell">
       <div className="section-header page-header report-preview-header report-review-header">
         <div>
-          <p className="eyebrow guided-eyebrow">Procedure Report</p>
+          <p className="eyebrow guided-eyebrow">
+            {isReadyForExport ? "Completed Procedure Report" : "Procedure Report"}
+          </p>
           <h1>{info?.title ?? session.title}</h1>
           <p className="notice info">
             <strong>Documentation support only.</strong> Follow OEM procedure.
@@ -319,14 +323,23 @@ export function DiagnosticProcedureReport({
           >
             Edit Procedure Details
           </Link>
-          <a
-            className="button button-primary touch-target"
-            href={`${origin}${reportPath}?preview=1`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Printable Report
-          </a>
+          {isReadyForExport ? (
+            <Link
+              className="button button-primary touch-target"
+              href={`/dashboard/sessions/${session.id}/export`}
+            >
+              Export Report
+            </Link>
+          ) : (
+            <a
+              className="button button-primary touch-target"
+              href={`${origin}${reportPath}?preview=1`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Printable Report
+            </a>
+          )}
         </div>
       </div>
       <section className="card detail-card report-command-card form-stack">
@@ -521,7 +534,22 @@ export function DiagnosticProcedureReport({
             );
           })}
         </div>
-        {!showApprovalAction ? (
+        {isReadyForExport ? (
+          <div className="form-actions report-inline-actions">
+            <Link
+              className="button button-secondary touch-target"
+              href={`/dashboard/sessions/${session.id}/diagnostic-procedure`}
+            >
+              Edit Procedure Details
+            </Link>
+            <Link
+              className="button button-primary touch-target"
+              href={`/dashboard/sessions/${session.id}/export`}
+            >
+              Export Report
+            </Link>
+          </div>
+        ) : !showApprovalAction ? (
           <Link
             className="button button-primary touch-target"
             href={`/dashboard/sessions/${session.id}/approve`}

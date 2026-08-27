@@ -6,6 +6,10 @@ import { redirect } from 'next/navigation'
 import { requireActiveBillingAccess } from '@/features/billing'
 import { createCaptureRecordFromUploadedFile } from '@/features/capture/actions'
 import { extractDiagnosticProcedureSource } from '@/features/diagnostic-procedures/source-extraction'
+import {
+  invalidateReportApprovalForSessionId,
+  revalidateReportWorkflow,
+} from '@/features/reports/approval-state'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import {
@@ -89,6 +93,20 @@ function safeJson(value: unknown): Json {
 function getRedirectPath(sessionId: string, params: Record<string, string | number | boolean>) {
   const query = new URLSearchParams(Object.entries(params).map(([key, value]) => [key, String(value)]))
   return `/dashboard/sessions/${sessionId}/diagnostic-procedure?${query.toString()}`
+}
+
+async function invalidateDiagnosticReportApproval(
+  supabase: Awaited<ReturnType<typeof requireSessionWorkspace>>['supabase'],
+  organizationId: string,
+  sessionId: string,
+) {
+  const error = await invalidateReportApprovalForSessionId(
+    supabase,
+    organizationId,
+    sessionId,
+  )
+  if (!error) revalidateReportWorkflow(sessionId)
+  return error
 }
 
 function buildAuditEvent(eventType: DiagnosticAuditEventType, profile: { id: string; full_name?: string | null }, details: Omit<DiagnosticAuditEvent, 'event_type' | 'occurred_at' | 'profile_id' | 'profile_name'> = {}): DiagnosticAuditEvent {
@@ -206,6 +224,13 @@ export async function uploadAndExtractDiagnosticProcedure(sessionId: string, for
     fileSizeBytes: file.size,
   })
   if (!storageAllowance.ok) redirect(getRedirectPath(session.id, { error: storageAllowance.message }))
+
+  const approvalError = await invalidateDiagnosticReportApproval(
+    supabase,
+    profile.organization_id,
+    session.id,
+  )
+  if (approvalError) redirect(getRedirectPath(session.id, { error: approvalError }))
 
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(0, 140) || 'diagnostic-procedure'
   const storagePath = `organizations/${profile.organization_id}/sessions/${session.id}/captures/${Date.now()}-diagnostic-procedure-${safeName}`
@@ -452,6 +477,13 @@ export async function updateDiagnosticProcedureStepExtraction(sectionId: string,
   let nextReportStructure = updateDraftReportStructure(isRecord(draftRecord) ? draftRecord.report_structure : null, stepId, { ...patch, sort_order: sortOrder } as SectionMetadata, visibilityChanged ? [buildAuditEvent('step_hidden_or_unhidden', profile, { step_id: stepId, step_title: sectionTitle, details: { visible } })] : [])
   if (isRecord(nextReportStructure)) nextReportStructure = safeJson({ ...nextReportStructure, procedure_status: 'technician_review_required' })
 
+  const approvalError = await invalidateDiagnosticReportApproval(
+    supabase,
+    profile.organization_id,
+    section.documentation_session_id,
+  )
+  if (approvalError) return { ok: false, error: approvalError }
+
   const { error: sectionError } = await supabase
     .from('ai_report_draft_sections')
     .update({ title: sectionTitle, body: instruction, sort_order: sortOrder, metadata: safeJson(nextMetadata), updated_at: new Date().toISOString() })
@@ -483,6 +515,12 @@ export async function approveDiagnosticProcedureStructure(draftId: string): Prom
     .single()
   if (error || !draft || !getDiagnosticReportStructure(draft.report_structure)) return { ok: false, error: 'Diagnostic procedure draft not found.' }
   const nextReportStructure = patchDraftProcedureStatus(draft.report_structure, 'approved_for_use', buildAuditEvent('extraction_review_approved', workspace.profile))
+  const approvalError = await invalidateDiagnosticReportApproval(
+    workspace.supabase,
+    workspace.profile.organization_id,
+    draft.documentation_session_id,
+  )
+  if (approvalError) return { ok: false, error: approvalError }
   const { error: updateError } = await workspace.supabase
     .from('ai_report_drafts')
     .update({ report_structure: nextReportStructure, status: 'reviewed', updated_at: new Date().toISOString() })
@@ -531,6 +569,13 @@ export async function updateDiagnosticStep(sectionId: string, formData: FormData
   if (technicianSelectedBranch) auditEvents.push(buildAuditEvent('branch_selected', profile, { step_id: stepId, step_title: section.title, details: { branch: technicianSelectedBranch } }))
   if (technicianReadings.length > 0) auditEvents.push(buildAuditEvent('reading_added_or_updated', profile, { step_id: stepId, step_title: section.title, details: { reading_count: technicianReadings.length } }))
   const nextReportStructure = updateDraftReportStructure(isRecord(draftRecord) ? draftRecord.report_structure : null, stepId, patch, auditEvents)
+
+  const approvalError = await invalidateDiagnosticReportApproval(
+    supabase,
+    profile.organization_id,
+    section.documentation_session_id,
+  )
+  if (approvalError) return { ok: false, error: approvalError }
 
   const { error: sectionError } = await supabase
     .from('ai_report_draft_sections')
@@ -583,6 +628,13 @@ export async function attachCaptureToDiagnosticStep(sectionId: string, captureIt
       documentation_support_only: true,
     },
   }
+
+  const approvalError = await invalidateDiagnosticReportApproval(
+    supabase,
+    profile.organization_id,
+    section.documentation_session_id,
+  )
+  if (approvalError) return { ok: false, error: approvalError }
 
   const { error: captureUpdateError } = await supabase
     .from('capture_items')
@@ -643,6 +695,13 @@ export async function signOffDiagnosticProcedure(draftId: string, formData: Form
     sign_off_name: signOffName,
     sign_off_statement: SIGN_OFF_STATEMENT,
   }, buildAuditEvent('procedure_signed_off', workspace.profile, { details: { sign_off_name: signOffName, report_ready: reportReady, incomplete_acknowledged: incompleteAcknowledged } }))
+
+  const approvalError = await invalidateDiagnosticReportApproval(
+    workspace.supabase,
+    workspace.profile.organization_id,
+    draft.documentation_session_id,
+  )
+  if (approvalError) return { ok: false, error: approvalError }
 
   const { error: updateError } = await workspace.supabase
     .from('ai_report_drafts')

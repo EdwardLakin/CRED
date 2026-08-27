@@ -18,6 +18,22 @@ const reportActions = readFileSync(
   "src/features/reports/actions.ts",
   "utf8",
 );
+const reportApprovalState = readFileSync(
+  "src/features/reports/approval-state.ts",
+  "utf8",
+);
+const captureActions = readFileSync(
+  "src/features/capture/actions.ts",
+  "utf8",
+);
+const signatureActions = readFileSync(
+  "src/features/signatures/actions.ts",
+  "utf8",
+);
+const diagnosticActions = readFileSync(
+  "src/features/diagnostic-procedures/actions.ts",
+  "utf8",
+);
 const reportPage = readFileSync(
   "app/dashboard/sessions/[id]/report/page.tsx",
   "utf8",
@@ -104,18 +120,37 @@ test("review, approval, and export have distinct routes and one forward action",
   assert.doesNotMatch(reportPage, /status\.edit && !isReadyForExport/);
   assert.doesNotMatch(reportPage, /Open Report Studio/);
   assert.match(reportActions, /getSessionStepRedirectPath\(session\.id, 'export', \{ reviewed: 1 \}\)/);
-  assert.match(reportActions, /session\.status === 'finalized'/);
+  assert.match(reportApprovalState, /session\.status === 'finalized'/);
   assert.doesNotMatch(reportPage, /EvidenceWorkspaceBacklinks/);
   assert.match(reviewComponents, /defaultValue=\{getSectionDisplayTitle\(section\)\}/);
 });
 
 test("saving an approved report invalidates approval before delivery", () => {
-  assert.match(reportActions, /async function invalidateReportApproval/);
-  assert.match(reportActions, /review_status: 'draft'/);
-  assert.match(reportActions, /reviewed_at: null/);
-  assert.match(reportActions, /reviewed_by: null/);
-  assert.match(reportActions, /status: 'needs_review'/);
-  assert.match(reportActions, /approved_at: null/);
-  assert.match(reportActions, /approved_by: null/);
+  assert.match(reportApprovalState, /export async function invalidateReportApproval/);
+  assert.match(reportApprovalState, /review_status: 'draft'/);
+  assert.match(reportApprovalState, /reviewed_at: null/);
+  assert.match(reportApprovalState, /reviewed_by: null/);
+  assert.match(reportApprovalState, /status: 'needs_review'/);
+  assert.match(reportApprovalState, /approved_at: null/);
+  assert.match(reportApprovalState, /approved_by: null/);
+  assert.match(reportActions, /invalidateReportApproval\(supabase, profile\.organization_id, session\)/);
   assert.doesNotMatch(reportActions, /Approved reports are read-only\./);
+});
+
+test("delete, signature, and diagnostic mutations also invalidate approval", () => {
+  assert.match(captureActions, /removeCaptureItem[\s\S]*invalidateReportApprovalForSessionId/);
+  assert.match(captureActions, /removeDocumentationItem[\s\S]*invalidateReportApprovalForSessionId/);
+  assert.match(signatureActions, /saveSignature[\s\S]*invalidateReportApproval/);
+  assert.match(signatureActions, /useSavedSignature[\s\S]*invalidateReportApproval/);
+  assert.match(diagnosticActions, /async function invalidateDiagnosticReportApproval/);
+  assert.match(diagnosticActions, /invalidateReportApprovalForSessionId/);
+  assert.match(reportApprovalState, /revalidatePath\(`\/dashboard\/sessions\/\$\{sessionId\}\/approve`\)/);
+  assert.match(reportApprovalState, /revalidatePath\(`\/dashboard\/sessions\/\$\{sessionId\}\/export`\)/);
+});
+
+test("completed diagnostic reports stay on a view and export-capable surface", () => {
+  assert.match(reportPage, /isReadyForExport=\{isReadyForExport\}/);
+  assert.match(reviewComponents, /isReadyForExport \? "Completed Procedure Report"/);
+  assert.match(reviewComponents, /isReadyForExport \? \([\s\S]*Export Report/);
+  assert.match(reviewComponents, /href=\{`\/dashboard\/sessions\/\$\{session\.id\}\/export`\}/);
 });

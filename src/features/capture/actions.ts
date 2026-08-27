@@ -8,6 +8,10 @@ import {
   requireActiveBillingAccess,
 } from '@/features/billing'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import {
+  invalidateReportApprovalForSessionId,
+  revalidateReportWorkflow,
+} from '@/features/reports/approval-state'
 import { normalizeEvidenceCategory } from '@/features/capture/evidence-category'
 import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import {
@@ -3097,6 +3101,15 @@ export async function removeCaptureItem(formData: FormData): Promise<{ ok: boole
     return { ok: false, error: billingAccess.message, sessionId: capture.documentation_session_id }
   }
 
+  const approvalError = await invalidateReportApprovalForSessionId(
+    supabase,
+    profile.organization_id,
+    capture.documentation_session_id,
+  )
+  if (approvalError) {
+    return { ok: false, error: approvalError, sessionId: capture.documentation_session_id }
+  }
+
   const { error } = await supabase
     .from('capture_items')
     .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
@@ -3104,6 +3117,7 @@ export async function removeCaptureItem(formData: FormData): Promise<{ ok: boole
     .eq('organization_id', profile.organization_id)
 
   if (error) {
+    revalidateReportWorkflow(capture.documentation_session_id)
     logCaptureFailure({
       step: 'capture_delete',
       captureId: capture.id,
@@ -3115,11 +3129,7 @@ export async function removeCaptureItem(formData: FormData): Promise<{ ok: boole
   // Phase 0 preserves individual capture deletion. List-level "Delete
   // Observation" for grouped captures needs a dedicated group action rather
   // than pretending the first capture represents the whole group.
-  revalidatePath(`/dashboard/sessions/${capture.documentation_session_id}`)
-  revalidatePath(
-    `/dashboard/sessions/${capture.documentation_session_id}/capture`,
-  )
-  revalidatePath(`/dashboard/sessions/${capture.documentation_session_id}/report`)
+  revalidateReportWorkflow(capture.documentation_session_id)
 
   if (capture.storage_path) {
     await removeUploadedObject(supabase, capture.storage_path)
@@ -3158,6 +3168,13 @@ export async function removeDocumentationItem(
     return { ok: false, error: 'Item not found.', sessionId }
   }
 
+  const approvalError = await invalidateReportApprovalForSessionId(
+    supabase,
+    profile.organization_id,
+    sessionId,
+  )
+  if (approvalError) return { ok: false, error: approvalError, sessionId }
+
   const { data: deletedAttachments, error: deleteError } = await supabase.rpc(
     'soft_delete_documentation_item',
     {
@@ -3167,6 +3184,7 @@ export async function removeDocumentationItem(
   )
 
   if (deleteError) {
+    revalidateReportWorkflow(sessionId)
     logCaptureFailure({
       step: 'documentation_item_delete',
       ...getSafeErrorDetails(deleteError),
@@ -3181,9 +3199,7 @@ export async function removeDocumentationItem(
     storagePaths.map((storagePath) => removeUploadedObject(supabase, storagePath)),
   )
 
-  revalidatePath(`/dashboard/sessions/${sessionId}`)
-  revalidatePath(`/dashboard/sessions/${sessionId}/capture`)
-  revalidatePath(`/dashboard/sessions/${sessionId}/report`)
+  revalidateReportWorkflow(sessionId)
 
   return { ok: true, sessionId }
 }
