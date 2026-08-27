@@ -168,7 +168,7 @@ test('mobile browser tab keeps three offline sessions isolated across reload and
     await navigateInPage(page, `${baseURL}/dashboard`);
     await expect(page).toHaveURL(`${baseURL}/dashboard`);
   }
-  await expect(page.getByText('Offline Dashboard')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Offline Dashboard' })).toBeVisible();
   await expect(page.locator('.session-card')).toHaveCount(3);
 
   await page.locator('.session-card').nth(0).getByRole('button', { name: 'Continue' }).click();
@@ -197,8 +197,7 @@ test('identity mismatch and expired auth stop handoff without deleting local dat
 });
 
 test('offline install page self-registers service worker and survives offline reload', async ({ page, context, browserName }) => {
-  await page.goto(`${baseURL}/offline.html`);
-  await page.evaluate(() => {
+  await page.addInitScript(() => {
     localStorage.setItem('cred-offline-user-id', 'user-mobile');
     localStorage.setItem('cred-offline-organization-id', 'org-mobile');
     localStorage.setItem('cred-offline-provisioned-at', new Date().toISOString());
@@ -218,10 +217,10 @@ test('offline install page self-registers service worker and survives offline re
   await context.setOffline(true);
   if (browserName === 'webkit') {
     await expect.poll(() => page.evaluate(async () => Boolean((await caches.match('/offline.html'))?.ok))).toBe(true);
-    await expect(page.getByText('Offline Dashboard')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Offline Dashboard' })).toBeVisible();
     return;
   }
   await navigateInPage(page);
-  await expect(page.getByText('Offline Dashboard')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Offline Dashboard' })).toBeVisible();
   await expect(page.locator('#offlineReady .status')).toHaveText('Offline Ready');
 });
