@@ -3,7 +3,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 const root = process.cwd();
-const nextStaticRoot = path.join(root, ".next", "static");
 const outputPath = path.join(root, "public", "sw.js");
 const offlineDocumentPath = path.join(root, "public", "offline.html");
 
@@ -21,17 +20,14 @@ async function walk(directory) {
 await fs.access(offlineDocumentPath);
 await fs.access(path.join(root, "public", "apple-touch-icon.png"));
 await fs.access(path.join(root, "public", "apple-touch-icon-precomposed.png"));
-const staticFiles = await walk(nextStaticRoot);
-const nextAssets = staticFiles.map((absolutePath) => {
-  const relativePath = path.relative(nextStaticRoot, absolutePath).split(path.sep).join("/");
-  return `/_next/static/${relativePath}`;
-}).sort();
 
 const offlineAssetRoot = path.join(root, "public", "offline");
 const offlineFiles = (await walk(offlineAssetRoot))
   .map((absolutePath) => `/offline/${path.relative(offlineAssetRoot, absolutePath).split(path.sep).join("/")}`)
   .sort();
 
+// Keep install-time precaching deterministic. Next build assets contain a per-build
+// directory and are cached on first request by the static-asset fetch handler below.
 const shellAssets = [
   "/offline.html",
   ...offlineFiles,
@@ -41,13 +37,10 @@ const shellAssets = [
   "/icons/cred-icon.svg",
   "/icons/cred-maskable.svg",
   "/splash/cred-splash.svg",
-  ...nextAssets,
 ];
 const uniqueAssets = [...new Set(shellAssets)];
 const assetFingerprints = await Promise.all(uniqueAssets.map(async (asset) => {
-  const filePath = asset.startsWith("/_next/static/")
-    ? path.join(nextStaticRoot, asset.replace("/_next/static/", ""))
-    : path.join(root, "public", asset.replace(/^\//, ""));
+  const filePath = path.join(root, "public", asset.replace(/^\//, ""));
   try {
     const buffer = await fs.readFile(filePath);
     return `${asset}:${crypto.createHash("sha256").update(buffer).digest("hex")}`;
