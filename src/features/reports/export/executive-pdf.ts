@@ -77,37 +77,55 @@ function sectionHeading(
 function drawDetailRows(
   doc: PDFKit.PDFDocument,
   rows: readonly FinalReportDetail[],
-  options: { columns?: 1 | 2; muted?: string } = {},
+  options: { columns?: 1 | 2; compact?: boolean; muted?: string } = {},
 ) {
   if (!rows.length) return;
   const columns = options.columns ?? 2;
   const gap = 18;
   const width = (CONTENT_WIDTH - gap * (columns - 1)) / columns;
-  rows.forEach((row, index) => {
-    const column = index % columns;
-    if (column === 0) ensureSpace(doc, 42);
-    const x = MARGIN_X + column * (width + gap);
+  for (let start = 0; start < rows.length; start += columns) {
+    const group = rows.slice(start, start + columns);
+    doc.font("Helvetica-Bold").fontSize(7.5);
+    const labelHeight = Math.max(
+      ...group.map((entry) =>
+        doc.heightOfString(entry.label.toUpperCase(), {
+          width,
+          characterSpacing: 0.6,
+        }),
+      ),
+    );
+    doc.font("Helvetica").fontSize(9.5);
+    const valueHeight = Math.max(
+      ...group.map((entry) =>
+        doc.heightOfString(entry.value, { width, lineGap: 1 }),
+      ),
+    );
+    const valueOffset = Math.max(13, labelHeight + 4);
+    const minimumContentHeight = options.compact ? 28 : 36;
+    const bottomPadding = options.compact ? 4 : 8;
+    const groupHeight =
+      Math.max(minimumContentHeight, valueOffset + valueHeight) + bottomPadding;
+
+    ensureSpace(doc, groupHeight);
     const y = doc.y;
-    doc
-      .font("Helvetica-Bold")
-      .fontSize(7.5)
-      .fillColor(options.muted ?? "#667085")
-      .text(row.label.toUpperCase(), x, y, { width, characterSpacing: 0.6 });
-    doc
-      .font("Helvetica")
-      .fontSize(9.5)
-      .fillColor("#172033")
-      .text(row.value, x, y + 13, { width, lineGap: 1 });
-    if (column === columns - 1 || index === rows.length - 1) {
-      const pair = rows.slice(index - column, index - column + columns);
-      const maxLines = Math.max(
-        ...pair.map((entry) =>
-          doc.heightOfString(entry.value, { width, lineGap: 1 }),
-        ),
-      );
-      doc.y = y + Math.max(36, 17 + maxLines) + 8;
-    }
-  });
+    group.forEach((row, column) => {
+      const x = MARGIN_X + column * (width + gap);
+      doc
+        .font("Helvetica-Bold")
+        .fontSize(7.5)
+        .fillColor(options.muted ?? "#667085")
+        .text(row.label.toUpperCase(), x, y, {
+          width,
+          characterSpacing: 0.6,
+        });
+      doc
+        .font("Helvetica")
+        .fontSize(9.5)
+        .fillColor("#172033")
+        .text(row.value, x, y + valueOffset, { width, lineGap: 1 });
+    });
+    doc.y = y + groupHeight;
+  }
 }
 
 function drawImage(
@@ -646,7 +664,10 @@ function drawSections(
         });
       doc.moveDown(0.7);
     }
-    drawDetailRows(doc, section.rows, { columns: 2 });
+    drawDetailRows(doc, section.rows, {
+      columns: 2,
+      compact: section.title === "Source Index",
+    });
     doc.moveDown(0.45);
   });
 }

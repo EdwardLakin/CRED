@@ -6,6 +6,10 @@ import { redirect } from 'next/navigation'
 
 import { requireActiveBillingAccess } from '@/features/billing'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import {
+  invalidateReportApproval,
+  reportIsReadyForDelivery,
+} from '@/features/reports/approval-state'
 import { normalizeEvidenceCategory } from '@/features/capture/evidence-category'
 import { DEFAULT_REPORT_TYPE, SESSION_METADATA_FIELDS, normalizeReportType, normalizeSessionMetadata, sessionMetadataToJson } from '@/features/sessions/report-types'
 import { appendDiagnosticReportApprovedAuditEvent } from '@/features/diagnostic-procedures/actions'
@@ -206,10 +210,6 @@ async function requireOwnedSession(sessionId: string) {
     .single()
   if (error || !session) redirect(getReportRedirectPath(sessionId, { error: 'Documentation session not found.' }))
   return { ...workspace, session }
-}
-
-function reportIsReadyForDelivery(session: { review_status?: string | null; status?: string | null }) {
-  return session.review_status === 'ready_for_delivery' || session.status === 'finalized'
 }
 
 function requireReportReadyForDelivery(
@@ -565,6 +565,8 @@ export async function saveFinalNotes(sessionId: string, formData: FormData) {
   const { supabase, profile, session } = await requireOwnedSession(sessionId)
   const finalNotes = getString(formData, 'final_notes').slice(0, 6000)
   const includeInExport = formData.get('include_final_notes_in_export') === 'on'
+  const approvalError = await invalidateReportApproval(supabase, profile.organization_id, session)
+  if (approvalError) redirect(getReportRedirectPath(session.id, { error: approvalError }))
   const { error } = await supabase
     .from('documentation_sessions')
     .update({
@@ -578,8 +580,12 @@ export async function saveFinalNotes(sessionId: string, formData: FormData) {
     .eq('id', session.id)
     .eq('organization_id', profile.organization_id)
   if (error) redirect(getReportRedirectPath(session.id, { error: error.message }))
+  revalidatePath('/dashboard')
+  revalidatePath('/dashboard/sessions')
   revalidatePath(`/dashboard/sessions/${session.id}`)
   revalidatePath(`/dashboard/sessions/${session.id}/report`)
+  revalidatePath(`/dashboard/sessions/${session.id}/approve`)
+  revalidatePath(`/dashboard/sessions/${session.id}/export`)
   redirect(getReportRedirectPath(session.id, { notes: 1 }))
 }
 
@@ -638,6 +644,8 @@ export async function generateFinalNotesForSession(sessionId: string) {
   }
 
   const now = new Date().toISOString()
+  const approvalError = await invalidateReportApproval(supabase, profile.organization_id, session)
+  if (approvalError) redirect(getReportRedirectPath(session.id, { error: approvalError }))
   const { error } = await supabase
     .from('documentation_sessions')
     .update({
@@ -658,7 +666,12 @@ export async function generateFinalNotesForSession(sessionId: string) {
     metadata: { session_id: session.id, operation: 'final_notes_generation', model: FINAL_NOTES_MODEL, prompt_version: FINAL_NOTES_PROMPT_VERSION },
     createdBy: profile.id,
   })
+  revalidatePath('/dashboard')
+  revalidatePath('/dashboard/sessions')
+  revalidatePath(`/dashboard/sessions/${session.id}`)
   revalidatePath(`/dashboard/sessions/${session.id}/report`)
+  revalidatePath(`/dashboard/sessions/${session.id}/approve`)
+  revalidatePath(`/dashboard/sessions/${session.id}/export`)
   redirect(getReportRedirectPath(session.id, { notes_generated: 1 }))
 }
 
@@ -1550,8 +1563,9 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
   if (sessionError || !session) {
     redirect(getReportRedirectPath(draft.documentation_session_id, { error: 'Documentation session not found.' }))
   }
-  if (reportIsReadyForDelivery(session)) {
-    redirect(getSessionStepRedirectPath(session.id, 'export', { notice: 'Approved reports are read-only.' }))
+  const approvalError = await invalidateReportApproval(supabase, profile.organization_id, session)
+  if (approvalError) {
+    redirect(getReportRedirectPath(session.id, { error: approvalError }))
   }
 
   const fieldCount = Number(getString(formData, 'field_count') || 0)
@@ -1685,8 +1699,12 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
     }
   }
 
+  revalidatePath('/dashboard')
+  revalidatePath('/dashboard/sessions')
   revalidatePath(`/dashboard/sessions/${session.id}`)
   revalidatePath(`/dashboard/sessions/${session.id}/report`)
+  revalidatePath(`/dashboard/sessions/${session.id}/approve`)
+  revalidatePath(`/dashboard/sessions/${session.id}/export`)
   if (formData.get('autosave') === '1') return
   redirect(getReportRedirectPath(session.id, { edited: 1 }))
 }

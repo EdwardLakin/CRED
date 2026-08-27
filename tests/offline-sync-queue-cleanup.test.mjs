@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 const queue = readFileSync('src/features/offline/queue.ts', 'utf8')
 const banner = readFileSync('src/components/offline/OfflineBanner.tsx', 'utf8')
 const details = readFileSync('src/components/offline/SyncQueueDetails.tsx', 'utf8')
+const css = readFileSync('app/globals.css', 'utf8')
 
 test('pending sync count ignores completed and recoverable server-backed records', () => {
   assert.match(queue, /isActionableQueuedCapture/)
@@ -13,9 +14,14 @@ test('pending sync count ignores completed and recoverable server-backed records
   assert.match(queue, /normalizedRecords\.filter\(isActionableQueuedCapture\)/)
 })
 
-test('offline banner exposes sync queue details and cleanup removes completed queue records', () => {
+test('compact sync status exposes queue details without taking page layout space', () => {
   assert.match(queue, /cleanupCompletedQueuedCaptures/)
   assert.match(queue, /db\.delete\("queuedCaptures", record\.localId\)/)
   assert.match(banner, /<SyncQueueDetails \/>/)
+  assert.match(banner, /className="offline-status"/)
+  assert.match(banner, /<details className="offline-status-control">/)
   assert.match(details, /View sync queue/)
+  assert.match(css, /\.offline-status \{[^}]*position: fixed;/)
+  assert.match(css, /\.offline-status-panel \{[^}]*position: absolute;/)
+  assert.doesNotMatch(css, /\.offline-status \{[^}]*position: static;/)
 })

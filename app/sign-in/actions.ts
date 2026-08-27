@@ -21,5 +21,11 @@ export async function signIn(formData: FormData) {
   }
 
   const profile = await getCurrentProfile()
-  redirect(profile ? `/dashboard${planQuery}` : `/onboarding${plan ? `?plan=${plan}` : ''}`)
+  redirect(
+    profile
+      ? plan
+        ? `/dashboard${planQuery}`
+        : '/dashboard/sessions'
+      : `/onboarding${plan ? `?plan=${plan}` : ''}`,
+  )
 }

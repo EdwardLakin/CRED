@@ -10,26 +10,49 @@ export function OfflineBanner() {
     return null;
   }
 
+  const label = syncing
+    ? "Syncing"
+    : !online
+      ? "Offline"
+      : lastError
+        ? "Sync needs attention"
+        : `${pendingCaptures} waiting to sync`;
+  const detail = lastError
+    ? lastError
+    : syncing
+      ? "Checking saved captures."
+      : online
+        ? `${pendingCaptures} capture${pendingCaptures === 1 ? "" : "s"} saved on this device.`
+        : "Captures will sync automatically when your connection returns.";
+
   return (
-    <div className="offline-banner" role="status" aria-live="polite">
-      <div>
-        <strong>{syncing ? "Syncing…" : online ? "Online" : "Offline"}</strong>
-        <p className="muted">
-          {lastError
-            ? lastError
-            : syncing
-              ? "Checking offline captures."
-              : online
-                ? `${pendingCaptures} capture${pendingCaptures === 1 ? "" : "s"} waiting to sync.`
-                : "Captures will sync automatically when connection returns."}
-        </p>
-      </div>
-      {online && pendingCaptures > 0 ? (
-        <button className="button button-secondary" type="button" onClick={() => void syncNow()}>
-          Sync now
-        </button>
-      ) : null}
-    <SyncQueueDetails />
-    </div>
+    <aside
+      className="offline-status"
+      aria-label="Offline and sync status"
+      aria-live="polite"
+    >
+      <details className="offline-status-control">
+        <summary>
+          <span
+            className={lastError ? "offline-status-dot attention" : "offline-status-dot"}
+            aria-hidden="true"
+          />
+          <span>{label}</span>
+        </summary>
+        <div className="offline-status-panel">
+          <p>{detail}</p>
+          {online && (pendingCaptures > 0 || lastError) ? (
+            <button
+              className="button button-secondary touch-target"
+              type="button"
+              onClick={() => void syncNow()}
+            >
+              Sync now
+            </button>
+          ) : null}
+          <SyncQueueDetails />
+        </div>
+      </details>
+    </aside>
   );
 }

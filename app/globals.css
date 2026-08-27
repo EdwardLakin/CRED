@@ -2706,6 +2706,100 @@ a:focus-visible {
   gap: 18px;
 }
 
+.offline-status {
+  bottom: max(16px, env(safe-area-inset-bottom));
+  max-width: min(360px, calc(100vw - 24px));
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  z-index: 80;
+}
+
+.offline-status-control {
+  position: relative;
+}
+
+.offline-status-control > summary {
+  align-items: center;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+  color: var(--foreground);
+  cursor: pointer;
+  display: flex;
+  font-size: 0.82rem;
+  font-weight: 800;
+  gap: 8px;
+  justify-self: end;
+  list-style: none;
+  min-height: 44px;
+  padding: 8px 14px;
+  width: fit-content;
+}
+
+.offline-status-control > summary::-webkit-details-marker {
+  display: none;
+}
+
+.offline-status-control > summary:focus-visible {
+  outline: 3px solid var(--primary-soft);
+  outline-offset: 3px;
+}
+
+.offline-status-dot {
+  background: var(--primary);
+  border-radius: 999px;
+  box-shadow: 0 0 0 4px var(--primary-soft);
+  height: 8px;
+  width: 8px;
+}
+
+.offline-status-dot.attention {
+  background: var(--danger);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+.offline-status-panel {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 18px;
+  bottom: calc(100% + 10px);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  position: absolute;
+  right: 0;
+  width: min(340px, calc(100vw - 24px));
+}
+
+.offline-status-panel p {
+  color: var(--muted);
+  margin: 0;
+}
+
+.sync-queue-details {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.sync-queue-details summary {
+  color: var(--primary);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.sync-queue-details ul {
+  display: grid;
+  font-size: 0.76rem;
+  gap: 8px;
+  margin: 10px 0 0;
+  max-height: 180px;
+  overflow: auto;
+  padding-left: 20px;
+}
+
 .dashboard-navigation {
   background: var(--surface);
   border: 1px solid var(--border);

@@ -1,9 +1,12 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
 import { requireActiveBillingAccess } from '@/features/billing'
+import {
+  invalidateReportApproval,
+  revalidateReportWorkflow,
+} from '@/features/reports/approval-state'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 
@@ -55,12 +58,18 @@ export async function saveSignature(sessionId: string, formData: FormData) {
     redirect(`/dashboard/sessions/${sessionId}/report?error=${encodeURIComponent(storageAllowance.message)}`)
   }
 
-  const { data: session, error: sessionError } = await supabase.from('documentation_sessions').select('id').eq('id', sessionId).eq('organization_id', profile.organization_id).single()
+  const { data: session, error: sessionError } = await supabase.from('documentation_sessions').select('id, review_status, status').eq('id', sessionId).eq('organization_id', profile.organization_id).single()
   if (sessionError || !session) redirect(`/dashboard/sessions/${sessionId}/report?error=${encodeURIComponent('Documentation session not found.')}`)
 
   const storagePath = `organizations/${profile.organization_id}/sessions/${session.id}/signatures/${Date.now()}-${signatureType.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.${decoded.extension}`
   const { error: uploadError } = await supabase.storage.from(SIGNATURE_BUCKET).upload(storagePath, decoded.bytes, { contentType: decoded.mimeType, upsert: false })
   if (uploadError) redirect(`/dashboard/sessions/${session.id}/report?error=${encodeURIComponent(uploadError.message)}`)
+
+  const approvalError = await invalidateReportApproval(supabase, profile.organization_id, session)
+  if (approvalError) {
+    await supabase.storage.from(SIGNATURE_BUCKET).remove([storagePath])
+    redirect(`/dashboard/sessions/${session.id}/report?error=${encodeURIComponent(approvalError)}`)
+  }
 
   const { error } = await supabase.from('signature_captures').insert({
     documentation_session_id: session.id,
@@ -71,7 +80,11 @@ export async function saveSignature(sessionId: string, formData: FormData) {
     created_by: profile.id,
   })
 
-  if (error) redirect(`/dashboard/sessions/${session.id}/report?error=${encodeURIComponent(error.message)}`)
+  if (error) {
+    await supabase.storage.from(SIGNATURE_BUCKET).remove([storagePath])
+    revalidateReportWorkflow(session.id)
+    redirect(`/dashboard/sessions/${session.id}/report?error=${encodeURIComponent(error.message)}`)
+  }
   await recordUsageEvent({
     supabase,
     organizationId: profile.organization_id,
@@ -87,8 +100,7 @@ export async function saveSignature(sessionId: string, formData: FormData) {
     metadata: { source: 'signature', session_id: session.id, signature_type: signatureType },
     createdBy: profile.id,
   })
-  revalidatePath(`/dashboard/sessions/${session.id}`)
-  revalidatePath(`/dashboard/sessions/${session.id}/report`)
+  revalidateReportWorkflow(session.id)
   redirect(`/dashboard/sessions/${session.id}/report?saved=signature`)
 }
 
@@ -97,10 +109,12 @@ export async function useSavedSignature(sessionId: string) {
   if (!profile.use_default_signature || !profile.default_signature_path) {
     redirect(`/dashboard/sessions/${sessionId}/report?error=${encodeURIComponent('No enabled saved signature is available.')}`)
   }
-  const { data: session, error: sessionError } = await supabase.from('documentation_sessions').select('id').eq('id', sessionId).eq('organization_id', profile.organization_id).single()
+  const { data: session, error: sessionError } = await supabase.from('documentation_sessions').select('id, review_status, status').eq('id', sessionId).eq('organization_id', profile.organization_id).single()
   if (sessionError || !session) redirect(`/dashboard/sessions/${sessionId}/report?error=${encodeURIComponent('Documentation session not found.')}`)
   const { data: existing } = await supabase.from('signature_captures').select('id').eq('documentation_session_id', session.id).eq('organization_id', profile.organization_id).ilike('signature_type', '%Inspector%').maybeSingle()
   if (existing) redirect(`/dashboard/sessions/${session.id}/report?saved=signature`)
+  const approvalError = await invalidateReportApproval(supabase, profile.organization_id, session)
+  if (approvalError) redirect(`/dashboard/sessions/${session.id}/report?error=${encodeURIComponent(approvalError)}`)
   const { error } = await supabase.from('signature_captures').insert({
     documentation_session_id: session.id,
     organization_id: profile.organization_id,
@@ -109,8 +123,11 @@ export async function useSavedSignature(sessionId: string) {
     signature_image_path: profile.default_signature_path,
     created_by: profile.id,
   })
-  if (error) redirect(`/dashboard/sessions/${session.id}/report?error=${encodeURIComponent(error.message)}`)
+  if (error) {
+    revalidateReportWorkflow(session.id)
+    redirect(`/dashboard/sessions/${session.id}/report?error=${encodeURIComponent(error.message)}`)
+  }
   await recordUsageEvent({ supabase, organizationId: profile.organization_id, eventType: 'signature_captured', metadata: { session_id: session.id, signature_type: 'Inspector Signature', source: 'default_signature' }, createdBy: profile.id })
-  revalidatePath(`/dashboard/sessions/${session.id}/report`)
+  revalidateReportWorkflow(session.id)
   redirect(`/dashboard/sessions/${session.id}/report?saved=signature`)
 }
