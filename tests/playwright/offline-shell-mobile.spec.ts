@@ -95,14 +95,17 @@ async function registerServiceWorker(page: import('@playwright/test').Page) {
 
 async function createSessionWithCapture(page: import('@playwright/test').Page, name: string, note: string) {
   await page.getByRole('button', { name: 'Start New Session' }).click();
+  const captures = page.locator('.capture');
+  const previousCount = await captures.count();
   await page.locator('#galleryInput').setInputFiles({ name: `${name}.jpg`, mimeType: 'image/jpeg', buffer: Buffer.from(name) });
-  await page.getByLabel('Technician notes').fill(note);
+  await expect(captures).toHaveCount(previousCount + 1);
+  await captures.last().getByLabel('Technician notes').fill(note);
   await page.getByRole('button', { name: /Offline dashboard/ }).click();
 }
 
 async function queuedCaptureCount(page: import('@playwright/test').Page) {
   return page.evaluate(async () => {
-    const request = indexedDB.open('cred-offline', 3);
+    const request = indexedDB.open('cred-offline');
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       request.onerror = () => reject(request.error);
       request.onsuccess = () => resolve(request.result);
@@ -167,10 +170,10 @@ test('offline install page self-registers service worker and survives offline re
   await page.goto(`${baseURL}/offline.html`, { waitUntil: 'load' });
 
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)), { timeout: 10000 }).toBe(true);
-  await expect(page.getByText('Offline ready on this device')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('#offlineReady .status')).toHaveText('Offline Ready', { timeout: 10000 });
 
   await context.setOffline(true);
   await page.reload({ waitUntil: 'load' });
   await expect(page.getByText('Offline Dashboard')).toBeVisible();
-  await expect(page.getByText('Offline ready on this device')).toBeVisible();
+  await expect(page.locator('#offlineReady .status')).toHaveText('Offline Ready');
 });
