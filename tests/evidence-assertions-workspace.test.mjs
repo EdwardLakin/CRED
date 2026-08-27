@@ -6,14 +6,13 @@ const dataSource = readFileSync('src/features/evidence/assertions/data.ts', 'utf
 const actionSource = readFileSync('src/features/evidence/assertions/actions.ts', 'utf8')
 const validationSource = readFileSync('src/features/evidence/assertions/validation.ts', 'utf8')
 const componentSource = readFileSync('src/features/evidence/components/AssertionsWorkspace.tsx', 'utf8')
-const sessionPage = readFileSync('app/dashboard/sessions/[id]/page.tsx', 'utf8')
 const assertionsPage = readFileSync('app/dashboard/sessions/[id]/assertions/page.tsx', 'utf8')
 
-test('assertions route and session navigation are present', () => {
+test('assertions route remains available as an advanced Review tool', () => {
   assert.ok(existsSync('app/dashboard/sessions/[id]/assertions/page.tsx'))
   assert.match(assertionsPage, /getAssertionsData\(id\)/)
-  assert.match(sessionPage, /\/assertions`}/)
-  assert.match(sessionPage, /Factual Observations/)
+  assert.match(assertionsPage, /EvidenceWorkspaceBacklinks/)
+  assert.match(assertionsPage, /current="assertions"/)
 })
 
 test('assertions loader scopes session, assertions, evidence, entities, timeline events, and relationships', () => {
@@ -60,7 +59,7 @@ test('assertion links are accepted user relationships and unlink by soft delete'
 })
 
 test('assertions UI exposes required copy, fields, counts, and linking controls', () => {
-  for (const expected of ['Factual Observations', 'assertion_type', 'statement', 'review_status', 'suggestion_source', 'Linked evidence count', 'Linked entity count', 'Linked timeline event count', 'supports', 'contradicts', 'references', 'documents']) {
+  for (const expected of ['Factual Observations', 'assertion_type', 'statement', 'review_status', 'suggestion_source', 'Linked items', 'Linked entities', 'Linked timeline events', 'supports', 'contradicts', 'references', 'documents']) {
     assert.ok(componentSource.includes(expected) || assertionsPage.includes(expected), `missing ${expected}`)
   }
 })

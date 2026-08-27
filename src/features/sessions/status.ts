@@ -21,16 +21,16 @@ export function getSessionOperationalAction(session: DocumentationSession) {
   const workflowState = getSessionWorkflowState(session)
 
   if (workflowState === 'ready') {
-    return { href: `/dashboard/sessions/${session.id}/report`, label: 'Export / Open Report' }
+    return { href: `/dashboard/sessions/${session.id}/export`, label: 'Export report' }
   }
 
   if (workflowState === 'review_required') {
-    return { href: `/dashboard/sessions/${session.id}/report`, label: 'Open Review' }
+    return { href: `/dashboard/sessions/${session.id}/report`, label: 'Review items' }
   }
 
   if (workflowState === 'archived') {
     return { href: `/dashboard/sessions/${session.id}`, label: 'Archived' }
   }
 
-  return { href: `/dashboard/sessions/${session.id}/capture`, label: 'Continue Capture' }
+  return { href: `/dashboard/sessions/${session.id}/capture`, label: 'Continue capture' }
 }

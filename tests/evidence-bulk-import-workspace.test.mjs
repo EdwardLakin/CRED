@@ -10,7 +10,8 @@ const card = readFileSync('src/features/evidence/import/components/EvidenceImpor
 const detail = readFileSync('src/features/evidence/import/components/EvidenceImportBatchDetail.tsx', 'utf8')
 const fileList = readFileSync('src/features/evidence/import/components/EvidenceImportFileList.tsx', 'utf8')
 const library = readFileSync('src/features/evidence/components/EvidenceLibraryList.tsx', 'utf8')
-const sessionPage = readFileSync('app/dashboard/sessions/[id]/page.tsx', 'utf8')
+const featureGates = readFileSync('src/features/billing/feature-gates.ts', 'utf8')
+const importPage = readFileSync('app/dashboard/sessions/[id]/evidence/import/page.tsx', 'utf8')
 const capturePage = readFileSync('app/dashboard/sessions/[id]/capture/page.tsx', 'utf8')
 const reportPage = readFileSync('app/dashboard/sessions/[id]/report/page.tsx', 'utf8')
 
@@ -54,8 +55,18 @@ test('batch detail data forbids cross-session and cross-org batch access', () =>
   assert.match(data, /from\('capture_items'\)[\s\S]*\.eq\('import_batch_id', batchId\)[\s\S]*\.eq\('documentation_session_id', sessionId\)[\s\S]*\.eq\('organization_id', profile\.organization_id\)/)
 })
 
-test('evidence library and session overview expose import entry points and batch info', () => {
-  assert.match(sessionPage, /Import evidence/)
+test('bulk file import is Professional-gated, billing-aware, and usage-accounted', () => {
+  assert.match(featureGates, /bulk_import: 'professional'/)
+  assert.match(data, /requireWorkspaceFeatureOrRedirect\(profile, 'bulk_import', sessionId\)/)
+  assert.match(actions, /canUseFeature\(profile, 'bulk_import'\)/)
+  assert.match(actions, /requireActiveBillingAccess\(profile\)/)
+  assert.match(actions, /requireUsageAllowance\([\s\S]*eventType: 'storage_bytes_added'/)
+  assert.match(actions, /recordUsageEvent\([\s\S]*eventType: 'capture_uploaded'/)
+  assert.match(actions, /recordUsageEvent\([\s\S]*eventType: 'storage_bytes_added'/)
+  assert.match(importPage, /Import files/)
+})
+
+test('item library retains import batch status and review links', () => {
   assert.match(library, /source_kind[\s\S]*status[\s\S]*processed_count[\s\S]*failed_count[\s\S]*created_at/)
   assert.match(library, /evidence\/import\/\$\{batch\.id\}/)
 })

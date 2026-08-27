@@ -432,6 +432,7 @@ export function OfflineCaptureWorkspace({
 
     const addedItems: OfflineWorkspaceItem[] = [];
     const startingOrder = items.length + 1;
+    const clientItemId = createLocalId();
 
     try {
       for (const [fileIndex, file] of files.entries()) {
@@ -446,6 +447,13 @@ export function OfflineCaptureWorkspace({
           userId: session.userId,
           blob: file,
           metadata: {
+            clientItemId,
+            documentationItemId: null,
+            attachmentOrder: fileIndex + 1,
+            sourceKind: "observation",
+            attachmentKind: fileIndex === 0 ? "primary" : "supporting",
+            sourceDocumentType: null,
+            sourceDocumentLabel: null,
             captureIntent: "auto_evidence",
             manualType: null,
             guidedStep: null,

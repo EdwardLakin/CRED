@@ -62,7 +62,7 @@ export function SessionCard({
             <dd>{updatedValue}</dd>
           </div>
           <div>
-            <dt>Evidence</dt>
+            <dt>Items</dt>
             <dd>{evidenceLabel}</dd>
           </div>
           {showOperationalAction ? (

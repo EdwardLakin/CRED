@@ -52,6 +52,6 @@ test("summary sanitizer removes test commentary and unsupported visible-damage c
 test("prompt version is bumped for grounding changes", () => {
   assert.match(
     generator,
-    /AI_REPORT_DRAFT_PROMPT_VERSION = 'form-evidence-report-v5'/,
+    /AI_REPORT_DRAFT_PROMPT_VERSION = 'form-evidence-report-v6'/,
   );
 });

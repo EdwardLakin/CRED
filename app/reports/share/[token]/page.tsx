@@ -8,12 +8,18 @@ export default async function SharedReportPage({ params }: { params: Promise<{ t
   const supabase = createAdminClient()
   const { data: shareToken, error } = await supabase
     .from('report_share_tokens')
-    .select('*, documentation_sessions(id, title, organization_id)')
+    .select('*, documentation_sessions(id, title, organization_id, deleted_at, review_status, status)')
     .eq('token', token)
+    .eq('link_kind', 'report')
+    .is('deliverable_id', null)
     .maybeSingle()
 
   if (error || !shareToken || shareToken.disabled_at) notFound()
   if (shareToken.expires_at && new Date(shareToken.expires_at) < new Date()) notFound()
+
+  const session = Array.isArray(shareToken.documentation_sessions) ? shareToken.documentation_sessions[0] : shareToken.documentation_sessions
+  if (!session || session.deleted_at || session.organization_id !== shareToken.organization_id) notFound()
+  if (session.review_status !== 'ready_for_delivery' && session.status !== 'finalized') notFound()
 
   await supabase
     .from('report_share_tokens')
@@ -21,9 +27,6 @@ export default async function SharedReportPage({ params }: { params: Promise<{ t
     .eq('id', shareToken.id)
 
   const { data: profile } = await supabase.from('profiles').select('timezone').eq('id', shareToken.created_by ?? '').eq('organization_id', shareToken.organization_id).maybeSingle()
-
-  const session = Array.isArray(shareToken.documentation_sessions) ? shareToken.documentation_sessions[0] : shareToken.documentation_sessions
-  if (!session || session.organization_id !== shareToken.organization_id) notFound()
 
   return (
     <main className="page-shell dashboard-shell report-preview-shell">

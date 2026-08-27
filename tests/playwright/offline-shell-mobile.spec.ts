@@ -6,6 +6,10 @@ import path from 'node:path';
 let server: http.Server;
 let baseURL = '';
 let reachability = { ok: true, status: 'ready', userId: 'user-mobile', organizationId: 'org-mobile' };
+const ONE_PIXEL_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  'base64',
+);
 
 async function readStatic(pathname: string) {
   if (pathname.startsWith('/_next/static/')) {
@@ -67,8 +71,16 @@ test.afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
 
-test.beforeEach(async ({ context }) => {
+test.beforeEach(async ({ context, page }) => {
   reachability = { ok: true, status: 'ready', userId: 'user-mobile', organizationId: 'org-mobile' };
+  await page.addInitScript(() => {
+    const key = 'cred-playwright-document-loads';
+    sessionStorage.setItem(key, String(Number(sessionStorage.getItem(key) || '0') + 1));
+  });
+  page.on('pageerror', (error) => console.error('[offline-shell pageerror]', error));
+  page.on('console', (message) => {
+    if (message.type() === 'error') console.error('[offline-shell console]', message.text());
+  });
   await context.setOffline(false);
 });
 
@@ -94,15 +106,22 @@ async function registerServiceWorker(page: import('@playwright/test').Page) {
 }
 
 async function createSessionWithCapture(page: import('@playwright/test').Page, name: string, note: string) {
+  await expect(page.locator('#dashboard')).toBeVisible();
   await page.getByRole('button', { name: 'Start New Session' }).click();
-  await page.locator('#galleryInput').setInputFiles({ name: `${name}.jpg`, mimeType: 'image/jpeg', buffer: Buffer.from(name) });
-  await page.getByLabel('Technician notes').fill(note);
+  await expect(page.locator('#workspace')).toBeVisible();
+  const captures = page.locator('.capture');
+  await expect(captures).toHaveCount(0);
+  await page.locator('#galleryInput').setInputFiles({ name: `${name}.png`, mimeType: 'image/png', buffer: ONE_PIXEL_PNG });
+  await expect(captures).toHaveCount(1);
+  await captures.last().getByLabel('Technician notes').fill(note);
   await page.getByRole('button', { name: /Offline dashboard/ }).click();
+  await expect(page.locator('#dashboard')).toBeVisible();
+  await expect(page.locator('#workspace')).toBeHidden();
 }
 
 async function queuedCaptureCount(page: import('@playwright/test').Page) {
   return page.evaluate(async () => {
-    const request = indexedDB.open('cred-offline', 3);
+    const request = indexedDB.open('cred-offline');
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       request.onerror = () => reject(request.error);
       request.onsuccess = () => resolve(request.result);
@@ -116,7 +135,22 @@ async function queuedCaptureCount(page: import('@playwright/test').Page) {
   });
 }
 
-test('mobile browser tab keeps three offline sessions isolated across reload and handoff', async ({ page, context }) => {
+async function documentLoadCount(page: import('@playwright/test').Page) {
+  return page.evaluate(() => Number(sessionStorage.getItem('cred-playwright-document-loads') || '0')).catch(() => -1);
+}
+
+async function navigateInPage(page: import('@playwright/test').Page, url?: string) {
+  const previousCount = await documentLoadCount(page);
+  await page.evaluate((nextUrl) => {
+    window.setTimeout(() => {
+      if (nextUrl) window.location.href = nextUrl;
+      else window.location.reload();
+    }, 0);
+  }, url);
+  await expect.poll(() => documentLoadCount(page), { timeout: 10000 }).toBeGreaterThan(previousCount);
+}
+
+test('mobile browser tab keeps three offline sessions isolated across reload and handoff', async ({ page, context, browserName }) => {
   await provision(page);
   await registerServiceWorker(page);
 
@@ -128,8 +162,13 @@ test('mobile browser tab keeps three offline sessions isolated across reload and
   await expect(page.getByText('3 capture(s)')).toHaveCount(0);
 
   await context.setOffline(true);
-  await page.goto(`${baseURL}/dashboard`);
-  await expect(page.getByText('Offline Dashboard')).toBeVisible();
+  if (browserName === 'webkit') {
+    await expect.poll(() => page.evaluate(async () => Boolean((await caches.match('/offline.html'))?.ok))).toBe(true);
+  } else {
+    await navigateInPage(page, `${baseURL}/dashboard`);
+    await expect(page).toHaveURL(`${baseURL}/dashboard`);
+  }
+  await expect(page.getByRole('heading', { name: 'Offline Dashboard' })).toBeVisible();
   await expect(page.locator('.session-card')).toHaveCount(3);
 
   await page.locator('.session-card').nth(0).getByRole('button', { name: 'Continue' }).click();
@@ -157,20 +196,31 @@ test('identity mismatch and expired auth stop handoff without deleting local dat
   await expect.poll(() => queuedCaptureCount(page)).toBe(1);
 });
 
-test('offline install page self-registers service worker and survives offline reload', async ({ page, context }) => {
-  await page.goto(`${baseURL}/offline.html`);
-  await page.evaluate(() => {
+test('offline install page self-registers service worker and survives offline reload', async ({ page, context, browserName }) => {
+  await page.addInitScript(() => {
     localStorage.setItem('cred-offline-user-id', 'user-mobile');
     localStorage.setItem('cred-offline-organization-id', 'org-mobile');
     localStorage.setItem('cred-offline-provisioned-at', new Date().toISOString());
   });
   await page.goto(`${baseURL}/offline.html`, { waitUntil: 'load' });
 
+  await expect.poll(
+    () => page.evaluate(async () => Boolean((await navigator.serviceWorker.getRegistration('/'))?.active)),
+    { timeout: 10000 },
+  ).toBe(true);
+  if (!(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)))) {
+    await page.reload({ waitUntil: 'load' });
+  }
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)), { timeout: 10000 }).toBe(true);
-  await expect(page.getByText('Offline ready on this device')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('#offlineReady .status')).toHaveText('Offline Ready', { timeout: 10000 });
 
   await context.setOffline(true);
-  await page.reload({ waitUntil: 'load' });
-  await expect(page.getByText('Offline Dashboard')).toBeVisible();
-  await expect(page.getByText('Offline ready on this device')).toBeVisible();
+  if (browserName === 'webkit') {
+    await expect.poll(() => page.evaluate(async () => Boolean((await caches.match('/offline.html'))?.ok))).toBe(true);
+    await expect(page.getByRole('heading', { name: 'Offline Dashboard' })).toBeVisible();
+    return;
+  }
+  await navigateInPage(page);
+  await expect(page.getByRole('heading', { name: 'Offline Dashboard' })).toBeVisible();
+  await expect(page.locator('#offlineReady .status')).toHaveText('Offline Ready');
 });

@@ -15,10 +15,10 @@ type SupabaseLike = { from: (table: string) => QueryBuilder; rpc?: (fn: string, 
 export type DeliverablesWorkspace = { supabase: unknown; profile: { id?: string | null; organization_id: string; timezone?: string | null; organization: { plan?: string | null } } }
 
 export const deliverableTypeCards = [
-  { type: 'chronology', title: 'Chronology', description: 'Timeline events with linked evidence counts, entities, and factual observations.' },
-  { type: 'evidence_index', title: 'Evidence Index', description: 'Evidence item identifiers, source dates, review status, and include-in-outputs state.' },
+  { type: 'chronology', title: 'Chronology', description: 'Timeline events with linked item counts, entities, and factual observations.' },
+  { type: 'evidence_index', title: 'Source Index', description: 'Source item identifiers, dates, review status, and include-in-outputs state.' },
   { type: 'observation_summary', title: 'Observation Summary', description: 'Factual observations with supporting, contradicting, entity, and event links.' },
-  { type: 'relationship_map', title: 'Relationship Map', description: 'Investigation-tier map of verified links across evidence, events, entities, and observations.', requiredFeature: 'investigation_deliverables' },
+  { type: 'relationship_map', title: 'Relationship Map', description: 'Investigation-tier map of verified links across source items, events, entities, and observations.', requiredFeature: 'investigation_deliverables' },
 ] as const
 
 export async function getDeliverablesData(sessionId: string, workspace?: DeliverablesWorkspace) {
@@ -71,17 +71,40 @@ export function formatDeliverableStatus(status: string) {
   return status
 }
 
+export function formatDeliverableTitle(title: string) {
+  return title === 'Evidence Index' ? 'Source Index' : title
+}
+
+export function formatDeliverableType(type: string) {
+  return deliverableTypeCards.find((card) => card.type === type)?.title ?? type.replace(/_/g, ' ')
+}
+
+export function formatDeliverableSummary(summary: string) {
+  return summary
+    .replace(/evidence items/gi, 'source items')
+    .replace(/evidence links/gi, 'item links')
+    .replace(/evidence counts/gi, 'item counts')
+    .replace(/across evidence/gi, 'across source items')
+    .replace(/reviewed evidence/gi, 'reviewed items')
+    .replace(/\bevidence\b/gi, 'source material')
+}
+
+export function formatDeliverableOrigin(origin: unknown) {
+  const value = String(origin ?? 'advanced review')
+  return ['evidence_workspace', 'evidence workspace'].includes(value) ? 'Advanced Review' : value.replace(/_/g, ' ')
+}
+
 export function getDeliverableSourceSummary(deliverable: EvidenceDeliverable) {
   const sourceIds = deliverable.source_ids && typeof deliverable.source_ids === 'object' && !Array.isArray(deliverable.source_ids) ? deliverable.source_ids as Record<string, unknown> : {}
   const count = (key: string) => Array.isArray(sourceIds[key]) ? (sourceIds[key] as unknown[]).length : 0
-  return `${count('evidence_item_ids')} evidence · ${count('assertion_ids')} observations · ${count('timeline_event_ids')} timeline events · ${count('entity_ids')} entities`
+  return `${count('evidence_item_ids')} items · ${count('assertion_ids')} observations · ${count('timeline_event_ids')} timeline events · ${count('entity_ids')} entities`
 }
 
 export function summarizeDeliverableContent(content: Json) {
   if (!content || typeof content !== 'object' || Array.isArray(content)) return 'Preview unavailable'
   const record = content as Record<string, unknown>
   if (Array.isArray(record.events)) return `${record.events.length} chronology rows`
-  if (Array.isArray(record.items)) return `${record.items.length} evidence index rows`
+  if (Array.isArray(record.items)) return `${record.items.length} source index rows`
   if (Array.isArray(record.observations)) return `${record.observations.length} observation rows`
   if (Array.isArray(record.relationships)) return `${record.relationships.length} verified relationship rows`
   return 'Generated preview'
@@ -98,6 +121,7 @@ export async function validateDeliverableAccess(sessionId: string, deliverableId
   const rawWorkspace = workspace ?? (await requireSessionWorkspace())
   const supabase = rawWorkspace.supabase as SupabaseLike
   const { profile } = rawWorkspace
+  if (!canUseFeature(profile, 'deliverables')) notFound()
   const { data: session, error: sessionError } = await supabase.from('documentation_sessions').select('*').eq('id', sessionId).eq('organization_id', profile.organization_id).is('deleted_at', null).single()
   if (sessionError || !session) notFound()
 
@@ -115,9 +139,10 @@ export async function getDeliverableDetail(sessionId: string, deliverableId: str
 
 export function summarizeDeliverableProvenance(provenance: Json, sourceIds: Json) {
   const ids = sourceIds && typeof sourceIds === 'object' && !Array.isArray(sourceIds) ? sourceIds as Record<string, unknown> : {}
-  const counts = Object.entries(ids).filter(([, value]) => Array.isArray(value)).map(([key, value]) => `${(value as unknown[]).length} ${key.replace(/_/g, ' ')}`)
-  const generatedFrom = provenance && typeof provenance === 'object' && !Array.isArray(provenance) ? String((provenance as Record<string, unknown>).generated_from ?? 'evidence workspace') : 'evidence workspace'
-  return `${generatedFrom.replace(/_/g, ' ')} snapshot${counts.length ? ` · ${counts.join(' · ')}` : ''}`
+  const counts = Object.entries(ids).filter(([, value]) => Array.isArray(value)).map(([key, value]) => `${(value as unknown[]).length} ${key === 'evidence_item_ids' ? 'item ids' : key.replace(/_/g, ' ')}`)
+  const generatedFrom = provenance && typeof provenance === 'object' && !Array.isArray(provenance) ? (provenance as Record<string, unknown>).generated_from : null
+  const generatedFromLabel = formatDeliverableOrigin(generatedFrom).toLowerCase()
+  return `${generatedFromLabel} snapshot${counts.length ? ` · ${counts.join(' · ')}` : ''}`
 }
 
 

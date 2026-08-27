@@ -27,7 +27,7 @@ export async function quickReviewEvidence(sessionId: string, captureId: string, 
   const { supabase: raw, profile } = await requireSessionWorkspace(); assertFeatureAccess(profile); const supabase = raw as unknown as SupabaseLike
   await assertSession(sessionId, supabase, profile.organization_id)
   const { error } = await supabase.from('capture_items').update(patch).eq('id', captureId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).is('deleted_at', null)
-  if (error) throw new Error('Unable to review evidence')
+  if (error) throw new Error('Unable to review item')
   revalidateReview(sessionId)
 }
 
@@ -39,11 +39,11 @@ export async function bulkReviewEvidence(sessionId: string, formData: FormData) 
   else if (action === 'mark_followup') patch.evidence_review_status = 'needs_followup'
   else if (action === 'include') patch.include_in_report = true
   else if (action === 'exclude') patch.include_in_report = false
-  else throw new Error('Invalid bulk evidence action')
+  else throw new Error('Invalid bulk item action')
   const { supabase: raw, profile } = await requireSessionWorkspace(); assertFeatureAccess(profile); const supabase = raw as unknown as SupabaseLike
   await assertSession(sessionId, supabase, profile.organization_id)
   const { error } = await supabase.from('capture_items').update(patch).in('id', ids).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).is('deleted_at', null)
-  if (error) throw new Error('Unable to bulk review evidence')
+  if (error) throw new Error('Unable to review selected items')
   revalidateReview(sessionId)
 }
 

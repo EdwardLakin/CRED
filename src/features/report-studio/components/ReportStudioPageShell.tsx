@@ -57,7 +57,7 @@ type StudioSection =
   | "Cover Page"
   | "Header"
   | "Client / Asset"
-  | "Evidence"
+  | "Items"
   | "Footer"
   | "Signature"
   | "Colors & Typography";
@@ -95,7 +95,7 @@ const reportStudioRegressionTokens = [
   "cover page",
   "header",
   "report section",
-  "evidence layout",
+  "item layout",
   "footer",
   "signature",
   "full sample report",
@@ -616,7 +616,7 @@ export function ReportStudioPageShell({
               />
             </div>
             <label className="field-stack">
-              <span className="label">Evidence layout</span>
+              <span className="label">Item layout</span>
               <select
                 className="input"
                 value={brand.report_style.evidenceStyle}
@@ -765,7 +765,7 @@ export function ReportStudioPageShell({
                       <h1>{active}</h1>
                       <p className="muted">
                         Presentation-only settings for printable and exported
-                        customer deliverables. Evidence, notes, findings,
+                        customer deliverables. Items, notes, findings,
                         recommendations, and technician text are not changed.
                       </p>
                     </div>
@@ -892,9 +892,9 @@ export function ReportStudioPageShell({
                       </div>
                     </section>
                   )}
-                  {active === "Evidence" && (
+                  {active === "Items" && (
                     <section className="brand-section form-stack">
-                      <h3>Evidence layout</h3>
+                      <h3>Item layout</h3>
                       <div className="field-grid">
                         <select
                           className="input"
@@ -926,7 +926,7 @@ export function ReportStudioPageShell({
                       <div className="toggle-grid">
                         <Toggle
                           name="evidence_numbering"
-                          label="Evidence numbering"
+                          label="Item numbering"
                           checked={brand.report_style.evidenceNumbering}
                           onChange={(v) => rs({ evidenceNumbering: v })}
                         />
@@ -1237,7 +1237,7 @@ export function ReportStudioPageShell({
                           />
                         </label>
                       </div>
-                      <div className="brand-section form-stack"><h3>Typography by report area</h3>{["cover page","header","section headings","body text","evidence titles","evidence notes","footer","signature"].map((area) => (<label key={area} className="field-stack"><span className="label">{title(area)} font</span><select className="input" name={`typography_area_${area.replaceAll(" ", "_")}`} value={(brand.typography as any).areaStacks?.[area.replaceAll(" ", "_")] ?? brand.typography.bodyStack} onChange={(e) => patch({ ...brand, typography: { ...brand.typography, areaStacks: { ...((brand.typography as any).areaStacks ?? {}), [area.replaceAll(" ", "_")]: e.target.value } } as any })}>{SAFE_FONT_STACKS.map((x) => (<option key={x} value={x}>{x}</option>))}</select></label>))}</div>
+                      <div className="brand-section form-stack"><h3>Typography by report area</h3>{[{key:"cover_page",label:"Cover page"},{key:"header",label:"Header"},{key:"section_headings",label:"Section headings"},{key:"body_text",label:"Body text"},{key:"evidence_titles",label:"Item titles"},{key:"evidence_notes",label:"Item notes"},{key:"footer",label:"Footer"},{key:"signature",label:"Signature"}].map((area) => (<label key={area.key} className="field-stack"><span className="label">{area.label} font</span><select className="input" name={`typography_area_${area.key}`} value={(brand.typography as any).areaStacks?.[area.key] ?? brand.typography.bodyStack} onChange={(e) => patch({ ...brand, typography: { ...brand.typography, areaStacks: { ...((brand.typography as any).areaStacks ?? {}), [area.key]: e.target.value } } as any })}>{SAFE_FONT_STACKS.map((x) => (<option key={x} value={x}>{x}</option>))}</select></label>))}</div>
                       {invalid && (
                         <p className="error">
                           Enter a valid 6-digit hex color.
@@ -1307,11 +1307,11 @@ function evidenceImage(
     <img
       className={className}
       src={evidence.thumbnailUrl}
-      alt={evidence.label || "Evidence preview"}
+      alt={evidence.label || "Item preview"}
     />
   ) : (
     <div className={className}>
-      {evidence ? evidence.mediaKind || "Evidence" : "No image evidence"}
+      {evidence ? evidence.mediaKind || "Item" : "No item image"}
     </div>
   );
 }
@@ -1347,7 +1347,7 @@ export function ReportStudioPreview({
       "Cover Page": coverRef,
       Header: headerRef,
       "Client / Asset": clientAssetRef,
-      Evidence: evidenceRef,
+      Items: evidenceRef,
       Signature: signatureRef,
       Footer: footerRef,
     };
@@ -1416,12 +1416,12 @@ export function ReportStudioPreview({
           <ReportStudioEvidencePreview
             anchorProps={{
               ref: evidenceRef,
-              "data-preview-section": "Evidence",
+              "data-preview-section": "Items",
             }}
             brand={brand}
             selectedSession={selectedSession}
             setActive={setActive}
-            selected={sectionClass("Evidence")}
+            selected={sectionClass("Items")}
           />
           <ReportStudioSignaturePreview
             anchorProps={{
@@ -1645,24 +1645,24 @@ function ReportStudioEvidencePreview({
       {...anchorProps}
       data-preview-component="ReportStudioEvidencePreview"
       className={`preview-evidence evidence-layout-${rs.evidenceStyle} evidence-image-${rs.evidenceImageSize} ${selected}`}
-      onClick={() => setActive("Evidence")}
+      onClick={() => setActive("Items")}
     >
-      <h3>Evidence</h3>
+      <h3>Items</h3>
       <div className="evidence-items">
         {items.map((e, i) => (
           <article key={e?.id ?? i} className="evidence-item">
             <div className="evidence-copy">
               {rs.evidenceNumbering && (
                 <b className="evidence-number">
-                  EV-{String(i + 1).padStart(3, "0")}
+                  ITEM-{String(i + 1).padStart(3, "0")}
                 </b>
               )}
               <p>
                 {rs.notes
                   ? e?.note ||
                     e?.label ||
-                    "No included evidence found for this session."
-                  : e?.label || "Evidence item"}
+                    "No included items found for this session."
+                  : e?.label || "Item"}
               </p>
               {rs.timestamps && (
                 <small className="evidence-timestamp">
@@ -1671,7 +1671,7 @@ function ReportStudioEvidencePreview({
               )}
               {rs.captureMetadata && (
                 <small className="evidence-metadata">
-                  GPS verified · {e?.mediaKind || "image"} · session evidence
+                  GPS verified · {e?.mediaKind || "image"} · captured item
                 </small>
               )}
             </div>
@@ -1690,7 +1690,7 @@ function ReportStudioEvidencePreview({
         ))}
       </div>
       <small>
-        {selectedSession?.evidence?.length ?? 0} evidence item
+        {selectedSession?.evidence?.length ?? 0} item
         {(selectedSession?.evidence?.length ?? 0) === 1 ? "" : "s"} selected for
         report
       </small>

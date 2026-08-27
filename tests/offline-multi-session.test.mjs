@@ -9,7 +9,7 @@ const db = fs.readFileSync('src/features/offline/db.ts', 'utf8');
 const offlineHtml = fs.readFileSync('public/offline.html', 'utf8');
 
 test('offline database exposes multi-session isolation indexes without destructive reset', () => {
-  assert.match(db, /OFFLINE_DB_VERSION = 3/);
+  assert.match(db, /OFFLINE_DB_VERSION = 4/);
   assert.match(db, /by-organization-user/);
   assert.match(db, /by-last-opened-at/);
   assert.match(db, /by-local-session/);

@@ -38,7 +38,7 @@ async function loadTimelineEvent(supabase: TimelineActionSupabase, eventId: stri
 
 async function loadCaptureItem(supabase: TimelineActionSupabase, captureId: string, sessionId: string, organizationId: string) {
   const { data: capture, error } = await supabase.from('capture_items').select('id, documentation_session_id, organization_id').eq('id', captureId).eq('documentation_session_id', sessionId).eq('organization_id', organizationId).is('deleted_at', null).single()
-  if (error || !capture) throw new Error('Evidence item not found')
+  if (error || !capture) throw new Error('Item not found')
   return capture as { id: string; documentation_session_id: string; organization_id: string }
 }
 
@@ -79,7 +79,7 @@ export async function deleteTimelineEvent(sessionId: string, eventId: string) {
 export async function linkEvidenceToTimelineEvent(sessionId: string, eventId: string, formData: FormData) {
   const captureId = String(formData.get('capture_item_id') ?? '').trim()
   const relationshipType = parseEvidenceRelationshipType(formData.get('relationship_type'))
-  if (!captureId) throw new Error('Select an evidence item')
+  if (!captureId) throw new Error('Select an item')
   if (!relationshipType) throw new Error('Invalid relationship type')
   const { supabase: rawSupabase, profile } = await requireSessionWorkspace()
   assertFeatureAccess(profile)
@@ -89,7 +89,7 @@ export async function linkEvidenceToTimelineEvent(sessionId: string, eventId: st
   assertSameWorkspace(event, capture)
   const now = new Date().toISOString()
   const { error } = await supabase.from('evidence_relationships').insert({ documentation_session_id: sessionId, organization_id: profile.organization_id, source_type: 'capture_item', source_id: captureId, target_type: 'timeline_event', target_id: eventId, relationship_type: relationshipType, ...acceptedUserRelationshipDefaults('timeline_workspace', profile.id, now) })
-  if (error) throwFriendlyRelationshipMutationError(error, 'Unable to link evidence')
+  if (error) throwFriendlyRelationshipMutationError(error, 'Unable to link item')
   revalidatePath(`/dashboard/sessions/${sessionId}/timeline`)
 }
 
@@ -98,6 +98,6 @@ export async function unlinkEvidenceRelationship(sessionId: string, relationship
   assertFeatureAccess(profile)
   const supabase = rawSupabase as unknown as TimelineActionSupabase
   const { error } = await supabase.from('evidence_relationships').update(softDeleteUpdate()).eq('id', relationshipId).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).eq('source_type', 'capture_item').eq('target_type', 'timeline_event').is('deleted_at', null)
-  if (error) throw new Error('Unable to unlink evidence')
+  if (error) throw new Error('Unable to unlink item')
   revalidatePath(`/dashboard/sessions/${sessionId}/timeline`)
 }

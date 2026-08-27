@@ -4,7 +4,9 @@ import { notFound } from "next/navigation";
 import { getPlanLimits, parseBillingPlan } from "@/features/billing";
 import { AddCaptureForm, RecentCapturesList } from "@/features/capture";
 import { CaptureSessionSnapshot } from "@/features/offline/CaptureSessionSnapshot";
+import { completeCaptureAndPrepareReport } from "@/features/reports/actions";
 import { getDisplayReportTitle } from "@/features/reports/report-title";
+import { PendingActionButton } from "@/features/reports/review/PendingActionButton";
 import { requireSessionWorkspace } from "@/features/sessions/data";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -41,10 +43,14 @@ export default async function GuidedCapturePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ captureSaved?: string; addTo?: string }>;
+  searchParams: Promise<{
+    addTo?: string;
+    captureSaved?: string;
+    error?: "item_check_failed" | "no_items";
+  }>;
 }) {
   const { id } = await params;
-  const { captureSaved, addTo } = await searchParams;
+  const { captureSaved, addTo, error } = await searchParams;
   const requestHeaders = await headers();
   const prefetched = isLikelyPrefetch(requestHeaders);
   const { supabase, profile } = await requireSessionWorkspace();
@@ -101,6 +107,13 @@ export default async function GuidedCapturePage({
     .order("captured_at", { ascending: false });
 
   const captureItems = captures ?? [];
+  const { count: capturedItemCount } = await supabase
+    .from("documentation_items")
+    .select("id", { count: "exact", head: true })
+    .eq("documentation_session_id", session.id)
+    .eq("organization_id", profile.organization_id)
+    .eq("item_kind", "observation")
+    .is("deleted_at", null);
   const signedUrls: Record<string, string> = {};
   await Promise.all(
     captureItems.map(async (capture) => {
@@ -121,7 +134,11 @@ export default async function GuidedCapturePage({
   const captureReturnPath =
     `/dashboard/sessions/${session.id}/capture#main-capture-card`;
   const captureDonePath =
-    `/dashboard/sessions/${session.id}`;
+    `/dashboard/sessions/${session.id}/report`;
+  const completeCaptureAction = completeCaptureAndPrepareReport.bind(
+    null,
+    session.id,
+  );
 
   return (
     <main className="page-shell dashboard-shell focused-capture-shell">
@@ -133,8 +150,8 @@ export default async function GuidedCapturePage({
         sessionType={session.session_type}
         data={{
           captureTitle: addTo
-            ? "Add another image"
-            : "Observation Capture",
+            ? "Add photos"
+            : "Capture items",
           returnPath: captureReturnPath,
           donePath: captureDonePath,
           observationGroupId: addTo ?? null,
@@ -146,14 +163,26 @@ export default async function GuidedCapturePage({
       />
       <div className="section-header page-header focused-capture-header">
         <div>
-          <h1>{addTo ? "Add another image" : "Observation Capture"}</h1>
+          <h1>{addTo ? "Add photos" : "Capture"}</h1>
           <p className="muted">{displaySessionTitle}</p>
-          <p className="muted">If you have a paper form, capture it first.</p>
+          <p className="muted">
+            Keep photos of the same subject together. Forms stay separate.
+          </p>
         </div>
       </div>
 
       {captureSaved ? (
-        <p className="success">Saved. Keep capturing or tap Done.</p>
+        <p className="success">
+          Saved. Keep capturing or continue to review.
+        </p>
+      ) : null}
+      {error === "no_items" ? (
+        <p className="error">Save at least one item before continuing.</p>
+      ) : null}
+      {error === "item_check_failed" ? (
+        <p className="error">
+          CRED could not verify your saved items. Try again.
+        </p>
       ) : null}
 
       <section
@@ -170,24 +199,31 @@ export default async function GuidedCapturePage({
           helperText="Capture photos or choose media from your gallery."
           commonCaptureText=""
           showSuggestedCaptureText={false}
-          stickyDoneHref={captureDonePath}
           maxCaptureFileSizeBytes={planLimits.maxCaptureFileSizeBytes}
           maxVideoFileSizeBytes={planLimits.maxVideoFileSizeBytes}
           observationGroupId={addTo ?? null}
         />
+        <form action={completeCaptureAction} className="form-actions">
+          <PendingActionButton
+            className="button button-primary touch-target"
+            pendingLabel="Preparing review…"
+          >
+            Review items
+          </PendingActionButton>
+        </form>
       </section>
 
       <section className="card detail-card recent-captures-card">
         <div className="captures-section-header">
           <div>
-            <h2>Recent Observations</h2>
+            <h2>Captured</h2>
             <p className="muted">
-              Saved observations stay lightweight so you can reopen an issue or
-              add supporting images fast.
+              Items, forms and notes are organized for review.
             </p>
           </div>
           <span className="status-pill neutral">
-            {captureItems.length} saved
+            {capturedItemCount ?? 0} item
+            {capturedItemCount === 1 ? "" : "s"}
           </span>
         </div>
         <RecentCapturesList

@@ -76,7 +76,7 @@ function renderExportImage(asset, alt, fallbackText) {
 function appendixHtml(captures, assets, brand) {
   const style = brand.report_style
   if (style.evidenceAppendix === false) return ''
-  return `<section class="item service-section evidence-appendix-section"><h2>Evidence Appendix</h2><table class="evidence-appendix"><thead><tr><th>Preview</th>${style.evidenceIds ? '<th>Evidence ID</th>' : ''}<th>Caption / Title</th>${style.timestamps ? '<th>Captured</th>' : ''}${style.captureMetadata ? '<th>Type</th>' : ''}</tr></thead><tbody>${captures.map((capture, index) => `<tr><td class="appendix-thumb">${capture.media_kind === 'image' ? renderExportImage(assets[capture.id], `Evidence ${index + 1}`, 'Image unavailable') : capture.media_kind}</td>${style.evidenceIds ? `<td>EV-${String(index + 1).padStart(3, '0')}</td>` : ''}<td>${capture.technician_note || `Evidence ${index + 1}`}</td>${style.timestamps ? `<td>${capture.captured_at}</td>` : ''}${style.captureMetadata ? `<td>${capture.media_kind}</td>` : ''}</tr>`).join('')}</tbody></table></section>`
+  return `<section class="item service-section evidence-appendix-section"><h2>Source Index</h2><table class="evidence-appendix"><thead><tr><th>Preview</th>${style.evidenceIds ? '<th>Item reference</th>' : ''}<th>Caption / Title</th>${style.timestamps ? '<th>Captured</th>' : ''}${style.captureMetadata ? '<th>Type</th>' : ''}</tr></thead><tbody>${captures.map((capture, index) => `<tr><td class="appendix-thumb">${capture.media_kind === 'image' ? renderExportImage(assets[capture.id], `Item ${index + 1}`, 'Image unavailable') : capture.media_kind}</td>${style.evidenceIds ? `<td>Item ${String(index + 1).padStart(3, '0')}</td>` : ''}<td>${capture.technician_note || `Item ${index + 1}`}</td>${style.timestamps ? `<td>${capture.captured_at}</td>` : ''}${style.captureMetadata ? `<td>${capture.media_kind}</td>` : ''}</tr>`).join('')}</tbody></table></section>`
 }
 
 function makeBrand(api, overrides = {}) {
@@ -100,7 +100,7 @@ function exportFixtureHtml(api, brand, { logoUrl = null, includeSignature = true
     renderDefinitionRows: rowsHtml,
     renderExportImage,
     getUserEvidenceText: (capture) => capture.technician_note || '',
-    getPrimaryEvidenceLabel: (capture) => capture.technician_note || 'Evidence',
+    getPrimaryEvidenceLabel: (capture) => capture.technician_note || 'Item',
   }
   return `<!doctype html><html><head><style>${api.buildBrandCss(brand)}</style></head><body>${api.buildReportOpen({ branding: brand, timeZone: 'UTC' })}${api.buildReportCoverHtml({ reportTitle: session.title, reportType: 'Inspection', session, draft, organizationName: 'Acme Service', captures, imageAssets, timeZone: 'UTC', allowCoverImage: true, branding: brand, logoUrl, helpers })}<section class="item service-section"><h2>Findings</h2><p>Observed condition documented from submitted evidence.</p></section>${appendixHtml(captures, imageAssets, brand)}${includeSignature ? api.buildApprovalHtml({ profile: { full_name: 'Pat Inspector', inspector_role_or_title: 'Inspector' }, signatures: [], signatureUrls: {}, draft, session, timeZone: 'UTC', branding: brand, helpers: { renderDefinitionRows: rowsHtml, getApprovalDate: () => '2026-06-22T12:00:00.000Z' } }) : ''}${api.buildPrintFooterHtml({ organizationName: 'Acme Service', reportId: session.display_id, generatedAt: '2026-06-22T12:00:00.000Z', branding: brand })}</main></body></html>`
 }
@@ -126,19 +126,19 @@ test('fixture exports render system, workspace, custom, and legacy branding clas
 
 test('cover, footer, watermark, signature, and appendix toggles control rendered output', async () => {
   const api = await loadReportStudioRendering()
-  const professional = makeBrand(api, { report_style: { coverPage: 'professional_cover', showCoverImage: true, coverImageSource: 'first_evidence_image', watermark: { option: 'draft', opacity: 'strong' } } })
+  const professional = makeBrand(api, { report_style: { coverPage: 'professional_cover', showCoverImage: true, coverImageSource: 'first_evidence_image', evidenceAppendix: true, watermark: { option: 'draft', opacity: 'strong' } } })
   const noCover = makeBrand(api, { report_style: { coverPage: 'none', evidenceAppendix: false }, show_signature_block: false, show_report_id: false, show_contact_info: false })
 
   const professionalHtml = exportFixtureHtml(api, professional, { logoUrl: 'https://cdn.example.test/logo.png' })
   assert.match(professionalHtml, /brand-report-logo/)
   assert.match(professionalHtml, /report-watermark watermark-diagonal watermark-strong/)
   assert.match(professionalHtml, /approval-section/)
-  assert.match(professionalHtml, /Evidence Appendix/)
+  assert.match(professionalHtml, /Source Index/)
   assert.match(professionalHtml, /CRED-2026-001/)
 
   const disabledHtml = exportFixtureHtml(api, noCover)
   assert.doesNotMatch(disabledHtml, /report-cover/)
-  assert.doesNotMatch(disabledHtml, /Evidence Appendix/)
+  assert.doesNotMatch(disabledHtml, /Source Index/)
   assert.doesNotMatch(disabledHtml, /approval-section/)
   assert.doesNotMatch(disabledHtml, /CRED-2026-001/)
   assert.doesNotMatch(disabledHtml, /555-0100/)
@@ -146,20 +146,20 @@ test('cover, footer, watermark, signature, and appendix toggles control rendered
 
 test('evidence metadata toggles, evidence IDs, and image fallbacks render consistently', async () => {
   const api = await loadReportStudioRendering()
-  const withMeta = makeBrand(api, { report_style: { evidenceIds: true, timestamps: true, captureMetadata: true } })
+  const withMeta = makeBrand(api, { report_style: { evidenceAppendix: true, evidenceIds: true, timestamps: true, captureMetadata: true } })
   const withoutMeta = makeBrand(api, { report_style: { evidenceIds: false, timestamps: false, captureMetadata: false } })
 
   const richHtml = exportFixtureHtml(api, withMeta)
-  assert.match(richHtml, /<th>Evidence ID<\/th>/)
-  assert.match(richHtml, /EV-001/)
+  assert.match(richHtml, /<th>Item reference<\/th>/)
+  assert.match(richHtml, /Item 001/)
   assert.match(richHtml, /<th>Captured<\/th>/)
   assert.match(richHtml, /<th>Type<\/th>/)
   assert.match(richHtml, /onerror="this\.style\.display='none';this\.nextElementSibling\.style\.display='flex';"/)
   assert.match(richHtml, /Image unavailable/)
 
   const leanHtml = exportFixtureHtml(api, withoutMeta)
-  assert.doesNotMatch(leanHtml, /<th>Evidence ID<\/th>/)
-  assert.doesNotMatch(leanHtml, /EV-001/)
+  assert.doesNotMatch(leanHtml, /<th>Item reference<\/th>/)
+  assert.doesNotMatch(leanHtml, /Item 001/)
   assert.doesNotMatch(leanHtml, /<th>Captured<\/th>/)
   assert.doesNotMatch(leanHtml, /<th>Type<\/th>/)
 })

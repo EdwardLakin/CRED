@@ -146,7 +146,7 @@ export function ObservationAssistantEditor({
             Restore Original
           </button>
         </div>
-        <p className="muted">Technician Notes are preserved separately. AI uses this observation, its supporting evidence, image AI descriptions, session context, and nearby observations.</p>
+        <p className="muted">Technician Notes are preserved separately. AI uses this observation, its supporting items, image descriptions, session context, and nearby observations.</p>
         {message ? <p className="success compact-success" aria-live="polite">{message}</p> : null}
         {error ? <p className="error" role="alert">{error}</p> : null}
       </section>

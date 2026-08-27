@@ -35,16 +35,24 @@ test('Save Template and Save Report Studio post current draftBrandProfile fields
 })
 
 test('Apply & Export saves draft first, uses selected session, and falls back to working report-pdf params', () => {
-  for (const source of [toolbar, mobile, actions, pdf]) {
+  for (const source of [toolbar, mobile, actions]) {
     assert.match(source, /selected_session_output_id/)
     assert.match(source, /studio_export=1/)
     assert.match(source, /template=workspace-default/)
   }
+  assert.match(pdf, /selected_session_output_id/)
+  assert.match(pdf, /searchParams\.get\("studio_export"\)/)
+  assert.match(pdf, /searchParams\.set\("studio_export", "1"\)/)
   assert.match(actions, /export async function saveBrandingAndExport/)
   assert.match(actions, /await persistBrandingSettings\(formData\)/)
   assert.match(actions, /redirect\(`\/api\/dashboard\/sessions\/\$\{id\}\/report-pdf\?review_output=\$\{id\}&selected_session_output_id=\$\{id\}&template=workspace-default&studio_export=1`\)/)
-  assert.match(pdf, /selectedSessionOutputId[\s\S]*selectedSessionOutputId !== id[\s\S]*redirect/)
-  assert.match(pdf, /requestedTemplateId !== "workspace-default" && requestedTemplateId !== "draft"/)
+  assert.match(pdf, /selectedSessionOutputId[\s\S]*resolvedSessionId && resolvedSessionId !== id[\s\S]*redirectToCanonicalStudioExport/)
+  const workspaceDefaultFallback = pdf.slice(
+    pdf.indexOf('if (\n    !exportBranding'),
+    pdf.indexOf('const branding = normalizeBrandProfile'),
+  )
+  assert.match(workspaceDefaultFallback, /requestedTemplateId !== "system"/)
+  assert.doesNotMatch(workspaceDefaultFallback, /requestedTemplateId !== "workspace-default"/)
 })
 
 test('customer-visible v2 preview/export paths do not expose ai_summary', () => {
@@ -60,7 +68,7 @@ test('Report Studio v2 saves fail inline without clearing draft state or redirec
   assert.match(toolbar, /role="alert"/) 
   assert.match(toolbar, /if \(saveState\.ok\) handlers\.setIsDirty\(false\)/)
   assert.doesNotMatch(toolbar, /setDraftBrandProfile\(props\.profile|window\.location\.assign\(exportHref/) 
-  assert.match(toolbar, /if \(exportState\.ok && exportState\.redirectTo\) window\.location\.assign\(exportState\.redirectTo\)/)
+  assert.match(toolbar, /if \(exportState\.ok && exportState\.redirectTo\) window\.open\(exportState\.redirectTo, "_blank", "noopener,noreferrer"\)/)
 })
 
 test('Save Template does not upsert workspace_brand_profiles before template insert', () => {

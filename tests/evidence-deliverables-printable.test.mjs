@@ -21,6 +21,7 @@ test('deliverable detail and print routes are present', () => {
 
 test('deliverable access is scoped to organization and session and hides deleted deliverables', () => {
   assert.match(data, /validateDeliverableAccess/)
+  assert.match(data, /if \(!canUseFeature\(profile, 'deliverables'\)\) notFound\(\)/)
   assert.match(data, /from\('documentation_sessions'\).*eq\('id', sessionId\).*eq\('organization_id', profile\.organization_id\).*is\('deleted_at', null\)/s)
   assert.match(data, /from\('evidence_deliverables'\).*eq\('id', deliverableId\).*eq\('documentation_session_id', sessionId\).*eq\('organization_id', profile\.organization_id\).*is\('deleted_at', null\)/s)
 })

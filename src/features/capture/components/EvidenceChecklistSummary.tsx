@@ -9,15 +9,15 @@ export function EvidenceChecklistSummary({ captures, sessionType }: { captures: 
     <section className="card detail-card evidence-checklist-summary-card">
       <div className="captures-section-header">
         <div>
-          <h2>Supporting Evidence</h2>
+          <h2>Supporting Items</h2>
           <p className="muted">
-            Evidence captured for this report. Suggestions are reminders only. Capture evidence in the order that matches your work.
+            Items captured for this report. Suggestions are reminders only. Capture them in the order that matches your work.
           </p>
         </div>
         <span className="ai-status-pill info">{completeCount} of {summaries.length} groups</span>
       </div>
 
-      <div className="compact-checklist-grid" aria-label="Supporting evidence summary">
+      <div className="compact-checklist-grid" aria-label="Supporting items summary">
         {summaries.map((summary) => {
           const isMissing = summary.status === 'Missing'
           const label = summary.count > 0 ? `${summary.step.shortLabel} (${summary.count})` : summary.step.shortLabel
@@ -32,7 +32,7 @@ export function EvidenceChecklistSummary({ captures, sessionType }: { captures: 
       </div>
 
       <details className="expanded-checklist-details">
-        <summary className="secondary-link touch-target">Show Evidence Suggestions</summary>
+        <summary className="secondary-link touch-target">Show Item Suggestions</summary>
         <div className="guided-step-list compact-expanded-step-list">
           {summaries.map((summary) => (
             <article key={summary.step.key} className="guided-step-card guided-step-card-compact">

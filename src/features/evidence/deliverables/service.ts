@@ -60,7 +60,7 @@ export function generateChronology(data: DeliverableSourceData, sourceSelection:
     }
   })
   const sourceIds = collectSourceIds(data)
-  return { title: 'Chronology', summary: `${events.length} timeline events ordered by event date with verified evidence links.`, content: { type: 'chronology', events }, source_ids: sourceIds, provenance: deliverableProvenance('chronology', sourceIds, sourceSelection) }
+  return { title: 'Chronology', summary: `${events.length} timeline events ordered by event date with verified item links.`, content: { type: 'chronology', events }, source_ids: sourceIds, provenance: deliverableProvenance('chronology', sourceIds, sourceSelection) }
 }
 
 export function generateEvidenceIndex(data: DeliverableSourceData, sourceSelection: DeliverableSourceSelection = defaultDeliverableSourceSelection): GeneratedDeliverable {
@@ -77,7 +77,7 @@ export function generateEvidenceIndex(data: DeliverableSourceData, sourceSelecti
     source_ids: { evidence_item_ids: [item.id] },
   }))
   const sourceIds = { evidence_item_ids: sortedEvidenceItems.map((item) => item.id) }
-  return { title: 'Evidence Index', summary: `${items.length} evidence items indexed with source and review metadata.`, content: { type: 'evidence_index', items }, source_ids: sourceIds, provenance: deliverableProvenance('evidence_index', sourceIds, sourceSelection) }
+  return { title: 'Source Index', summary: `${items.length} source items indexed with source and review metadata.`, content: { type: 'evidence_index', items }, source_ids: sourceIds, provenance: deliverableProvenance('evidence_index', sourceIds, sourceSelection) }
 }
 
 export function generateObservationSummary(data: DeliverableSourceData, sourceSelection: DeliverableSourceSelection = defaultDeliverableSourceSelection): GeneratedDeliverable {
@@ -91,7 +91,7 @@ export function generateObservationSummary(data: DeliverableSourceData, sourceSe
     return { assertion_id: assertion.id, factual_observation: assertion.statement, linked_evidence_count: linkedEvidenceIds.length, supporting_evidence_count: supportingEvidenceIds.length, contradicting_evidence_count: contradictingEvidenceIds.length, linked_entities: data.entities.filter((entity) => linkedEntityIds.includes(entity.id)).map((entity) => ({ id: entity.id, display_name: entity.display_name })), linked_timeline_events: data.timelineEvents.filter((event) => linkedEventIds.includes(event.id)).map((event) => ({ id: event.id, title: event.title })), source_ids: { assertion_ids: [assertion.id], evidence_item_ids: linkedEvidenceIds, entity_ids: linkedEntityIds, timeline_event_ids: linkedEventIds } }
   })
   const sourceIds = collectSourceIds(data)
-  return { title: 'Observation Summary', summary: `${observations.length} factual observations summarized with supporting and contradicting evidence counts.`, content: { type: 'observation_summary', observations }, source_ids: sourceIds, provenance: deliverableProvenance('observation_summary', sourceIds, sourceSelection) }
+  return { title: 'Observation Summary', summary: `${observations.length} factual observations summarized with supporting and contradicting item counts.`, content: { type: 'observation_summary', observations }, source_ids: sourceIds, provenance: deliverableProvenance('observation_summary', sourceIds, sourceSelection) }
 }
 
 export function generateRelationshipMap(data: DeliverableSourceData, sourceSelection: DeliverableSourceSelection = defaultDeliverableSourceSelection): GeneratedDeliverable {
@@ -109,7 +109,7 @@ export function generateRelationshipMap(data: DeliverableSourceData, sourceSelec
   const sourceIds = collectSourceIds(data)
   return {
     title: 'Relationship Map',
-    summary: `${relationships.length} verified relationships across evidence, events, entities, and factual observations.`,
+    summary: `${relationships.length} verified relationships across source items, events, entities, and factual observations.`,
     content: { type: 'relationship_map', relationships },
     source_ids: sourceIds,
     provenance: deliverableProvenance('relationship_map', sourceIds, sourceSelection),
@@ -126,7 +126,7 @@ export function applyDeliverableSourceSelection(data: DeliverableSourceData, sou
 
   for (const batch of data.importBatches ?? []) assertWorkspaceScope(batch, data.sessionId, data.organizationId)
   ensureSelectedIdsExist(selection.selectedImportBatchIds, data.importBatches ?? [], 'Selected import batches')
-  ensureSelectedIdsExist(selection.selectedCaptureItemIds, data.evidenceItems, 'Selected evidence items')
+  ensureSelectedIdsExist(selection.selectedCaptureItemIds, data.evidenceItems, 'Selected source items')
   ensureSelectedIdsExist(selection.selectedTimelineEventIds, data.timelineEvents, 'Selected timeline events')
   ensureSelectedIdsExist(selection.selectedEntityIds, data.entities, 'Selected entities')
   ensureSelectedIdsExist(selection.selectedAssertionIds, data.assertions, 'Selected factual observations')
@@ -214,7 +214,7 @@ function collectSourceIds(data: DeliverableSourceData): Record<string, string[]>
 function sourceLabel(data: DeliverableSourceData, type: string, id: string) {
   if (type === 'capture_item') {
     const item = data.evidenceItems.find((row) => row.id === id)
-    return item?.original_filename ?? item?.technician_note ?? item?.ai_summary ?? 'Evidence item'
+    return item?.original_filename ?? item?.technician_note ?? item?.ai_summary ?? 'Source item'
   }
   if (type === 'timeline_event') return data.timelineEvents.find((row) => row.id === id)?.title ?? 'Timeline event'
   if (type === 'entity') return data.entities.find((row) => row.id === id)?.display_name ?? 'Entity'

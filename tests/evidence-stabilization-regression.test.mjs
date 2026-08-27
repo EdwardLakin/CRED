@@ -33,7 +33,7 @@ test('evidence mutations return typed safe results and client forms render inlin
   assert.match(actions, /export type EvidenceMutationResult/)
   assert.match(actions, /Review status saved\./)
   assert.match(actions, /Output preference saved\./)
-  assert.match(actions, /This evidence item could not be updated\. Refresh and try again\./)
+  assert.match(actions, /This item could not be updated\. Refresh and try again\./)
   assert.match(forms, /useActionState/)
   assert.match(forms, /pending \? 'Saving…'/)
   assert.match(forms, /router\.refresh\(\)/)

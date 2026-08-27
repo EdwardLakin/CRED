@@ -80,7 +80,7 @@ const DETECTED_TYPE_LABELS: Record<string, string> = {
   suspension_component: 'Suspension Component',
   defect_photo: 'Defect Photo',
   general_equipment_photo: 'General Equipment Photo',
-  general_evidence: 'General Evidence',
+  general_evidence: 'General Item',
   supporting_photo: 'Supporting Photo',
   unknown: 'Unknown',
 }
@@ -168,6 +168,12 @@ function getFieldLabel(field: string) {
   return FIELD_LABELS[field] ?? titleCase(field)
 }
 
+function normalizeItemTerminology(value: string) {
+  return value
+    .replace(/\bEvidence\b/g, 'Item')
+    .replace(/\bevidence\b/g, 'item')
+}
+
 function getSourceLabel(extractedData: Json | null) {
   const sourceDocument = getSourceDocumentMetadata(extractedData)
 
@@ -184,7 +190,7 @@ function getSourceLabel(extractedData: Json | null) {
     : null
   const label =
     typeof classification?.label === 'string' && classification.label.trim()
-      ? classification.label.trim()
+      ? normalizeItemTerminology(classification.label.trim())
       : null
   const detectedType =
     typeof classification?.detected_type === 'string' &&
@@ -205,7 +211,7 @@ function getText(value: Json | undefined, maxLength = 400) {
     return null
   }
 
-  const trimmed = value.replace(/\s+/g, ' ').trim()
+  const trimmed = normalizeItemTerminology(value).replace(/\s+/g, ' ').trim()
   return trimmed ? trimmed.slice(0, maxLength) : null
 }
 
@@ -334,7 +340,7 @@ export function ExtractedEvidencePanel({
       <div>
         <h2>Document Details</h2>
         <p className="muted">
-          Captured documents and evidence are ready to review. Apply trusted values directly to Report Details.
+          Captured documents and items are ready to review. Apply trusted values directly to Report Details.
         </p>
       </div>
 

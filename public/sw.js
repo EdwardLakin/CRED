@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cred-offline-ed1110fc231f1713";
+const CACHE_VERSION = "cred-offline-7d4eed1de040047a";
 const OFFLINE_DOCUMENT = "/offline.html";
 const PRECACHE_ASSETS = [
   "/offline.html",
@@ -12,42 +12,7 @@ const PRECACHE_ASSETS = [
   "/apple-touch-icon-precomposed.png",
   "/icons/cred-icon.svg",
   "/icons/cred-maskable.svg",
-  "/splash/cred-splash.svg",
-  "/_next/static/WSvBmnUgPwhGhS0THHCE9/_buildManifest.js",
-  "/_next/static/WSvBmnUgPwhGhS0THHCE9/_clientMiddlewareManifest.js",
-  "/_next/static/WSvBmnUgPwhGhS0THHCE9/_ssgManifest.js",
-  "/_next/static/chunks/0-f2pizroh_l4.js",
-  "/_next/static/chunks/01sxowo2k_3jr.js",
-  "/_next/static/chunks/02-blbd0utox5.css",
-  "/_next/static/chunks/0245a4ypel7xx.js",
-  "/_next/static/chunks/05-c3ty_6dwfk.js",
-  "/_next/static/chunks/0cahj4hkpsg-k.js",
-  "/_next/static/chunks/0cz1d0mv5g_q7.js",
-  "/_next/static/chunks/0ddp_lrll3x-z.js",
-  "/_next/static/chunks/0jr-cjjbn9cqu.js",
-  "/_next/static/chunks/0jy0f9knmomhz.js",
-  "/_next/static/chunks/0tplh5ca_wqje.js",
-  "/_next/static/chunks/0zm7blno40yu7.js",
-  "/_next/static/chunks/14mrh2-p_w84d.js",
-  "/_next/static/chunks/15av8o923u-7w.js",
-  "/_next/static/chunks/1ldhwkdsg700d.js",
-  "/_next/static/chunks/1ripxx8ef1fx-.js",
-  "/_next/static/chunks/1rxncug86bump.js",
-  "/_next/static/chunks/1uxxd_8_lafly.js",
-  "/_next/static/chunks/21x9obqqc2awh.js",
-  "/_next/static/chunks/27jktro2p5rq9.js",
-  "/_next/static/chunks/2cya-h6pss2j9.js",
-  "/_next/static/chunks/2fkx0onbjhg49.js",
-  "/_next/static/chunks/2fxatfi4xu1vg.js",
-  "/_next/static/chunks/35849yxq898xt.js",
-  "/_next/static/chunks/36z57ezv9m8s9.js",
-  "/_next/static/chunks/3hbvnaljn_uxo.js",
-  "/_next/static/chunks/3jvkbm-wxvaor.js",
-  "/_next/static/chunks/3nql251i4l50w.js",
-  "/_next/static/chunks/40yyi5r19ck_2.js",
-  "/_next/static/chunks/43cavunylurnk.js",
-  "/_next/static/chunks/turbopack-3y4_9gvwbdyxg.js",
-  "/_next/static/media/favicon.2vob68tjqpejf.ico"
+  "/splash/cred-splash.svg"
 ];
 const NAVIGATION_PATHS = new Set(["/", "/dashboard", "/sign-in", "/offline", "/offline/capture"]);
 const INSTALL_ERROR_KEY = "/__cred_sw_last_install_error__";

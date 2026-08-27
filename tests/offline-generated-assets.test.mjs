@@ -23,6 +23,14 @@ test('generated static shell and service worker match committed assets when buil
   assert.match(worker, /const CACHE_VERSION = "cred-offline-/);
   assert.match(worker, /const PRECACHE_ASSETS = \[/);
   assert.match(worker, /"\/apple-touch-icon\.png"/);
+  const precacheJson = worker.match(/const PRECACHE_ASSETS = (\[[\s\S]*?\]);/)?.[1];
+  assert.ok(precacheJson, 'precache manifest must be readable');
+  const precacheAssets = JSON.parse(precacheJson);
+  assert.equal(
+    precacheAssets.some((asset) => asset.startsWith('/_next/static/')),
+    false,
+    'build-specific Next assets must be runtime cached, not precached',
+  );
 
   const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
   assert.match(packageJson.scripts.prebuild, /generate-apple-touch-icon\.mjs .*write-offline-document\.mjs .*build-offline-shell\.mjs/);

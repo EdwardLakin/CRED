@@ -3,7 +3,10 @@
 import { randomUUID } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
 
+import { getPlanLimits, requireActiveBillingAccess } from '@/features/billing'
+import { canUseFeature } from '@/features/billing/feature-gates'
 import { requireSessionWorkspace } from '@/features/sessions/data'
+import { recordUsageEvent, requireUsageAllowance } from '@/features/usage'
 import { queueCaptureAnalysisJobs } from '@/lib/capture-processing/queue'
 import type { Json } from '@/lib/supabase/database.types'
 import { generateEvidenceSuggestionsForCaptures } from '@/features/evidence/suggestions/service'
@@ -14,6 +17,16 @@ export type BulkEvidenceImportResult = {
   batchId?: string
   message: string
   files: { name: string; ok: boolean; captureItemId?: string; error?: string }[]
+}
+
+function assertBulkImportAccess(profile: Awaited<ReturnType<typeof requireSessionWorkspace>>['profile']) {
+  if (!canUseFeature(profile, 'bulk_import')) {
+    throw new Error('Bulk file import is available with CRED Professional or Investigation.')
+  }
+
+  const billingAccess = requireActiveBillingAccess(profile)
+  if (!billingAccess.ok) throw new Error(billingAccess.message)
+  return billingAccess.access
 }
 
 function safeFileMetadata(file: File, index: number): Json {
@@ -28,9 +41,32 @@ function batchStatus(processedCount: number, failedCount: number) {
 
 export async function importBulkEvidence(sessionId: string, formData: FormData): Promise<BulkEvidenceImportResult> {
   const files = formData.getAll('files').filter((value): value is File => value instanceof File && value.size > 0)
-  if (files.length === 0) return { ok: false, message: 'Select at least one evidence file to import.', files: [] }
+  if (files.length === 0) return { ok: false, message: 'Select at least one file to import.', files: [] }
 
   const { supabase, profile } = await requireSessionWorkspace()
+  let billingAccess: ReturnType<typeof assertBulkImportAccess>
+  try {
+    billingAccess = assertBulkImportAccess(profile)
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : 'Bulk file import is unavailable.', files: [] }
+  }
+
+  const limits = getPlanLimits(billingAccess.plan)
+  const oversizedFile = files.find((file) => file.size > (file.type.startsWith('video/') ? limits.maxVideoFileSizeBytes : limits.maxCaptureFileSizeBytes))
+  if (oversizedFile) {
+    return { ok: false, message: `${sanitizeEvidenceFilename(oversizedFile.name)} is larger than your plan allows.`, files: [] }
+  }
+
+  const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
+  const storageAllowance = await requireUsageAllowance({
+    supabase,
+    organizationId: profile.organization_id,
+    plan: billingAccess.plan,
+    eventType: 'storage_bytes_added',
+    quantity: totalBytes,
+  })
+  if (!storageAllowance.ok) return { ok: false, message: storageAllowance.message, files: [] }
+
   const { data: session, error: sessionError } = await supabase.from('documentation_sessions').select('id, organization_id').eq('id', sessionId).eq('organization_id', profile.organization_id).is('deleted_at', null).single()
   if (sessionError || !session) return { ok: false, message: 'Documentation session not found.', files: [] }
 
@@ -103,6 +139,26 @@ export async function importBulkEvidence(sessionId: string, formData: FormData):
     results.push({ name, ok: true, captureItemId: captureItem.id })
 
     try {
+      await recordUsageEvent({
+        supabase,
+        organizationId: profile.organization_id,
+        eventType: 'capture_uploaded',
+        metadata: { session_id: session.id, capture_id: captureItem.id, import_batch_id: batch.id, source_kind: BULK_EVIDENCE_SOURCE_KIND },
+        createdBy: profile.id,
+      })
+      await recordUsageEvent({
+        supabase,
+        organizationId: profile.organization_id,
+        eventType: 'storage_bytes_added',
+        quantity: file.size,
+        metadata: { session_id: session.id, capture_id: captureItem.id, import_batch_id: batch.id, source_kind: BULK_EVIDENCE_SOURCE_KIND },
+        createdBy: profile.id,
+      })
+    } catch {
+      // Usage accounting is retriable and must not make a durable upload disappear.
+    }
+
+    try {
       await queueCaptureAnalysisJobs({ supabase, organizationId: profile.organization_id, sessionId: session.id, captureItemId: captureItem.id, metadata: { import_batch_id: batch.id, source_kind: BULK_EVIDENCE_SOURCE_KIND } })
     } catch {
       await supabase.from('capture_items').update({ processing_status: 'needs_queue_retry', ai_status: 'needs_review' }).eq('id', captureItem.id).eq('documentation_session_id', session.id).eq('organization_id', profile.organization_id)
@@ -132,19 +188,19 @@ async function loadBatchCaptureItems(supabase: ImportSupabaseLike, sessionId: st
   let query = supabase.from('capture_items').select('*').eq('documentation_session_id', sessionId).eq('organization_id', organizationId).eq('import_batch_id', batchId)
   if (ids) query = query.in('id', ids)
   const { data, error } = await query.is('deleted_at', null)
-  if (error) throw new Error('Unable to load batch evidence')
+  if (error) throw new Error('Unable to load batch items')
   const rows = (data ?? []) as BatchCaptureRow[]
-  if (ids && rows.length !== new Set(ids).size) throw new Error('Selected evidence must belong to this batch, session, and organization, and cannot be deleted')
+  if (ids && rows.length !== new Set(ids).size) throw new Error('Selected items must belong to this batch, session, and organization, and cannot be deleted')
   return rows
 }
 
 async function updateBatchCaptures(sessionId: string, batchId: string, ids: string[], patch: Record<string, unknown>) {
-  const { supabase: rawSupabase, profile } = await requireSessionWorkspace(); const supabase = rawSupabase as unknown as ImportSupabaseLike
+  const { supabase: rawSupabase, profile } = await requireSessionWorkspace(); assertBulkImportAccess(profile); const supabase = rawSupabase as unknown as ImportSupabaseLike
   const uniqueIds = [...new Set(ids)]
-  if (!uniqueIds.length) throw new Error('Select at least one evidence item')
+  if (!uniqueIds.length) throw new Error('Select at least one item')
   await loadBatchCaptureItems(supabase, sessionId, batchId, profile.organization_id, uniqueIds)
   const { error } = await supabase.from('capture_items').update({ ...patch, updated_at: new Date().toISOString() }).eq('documentation_session_id', sessionId).eq('organization_id', profile.organization_id).eq('import_batch_id', batchId).in('id', uniqueIds).is('deleted_at', null)
-  if (error) throw new Error('Unable to update batch evidence')
+  if (error) throw new Error('Unable to update batch items')
   revalidatePath(`/dashboard/sessions/${sessionId}/evidence/import/${batchId}`); revalidatePath(`/dashboard/sessions/${sessionId}/evidence`)
 }
 
@@ -154,6 +210,6 @@ export async function updateBatchEvidenceEventDate(sessionId: string, batchId: s
 export async function bulkUpdateBatchEvidenceReviewStatus(sessionId: string, batchId: string, formData: FormData) { const status = parseBatchEvidenceReviewStatus(formData.get('evidence_review_status')); if (!status) throw new Error('Invalid review status'); let ids = parseSelectedCaptureItemIds(formData); if (!ids.length && formData.get('scope') === 'all_unreviewed') { const { supabase: rawSupabase, profile } = await requireSessionWorkspace(); ids = (await loadBatchCaptureItems(rawSupabase as unknown as ImportSupabaseLike, sessionId, batchId, profile.organization_id)).filter((item) => item.evidence_review_status === 'unreviewed').map((item) => item.id) } await updateBatchCaptures(sessionId, batchId, ids, { evidence_review_status: status }) }
 export async function bulkUpdateBatchEvidenceOutputInclusion(sessionId: string, batchId: string, formData: FormData) { const include = parseBatchOutputInclusion(formData.get('include_in_report')); if (include === null) throw new Error('Invalid output inclusion'); await updateBatchCaptures(sessionId, batchId, parseSelectedCaptureItemIds(formData), { include_in_report: include }) }
 
-async function generateBatchSuggestions(sessionId: string, batchId: string, ids?: string[]) { const { supabase: rawSupabase, profile } = await requireSessionWorkspace(); const supabase = rawSupabase as unknown as ImportSupabaseLike; const captures = (await loadBatchCaptureItems(supabase, sessionId, batchId, profile.organization_id, ids)).filter((item) => item.evidence_review_status !== 'excluded' && item.include_in_report && (ids || item.evidence_review_status === 'unreviewed')); const suggestions = await generateEvidenceSuggestionsForCaptures(sessionId, captures, { organizationId: profile.organization_id, userId: profile.id ?? null, timezone: profile.timezone ?? null }); for (const [table, rows] of Object.entries(suggestions)) if (rows.length) { const { error } = await supabase.from(table).insert(rows); if (error) throw new Error('Unable to create batch suggestions') } revalidatePath(`/dashboard/sessions/${sessionId}/suggestions`); revalidatePath(`/dashboard/sessions/${sessionId}/evidence/import/${batchId}`); return { created: Object.values(suggestions).reduce((sum, rows) => sum + rows.length, 0), unsupported: ['Entity suggestions', 'Relationship suggestions'] } }
+async function generateBatchSuggestions(sessionId: string, batchId: string, ids?: string[]) { const { supabase: rawSupabase, profile } = await requireSessionWorkspace(); assertBulkImportAccess(profile); if (!canUseFeature(profile, 'suggestions')) throw new Error('AI suggestions are available with CRED Professional or Investigation.'); const supabase = rawSupabase as unknown as ImportSupabaseLike; const captures = (await loadBatchCaptureItems(supabase, sessionId, batchId, profile.organization_id, ids)).filter((item) => item.evidence_review_status !== 'excluded' && item.include_in_report && (ids || item.evidence_review_status === 'unreviewed')); const suggestions = await generateEvidenceSuggestionsForCaptures(sessionId, captures, { organizationId: profile.organization_id, userId: profile.id ?? null, timezone: profile.timezone ?? null }); for (const [table, rows] of Object.entries(suggestions)) if (rows.length) { const { error } = await supabase.from(table).insert(rows); if (error) throw new Error('Unable to create batch suggestions') } revalidatePath(`/dashboard/sessions/${sessionId}/suggestions`); revalidatePath(`/dashboard/sessions/${sessionId}/evidence/import/${batchId}`); return { created: Object.values(suggestions).reduce((sum, rows) => sum + rows.length, 0), unsupported: ['Entity suggestions', 'Relationship suggestions'] } }
 export async function generateSuggestionsForImportBatch(sessionId: string, batchId: string) { return generateBatchSuggestions(sessionId, batchId) }
-export async function generateSuggestionsForSelectedBatchEvidence(sessionId: string, batchId: string, formData: FormData) { const ids = parseSelectedCaptureItemIds(formData); if (!ids.length) throw new Error('Select at least one evidence item'); return generateBatchSuggestions(sessionId, batchId, ids) }
+export async function generateSuggestionsForSelectedBatchEvidence(sessionId: string, batchId: string, formData: FormData) { const ids = parseSelectedCaptureItemIds(formData); if (!ids.length) throw new Error('Select at least one item'); return generateBatchSuggestions(sessionId, batchId, ids) }

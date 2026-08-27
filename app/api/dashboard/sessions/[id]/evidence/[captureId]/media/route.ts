@@ -23,14 +23,14 @@ function cleanMediaError(status = 404) {
 }
 
 function getSafeDownloadFilename(storagePath: string, fallbackId: string) {
-  const rawName = storagePath.split('/').pop() || `evidence-${fallbackId}`;
+  const rawName = storagePath.split('/').pop() || `item-${fallbackId}`;
   const safeName = rawName
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-zA-Z0-9._-]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 120);
-  return safeName || `evidence-${fallbackId}`;
+  return safeName || `item-${fallbackId}`;
 }
 
 function getInlineContentType(
@@ -77,6 +77,8 @@ async function validateShareTokenAccess(
     .from("report_share_tokens")
     .select("*, documentation_sessions(*)")
     .eq("token", token)
+    .eq("link_kind", "report")
+    .is("deliverable_id", null)
     .maybeSingle();
 
   const sharedSession = Array.isArray(shareToken?.documentation_sessions)
@@ -88,6 +90,7 @@ async function validateShareTokenAccess(
     !shareToken ||
     !sharedSession ||
     shareToken.disabled_at ||
+    sharedSession.deleted_at ||
     sharedSession.id !== sessionId ||
     sharedSession.organization_id !== shareToken.organization_id ||
     (shareToken.expires_at && new Date(shareToken.expires_at) < new Date())
@@ -124,6 +127,7 @@ export async function GET(request: Request, { params }: RouteContext) {
         .select("id")
         .eq("id", id)
         .eq("organization_id", organizationId)
+        .is("deleted_at", null)
         .single();
       if (sessionError || !session) notFound();
     }
@@ -137,14 +141,19 @@ export async function GET(request: Request, { params }: RouteContext) {
       .is("deleted_at", null)
       .maybeSingle();
 
-    if (captureError || !capture || !capture.storage_path) {
+    if (
+      captureError ||
+      !capture ||
+      !capture.storage_path ||
+      (shareToken && !capture.include_in_report)
+    ) {
       console.warn("[report-media-capture-unavailable]", {
         session_id: id,
         capture_id: captureId,
         storage_path_exists: Boolean(capture?.storage_path),
         error: captureError?.message ?? (!capture ? "Capture not found" : "Missing storage_path"),
       });
-      return cleanMediaError(capture ? 410 : 404);
+      return cleanMediaError(shareToken ? 404 : capture ? 410 : 404);
     }
 
     if (download) {

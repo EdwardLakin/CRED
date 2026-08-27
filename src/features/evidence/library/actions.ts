@@ -10,7 +10,7 @@ export type EvidenceMutationResult =
   | { ok: true; message: string }
   | { ok: false; message: string }
 
-const EVIDENCE_MUTATION_ERROR = 'This evidence item could not be updated. Refresh and try again.'
+const EVIDENCE_MUTATION_ERROR = 'This item could not be updated. Refresh and try again.'
 type UpdatedEvidenceRow = {
   id: string
   documentation_session_id: string
@@ -39,7 +39,7 @@ function valuesMatch(requested: unknown, stored: unknown) {
 }
 
 function logEvidenceMutationFailure(operation: string, captureId: string, organizationId: string, errorCode?: string) {
-  console.error('Evidence mutation failed', { operation, captureId, organizationId, errorCode })
+  console.error('Item mutation failed', { operation, captureId, organizationId, errorCode })
 }
 
 function revalidateEvidenceMutationRoutes(sessionId: string, captureId: string) {
@@ -67,18 +67,18 @@ async function updateEvidenceCapture(captureId: string, patch: EvidencePatch, op
 
   if (error) {
     logEvidenceMutationFailure(operation, captureId, profile.organization_id, error.code)
-    throw new Error('Unable to update evidence item. Please refresh and try again.')
+    throw new Error('Unable to update this item. Please refresh and try again.')
   }
   if (!data) {
     logEvidenceMutationFailure(operation, captureId, profile.organization_id, 'NO_ROWS_UPDATED')
-    throw new Error('Evidence item was not updated. It may have been deleted or you may not have access.')
+    throw new Error('This item was not updated. It may have been deleted or you may not have access.')
   }
 
   const row = data as UpdatedEvidenceRow
   for (const [key, value] of Object.entries(patch)) {
     if (!valuesMatch(value, row[key as keyof UpdatedEvidenceRow])) {
       logEvidenceMutationFailure(operation, captureId, profile.organization_id, `MISMATCH_${key}`)
-      throw new Error('Evidence item update could not be verified. Please refresh and try again.')
+      throw new Error('The item update could not be verified. Please refresh and try again.')
     }
   }
 
@@ -87,7 +87,7 @@ async function updateEvidenceCapture(captureId: string, patch: EvidencePatch, op
 }
 
 function mutationError(operation: string, captureId: string, error: unknown): EvidenceMutationResult {
-  console.error('Evidence mutation action failed', {
+  console.error('Item mutation action failed', {
     operation,
     captureId,
     errorCode: error instanceof Error ? error.name : 'UNKNOWN',

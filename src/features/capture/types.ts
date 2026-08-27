@@ -3,6 +3,8 @@ import type { Database, Json } from '@/lib/supabase/database.types'
 export type CaptureItem = Database['public']['Tables']['capture_items']['Row']
 export type CaptureType = 'photo' | 'document' | 'vin_plate' | 'info_plate' | 'voice_note' | 'text_note' | 'video' | 'evidence_video'
 export type CaptureIntent = 'auto_image' | 'auto_evidence' | 'manual'
+export type DocumentationItemKind = 'observation' | 'document' | 'note'
+export type CaptureAttachmentKind = 'primary' | 'supporting' | 'document' | 'note'
 
 export type SourceDocumentType =
   | 'work_order'
@@ -100,8 +102,8 @@ export const CAPTURE_TYPES: Array<{ value: CaptureType; label: string; helper: s
   { value: 'vin_plate', label: 'VIN Plate', helper: 'Vehicle VIN label or plate' },
   { value: 'info_plate', label: 'Info/Data Plate', helper: 'Manufacturer, rating, or data tag' },
   { value: 'voice_note', label: 'Voice Note', helper: 'Audio note for later transcription' },
-  { value: 'text_note', label: 'Text Note', helper: 'Typed evidence note without a file' },
-  { value: 'video', label: 'Video', helper: 'Short evidence video with note' },
+  { value: 'text_note', label: 'Text Note', helper: 'Typed item note without a file' },
+  { value: 'video', label: 'Video', helper: 'Short supporting video with note' },
 ]
 
 export const CAPTURE_TYPE_LABELS: Record<CaptureType, string> = {
@@ -112,7 +114,7 @@ export const CAPTURE_TYPE_LABELS: Record<CaptureType, string> = {
   voice_note: 'Voice Note',
   text_note: 'Text Note',
   video: 'Video',
-  evidence_video: 'Evidence Video',
+  evidence_video: 'Supporting Video',
 }
 
 export const MANUAL_CAPTURE_TYPES = CAPTURE_TYPES
@@ -177,7 +179,7 @@ export function getInitialExtractedData(type: CaptureType): Json {
 
 export function getCaptureEventTitle(type: CaptureType, intent: CaptureIntent = 'manual') {
   if (intent === 'auto_image') {
-    return 'Evidence captured'
+    return 'Item captured'
   }
 
   switch (type) {
@@ -187,7 +189,7 @@ export function getCaptureEventTitle(type: CaptureType, intent: CaptureIntent = 
       return 'Info plate captured'
     case 'video':
     case 'evidence_video':
-      return 'Video evidence captured'
+      return 'Supporting video captured'
     case 'voice_note':
       return 'Voice note captured'
     case 'text_note':

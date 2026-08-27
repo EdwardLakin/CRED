@@ -9,7 +9,6 @@ const summarySource = readFileSync('src/features/evidence/relationships/componen
 const listSource = readFileSync('src/features/evidence/relationships/components/RelationshipList.tsx', 'utf8')
 const badgeSource = readFileSync('src/features/evidence/relationships/components/RelationshipBadge.tsx', 'utf8')
 const navSource = readFileSync('src/features/evidence/components/EvidenceWorkspaceNav.tsx', 'utf8')
-const sessionSource = readFileSync('app/dashboard/sessions/[id]/page.tsx', 'utf8')
 
 test('relationship route renders the relationship explorer workspace', () => {
   assert.match(routeSource, /getRelationshipExplorerData/)
@@ -26,7 +25,7 @@ test('relationship loader is session and organization scoped and filters deleted
 })
 
 test('relationship summary counts key graph edges', () => {
-  for (const label of ['Total relationships', 'Evidence linked to events', 'Evidence linked to entities', 'Evidence linked to observations', 'Events linked to entities', 'Events linked to observations', 'Entities linked to observations']) {
+  for (const label of ['Total connections', 'Items linked to events', 'Items linked to entities', 'Items linked to observations', 'Events linked to entities', 'Events linked to observations', 'Entities linked to observations']) {
     assert.match(summarySource, new RegExp(label))
   }
   for (const key of ['evidenceLinkedToEvents', 'evidenceLinkedToEntities', 'evidenceLinkedToObservations', 'eventsLinkedToEntities', 'eventsLinkedToObservations', 'entitiesLinkedToObservations']) {
@@ -35,11 +34,11 @@ test('relationship summary counts key graph edges', () => {
 })
 
 test('relationship explorer renders grouped relationship views', () => {
-  for (const heading of ['Evidence Relationships', 'Timeline Relationships', 'Entity Relationships', 'Observation Relationships']) {
+  for (const heading of ['Item Connections', 'Timeline Connections', 'Entity Connections', 'Observation Connections']) {
     assert.match(explorerSource, new RegExp(heading))
   }
-  assert.match(explorerSource, /supporting evidence/i)
-  assert.match(explorerSource, /contradicting evidence/i)
+  assert.match(explorerSource, /supporting items/i)
+  assert.match(explorerSource, /conflicting items/i)
 })
 
 test('relationship detail displays review status and provenance consistently', () => {
@@ -53,5 +52,5 @@ test('relationship detail displays review status and provenance consistently', (
 test('workspace navigation links to relationship explorer', () => {
   assert.match(navSource, /relationships/)
   assert.match(navSource, /EVIDENCE_WORKSPACE_LABELS\.relationships/)
-  assert.match(sessionSource, /feature\.hrefSegment/)
+  assert.match(routeSource, /EvidenceWorkspaceBacklinks/)
 })

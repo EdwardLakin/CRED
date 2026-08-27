@@ -51,10 +51,10 @@ test('deliverables preserve provenance and source identifiers', () => {
   assert.match(migration, /provenance jsonb not null/)
 })
 
-test('navigation links include deliverables outside capture workflow', () => {
+test('additional outputs stay inside advanced Review tools and outside the four-step capture surface', () => {
   assert.match(nav, /deliverables/)
-  assert.match(sessionPage, /getVisibleWorkspaceFeatures\(profile\)/)
-  assert.match(sessionPage, /feature\.hrefSegment/)
+  assert.doesNotMatch(sessionPage, /getVisibleWorkspaceFeatures\(profile\)/)
+  assert.match(sessionPage, /\/report/)
   const capturePage = readFileSync('app/dashboard/sessions/[id]/capture/page.tsx', 'utf8')
   assert.doesNotMatch(capturePage, /deliverables/i)
 })

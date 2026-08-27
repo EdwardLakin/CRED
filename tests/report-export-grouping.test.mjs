@@ -81,6 +81,47 @@ test("groups chained observation captures so every included image renders once",
   );
 });
 
+test("canonical item identity groups rapid and offline attachments in stable order", async () => {
+  const {
+    getObservationGroupKey,
+    getOrderedObservationGroupCaptures,
+  } = await loadExportGrouping();
+  const laterPhoto = {
+    id: "capture-two",
+    documentation_item_id: "item-stable",
+    attachment_order: 2,
+    observation_group_id: null,
+    group_order: null,
+    captured_at: "2026-08-27T10:01:00.000Z",
+  };
+  const firstPhoto = {
+    id: "capture-one",
+    documentation_item_id: "item-stable",
+    attachment_order: 1,
+    observation_group_id: null,
+    group_order: null,
+    captured_at: "2026-08-27T10:00:00.000Z",
+  };
+  const otherItem = {
+    id: "capture-three",
+    documentation_item_id: "item-other",
+    attachment_order: 1,
+    observation_group_id: "capture-one",
+    group_order: 3,
+    captured_at: "2026-08-27T10:02:00.000Z",
+  };
+
+  assert.equal(getObservationGroupKey(firstPhoto), "item-stable");
+  assert.deepEqual(
+    getOrderedObservationGroupCaptures(firstPhoto, [
+      laterPhoto,
+      otherItem,
+      firstPhoto,
+    ]).map((capture) => capture.id),
+    ["capture-one", "capture-two"],
+  );
+});
+
 test("export markup supports one primary and two supporting images without duplicating primary", () => {
   const routeSource = readFileSync(
     "app/api/dashboard/sessions/[id]/report-pdf/route.ts",

@@ -13,13 +13,15 @@ test('Report Studio no longer renders blank placeholder controls or nested forms
 })
 
 test('sidebar and preview clicks select matching real editable sections', () => {
-  for (const section of ['Cover Page','Header','Client / Asset','Evidence','Footer','Signature','Colors & Typography','Templates']) assert.match(studio, new RegExp(section))
+  for (const section of ['Cover Page','Header','Client / Asset','Items','Footer','Signature','Colors & Typography','Templates']) assert.match(studio, new RegExp(section))
   assert.match(studio, /setActive\('Cover Page'\)/)
   assert.match(studio, /setActive\('Header'\)/)
   assert.match(studio, /setActive\('Client \/ Asset'\)/)
-  assert.match(studio, /setActive\('Evidence'\)/)
+  assert.match(studio, /setActive\('Items'\)/)
   assert.match(studio, /setActive\('Footer'\)/)
   assert.match(studio, /setActive\('Signature'\)/)
+  assert.match(studio, /ITEM-/)
+  assert.doesNotMatch(studio, />Evidence<|Evidence layout|Evidence numbering|EV-/)
 })
 
 test('colors typography templates and v1 cover controls update shared preview state', () => {
@@ -28,7 +30,7 @@ test('colors typography templates and v1 cover controls update shared preview st
   assert.match(studio, /applyTemplate/)
   assert.match(studio, /previewStyle=/)
   assert.match(studio, /brand\.report_style\.coverPage/)
-  assert.match(types, /COVER_PAGE_LAYOUTS = \['none','simple_cover','professional_cover'\]/)
+  assert.match(types, /COVER_PAGE_LAYOUTS = \[[^\]]*'none'[^\]]*'simple_cover'[^\]]*'professional_cover'/)
   assert.doesNotMatch(`${studio}\n${types}`, /selected_report_image|raw html|custom css|font upload/i)
 })
 

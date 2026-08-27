@@ -14,26 +14,25 @@ const pages = [
   readFileSync('app/dashboard/sessions/[id]/assertions/page.tsx', 'utf8'),
 ]
 
-test('session detail renders a unified Evidence Workspace overview with all counts', () => {
-  assert.match(sessionPage, /EvidenceWorkspaceNav/)
-  for (const table of ['capture_items', 'timeline_events', 'evidence_entities', 'evidence_assertions', 'evidence_relationships']) {
-    assert.match(sessionPage, new RegExp(`from\\('${table}'\\).*count: 'exact'`))
-  }
-  for (const label of ['Evidence items', 'Timeline events', 'Entities', 'Factual observations', 'Relationships']) {
+test('session root resumes the simple flow while advanced workspace navigation remains available', () => {
+  assert.doesNotMatch(sessionPage, /EvidenceWorkspaceNav/)
+  assert.match(sessionPage, /redirect\(`\/dashboard\/sessions\/\$\{session\.id\}\/capture`\)/)
+  assert.match(sessionPage, /redirect\(`\/dashboard\/sessions\/\$\{session\.id\}\/report`\)/)
+  for (const label of ['Items', 'Timeline events', 'Entities', 'Factual observations', 'Connections']) {
     assert.match(navComponent, new RegExp(label))
   }
 })
 
 test('workspace navigation cards and backlinks use the standard workspace labels', () => {
-  for (const label of ['Evidence Library', 'Timeline', 'Entities', 'Factual Observations', 'Deliverables', 'Existing Report']) {
+  for (const label of ['Items', 'Timeline', 'Entities', 'Factual Observations', 'Additional Outputs', 'Report']) {
     assert.match(constants, new RegExp(label))
-    assert.match(navComponent, new RegExp(label))
   }
+  for (const key of ['library', 'timeline', 'entities', 'assertions', 'deliverables', 'report']) assert.match(navComponent, new RegExp(`EVIDENCE_WORKSPACE_LABELS\\.${key}`))
   for (const page of pages) assert.match(page, /EvidenceWorkspaceBacklinks/)
 })
 
 test('workspace review and output labels are standardized without restricted language', () => {
-  for (const label of ['Include in outputs', 'Suggested', 'Accepted', 'Edited', 'Rejected', 'Needs review', 'Unreviewed']) {
+  for (const label of ['Include in report', 'Suggested', 'Accepted', 'Edited', 'Rejected', 'Needs review', 'Unreviewed']) {
     assert.match(constants, new RegExp(label))
   }
   assert.match(evidenceForms, /formatEvidenceReviewStatus/)

@@ -8,7 +8,7 @@ const correctiveMigration = readFileSync('supabase/migrations/20260624124000_fix
 
 test('evidence mutations verify returned capture rows instead of trusting no-error updates', () => {
   assert.match(actions, /\.update\(updatePatch\)[\s\S]*\.eq\('id', captureId\)[\s\S]*\.eq\('organization_id', profile\.organization_id\)[\s\S]*\.is\('deleted_at', null\)[\s\S]*\.select\(UPDATED_EVIDENCE_SELECT\)[\s\S]*\.maybeSingle\(\)/)
-  assert.match(actions, /if \(!data\)[\s\S]*NO_ROWS_UPDATED[\s\S]*throw new Error\('Evidence item was not updated/)
+  assert.match(actions, /if \(!data\)[\s\S]*NO_ROWS_UPDATED[\s\S]*throw new Error\('This item was not updated/)
   assert.match(actions, /for \(const \[key, value\] of Object\.entries\(patch\)\)[\s\S]*valuesMatch/)
   assert.match(actions, /MISMATCH_\$\{key\}/)
 })

@@ -4,17 +4,17 @@ import { EmptyState, SessionCard } from '@/features/sessions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { loadCurrentReportDraftsBySession } from '@/features/sessions/report-title-data'
 
-function getCaptureCounts(captures: Array<{ documentation_session_id: string }> | null) {
-  const captureCountBySession = new Map<string, number>()
+function getItemCounts(items: Array<{ documentation_session_id: string }> | null) {
+  const itemCountBySession = new Map<string, number>()
 
-  for (const capture of captures ?? []) {
-    captureCountBySession.set(
-      capture.documentation_session_id,
-      (captureCountBySession.get(capture.documentation_session_id) ?? 0) + 1,
+  for (const item of items ?? []) {
+    itemCountBySession.set(
+      item.documentation_session_id,
+      (itemCountBySession.get(item.documentation_session_id) ?? 0) + 1,
     )
   }
 
-  return captureCountBySession
+  return itemCountBySession
 }
 
 export default async function ArchivedSessionsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
@@ -43,15 +43,16 @@ export default async function ArchivedSessionsPage({ searchParams }: { searchPar
 
   const archivedSessions = sessions ?? []
   const sessionIds = archivedSessions.map((session) => session.id)
-  const { data: captures } = sessionIds.length > 0
+  const { data: items } = sessionIds.length > 0
     ? await supabase
-        .from('capture_items')
+        .from('documentation_items')
         .select('documentation_session_id')
         .eq('organization_id', profile.organization_id)
         .in('documentation_session_id', sessionIds)
+        .eq('item_kind', 'observation')
         .is('deleted_at', null)
     : { data: null }
-  const captureCountBySession = getCaptureCounts(captures)
+  const itemCountBySession = getItemCounts(items)
   const reportDraftBySession = await loadCurrentReportDraftsBySession(
     (organizationId, ids) =>
       supabase
@@ -89,7 +90,7 @@ export default async function ArchivedSessionsPage({ searchParams }: { searchPar
             <SessionCard
               key={session.id}
               session={session}
-              evidenceCount={captureCountBySession.get(session.id)}
+              evidenceCount={itemCountBySession.get(session.id) ?? 0}
               showOperationalAction
               showArchiveAction
               showManagementActions

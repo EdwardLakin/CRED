@@ -36,7 +36,7 @@ test('feature comparison derives booleans from centralized gates', () => {
   assert.match(publicPlans, /canUseFeature\('individual', feature\)/)
   assert.match(publicPlans, /canUseFeature\('team', feature\)/)
   assert.match(publicPlans, /canUseFeature\('shop', feature\)/)
-  assert.match(publicPlans, /Investigation deliverables/)
+  assert.match(publicPlans, /Investigation outputs/)
   assert.match(publicPlans, /label: 'Storage'/)
   assert.match(publicPlans, /label: 'AI actions \/ month'/)
 })
@@ -63,4 +63,13 @@ test('Essentials remains primary and mobile comparison plus screenshot fallbacks
 test('landing page renders authenticated and unauthenticated CTA paths', () => {
   assert.match(page, /isAuthenticated \? '\/dashboard\?checkout=individual' : '\/sign-up\?plan=individual'/)
   assert.match(page, /PricingCheckoutButton plan=\{plan\.billingKey\} isAuthenticated=\{isAuthenticated\}/)
+})
+
+test('public plan and landing copy use the plain item vocabulary', () => {
+  for (const label of ['Items', 'Advanced Review', 'Connections', 'Additional Outputs']) {
+    assert.match(publicPlans + page, new RegExp(label))
+  }
+  for (const retired of ['Evidence Library', 'Relationship Explorer', 'structured evidence review', 'evidence workflow']) {
+    assert.doesNotMatch(publicPlans + page, new RegExp(retired, 'i'))
+  }
 })

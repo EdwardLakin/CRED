@@ -9,6 +9,7 @@ export type FeatureKey =
   | 'evidence_library'
   | 'existing_report'
   | 'report_export'
+  | 'bulk_import'
   | 'review_queue'
   | 'timeline'
   | 'factual_observations'
@@ -46,6 +47,7 @@ const FEATURE_MINIMUM_TIER: Record<FeatureKey, CredTier> = {
   evidence_library: 'essentials',
   existing_report: 'essentials',
   report_export: 'essentials',
+  bulk_import: 'professional',
   team_management: 'essentials',
   review_queue: 'professional',
   timeline: 'professional',
@@ -58,17 +60,17 @@ const FEATURE_MINIMUM_TIER: Record<FeatureKey, CredTier> = {
 }
 
 export const WORKSPACE_FEATURES: VisibleWorkspaceFeature[] = [
-  { key: 'capture', label: 'Capture', hrefSegment: 'capture', shortLabel: 'Capture', description: 'Add photos, notes, files, and field evidence.' },
-  { key: 'evidence_library', label: 'Evidence Library', hrefSegment: 'evidence', shortLabel: 'Evidence', description: 'Review source items and choose what to include in outputs.' },
-  { key: 'existing_report', label: 'Existing Report', hrefSegment: 'report', shortLabel: 'Report', description: 'Review the current generated report.' },
+  { key: 'capture', label: 'Capture', hrefSegment: 'capture', shortLabel: 'Capture', description: 'Add item photos, notes, forms, and documents.' },
+  { key: 'evidence_library', label: 'Items', hrefSegment: 'evidence', shortLabel: 'Items', description: 'Review captured items and choose what to include in the report.' },
+  { key: 'existing_report', label: 'Review', hrefSegment: 'report', shortLabel: 'Review', description: 'Review the current report.' },
   { key: 'report_export', label: 'Export', hrefSegment: 'report', shortLabel: 'Export', description: 'Export PDF or email the reviewed report.' },
-  { key: 'timeline', label: 'Timeline', hrefSegment: 'timeline', shortLabel: 'Timeline', description: 'Organize dated events and linked evidence.' },
-  { key: 'review_queue', label: 'Review Queue', hrefSegment: 'evidence/review', shortLabel: 'Review', description: 'Process unresolved evidence and AI suggestions.' },
-  { key: 'factual_observations', label: 'Factual Observations', hrefSegment: 'assertions', shortLabel: 'Observations', description: 'Review factual observations and supporting links.' },
+  { key: 'timeline', label: 'Timeline', hrefSegment: 'timeline', shortLabel: 'Timeline', description: 'Organize dated events and linked source items.' },
+  { key: 'review_queue', label: 'Advanced Review', hrefSegment: 'evidence/review', shortLabel: 'Advanced Review', description: 'Process unresolved items and AI suggestions.' },
+  { key: 'factual_observations', label: 'Documented Observations', hrefSegment: 'assertions', shortLabel: 'Observations', description: 'Review factual observations and supporting links.' },
   { key: 'suggestions', label: 'Suggestions', hrefSegment: 'suggestions', shortLabel: 'Suggestions', description: 'Review AI-proposed events, entities, observations, and relationships.' },
-  { key: 'deliverables', label: 'Deliverables', hrefSegment: 'deliverables', shortLabel: 'Deliverables', description: 'Generate evidence outputs for professional review.' },
-  { key: 'entities', label: 'Entities', hrefSegment: 'entities', shortLabel: 'Entities', description: 'Review people, places, assets, and organizations.' },
-  { key: 'relationship_explorer', label: 'Relationship Explorer', hrefSegment: 'relationships', shortLabel: 'Relationships', description: 'Explore how evidence, events, entities, and observations connect.' },
+  { key: 'deliverables', label: 'Additional Outputs', hrefSegment: 'deliverables', shortLabel: 'Outputs', description: 'Generate versioned outputs for professional review.' },
+  { key: 'entities', label: 'People & Organizations', hrefSegment: 'entities', shortLabel: 'People & Orgs', description: 'Review people, places, assets, and organizations.' },
+  { key: 'relationship_explorer', label: 'Connections', hrefSegment: 'relationships', shortLabel: 'Connections', description: 'Explore how sources, events, people, and observations connect.' },
 ]
 
 function planFromSubject(subject: FeatureAccessSubject) {

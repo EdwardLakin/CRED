@@ -18,7 +18,7 @@ test("report summary prompt forbids unsupported recommendations", () => {
   );
   assert.match(
     generator,
-    /Do not claim that visual evidence independently proves/,
+    /Do not claim that visual content independently proves/,
   );
 });
 

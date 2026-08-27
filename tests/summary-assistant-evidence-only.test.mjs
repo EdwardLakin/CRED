@@ -36,8 +36,8 @@ test('rental and property condition reports can mention property only when conte
 })
 
 test('generic evidence reports use a safe industry-neutral fallback', () => {
-  assert.match(assistant, /This report summarizes the documented evidence for \$\{subjectLabel\}/)
-  assert.match(assistant, /This report summarizes the documented evidence captured for review/)
+  assert.match(assistant, /This report summarizes the documented items for \$\{subjectLabel\}/)
+  assert.match(assistant, /This report summarizes the documented items captured for review/)
   assert.match(assistant, /items, observations, or conditions captured during the documentation process/)
   assert.match(assistant, /general documentation/)
   assert.doesNotMatch(assistant, /return "inspected subject"/)

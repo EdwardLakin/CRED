@@ -5,17 +5,17 @@ import { createQuickCaptureSession } from '@/features/sessions/actions'
 import { requireSessionWorkspace } from '@/features/sessions/data'
 import { loadCurrentReportDraftsBySession } from '@/features/sessions/report-title-data'
 
-function getCaptureCounts(captures: Array<{ documentation_session_id: string }> | null) {
-  const captureCountBySession = new Map<string, number>()
+function getItemCounts(items: Array<{ documentation_session_id: string }> | null) {
+  const itemCountBySession = new Map<string, number>()
 
-  for (const capture of captures ?? []) {
-    captureCountBySession.set(
-      capture.documentation_session_id,
-      (captureCountBySession.get(capture.documentation_session_id) ?? 0) + 1,
+  for (const item of items ?? []) {
+    itemCountBySession.set(
+      item.documentation_session_id,
+      (itemCountBySession.get(item.documentation_session_id) ?? 0) + 1,
     )
   }
 
-  return captureCountBySession
+  return itemCountBySession
 }
 
 type SessionFilter = 'active' | 'completed' | 'archived'
@@ -61,15 +61,16 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
 
   const sessionResults = sessions ?? []
   const sessionIds = sessionResults.map((session) => session.id)
-  const { data: captures } = sessionIds.length > 0
+  const { data: items } = sessionIds.length > 0
     ? await supabase
-        .from('capture_items')
+        .from('documentation_items')
         .select('documentation_session_id')
         .eq('organization_id', profile.organization_id)
         .in('documentation_session_id', sessionIds)
+        .eq('item_kind', 'observation')
         .is('deleted_at', null)
     : { data: null }
-  const captureCountBySession = getCaptureCounts(captures)
+  const itemCountBySession = getItemCounts(items)
   const reportDraftBySession = await loadCurrentReportDraftsBySession(
     (organizationId, ids) =>
       supabase
@@ -87,7 +88,7 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
       <div className="section-header page-header">
         <div>
           <h1>Recent Sessions</h1>
-          <p className="muted">Open a session and keep moving: capture, review, export.</p>
+          <p className="muted">Open a session and keep moving: capture, review, approve, export.</p>
         </div>
         <div className="page-actions">
           <form action={createQuickCaptureSession}>
@@ -126,7 +127,7 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
             <SessionCard
               key={session.id}
               session={session}
-              evidenceCount={captureCountBySession.get(session.id)}
+              evidenceCount={itemCountBySession.get(session.id) ?? 0}
               showOperationalAction
               showArchiveAction
               showManagementActions
@@ -138,7 +139,7 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
       ) : (
         <EmptyState
           title={searchTerm ? 'No matching sessions' : sessionFilter === 'archived' ? 'No archived sessions' : sessionFilter === 'completed' ? 'No completed sessions' : 'No active sessions yet'}
-          description={searchTerm ? 'Try a different search or start a new session.' : sessionFilter === 'archived' ? 'Archived sessions will appear here.' : sessionFilter === 'completed' ? 'Approved and exported sessions will appear here.' : 'Press New Session and start capturing evidence.'}
+          description={searchTerm ? 'Try a different search or start a new session.' : sessionFilter === 'archived' ? 'Archived sessions will appear here.' : sessionFilter === 'completed' ? 'Approved and exported sessions will appear here.' : 'Press New Session and start adding items.'}
           actionHref="/dashboard/sessions/new"
           actionLabel="New Session"
         />

@@ -22,7 +22,7 @@ test('selected, workspace default, system fallback, and old template rows normal
   assert.match(route, /normalizeReportTemplate\(defaultTemplate\)/)
   assert.match(route, /normalizeBrandProfile\(legacyBranding as any\)/)
   assert.match(route, /requestedTemplateId !== "system"/)
-  assert.match(route, /normalizeBrandProfile\(exportBranding \?\? null\)/)
+  assert.match(route, /normalizeBrandProfile\(\s*[\s\S]*exportBranding \?\? null,?\s*\)/)
   assert.match(types, /rawHeader === 'classic'/)
   assert.match(types, /row\?\.report_style \?\? \{\}/)
 })
@@ -46,10 +46,12 @@ test('cover page, footer, watermark, signature, appendix, and metadata toggles a
   assert.match(watermark, /watermark\.option === "none"/)
   assert.match(signatures, /show_signature_block === false/)
   assert.match(signatures, /signatureBlocks\?\.filter\(\(block\) => block\.enabled\)/)
-  assert.match(route, /evidenceAppendix === false/)
-  assert.match(route, /style\.timestamps \? "<th>Captured<\/th>"/)
-  assert.match(route, /style\.captureMetadata \? "<th>Type<\/th>"/)
-  assert.match(route, /style\.evidenceIds \? "<th>Evidence ID<\/th>"/)
+  assert.match(route, /function shouldIncludeEvidenceAppendix/)
+  assert.match(route, /if \(includeAppendix\)/)
+  assert.match(route, /title: "Source Index"/)
+  assert.match(route, /style\.timestamps \? \["Captured"/)
+  assert.match(route, /style\.captureMetadata \? \["Type"/)
+  assert.match(route, /style\.evidenceIds \? \["Item reference"/)
 })
 
 test('custom field definitions only render when report values exist', () => {
@@ -59,15 +61,15 @@ test('custom field definitions only render when report values exist', () => {
 })
 
 test('preview modes stay realistic, iPad friendly, and controls use readable labels', () => {
-  for (const mode of ['cover page','header','report section','evidence layout','footer','signature','full sample report']) assert.match(studio, new RegExp(mode))
+  for (const mode of ['cover page','header','report section','item layout','footer','signature','full sample report']) assert.match(studio, new RegExp(mode))
   assert.match(studio, /preview-toggle/)
   assert.match(studio, /brand-preview-panel/)
   assert.doesNotMatch(studio, />[a-z]+[A-Z][A-Za-z]*</)
 })
 
 
-test('v1 scope keeps only stable cover choices and defers advanced controls', () => {
-  assert.match(types, /COVER_PAGE_LAYOUTS = \['none','simple_cover','professional_cover'\]/)
+test('stable cover choices remain available alongside advanced templates', () => {
+  assert.match(types, /COVER_PAGE_LAYOUTS = \[[^\]]*'none'[^\]]*'simple_cover'[^\]]*'professional_cover'/)
   assert.match(types, /rawCover === 'letterhead_cover'[\s\S]*'professional_cover'/)
   assert.match(types, /rawCover === 'image_cover'[\s\S]*'simple_cover'/)
   assert.match(types, /export function normalizeReportStyle/)

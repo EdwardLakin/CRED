@@ -1,4 +1,4 @@
-import { now, SESSION_STATUSES, SYNCABLE_STATUSES } from './contracts.js';
+import { createId, now, SESSION_STATUSES, SYNCABLE_STATUSES } from './contracts.js';
 import { addCapture, capturesForSession, createSession, deleteCapture, deleteSession, getOfflineIdentity, listSessions, normalizeSessionReportOrders, retargetSessionCaptures, saveSession, sessionStats, updateCapture } from './store.js';
 const REQUIRED_OFFLINE_ASSETS = ['/offline.html', '/offline/offline-shell.css', '/offline/offline-shell.js', '/offline/contracts.js', '/offline/db.js', '/offline/store.js', '/manifest.webmanifest', '/apple-touch-icon.png', '/apple-touch-icon-precomposed.png'];
 const CONTROL_RELOAD_KEY = 'cred-offline-control-reload-attempted';
@@ -7,6 +7,7 @@ const TIMEOUTS = { swFetch: 5000, registration: 10000, ready: 10000, controller:
 const state = { identity: null, activeSession: null, objectUrls: [], storageEstimate: null, capabilities: null, serviceWorker: { supported: 'serviceWorker' in navigator, registrationAttempted: false, registered: false, registrationError: null, registrationScope: null, scopeMatchesPage: null, registrationCount: 0, duplicateRegistrations: false, registrations: [], activeScriptURL: null, lifecycleState: 'not-started', controllerCheckpoints: [], installing: false, installed: false, waiting: false, activating: false, activated: false, installingState: null, installingScriptURL: null, installingLastStateChangeAt: null, installStuck: false, skipWaitingSent: false, controllerChangeReceived: false, controlled: Boolean(navigator.serviceWorker?.controller), readyResolved: false, readyTimedOut: false, readyRejected: null, cacheNames: [], cached: false, cacheMissing: REQUIRED_OFFLINE_ASSETS, diagnostics: null, finalStatus: 'Checking offline readiness…', error: null, swScriptCheck: null, offlineReloadTest: null } };
 const $ = (id) => document.getElementById(id);
 const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] ?? char);
+const getDisplaySessionType = (value) => value === 'General Evidence Report' ? 'General Documentation Report' : value;
 const formatBytes = (bytes) => bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 const formatDate = (value) => value ? new Date(value).toLocaleString() : 'Not recorded';
 function setMessage(text, className = '') { const el = $('message'); if (el) {
@@ -358,7 +359,7 @@ async function renderDashboard() {
 function sessionCard(session, stats) {
     const progress = stats.captureCount ? `${stats.verifiedCount}/${stats.captureCount} verified` : 'No captures yet';
     return `<article class="card session-card" id="session-${session.localSessionId}">
-    <div class="card-header"><div><h2>${escapeHtml(session.title)}</h2><p class="muted">${escapeHtml(session.sessionType)} · Created ${formatDate(session.createdAt)}</p><p class="muted">Last opened ${formatDate(session.lastOpenedAt || session.updatedAt)}</p></div><span class="status">${escapeHtml(session.status)}</span></div>
+    <div class="card-header"><div><h2>${escapeHtml(session.title)}</h2><p class="muted">${escapeHtml(getDisplaySessionType(session.sessionType))} · Created ${formatDate(session.createdAt)}</p><p class="muted">Last opened ${formatDate(session.lastOpenedAt || session.updatedAt)}</p></div><span class="status">${escapeHtml(session.status)}</span></div>
     <p class="muted">${stats.captureCount} capture(s), ${stats.pendingCount} pending, ${progress}, ${formatBytes(stats.bytes)} local media.</p>
     <p class="muted">Server session: ${session.serverSessionId ? escapeHtml(session.serverSessionId) : 'not assigned yet'}</p>
     ${session.lastError ? `<p class="error">${escapeHtml(session.lastError)}</p>` : ''}
@@ -405,7 +406,7 @@ async function renderWorkspace() {
         return;
     await normalizeSessionReportOrders(session.localSessionId, state.identity);
     const captures = await capturesForSession(session.localSessionId, state.identity);
-    $('workspace').innerHTML = `<section class="card"><button class="ghost" id="backToDashboard">← Offline dashboard</button><p class="eyebrow">Offline capture</p><h1>${escapeHtml(session.title)}</h1><p class="muted">${escapeHtml(session.sessionType)} · ${captures.length} local capture(s)</p><div class="button-row"><button id="takePhoto">Take photo / video</button><button class="secondary" id="chooseMedia">Choose media</button><button class="secondary" id="syncActive">Prepare this session online</button></div><input id="cameraInput" class="hidden" type="file" accept="image/*,video/*" capture="environment" multiple><input id="galleryInput" class="hidden" type="file" accept="image/*,video/*" multiple></section><section class="grid" id="captureList"></section>`;
+    $('workspace').innerHTML = `<section class="card"><button class="ghost" id="backToDashboard">← Offline dashboard</button><p class="eyebrow">Offline capture</p><h1>${escapeHtml(session.title)}</h1><p class="muted">${escapeHtml(getDisplaySessionType(session.sessionType))} · ${captures.length} local capture(s)</p><div class="button-row"><button id="takePhoto">Take photo / video</button><button class="secondary" id="chooseMedia">Choose media</button><button class="secondary" id="syncActive">Prepare this session online</button></div><input id="cameraInput" class="hidden" type="file" accept="image/*,video/*" capture="environment" multiple><input id="galleryInput" class="hidden" type="file" accept="image/*,video/*" multiple></section><section class="grid" id="captureList"></section>`;
     $('backToDashboard').onclick = renderDashboard;
     $('syncActive').onclick = () => syncSession(session.localSessionId);
     $('takePhoto').onclick = () => $('cameraInput').click();
@@ -445,7 +446,8 @@ async function addFiles(files) {
         return setMessage('This device does not report enough available browser storage for those files.', 'error');
     const existing = await capturesForSession(state.activeSession.localSessionId, state.identity);
     let order = existing.length + 1;
-    for (const file of files) {
+    const clientItemId = createId();
+    for (const [fileIndex, file] of files.entries()) {
         if (!state.identity)
             return;
         const limit = file.type.startsWith('video/') ? state.identity.captureLimits.maxVideoFileSizeBytes : state.identity.captureLimits.maxCaptureFileSizeBytes;
@@ -453,7 +455,7 @@ async function addFiles(files) {
             setMessage(`${file.name} exceeds the configured offline capture limit.`, 'error');
             continue;
         }
-        await addCapture(state.activeSession, file, order++);
+        await addCapture(state.activeSession, file, order++, { clientItemId, attachmentOrder: fileIndex + 1 });
     }
     await refreshStorageEstimate();
     setMessage(`${files.length} capture(s) saved locally.`, 'success');

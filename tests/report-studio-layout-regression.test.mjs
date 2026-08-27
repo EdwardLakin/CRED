@@ -20,7 +20,7 @@ test('Report Studio desktop/tablet layout prevents horizontal clipping', () => {
 test('Report Studio Lite replaces desktop workbench on phone widths without horizontal overflow', () => {
   assert.match(studio, /report-studio-lite-shell/)
   assert.match(studio, /Lite editor on mobile\. Use desktop or tablet for full Report Studio controls\./)
-  for (const token of ['Report/session','Template','Primary color','Accent color','Cover on','Logo on','Report ID on','Evidence layout','Live Preview','Apply &amp; Export']) {
+  for (const token of ['Report/session','Template','Primary color','Accent color','Cover on','Logo on','Report ID on','Item layout','Live Preview','Apply &amp; Export']) {
     assert.match(studio, new RegExp(token.replace(/[()]/g, '\\$&')))
   }
   assert.match(css, /@media\(max-width:720px\)[\s\S]*\.report-studio-desktop-shell\{display:none\}/)
@@ -41,15 +41,15 @@ test('Report Studio does not render nested forms', () => {
   assert.match(studio, /form="save-report-template-form"/)
 })
 
-test('selected Review output is passed into Report Studio and export controls', () => {
-  assert.match(reviewPage, /review_output=\$\{currentReport\.id \?\? session\.id\}/)
+test('standard Review stays in the four-step flow without a Report Studio detour', () => {
+  assert.doesNotMatch(reviewPage, /review_output=\$\{currentReport\.id \?\? session\.id\}/)
   assert.match(studio, /name="review_output_id"/)
   assert.match(studio, /Apply &amp; Export/)
   assert.match(route, /requestedTemplateId/)
 })
 
-test('Report Studio cover choices remain v1-only', () => {
-  assert.match(types, /COVER_PAGE_LAYOUTS = \['none','simple_cover','professional_cover'\]/)
+test('Report Studio retains the stable cover choices', () => {
+  assert.match(types, /COVER_PAGE_LAYOUTS = \[[^\]]*'none'[^\]]*'simple_cover'[^\]]*'professional_cover'/)
   assert.match(studio, /COVER_PAGE_LAYOUTS\.map/)
   assert.doesNotMatch(studio, /letterhead_cover|image_cover|selected_report_image/)
   assert.doesNotMatch(actions, /selected_report_image/)
@@ -57,5 +57,5 @@ test('Report Studio cover choices remain v1-only', () => {
 
 test('export continues to use normalized Report Studio template', () => {
   assert.match(route, /normalizeReportTemplate\(selectedTemplate\)/)
-  assert.match(route, /normalizeBrandProfile\(exportBranding \?\? null\)/)
+  assert.match(route, /normalizeBrandProfile\(\s*[\s\S]*exportBranding \?\? null,?\s*\)/)
 })

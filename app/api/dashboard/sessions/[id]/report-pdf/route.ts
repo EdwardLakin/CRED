@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { notFound, redirect } from "next/navigation";
+import sharp from "sharp";
 
 import { requireActiveBillingAccess } from "@/features/billing";
 import {
@@ -31,6 +32,19 @@ import {
   sanitizeCapturesForImageAiAssist,
 } from "@/features/reports/report-structure";
 import { getDisplayReportTitle } from "@/features/reports/report-title";
+import {
+  buildFinalReportSnapshot,
+  type FinalReportDetail,
+  type FinalReportDocument,
+  type FinalReportItem,
+  type FinalReportMedia,
+  type FinalReportSection,
+  type FinalReportSnapshot,
+} from "@/features/reports/final-report-snapshot";
+import {
+  renderExecutiveReportPdf,
+  type ExecutivePdfAssets,
+} from "@/features/reports/export/executive-pdf";
 import { getObservationReportTitleState } from "@/features/reports/observation-titles";
 import {
   getObservationGroupKey,
@@ -85,8 +99,21 @@ type ReportSession =
     organizations: { name: string } | null;
   };
 
+function reportIsReadyForDelivery(
+  session: Pick<ReportSession, "review_status" | "status">,
+) {
+  return (
+    session.review_status === "ready_for_delivery" ||
+    session.status === "finalized"
+  );
+}
+
 type ReportPresentationMode = "gallery" | "detailed";
 type ExportBranding = WorkspaceBrandProfile;
+type NormalizedReviewDocument = ReturnType<
+  typeof buildNormalizedReportModel<ReportCapture>
+>;
+type NormalizedReviewEntry = NormalizedReviewDocument["findings"][number];
 
 function hasUniqueReportDetails(params: {
   reviewDocument: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>;
@@ -130,11 +157,23 @@ function cleanReportTitle(
   draft: ReportDraft | null | undefined,
   genericFallback = false,
 ) {
-  return getDisplayReportTitle(
+  const title = getDisplayReportTitle(
     preferred ? { ...draft, title: preferred } : draft,
     session,
     { genericFallback },
   );
+  return /^general evidence report$/i.test(title)
+    ? "General Documentation Report"
+    : /^evidence report$/i.test(title)
+      ? "Documentation Report"
+      : title;
+}
+
+function getCustomerFacingReportType(value: unknown) {
+  const reportType = normalizeReportType(value);
+  return reportType === "General Evidence Report"
+    ? "General Documentation Report"
+    : reportType;
 }
 
 function isHiddenFromReport(metadata: Json) {
@@ -253,6 +292,7 @@ function getDocumentedObservationCount(
   ];
   const renderedIds = new Set<string>();
   const dedupedEntryCount = allEntries.filter((entry) => {
+    if (isTrueReferenceDocument(entry.capture)) return false;
     const groupKey = getObservationGroupKey(entry.capture);
     if (renderedIds.has(groupKey)) return false;
     renderedIds.add(groupKey);
@@ -278,6 +318,7 @@ function getObservationCategorySummary(
   return Array.from(
     new Set(
       allEntries
+        .filter((entry) => !isTrueReferenceDocument(entry.capture))
         .map((entry) => getObservationCategoryLabel(entry))
         .filter(Boolean),
     ),
@@ -316,9 +357,9 @@ function buildReportOverviewHtml(params: {
     : "";
   const countText =
     typeof params.documentedObservationCount === "number"
-      ? ` It includes ${params.documentedObservationCount} documented observation${params.documentedObservationCount === 1 ? "" : "s"}.`
-      : " It documents technician observations.";
-  const generatedSummary = `This ${reportSubject} summarizes the inspection purpose, technician-documented conditions, supporting evidence, and recommended next actions where provided.${countText}${categoryText}`;
+      ? ` It includes ${params.documentedObservationCount} documented item${params.documentedObservationCount === 1 ? "" : "s"}.`
+      : " It documents reviewed conditions.";
+  const generatedSummary = `This ${reportSubject} summarizes the reviewed conditions, supporting photographs, forms and documents, and recommended next actions where provided.${countText}${categoryText}`;
   const summaryText = summary || generatedSummary;
   const paragraphs = summaryText
     .split(/\n{2,}/)
@@ -327,10 +368,10 @@ function buildReportOverviewHtml(params: {
     .slice(0, 2);
   const snapshotRows = [
     {
-      label: "Documented observations",
+      label: "Documented items",
       value:
         typeof params.documentedObservationCount === "number"
-          ? `${params.documentedObservationCount} Documented observation${params.documentedObservationCount === 1 ? "" : "s"}`
+          ? `${params.documentedObservationCount} Documented item${params.documentedObservationCount === 1 ? "" : "s"}`
           : "",
     },
     {
@@ -376,7 +417,7 @@ function buildEvidenceGalleryHtml(
   return `<section class="item service-section gallery-section"><h2>Supporting Photo Record</h2><p class="muted">Photographs are included to support the report conclusions and are not a substitute for the written findings.</p><div class="gallery-grid">${images
     .map((capture) => {
       const meta = evidenceByCaptureId.get(capture.id);
-      const evidenceId = meta?.evidenceId ?? "Evidence";
+      const itemReference = meta?.evidenceId ?? "Item";
       const label = cleanCustomerFacingText(
         getCustomerFacingEvidenceTitle(capture, 0),
       );
@@ -386,14 +427,14 @@ function buildEvidenceGalleryHtml(
       const media = renderExportImage(
         imageAssets[capture.id],
         label,
-        "Preview unavailable in printable export. Original evidence retained.",
+        "Preview unavailable in this report. The original item remains saved.",
       );
-      return `<article class="gallery-card"><div class="gallery-thumb">${media}</div><div class="gallery-caption"><p class="gallery-evidence-id">${escapeHtml(evidenceId)}</p><h3>${escapeHtml(label)}</h3><p>${escapeHtml(captured)}</p></div></article>`;
+      return `<article class="gallery-card"><div class="gallery-thumb">${media}</div><div class="gallery-caption"><p class="gallery-evidence-id">${escapeHtml(itemReference)}</p><h3>${escapeHtml(label)}</h3><p>${escapeHtml(captured)}</p></div></article>`;
     })
     .join("")}</div></section>`;
 }
 
-const EXPORT_LIGHTBOX_HTML = `<div class="export-lightbox" data-export-lightbox hidden aria-modal="true" role="dialog" aria-label="Expanded evidence image"><button type="button" class="export-lightbox-close" data-lightbox-close aria-label="Close expanded image">Close</button><button type="button" class="export-lightbox-prev" data-lightbox-prev aria-label="Previous image">‹</button><img data-lightbox-image alt="" /><button type="button" class="export-lightbox-next" data-lightbox-next aria-label="Next image">›</button><div class="export-lightbox-counter" data-lightbox-counter></div></div><script>(function(){var modal=document.querySelector('[data-export-lightbox]');if(!modal)return;var img=modal.querySelector('[data-lightbox-image]');var counter=modal.querySelector('[data-lightbox-counter]');var groups={};var currentGroup='';var currentIndex=0;document.querySelectorAll('[data-lightbox-group]').forEach(function(btn){var group=btn.getAttribute('data-lightbox-group')||'';(groups[group]=groups[group]||[]).push(btn);btn.addEventListener('click',function(){open(group,Number(btn.getAttribute('data-lightbox-index')||0));});});Object.keys(groups).forEach(function(group){groups[group].sort(function(a,b){return Number(a.getAttribute('data-lightbox-index')||0)-Number(b.getAttribute('data-lightbox-index')||0);});});function open(group,index){currentGroup=group;currentIndex=index;render();modal.hidden=false;document.body.style.overflow='hidden';}function close(){modal.hidden=true;document.body.style.overflow='';}function move(delta){var items=groups[currentGroup]||[];if(!items.length)return;currentIndex=(currentIndex+delta+items.length)%items.length;render();}function render(){var items=groups[currentGroup]||[];var item=items[currentIndex];if(!item)return;img.src=item.getAttribute('data-lightbox-src')||'';img.alt=item.getAttribute('data-lightbox-alt')||'';counter.textContent=(currentIndex+1)+' / '+items.length;}modal.querySelector('[data-lightbox-close]').addEventListener('click',close);modal.querySelector('[data-lightbox-prev]').addEventListener('click',function(){move(-1);});modal.querySelector('[data-lightbox-next]').addEventListener('click',function(){move(1);});modal.addEventListener('click',function(event){if(event.target===modal)close();});document.addEventListener('keydown',function(event){if(modal.hidden)return;if(event.key==='Escape')close();if(event.key==='ArrowLeft')move(-1);if(event.key==='ArrowRight')move(1);});})();</script>`;
+const EXPORT_LIGHTBOX_HTML = `<div class="export-lightbox" data-export-lightbox hidden aria-modal="true" role="dialog" aria-label="Expanded item photo"><button type="button" class="export-lightbox-close" data-lightbox-close aria-label="Close expanded image">Close</button><button type="button" class="export-lightbox-prev" data-lightbox-prev aria-label="Previous image">‹</button><img data-lightbox-image alt="" /><button type="button" class="export-lightbox-next" data-lightbox-next aria-label="Next image">›</button><div class="export-lightbox-counter" data-lightbox-counter></div></div><script>(function(){var modal=document.querySelector('[data-export-lightbox]');if(!modal)return;var img=modal.querySelector('[data-lightbox-image]');var counter=modal.querySelector('[data-lightbox-counter]');var groups={};var currentGroup='';var currentIndex=0;document.querySelectorAll('[data-lightbox-group]').forEach(function(btn){var group=btn.getAttribute('data-lightbox-group')||'';(groups[group]=groups[group]||[]).push(btn);btn.addEventListener('click',function(){open(group,Number(btn.getAttribute('data-lightbox-index')||0));});});Object.keys(groups).forEach(function(group){groups[group].sort(function(a,b){return Number(a.getAttribute('data-lightbox-index')||0)-Number(b.getAttribute('data-lightbox-index')||0);});});function open(group,index){currentGroup=group;currentIndex=index;render();modal.hidden=false;document.body.style.overflow='hidden';}function close(){modal.hidden=true;document.body.style.overflow='';}function move(delta){var items=groups[currentGroup]||[];if(!items.length)return;currentIndex=(currentIndex+delta+items.length)%items.length;render();}function render(){var items=groups[currentGroup]||[];var item=items[currentIndex];if(!item)return;img.src=item.getAttribute('data-lightbox-src')||'';img.alt=item.getAttribute('data-lightbox-alt')||'';counter.textContent=(currentIndex+1)+' / '+items.length;}modal.querySelector('[data-lightbox-close]').addEventListener('click',close);modal.querySelector('[data-lightbox-prev]').addEventListener('click',function(){move(-1);});modal.querySelector('[data-lightbox-next]').addEventListener('click',function(){move(1);});modal.addEventListener('click',function(event){if(event.target===modal)close();});document.addEventListener('keydown',function(event){if(modal.hidden)return;if(event.key==='Escape')close();if(event.key==='ArrowLeft')move(-1);if(event.key==='ArrowRight')move(1);});})();</script>`;
 
 function buildFinalNotesHtml(
   session: Pick<ReportSession, "final_notes" | "include_final_notes_in_export">,
@@ -417,6 +458,9 @@ function getEvidenceKind(capture: ReportCapture) {
   );
   if (capture.type === "text_note" || capture.media_kind === "note")
     return "note";
+  // A photographed form is still a document. Source metadata must win over
+  // the image container type so it never becomes a documented condition.
+  if (isTrueReferenceDocument(capture)) return "document";
   if (isImageFile || capture.media_kind === "image" || capture.type === "photo")
     return "image";
   if (capture.media_kind === "video" || capture.type === "video")
@@ -574,7 +618,7 @@ function getPrimaryEvidenceLabel(capture: ReportCapture) {
     getUserEvidenceText(capture) ||
     (manualLabel && !looksLikeRawUploadFilename(manualLabel)
       ? manualLabel
-      : "Photo evidence")
+      : "Supporting photo")
   );
 }
 
@@ -634,7 +678,7 @@ function renderExportImage(
   lightbox?: { group: string; index: number; total: number },
 ) {
   const originalLink = asset?.originalMediaUrl
-    ? `<p class="original-link"><a href="${escapeHtmlAttributeRaw(asset.originalMediaUrl)}" target="_blank" rel="noreferrer">Open original evidence</a></p>`
+    ? `<p class="original-link"><a href="${escapeHtmlAttributeRaw(asset.originalMediaUrl)}" target="_blank" rel="noreferrer">Open original item</a></p>`
     : "";
   const fallback = `<div class="media-fallback export-image-fallback">${escapeHtml(fallbackText)}${originalLink}</div>`;
   if (asset?.classification === "webSafeImage" && asset.mediaUrl) {
@@ -698,7 +742,7 @@ function buildCaptureImageUrls(
           session_id: sessionId,
           capture_id: capture.id,
           has_storage_path: false,
-          error: "Missing storage_path for image evidence",
+          error: "Missing storage_path for image item",
         });
       }
       imageAssets[capture.id] = {
@@ -725,6 +769,108 @@ function buildCaptureImageUrls(
           };
   }
   return imageAssets;
+}
+
+async function resizePdfImage(
+  value: Blob,
+  options: { width: number; height: number; quality?: number },
+) {
+  const source = Buffer.from(await value.arrayBuffer());
+  return sharp(source, { failOn: "none" })
+    .rotate()
+    .flatten({ background: "#ffffff" })
+    .resize({
+      width: options.width,
+      height: options.height,
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .jpeg({ quality: options.quality ?? 80, progressive: true })
+    .toBuffer();
+}
+
+async function downloadPdfImage(
+  supabase: SupabaseClient<Database>,
+  bucket: string,
+  path: string | null | undefined,
+  options: { width: number; height: number; quality?: number },
+) {
+  if (!path) return null;
+  const { data, error } = await supabase.storage.from(bucket).download(path);
+  if (error || !data) return null;
+  try {
+    return await resizePdfImage(data, options);
+  } catch (error) {
+    console.warn("[executive-pdf-image-normalize]", {
+      bucket,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+async function loadExecutivePdfAssets(params: {
+  supabase: SupabaseClient<Database>;
+  snapshot: FinalReportSnapshot;
+  captures: ReportCapture[];
+  branding: ExportBranding;
+}): Promise<ExecutivePdfAssets> {
+  const capturesById = new Map(
+    params.captures.map((capture) => [capture.id, capture]),
+  );
+  const media: Record<string, Buffer | null> = {};
+  // Keep this sequential. Large original camera files can briefly consume
+  // hundreds of megabytes when decoded, while the report only needs a compact
+  // presentation copy.
+  for (const item of params.snapshot.media) {
+    const capture = capturesById.get(item.id);
+    media[item.id] = await downloadPdfImage(
+      params.supabase,
+      "documentation-captures",
+      capture?.thumbnail_path ?? capture?.storage_path,
+      { width: 1400, height: 1100, quality: 78 },
+    );
+  }
+  const logo = await downloadPdfImage(
+    params.supabase,
+    "documentation-branding",
+    params.branding.logo_storage_path,
+    { width: 600, height: 220, quality: 86 },
+  );
+  return { logo, media };
+}
+
+function getExecutivePdfFilename(snapshot: FinalReportSnapshot) {
+  const base = `${snapshot.reportId}-${snapshot.reportTitle}`
+    .replace(/[^a-z0-9]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 100);
+  return `${base || "executive-report"}.pdf`;
+}
+
+async function buildExecutivePdfResponse(params: {
+  supabase: SupabaseClient<Database>;
+  snapshot: FinalReportSnapshot;
+  captures: ReportCapture[];
+  branding: ExportBranding;
+  disposition: "inline" | "attachment";
+}) {
+  const assets = await loadExecutivePdfAssets(params);
+  const pdf = await renderExecutiveReportPdf({
+    snapshot: params.snapshot,
+    branding: params.branding,
+    assets,
+  });
+  const filename = getExecutivePdfFilename(params.snapshot);
+  return new Response(new Uint8Array(pdf), {
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `${params.disposition}; filename="${filename}"`,
+      "Content-Length": String(pdf.byteLength),
+      "Cache-Control": "private, no-store, max-age=0",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
 }
 
 function buildSignatureUrls(
@@ -979,18 +1125,13 @@ function buildFindingCardsHtml(
     .map((finding, index) => {
       const capture = finding.entry.capture;
       const imageAsset = imageAssets[capture.id];
-      const isImageFile = Boolean(
-        capture.storage_path?.match(/\.(jpg|jpeg|png|webp|gif|heic)$/i),
-      );
       const shouldRenderImage =
         options.renderImages !== false &&
         imageAsset?.classification === "webSafeImage" &&
         imageAsset.mediaUrl &&
-        (capture.media_kind === "image" ||
-          capture.type === "photo" ||
-          isImageFile);
+        getEvidenceKind(capture) === "image";
       const imageHtml = shouldRenderImage
-        ? `<div class="finding-image">${renderExportImage(imageAsset, `${finding.title} evidence image`, "Preview unavailable in printable export. Original evidence retained.")}</div>`
+        ? `<div class="finding-image">${renderExportImage(imageAsset, `${finding.title} supporting photo`, "Preview unavailable in this report. The original item remains saved.")}</div>`
         : "";
       const details = finding.details.filter(
         (detail) =>
@@ -1016,16 +1157,16 @@ function isTrueReferenceDocument(capture: ReportCapture) {
   const metadata = isRecord(data.metadata) ? data.metadata : {};
   const upload = isRecord(data.upload) ? data.upload : {};
   const sourceType =
-    typeof data.source_type === "string" ? data.source_type : "";
+    typeof data.source_type === "string" ? data.source_type.toLowerCase() : "";
   const captureRole =
-    typeof data.capture_role === "string" ? data.capture_role : "";
+    typeof data.capture_role === "string" ? data.capture_role.toLowerCase() : "";
   const uploadType =
     typeof upload.type === "string"
-      ? upload.type
+      ? upload.type.toLowerCase()
       : typeof upload.upload_type === "string"
-        ? upload.upload_type
+        ? upload.upload_type.toLowerCase()
         : typeof upload.document_type === "string"
-          ? upload.document_type
+          ? upload.document_type.toLowerCase()
           : "";
   return (
     capture.media_kind === "document" ||
@@ -1045,6 +1186,203 @@ function isTrueReferenceDocument(capture: ReportCapture) {
   );
 }
 
+function getAllReviewEntries(
+  reviewDocument: NormalizedReviewDocument,
+): NormalizedReviewEntry[] {
+  return [
+    ...reviewDocument.findings,
+    ...reviewDocument.concerns,
+    ...reviewDocument.recommendedActionEvidence,
+    ...reviewDocument.referenceDocuments,
+    ...reviewDocument.additionalNotes,
+    ...reviewDocument.supportingEvidence,
+  ];
+}
+
+function dedupeReviewEntries(entries: NormalizedReviewEntry[]) {
+  const renderedIds = new Set<string>();
+  return entries.filter((entry) => {
+    const groupKey = getObservationGroupKey(entry.capture);
+    if (renderedIds.has(groupKey)) return false;
+    renderedIds.add(groupKey);
+    return true;
+  });
+}
+
+function getReferenceDocumentEntries(reviewDocument: NormalizedReviewDocument) {
+  return dedupeReviewEntries(
+    getAllReviewEntries(reviewDocument).filter((entry) =>
+      isTrueReferenceDocument(entry.capture),
+    ),
+  );
+}
+
+function getDocumentedItemEntries(reviewDocument: NormalizedReviewDocument) {
+  return dedupeReviewEntries(
+    getAllReviewEntries(reviewDocument).filter(
+      (entry) => !isTrueReferenceDocument(entry.capture),
+    ),
+  );
+}
+
+function toFinalReportMediaKind(
+  capture: ReportCapture,
+): FinalReportMedia["kind"] {
+  const kind = getEvidenceKind(capture);
+  if (kind === "image") return "photo";
+  if (
+    kind === "document" ||
+    kind === "note" ||
+    kind === "video" ||
+    kind === "audio"
+  )
+    return kind;
+  return "file";
+}
+
+function withoutRepeatedTitle(title: string, value: string) {
+  const normalized = (text: string) =>
+    text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return normalized(title) === normalized(value) ? "" : value;
+}
+
+function buildExecutiveSnapshot(params: {
+  session: ReportSession;
+  organizationName: string;
+  reportTitle: string;
+  reportType: string;
+  reportDraft: ReportDraft | null;
+  reviewDocument: NormalizedReviewDocument;
+  captureItems: ReportCapture[];
+  timeZone: string | null;
+  identity: FinalReportDetail[];
+  extraSections?: FinalReportSection[];
+  approvedBy?: string | null;
+}) {
+  const media: FinalReportMedia[] = params.captureItems.map((capture) => ({
+    id: capture.id,
+    kind: toFinalReportMediaKind(capture),
+    label: getCustomerFacingEvidenceTitle(capture, 0),
+    capturedAt: capture.captured_at,
+  }));
+  const allCaptures = params.captureItems;
+  const items: FinalReportItem[] = getDocumentedItemEntries(
+    params.reviewDocument,
+  ).map((entry, index) => {
+    const capture = entry.capture;
+    const title = getCustomerFacingEvidenceTitle(capture, index);
+    const description = withoutRepeatedTitle(
+      title,
+      cleanCustomerFacingText(
+        stripConfidenceText(getCustomerObservationText(capture)),
+      ),
+    );
+    const groupCaptures = getOrderedObservationGroupCaptures(
+      capture,
+      allCaptures,
+    );
+    const details = dedupeEvidenceDetails(entry.group.details)
+      .filter((detail) => shouldRenderTrustedProofDetail(capture, detail))
+      .map((detail) => ({ label: detail.label, value: detail.value }));
+    return {
+      id: getObservationGroupKey(capture),
+      title,
+      description,
+      category: getObservationCategoryLabel(entry),
+      details,
+      recommendations: entry.group.recommendations.flatMap(
+        splitRecommendationText,
+      ),
+      mediaIds: groupCaptures
+        .filter((groupCapture) => getEvidenceKind(groupCapture) === "image")
+        .map((groupCapture) => groupCapture.id),
+    };
+  });
+  const documents: FinalReportDocument[] = getReferenceDocumentEntries(
+    params.reviewDocument,
+  ).map((entry, index) => {
+    const capture = entry.capture;
+    const title = getCustomerFacingEvidenceTitle(capture, index);
+    const summary = withoutRepeatedTitle(
+      title,
+      cleanCustomerFacingText(
+        stripConfidenceText(getCustomerObservationText(capture)),
+      ),
+    );
+    return {
+      id: getObservationGroupKey(capture),
+      title,
+      summary,
+      details: dedupeEvidenceDetails(entry.group.details).map((detail) => ({
+        label: detail.label,
+        value: detail.value,
+      })),
+      mediaId: capture.id,
+    };
+  });
+  const recommendedActions =
+    params.reviewDocument.categorizedRecommendedActions
+      .map((item) => item.action.trim())
+      .filter(Boolean);
+  const sections = [...(params.extraSections ?? [])];
+  if (recommendedActions.length) {
+    sections.push({
+      id: "recommended-actions",
+      title: "Recommended Actions",
+      summary: "",
+      rows: recommendedActions.map((action, index) => ({
+        label: `Action ${index + 1}`,
+        value: action,
+      })),
+    });
+  }
+  if (
+    params.session.include_final_notes_in_export &&
+    params.session.final_notes?.trim()
+  ) {
+    sections.push({
+      id: "final-notes",
+      title: "Final Notes",
+      summary: params.session.final_notes,
+      rows: [],
+    });
+  }
+  const approvalDate = getApprovalDate(params.reportDraft, params.session);
+  const isApproved = Boolean(
+    approvalDate ||
+      params.reportDraft?.status === "approved" ||
+      params.session.review_status === "ready_for_delivery" ||
+      params.session.review_status === "reviewed",
+  );
+  return buildFinalReportSnapshot({
+    sourceDraftId: params.reportDraft?.id ?? null,
+    sessionId: params.session.id,
+    reportId: params.session.display_id ?? params.session.id,
+    organizationName: params.organizationName,
+    reportTitle: params.reportTitle,
+    reportType: params.reportType,
+    reportDate: formatDateInTimeZone(
+      approvalDate ??
+        params.reportDraft?.updated_at ??
+        params.session.updated_at ??
+        params.session.created_at,
+      params.timeZone,
+    ),
+    summary: params.reportDraft?.summary,
+    identity: params.identity,
+    media,
+    items,
+    documents,
+    sections,
+    status: params.reportDraft?.status ?? params.session.review_status,
+    approved: isApproved,
+    approvedAt: approvalDate
+      ? formatDateTimeInTimeZone(approvalDate, params.timeZone)
+      : null,
+    reviewedBy: params.approvedBy ?? null,
+  });
+}
+
 function buildReferenceDocumentsHtml(
   items: ReturnType<
     typeof buildNormalizedReportModel<ReportCapture>
@@ -1056,7 +1394,7 @@ function buildReferenceDocumentsHtml(
     isTrueReferenceDocument(entry.capture),
   );
   if (!referenceItems.length) return "";
-  return `<section class="item service-section"><h2>Source Documentation</h2>${referenceItems
+  return `<section class="item service-section"><h2>Forms &amp; Documents</h2>${referenceItems
     .map((entry) => {
       const details = dedupeEvidenceDetails(entry.group.details).filter(
         (detail) => isMeaningfulCustomerReportText(detail.value),
@@ -1064,7 +1402,7 @@ function buildReferenceDocumentsHtml(
       const originalHtml =
         options.includeOriginal === false
           ? ""
-          : `<details><summary>View Original Reference</summary>${buildEvidenceItemsHtml([entry], imageAssets)}</details>`;
+          : `<details><summary>View Original Document</summary>${buildEvidenceItemsHtml([entry], imageAssets)}</details>`;
       return `<article class="reference-card"><h3>${escapeHtml(getPrimaryEvidenceLabel(entry.capture))}</h3>${details.length ? renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value }))) : '<p class="muted">Source document included to support the report record.</p>'}${originalHtml}</article>`;
     })
     .join("")}</section>`;
@@ -1080,17 +1418,7 @@ function buildEvidenceItemsHtml(
     .map((entry) => {
       const capture = entry.capture;
       const imageAsset = imageAssets[capture.id];
-      const isImageFile = Boolean(
-        capture.storage_path?.match(/\.(jpg|jpeg|png|webp|gif|heic)$/i),
-      );
-      const mediaKind = isImageFile
-        ? "image"
-        : capture.media_kind ||
-          (capture.type === "text_note"
-            ? "note"
-            : capture.type === "video"
-              ? "video"
-              : "image");
+      const mediaKind = getEvidenceKind(capture);
       const evidenceTitle = getPrimaryEvidenceLabel(capture);
       const title = cleanCustomerFacingText(evidenceTitle);
       const mediaHtml =
@@ -1100,17 +1428,15 @@ function buildEvidenceItemsHtml(
             ? renderExportImage(
                 imageAsset,
                 getPrimaryEvidenceLabel(capture),
-                "Preview unavailable in printable export. Original evidence retained.",
+                "Preview unavailable in this report. The original item remains saved.",
               )
             : imageAsset?.originalMediaUrl && mediaKind === "video"
-              ? `<div class="video-still">Video reference</div><p class="video-link original-link"><a href="${escapeHtmlAttributeRaw(imageAsset.originalMediaUrl)}">Open video evidence</a></p>`
+              ? `<div class="video-still">Video item</div><p class="video-link original-link"><a href="${escapeHtmlAttributeRaw(imageAsset.originalMediaUrl)}">Open video</a></p>`
               : imageAsset?.originalMediaUrl
                 ? `<p class="original-link"><a href="${escapeHtmlAttributeRaw(imageAsset.originalMediaUrl)}">Open saved file</a></p>`
                 : mediaKind === "audio"
                   ? '<div class="video-still">Voice Note</div>'
-                  : mediaKind === "image"
-                    ? '<div class="media-fallback">Image unavailable in printable export.</div>'
-                    : `<div class="media-fallback">Saved evidence file unavailable for export.</div>`;
+                  : `<div class="media-fallback">Saved item unavailable for this report.</div>`;
       const group = entry.group;
       const renderedText: string[] = [];
       const details = dedupeEvidenceDetails(group.details).filter((detail) =>
@@ -1149,23 +1475,23 @@ function getObservationCategoryLabel(
   >["findings"][number],
 ) {
   const category = normalizeEvidenceCategory(entry.capture.evidence_category);
-  if (category === "observation") return "Observation";
+  if (category === "observation") return "Documented Item";
   if (category === "concern") return "Concern";
   if (category === "recommended_action") return "Recommended Action";
   if (entry.purpose === "concern") return "Concern";
   if (entry.purpose === "recommended_action") return "Recommended Action";
   if (entry.purpose === "reference_document") {
     if (getEvidenceKind(entry.capture) === "document")
-      return "Reference Document";
+      return "Form or Document";
     return getUserEvidenceText(entry.capture)
-      ? "Observation"
-      : "Photo Evidence";
+      ? "Documented Item"
+      : "Supporting Photo";
   }
   if (entry.purpose === "supporting_evidence")
     return getUserEvidenceText(entry.capture)
-      ? "Observation"
-      : "Photo Evidence";
-  return "Observation";
+      ? "Documented Item"
+      : "Supporting Photo";
+  return "Documented Item";
 }
 
 function buildFormStructuredReportHtml(
@@ -1206,9 +1532,9 @@ function buildFormStructuredReportHtml(
     });
     if (images.length === 0) return "";
     const group = `form-${sectionKey}-${fieldKey ?? "section"}`;
-    return `<div class="supporting-evidence-panel"><div class="supporting-evidence-heading"><strong>Evidence</strong><span>${images.length} item${images.length === 1 ? "" : "s"}</span></div><div class="supporting-export-grid" data-count="${images.length}">${images.map(({ capture, asset }, index) => `<div class="supporting-export-item">${renderExportImage(asset, getPrimaryEvidenceLabel(capture), "Preview unavailable in printable export. Original evidence retained.", { group, index, total: images.length })}</div>`).join("")}</div></div>`;
+    return `<div class="supporting-evidence-panel"><div class="supporting-evidence-heading"><strong>Supporting photos</strong><span>${images.length} item${images.length === 1 ? "" : "s"}</span></div><div class="supporting-export-grid" data-count="${images.length}">${images.map(({ capture, asset }, index) => `<div class="supporting-export-item">${renderExportImage(asset, getPrimaryEvidenceLabel(capture), "Preview unavailable in this report. The original item remains saved.", { group, index, total: images.length })}</div>`).join("")}</div></div>`;
   };
-  return `<section class="item service-section"><h2>Captured Form Structure</h2><p class="muted">Organized from the captured document structure and technician-approved edits.</p></section>${sections
+  return `<section class="item service-section"><h2>Forms &amp; Documents</h2><p class="muted">Organized from the captured document structure and approved edits.</p></section>${sections
     .map((section) => {
       const rows = section.fields
         .map((field) => {
@@ -1234,26 +1560,13 @@ function buildDocumentedObservationsHtml(
   reviewDocument: ReturnType<typeof buildNormalizedReportModel<ReportCapture>>,
   imageAssets: Record<string, ExportImageAsset>,
 ) {
-  const allEntries = [
-    ...reviewDocument.findings,
-    ...reviewDocument.concerns,
-    ...reviewDocument.recommendedActionEvidence,
-    ...reviewDocument.referenceDocuments,
-    ...reviewDocument.additionalNotes,
-    ...reviewDocument.supportingEvidence,
-  ];
-  const renderedIds = new Set<string>();
-  const entries = allEntries.filter((entry) => {
-    const groupKey = getObservationGroupKey(entry.capture);
-    if (renderedIds.has(groupKey)) return false;
-    renderedIds.add(groupKey);
-    return true;
-  });
+  const allEntries = getAllReviewEntries(reviewDocument);
+  const entries = getDocumentedItemEntries(reviewDocument);
   const actionCards = reviewDocument.categorizedRecommendedActions.filter(
     (item) => item.action.trim(),
   );
   if (entries.length === 0 && actionCards.length === 0)
-    return '<section class="item service-section"><h2>Documented Observations</h2><p class="muted">No documented observations added yet.</p></section>';
+    return '<section class="item service-section"><h2>Documented Items</h2><p class="muted">No documented items added yet.</p></section>';
   const entryCards = entries.map((entry, index) => {
     const capture = entry.capture;
     const groupCaptures = getOrderedObservationGroupCaptures(
@@ -1265,8 +1578,6 @@ function buildDocumentedObservationsHtml(
       groupCaptures[0] ??
       capture;
     const imageAsset = imageAssets[primaryImageCapture.id];
-    const kind = getEvidenceKind(capture);
-    const isDocument = kind === "document" || capture.media_kind === "document";
     const groupImageAssets = groupCaptures
       .filter((groupCapture) => getEvidenceKind(groupCapture) === "image")
       .map((groupCapture) => ({
@@ -1283,7 +1594,7 @@ function buildDocumentedObservationsHtml(
     const supportingImageAssets = groupImageAssets.filter(
       ({ capture: groupCapture }) => groupCapture.id !== primaryImageCapture.id,
     );
-    const lightboxGroup = `observation-${index}`;
+    const lightboxGroup = `item-${index}`;
     const getLightboxOptions = (captureId: string) => ({
       group: lightboxGroup,
       index: groupImageAssets.findIndex(
@@ -1292,12 +1603,12 @@ function buildDocumentedObservationsHtml(
       total: groupImageAssets.length,
     });
     const mediaHtml = primaryImageAsset
-      ? `<div class="media">${renderExportImage(primaryImageAsset.asset, getPrimaryEvidenceLabel(primaryImageAsset.capture), "Preview unavailable in printable export. Original evidence retained.", getLightboxOptions(primaryImageAsset.capture.id))}</div>`
+      ? `<div class="media">${renderExportImage(primaryImageAsset.asset, getPrimaryEvidenceLabel(primaryImageAsset.capture), "Preview unavailable in this report. The original item remains saved.", getLightboxOptions(primaryImageAsset.capture.id))}</div>`
       : imageAsset?.originalMediaUrl
-        ? `<p class="original-link"><a href="${escapeHtmlAttributeRaw(imageAsset.originalMediaUrl)}">Open supporting ${isDocument ? "document" : "file"}</a></p>`
+        ? `<p class="original-link"><a href="${escapeHtmlAttributeRaw(imageAsset.originalMediaUrl)}">Open supporting file</a></p>`
         : "";
     const supportingImagesHtml = supportingImageAssets.length
-      ? `<div class="supporting-evidence-panel"><div class="supporting-evidence-heading"><strong>Additional supporting photos</strong><span>${supportingImageAssets.length} photo${supportingImageAssets.length === 1 ? "" : "s"}</span></div><div class="supporting-export-grid" data-count="${supportingImageAssets.length}">${supportingImageAssets.map(({ capture: groupCapture, asset }) => `<div class="supporting-export-item">${renderExportImage(asset, getPrimaryEvidenceLabel(groupCapture), "Preview unavailable in printable export. Original evidence retained.", getLightboxOptions(groupCapture.id))}</div>`).join("")}</div></div>`
+      ? `<div class="supporting-evidence-panel"><div class="supporting-evidence-heading"><strong>Additional supporting photos</strong><span>${supportingImageAssets.length} photo${supportingImageAssets.length === 1 ? "" : "s"}</span></div><div class="supporting-export-grid" data-count="${supportingImageAssets.length}">${supportingImageAssets.map(({ capture: groupCapture, asset }) => `<div class="supporting-export-item">${renderExportImage(asset, getPrimaryEvidenceLabel(groupCapture), "Preview unavailable in this report. The original item remains saved.", getLightboxOptions(groupCapture.id))}</div>`).join("")}</div></div>`
       : "";
     const renderedText: string[] = [];
     const technicianNote = cleanCustomerFacingText(
@@ -1330,20 +1641,19 @@ function buildDocumentedObservationsHtml(
     const heading = cleanCustomerFacingText(
       getCustomerFacingEvidenceTitle(capture, index),
     );
-    const evidenceHtml =
-      isDocument || details.length
-        ? `<div class="proof-block">${isDocument ? `<p class="proof-line">Supporting document</p>` : ""}${details.length ? renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value }))) : ""}</div>`
-        : "";
-    return `<article class="finding-card observation-card"><div class="observation-main">${mediaHtml}<div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">Observation ${String(index + 1).padStart(2, "0")}</span><span class="observation-kind">${escapeHtml(getObservationCategoryLabel(entry))}</span></div><h3>${escapeHtml(heading)}</h3>${technicianNote ? `<p>${escapeHtml(technicianNote)}</p>` : ""}${evidenceHtml}${recommendations.length ? `<div class="proof-block"><h4>Recommended Action</h4><ul>${recommendations.map((value) => `<li>${escapeHtml(cleanCustomerFacingText(value))}</li>`).join("")}</ul></div>` : ""}</div></div>${supportingImagesHtml}</article>`;
+    const detailsHtml = details.length
+      ? `<div class="proof-block">${renderDefinitionRows(details.map((detail) => ({ label: detail.label, value: detail.value })))}</div>`
+      : "";
+    return `<article class="finding-card observation-card"><div class="observation-main">${mediaHtml}<div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">Item ${String(index + 1).padStart(2, "0")}</span><span class="observation-kind">${escapeHtml(getObservationCategoryLabel(entry))}</span></div><h3>${escapeHtml(heading)}</h3>${technicianNote ? `<p>${escapeHtml(technicianNote)}</p>` : ""}${detailsHtml}${recommendations.length ? `<div class="proof-block"><h4>Recommended Action</h4><ul>${recommendations.map((value) => `<li>${escapeHtml(cleanCustomerFacingText(value))}</li>`).join("")}</ul></div>` : ""}</div></div>${supportingImagesHtml}</article>`;
   });
   const actionEntryCards = actionCards.map(
     (action, index) =>
-      `<article class="finding-card observation-card"><div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">Observation ${String(entries.length + index + 1).padStart(2, "0")}</span><span class="observation-kind">Recommended Action</span></div><h3>Recommended Action</h3><p>${escapeHtml(cleanCustomerFacingText(stripConfidenceText(action.action)))}</p></div></article>`,
+      `<article class="finding-card observation-card"><div class="finding-content observation-content"><div class="observation-heading"><span class="observation-number">Item ${String(entries.length + index + 1).padStart(2, "0")}</span><span class="observation-kind">Recommended Action</span></div><h3>Recommended Action</h3><p>${escapeHtml(cleanCustomerFacingText(stripConfidenceText(action.action)))}</p></div></article>`,
   );
   const observationCards = [...entryCards, ...actionEntryCards];
   const [firstObservationHtml = "", ...remainingObservationHtml] =
     observationCards;
-  return `<section class="item service-section findings-section documented-observations"><div class="documented-observations-lead"><div class="section-heading"><p class="eyebrow">Documented Observations</p><h2>Documented Observations</h2></div><p class="muted section-intro">Each observation below includes the documented condition and supporting image where available.</p>${firstObservationHtml}</div>${remainingObservationHtml.join("")}</section>`;
+  return `<section class="item service-section findings-section documented-observations"><div class="documented-observations-lead"><div class="section-heading"><p class="eyebrow">Documented Items</p><h2>Documented Items</h2></div><p class="muted section-intro">Each item below includes the documented condition and supporting photos where available.</p>${firstObservationHtml}</div>${remainingObservationHtml.join("")}</section>`;
 }
 
 function buildEvidenceSectionHtml(
@@ -1370,12 +1680,12 @@ function buildEvidenceAppendixHtml(
   const style =
     options.branding?.report_style ?? DEFAULT_BRAND_PROFILE.report_style;
   if (captures.length === 0)
-    return '<section class="item service-section"><h2>Evidence Appendix</h2><p class="muted">No included evidence selected for this report.</p></section>';
+    return '<section class="item service-section"><h2>Source Index</h2><p class="muted">No additional source items selected for this report.</p></section>';
   const reportDocument = buildUniversalReportDocument({ captures, timeZone });
   const evidenceByCaptureId = new Map(
     reportDocument.evidenceItems.map((item) => [item.sourceCaptureId, item]),
   );
-  return `<section class="item service-section evidence-appendix-section"><h2>Evidence Appendix</h2><p class="muted">Supporting records retained with the reviewed report package.</p><div class="evidence-appendix-grid">${captures
+  return `<section class="item service-section evidence-appendix-section"><h2>Source Index</h2><p class="muted">Optional source references retained with the reviewed report.</p><div class="evidence-appendix-grid">${captures
     .map((capture) => {
       const imageAsset = imageAssets[capture.id];
       const mediaKind = getEvidenceKind(capture);
@@ -1388,7 +1698,7 @@ function buildEvidenceAppendixHtml(
             ? ""
             : `<div class="appendix-thumb appendix-kind">${escapeHtml(mediaKind)}</div>`;
       const metadataRows = [
-        style.evidenceIds ? ["Evidence ID", evidenceMeta?.evidenceId ?? "Evidence"] : null,
+        style.evidenceIds ? ["Item reference", evidenceMeta?.evidenceId ?? "Item"] : null,
         style.timestamps ? ["Captured", evidenceMeta?.capturedAtLabel ?? formatDateTimeInTimeZone(capture.captured_at, timeZone)] : null,
         style.captureMetadata ? ["Type", evidenceMeta?.evidenceType ?? mediaKind] : null,
         options.showDebugDetails ? ["Debug ID", capture.id] : null,
@@ -1528,8 +1838,8 @@ function buildDiagnosticProcedureReportHtml(params: {
                   .join("")}</ul></div>`,
             )
             .join("")
-        : '<p class="muted">No step evidence attached.</p>';
-      return `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2>${typeof metadata.source_page_start === "number" ? `<p class="muted">Source page${typeof metadata.source_page_end === "number" && metadata.source_page_end !== metadata.source_page_start ? `s ${metadata.source_page_start}-${metadata.source_page_end}` : ` ${metadata.source_page_start}`}</p>` : ""}${Array.isArray(metadata.extraction_warnings) && metadata.extraction_warnings.length ? `<p class="notice warning">Review needed for this procedure step.</p>` : ""}<p><strong>Status:</strong> ${escapeHtml(typeof metadata.technician_status === "string" ? metadata.technician_status.replace(/_/g, " ") : "not tested")}</p><p><strong>Completeness:</strong> ${escapeHtml(completeness.badges.length ? completeness.badges.join(", ") : "Incomplete")}</p>${typeof metadata.technician_selected_branch === "string" && metadata.technician_selected_branch ? `<p><strong>Technician-selected branch:</strong> ${escapeHtml(metadata.technician_selected_branch)}</p>` : ""}<h3>OEM instruction text</h3><p>${escapeHtml(String(metadata.instruction ?? section.body ?? ""))}</p>${typeof metadata.oem_flow_text === "string" && metadata.oem_flow_text ? `<p><strong>OEM flow text:</strong> ${escapeHtml(metadata.oem_flow_text)}</p>` : ""}<h3>Technician-entered readings</h3>${readingsHtml}${typeof metadata.technician_notes === "string" && metadata.technician_notes ? `<h3>Technician notes</h3><p>${escapeHtml(metadata.technician_notes)}</p>` : ""}${typeof metadata.technician_conclusion === "string" && metadata.technician_conclusion ? `<h3>Technician conclusion</h3><p>${escapeHtml(metadata.technician_conclusion)}</p>` : ""}<h3>Attached evidence</h3>${evidenceHtml}</section>`;
+        : '<p class="muted">No step items attached.</p>';
+      return `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2>${typeof metadata.source_page_start === "number" ? `<p class="muted">Source page${typeof metadata.source_page_end === "number" && metadata.source_page_end !== metadata.source_page_start ? `s ${metadata.source_page_start}-${metadata.source_page_end}` : ` ${metadata.source_page_start}`}</p>` : ""}${Array.isArray(metadata.extraction_warnings) && metadata.extraction_warnings.length ? `<p class="notice warning">Review needed for this procedure step.</p>` : ""}<p><strong>Status:</strong> ${escapeHtml(typeof metadata.technician_status === "string" ? metadata.technician_status.replace(/_/g, " ") : "not tested")}</p><p><strong>Completeness:</strong> ${escapeHtml(completeness.badges.length ? completeness.badges.join(", ") : "Incomplete")}</p>${typeof metadata.technician_selected_branch === "string" && metadata.technician_selected_branch ? `<p><strong>Technician-selected branch:</strong> ${escapeHtml(metadata.technician_selected_branch)}</p>` : ""}<h3>OEM instruction text</h3><p>${escapeHtml(String(metadata.instruction ?? section.body ?? ""))}</p>${typeof metadata.oem_flow_text === "string" && metadata.oem_flow_text ? `<p><strong>OEM flow text:</strong> ${escapeHtml(metadata.oem_flow_text)}</p>` : ""}<h3>Technician-entered readings</h3>${readingsHtml}${typeof metadata.technician_notes === "string" && metadata.technician_notes ? `<h3>Technician notes</h3><p>${escapeHtml(metadata.technician_notes)}</p>` : ""}${typeof metadata.technician_conclusion === "string" && metadata.technician_conclusion ? `<h3>Technician conclusion</h3><p>${escapeHtml(metadata.technician_conclusion)}</p>` : ""}<h3>Attached items</h3>${evidenceHtml}</section>`;
     })
     .join("");
   const appendixHtml = buildEvidenceAppendixHtml(
@@ -1563,7 +1873,7 @@ function buildDiagnosticProcedureReportHtml(params: {
       { label: "Incomplete steps", value: String(progress.incompleteSteps) },
       { label: "Blocked steps", value: String(progress.blockedSteps) },
       {
-        label: "Missing readings/evidence/branches",
+        label: "Missing readings/items/branches",
         value: String(progress.missingRequiredDocumentationCount),
       },
       { label: "Warnings", value: String(progress.warningCount) },
@@ -1751,7 +2061,7 @@ function buildFieldServiceReportHtml({
       signedUrls,
     ),
     buildEvidenceSectionHtml(
-      "Supporting Evidence",
+      "Supporting Items",
       reviewDocument.supportingEvidence,
       signedUrls,
     ),
@@ -1761,7 +2071,184 @@ function buildFieldServiceReportHtml({
     : "";
 
   return `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable field service report</title>
-  <style>${REPORT_STYLES}${buildBrandCss(branding)}</style></head><body>${buildReportOpen({ branding, timeZone })}${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, captures: exportCaptureItems, imageAssets: signedUrls, timeZone, allowCoverImage: fieldUseGalleryMode, branding, logoUrl: brandLogoUrl, helpers: { isImageEvidence, renderDefinitionRows, renderExportImage, getUserEvidenceText, getPrimaryEvidenceLabel } })}${summaryHtml}<section class="item service-section"><h2>Report Details</h2>${renderDefinitionRows(headerRows)}</section>${renderFieldServiceSection(details, "equipment")}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work Performed / Resolution</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Supporting Record</h2><p class="muted">Photos, documents, and notes support the work summary and findings above.</p></section>${buildFinalNotesHtml(session)}${evidenceHtml}${fieldUseGalleryMode ? buildEvidenceGalleryHtml(exportCaptureItems, signedUrls, timeZone) : ""}${appendixHtml}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges Summary</h2>${renderDefinitionRows(chargeRows)}</section>${buildInspectorFacilityHtml(null, null)}${buildApprovalHtml({ profile: null, signatures, signatureUrls, draft: reportDraft, session, timeZone, branding, helpers: { renderDefinitionRows, getApprovalDate } })}${buildPrintFooterHtml({ organizationName, reportId: session.display_id, generatedAt: formatDateTimeInTimeZone(new Date().toISOString(), timeZone), branding })}</main>${EXPORT_LIGHTBOX_HTML}</body></html>`;
+  <style>${REPORT_STYLES}${buildBrandCss(branding)}</style></head><body>${buildReportOpen({ branding, timeZone })}${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: getCustomerFacingReportType(session.session_type), session, draft: reportDraft, organizationName, captures: exportCaptureItems, imageAssets: signedUrls, timeZone, allowCoverImage: fieldUseGalleryMode, branding, logoUrl: brandLogoUrl, helpers: { isImageEvidence, renderDefinitionRows, renderExportImage, getUserEvidenceText, getPrimaryEvidenceLabel } })}${summaryHtml}<section class="item service-section"><h2>Report Details</h2>${renderDefinitionRows(headerRows)}</section>${renderFieldServiceSection(details, "equipment")}<section class="item service-section"><h2>Travel</h2>${renderDefinitionRows(travelRows)}</section><section class="item service-section"><h2>Work Performed / Resolution</h2>${renderDefinitionRows(workRows)}</section><section class="item service-section"><h2>Supporting Record</h2><p class="muted">Photos, documents, and notes support the work summary and findings above.</p></section>${buildFinalNotesHtml(session)}${evidenceHtml}${fieldUseGalleryMode ? buildEvidenceGalleryHtml(exportCaptureItems, signedUrls, timeZone) : ""}${appendixHtml}<section class="item service-section"><h2>Time card summary</h2>${renderDefinitionRows(timeRows)}</section><section class="item service-section"><h2>Charges Summary</h2>${renderDefinitionRows(chargeRows)}</section>${buildInspectorFacilityHtml(null, null)}${buildApprovalHtml({ profile: null, signatures, signatureUrls, draft: reportDraft, session, timeZone, branding, helpers: { renderDefinitionRows, getApprovalDate } })}${buildPrintFooterHtml({ organizationName, reportId: session.display_id, generatedAt: formatDateTimeInTimeZone(new Date().toISOString(), timeZone), branding })}</main>${EXPORT_LIGHTBOX_HTML}</body></html>`;
+}
+
+function buildFieldServiceExecutiveContext(session: ReportSession) {
+  const details = normalizeFieldServiceDetails(session.field_service_details);
+  const rowsFor = (fieldNames: string[]): FinalReportDetail[] =>
+    fieldNames.map((fieldName) => ({
+      label: FIELD_SERVICE_FIELD_LABELS[fieldName] ?? fieldName,
+      value: getDetailValue(details, fieldName),
+    }));
+  const equipmentFields =
+    FIELD_SERVICE_SECTIONS.find((section) => section.key === "equipment")?.fields.map(
+      (field) => field.name,
+    ) ?? [];
+  const identity = rowsFor([
+    "customer_name",
+    "customer_address",
+    "work_order_number",
+    "purchase_order_number",
+    "unit_number",
+    "licence_number",
+  ]);
+  const sections: FinalReportSection[] = [
+    {
+      id: "equipment",
+      title: "Equipment",
+      summary: "",
+      rows: rowsFor(equipmentFields),
+    },
+    {
+      id: "travel",
+      title: "Travel",
+      summary: "",
+      rows: rowsFor([
+        "travel_start_location",
+        "travel_end_location",
+        "travel_start_odometer",
+        "travel_end_odometer",
+        "kilometers_traveled",
+        "travel_started_at",
+        "travel_ended_at",
+        "gps_distance_km",
+        "gps_distance_source",
+      ]),
+    },
+    {
+      id: "work-performed",
+      title: "Work Performed & Resolution",
+      summary: "",
+      rows: rowsFor([
+        "complaint",
+        "cause_of_failure",
+        "correction",
+        "technician_notes",
+      ]),
+    },
+    {
+      id: "time-summary",
+      title: "Time Summary",
+      summary: "",
+      rows: rowsFor([
+        "work_started_at",
+        "work_ended_at",
+        "travel_time_hours",
+        "working_time_hours",
+        "overtime_hours",
+        "double_time_hours",
+        "total_hours",
+      ]),
+    },
+    {
+      id: "charges-summary",
+      title: "Charges Summary",
+      summary: "",
+      rows: rowsFor([
+        "labour_charge",
+        "parts_charge",
+        "mileage_charge",
+        "expenses_charge",
+        "misc_charges",
+        "subtotal",
+        "tax",
+        "total",
+      ]),
+    },
+  ];
+  return { identity, sections };
+}
+
+function buildDiagnosticExecutiveSections(params: {
+  reportDraft: ReportDraft;
+  reportSections: ReportDraftSection[];
+  captureItems: ReportCapture[];
+}): FinalReportSection[] {
+  const steps = params.reportSections.filter((section) => {
+    const metadata = getDiagnosticStepMetadata(section);
+    return (
+      metadata.section_type === "diagnostic_procedure_step" &&
+      metadata.visible !== false
+    );
+  });
+  const progress = getDiagnosticProcedureProgress(steps, params.captureItems);
+  const summary: FinalReportSection = {
+    id: "procedure-progress",
+    title: "Procedure Completion",
+    summary: "",
+    rows: [
+      { label: "Complete", value: `${progress.percentComplete}%` },
+      { label: "Visible steps", value: String(progress.totalVisibleSteps) },
+      { label: "Incomplete steps", value: String(progress.incompleteSteps) },
+      { label: "Blocked steps", value: String(progress.blockedSteps) },
+      {
+        label: "Missing required items",
+        value: String(progress.missingRequiredDocumentationCount),
+      },
+      { label: "Warnings", value: String(progress.warningCount) },
+    ],
+  };
+  return [
+    summary,
+    ...steps.map((section): FinalReportSection => {
+      const metadata = getDiagnosticStepMetadata(section);
+      const stepId =
+        typeof metadata.step_id === "string"
+          ? metadata.step_id
+          : section.section_key;
+      const readings = asDiagnosticRecordArray(metadata.technician_readings);
+      const attachedItemCount = params.captureItems.filter((capture) =>
+        captureMatchesDiagnosticStep(capture, stepId),
+      ).length;
+      const rows: FinalReportDetail[] = [
+        {
+          label: "Status",
+          value:
+            typeof metadata.technician_status === "string"
+              ? metadata.technician_status
+              : "Not tested",
+        },
+        ...readings.map((reading, index) => ({
+          label: String(reading.label ?? `Reading ${index + 1}`),
+          value: `${String(reading.value ?? "")}${reading.unit ? ` ${String(reading.unit)}` : ""}`,
+        })),
+        {
+          label: "Attached items",
+          value: String(attachedItemCount),
+        },
+      ];
+      if (typeof metadata.technician_notes === "string")
+        rows.push({ label: "Technician notes", value: metadata.technician_notes });
+      if (typeof metadata.technician_conclusion === "string")
+        rows.push({
+          label: "Technician conclusion",
+          value: metadata.technician_conclusion,
+        });
+      return {
+        id: section.id,
+        title: section.title,
+        summary: String(metadata.instruction ?? section.body ?? ""),
+        rows,
+      };
+    }),
+  ];
+}
+
+function buildFormExecutiveSections(
+  sections: ReturnType<typeof normalizeFormBlueprintSections>,
+): FinalReportSection[] {
+  return sections.map((section) => ({
+    id: section.key,
+    title: section.title,
+    summary: section.body ?? "",
+    rows: section.fields.map((field) => ({
+      label: field.label,
+      value: [field.value || "Not captured", field.unit ?? ""]
+        .filter(Boolean)
+        .join(" "),
+    })),
+  }));
 }
 
 const REPORT_STYLES = `
@@ -2272,6 +2759,8 @@ export async function GET(_request: Request, { params }: RouteContext) {
       .from("report_share_tokens")
       .select("*, documentation_sessions(*, organizations(name))")
       .eq("token", shareTokenValue)
+      .eq("link_kind", "report")
+      .is("deliverable_id", null)
       .maybeSingle();
 
     const sharedSession = Array.isArray(shareToken?.documentation_sessions)
@@ -2283,8 +2772,10 @@ export async function GET(_request: Request, { params }: RouteContext) {
       !shareToken ||
       !sharedSession ||
       shareToken.disabled_at ||
+      sharedSession.deleted_at ||
       sharedSession.id !== id ||
       sharedSession.organization_id !== shareToken.organization_id ||
+      !reportIsReadyForDelivery(sharedSession as ReportSession) ||
       (shareToken.expires_at && new Date(shareToken.expires_at) < new Date())
     ) {
       notFound();
@@ -2316,6 +2807,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
       .select("*, organizations(name)")
       .eq("id", id)
       .eq("organization_id", organizationId)
+      .is("deleted_at", null)
       .maybeSingle();
 
     if (sessionError || !ownedSession) {
@@ -2350,7 +2842,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     if (
       !previewOnly &&
       !studioExport &&
-      ownedSession.review_status !== "ready_for_delivery"
+      !reportIsReadyForDelivery(ownedSession)
     ) {
       redirect(
         `/dashboard/sessions/${id}/report?error=${encodeURIComponent("Approve this report before exporting.")}`,
@@ -2419,6 +2911,14 @@ export async function GET(_request: Request, { params }: RouteContext) {
     )
     .eq("organization_id", organizationId)
     .maybeSingle();
+  const { data: reviewerProfile } = session.reviewed_by
+    ? await supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("id", session.reviewed_by)
+        .eq("organization_id", organizationId)
+        .maybeSingle()
+    : { data: null };
   const signatureUrls = buildSignatureUrls(
     session.id,
     reportSignatures,
@@ -2450,7 +2950,6 @@ export async function GET(_request: Request, { params }: RouteContext) {
   if (
     !exportBranding &&
     requestedTemplateId !== "system" &&
-    requestedTemplateId !== "workspace-default" &&
     requestedTemplateId !== "draft"
   ) {
     const { data: defaultTemplate } = await (
@@ -2475,9 +2974,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
       .maybeSingle();
     exportBranding = normalizeBrandProfile(legacyBranding as any);
   }
-  const branding = normalizeBrandProfile(
-    exportBranding ?? null,
-  ) as ExportBranding;
+  const branding = normalizeBrandProfile(exportBranding ?? null) as ExportBranding;
   const selectedTemplateExplicitlyDisablesCover =
     Boolean(selectedTemplateId) && branding.report_style.coverPage === "none";
   if (
@@ -2530,7 +3027,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
       created_by: createdBy,
       metadata: {
         item_count: captureItems.length,
-        format: "printable_html",
+        format: "application/pdf",
         report_template_id: selectedTemplateId,
         report_template_name: selectedTemplateName,
         report_template_snapshot: branding,
@@ -2543,7 +3040,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
       metadata: {
         session_id: session.id,
         item_count: captureItems.length,
-        format: "printable_html",
+        format: "application/pdf",
       },
       createdBy,
     });
@@ -2554,7 +3051,52 @@ export async function GET(_request: Request, { params }: RouteContext) {
     typeof session.organizations.name === "string"
       ? session.organizations.name
       : "CRED";
+  const pdfDisposition = sharedAccess ? "inline" : "attachment";
   if (reportDraft && getDiagnosticProcedureInfo(reportDraft)) {
+    const diagnosticInfo = getDiagnosticProcedureInfo(reportDraft);
+    const diagnosticReviewDocument = buildNormalizedReportModel({
+      captures: exportCaptureItems,
+      sections: [],
+      draftSections: reportSections,
+      measurements: reportDraft.measurements ?? [],
+      findings: reportDraft.findings ?? [],
+    });
+    const diagnosticTitle = cleanReportTitle(
+      diagnosticInfo?.title ?? reportDraft.title ?? session.title,
+      session,
+      reportDraft,
+    );
+    const diagnosticSnapshot = buildExecutiveSnapshot({
+      session,
+      organizationName,
+      reportTitle: diagnosticTitle,
+      reportType: "Diagnostic Procedure Report",
+      reportDraft,
+      reviewDocument: diagnosticReviewDocument,
+      captureItems: exportCaptureItems,
+      timeZone,
+      approvedBy: reviewerProfile?.full_name ?? null,
+      identity: [
+        { label: "Session", value: session.title },
+        { label: "Procedure", value: diagnosticInfo?.title ?? "" },
+        { label: "Manufacturer", value: diagnosticInfo?.manufacturer ?? "" },
+        { label: "Document type", value: diagnosticInfo?.documentType ?? "" },
+      ],
+      extraSections: buildDiagnosticExecutiveSections({
+        reportDraft,
+        reportSections,
+        captureItems: exportCaptureItems,
+      }),
+    });
+    if (!previewOnly) {
+      return buildExecutivePdfResponse({
+        supabase,
+        snapshot: diagnosticSnapshot,
+        captures: exportCaptureItems,
+        branding,
+        disposition: pdfDisposition,
+      });
+    }
     const html = buildDiagnosticProcedureReportHtml({
       session,
       organizationName,
@@ -2562,7 +3104,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
       reportSections,
       captureItems: exportCaptureItems,
       signedUrls: imageAssets,
-      showToolbar: !previewOnly,
+      showToolbar: false,
       timeZone,
       branding,
       brandLogoUrl,
@@ -2576,6 +3118,41 @@ export async function GET(_request: Request, { params }: RouteContext) {
     const visibleReportSections = reportSections.filter(
       (section) => !isHiddenFromReport(section.metadata),
     );
+    const fieldContext = buildFieldServiceExecutiveContext(session);
+    const fieldReviewDocument = buildNormalizedReportModel({
+      captures: exportCaptureItems,
+      sections: [],
+      draftSections: visibleReportSections,
+      measurements: reportDraft?.measurements ?? [],
+      findings: reportDraft?.findings ?? [],
+    });
+    const fieldReportTitle = cleanReportTitle(
+      reportDraft?.title || session.title,
+      session,
+      reportDraft,
+    );
+    const fieldSnapshot = buildExecutiveSnapshot({
+      session,
+      organizationName,
+      reportTitle: fieldReportTitle,
+      reportType: "Field Service Report",
+      reportDraft,
+      reviewDocument: fieldReviewDocument,
+      captureItems: exportCaptureItems,
+      timeZone,
+      identity: fieldContext.identity,
+      extraSections: fieldContext.sections,
+      approvedBy: reviewerProfile?.full_name ?? null,
+    });
+    if (!previewOnly) {
+      return buildExecutivePdfResponse({
+        supabase,
+        snapshot: fieldSnapshot,
+        captures: exportCaptureItems,
+        branding,
+        disposition: pdfDisposition,
+      });
+    }
     const html = buildFieldServiceReportHtml({
       session,
       organizationName,
@@ -2585,7 +3162,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
       signatureUrls,
       reportDraft,
       reportSections: visibleReportSections,
-      showToolbar: !previewOnly,
+      showToolbar: false,
       timeZone,
       branding,
       brandLogoUrl,
@@ -2624,10 +3201,11 @@ export async function GET(_request: Request, { params }: RouteContext) {
     reportDraft,
     isGenericEvidenceReport,
   );
-  const subjectDetailRows = buildCustomerAssetRows(
+  const customerAssetRows = buildCustomerAssetRows(
     formSections,
     session as unknown as Record<string, unknown>,
-  ).filter(
+  );
+  const subjectDetailRows = customerAssetRows.filter(
     (row) =>
       ![
         "Customer / Client",
@@ -2730,9 +3308,17 @@ export async function GET(_request: Request, { params }: RouteContext) {
           imageAssets,
         )
       : "";
-  const observationsHtml =
-    formStructuredHtml ||
-    buildDocumentedObservationsHtml(reviewDocument, imageAssets);
+  const observationsHtml = buildDocumentedObservationsHtml(
+    reviewDocument,
+    imageAssets,
+  );
+  const formsAndDocumentsHtml = [
+    formStructuredHtml,
+    buildReferenceDocumentsHtml(
+      getReferenceDocumentEntries(reviewDocument),
+      imageAssets,
+    ),
+  ].join("");
   const approvalHtml = buildApprovalHtml({
     profile: reportProfile,
     signatures: reportSignatures,
@@ -2744,13 +3330,48 @@ export async function GET(_request: Request, { params }: RouteContext) {
     helpers: { renderDefinitionRows, getApprovalDate },
   });
 
-  const toolbarHtml = previewOnly
-    ? ""
-    : '<div class="toolbar"><button onclick="window.print()">Print / Save Report</button><p class="print-help">Use your browser’s Print or Share menu to save a printable report.</p></div>';
+  const executiveSections: FinalReportSection[] = isGenericEvidenceReport
+    ? []
+    : buildFormExecutiveSections(formSections);
+  if (includeAppendix) {
+    executiveSections.push({
+      id: "source-index",
+      title: "Source Index",
+      summary: "Optional source references for the reviewed report.",
+      rows: appendixCaptureItems.map((capture, index) => ({
+        label: `Item ${String(index + 1).padStart(3, "0")}`,
+        value: `${getCustomerFacingEvidenceTitle(capture, index)} - ${formatDateTimeInTimeZone(capture.captured_at, timeZone)}`,
+      })),
+    });
+  }
+  const finalSnapshot = buildExecutiveSnapshot({
+    session,
+    organizationName,
+    reportTitle,
+    reportType: getCustomerFacingReportType(session.session_type),
+    reportDraft,
+    reviewDocument,
+    captureItems: exportCaptureItems,
+    timeZone,
+    identity: customerAssetRows,
+    extraSections: executiveSections,
+    approvedBy: reviewerProfile?.full_name ?? null,
+  });
+  if (!previewOnly) {
+    return buildExecutivePdfResponse({
+      supabase,
+      snapshot: finalSnapshot,
+      captures: exportCaptureItems,
+      branding,
+      disposition: pdfDisposition,
+    });
+  }
+
+  const toolbarHtml = "";
   let html: string;
   try {
     html = `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" /><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" /><title>${escapeHtml(reportTitle)} printable report</title>
-  <style>${REPORT_STYLES}${buildBrandCss(branding)}</style></head><body>${buildReportOpen({ branding, timeZone })}${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: normalizeReportType(session.session_type), session, draft: reportDraft, organizationName, companyProfile: reportCompanyProfile, captures: appendixCaptureItems, imageAssets: imageAssets, timeZone, allowCoverImage: useGalleryMode, branding, logoUrl: brandLogoUrl, helpers: { isImageEvidence, renderDefinitionRows, renderExportImage, getUserEvidenceText, getPrimaryEvidenceLabel } })}${summaryHtml}${observationsHtml}${unattachedHtml}${appendixHtml}${approvalHtml}${buildPrintFooterHtml({ organizationName, reportId: session.display_id, generatedAt: formatDateTimeInTimeZone(new Date().toISOString(), timeZone), branding })}</main>${EXPORT_LIGHTBOX_HTML}</body></html>`;
+  <style>${REPORT_STYLES}${buildBrandCss(branding)}</style></head><body>${buildReportOpen({ branding, timeZone })}${toolbarHtml}${buildReportCoverHtml({ reportTitle, reportType: getCustomerFacingReportType(session.session_type), session, draft: reportDraft, organizationName, companyProfile: reportCompanyProfile, captures: appendixCaptureItems, imageAssets: imageAssets, timeZone, allowCoverImage: useGalleryMode, branding, logoUrl: brandLogoUrl, helpers: { isImageEvidence, renderDefinitionRows, renderExportImage, getUserEvidenceText, getPrimaryEvidenceLabel } })}${summaryHtml}${observationsHtml}${formsAndDocumentsHtml}${unattachedHtml}${appendixHtml}${approvalHtml}${buildPrintFooterHtml({ organizationName, reportId: session.display_id, generatedAt: formatDateTimeInTimeZone(new Date().toISOString(), timeZone), branding })}</main>${EXPORT_LIGHTBOX_HTML}</body></html>`;
   } catch (error) {
     console.error("[report-pdf-render-error] Failed to render report export", {
       session_id: session.id,

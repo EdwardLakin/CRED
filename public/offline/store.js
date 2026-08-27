@@ -22,15 +22,40 @@ export function getOfflineIdentity() {
 }
 async function normalizeCaptureForIndexedDb(record) {
     const source = record.blob;
-    if (!(source instanceof Blob))
-        throw new Error('IndexedDB capture record does not contain Blob data.');
-    const blob = source instanceof File ? new Blob([await source.arrayBuffer()], { type: record.metadata.mimeType || source.type || 'application/octet-stream' }) : source;
-    return { ...record, blob };
+    if (!(source instanceof Blob) && !(source instanceof ArrayBuffer))
+        throw new Error('IndexedDB capture record does not contain media byte data.');
+    const blob = source instanceof ArrayBuffer
+        ? new Blob([source], { type: record.metadata.mimeType || 'application/octet-stream' })
+        : source;
+    const legacyMetadata = record.metadata;
+    const clientItemId = typeof legacyMetadata.clientItemId === 'string' && legacyMetadata.clientItemId.trim() ? legacyMetadata.clientItemId.trim().slice(0, 160) : record.localId;
+    const documentationItemId = typeof legacyMetadata.documentationItemId === 'string' && legacyMetadata.documentationItemId.trim() ? legacyMetadata.documentationItemId.trim() : null;
+    const attachmentOrder = Number.isInteger(legacyMetadata.attachmentOrder) && Number(legacyMetadata.attachmentOrder) > 0 ? Number(legacyMetadata.attachmentOrder) : 1;
+    const sourceDocumentType = typeof legacyMetadata.sourceDocumentType === 'string' && legacyMetadata.sourceDocumentType.trim() ? legacyMetadata.sourceDocumentType.trim() : null;
+    const sourceDocumentLabel = typeof legacyMetadata.sourceDocumentLabel === 'string' && legacyMetadata.sourceDocumentLabel.trim() ? legacyMetadata.sourceDocumentLabel.trim().slice(0, 80) : null;
+    const sourceKind = legacyMetadata.sourceKind === 'document' || legacyMetadata.sourceKind === 'note' || legacyMetadata.sourceKind === 'observation' ? legacyMetadata.sourceKind : sourceDocumentType || legacyMetadata.manualType === 'document' ? 'document' : legacyMetadata.manualType === 'voice_note' || legacyMetadata.manualType === 'text_note' ? 'note' : 'observation';
+    const attachmentKind = legacyMetadata.attachmentKind === 'primary' || legacyMetadata.attachmentKind === 'supporting' || legacyMetadata.attachmentKind === 'document' || legacyMetadata.attachmentKind === 'note' ? legacyMetadata.attachmentKind : sourceKind === 'document' ? 'document' : sourceKind === 'note' ? 'note' : attachmentOrder === 1 ? 'primary' : 'supporting';
+    return {
+        ...record,
+        blob,
+        metadata: {
+            ...legacyMetadata,
+            clientItemId,
+            documentationItemId,
+            attachmentOrder,
+            sourceKind,
+            attachmentKind,
+            sourceDocumentType,
+            sourceDocumentLabel,
+        },
+    };
 }
 async function putQueuedCapture(record) {
     try {
         const prepared = await normalizeCaptureForIndexedDb(record);
-        return put('queuedCaptures', prepared);
+        const blobBytes = await prepared.blob.arrayBuffer();
+        await put('queuedCaptures', { ...prepared, blob: blobBytes });
+        return prepared;
     }
     catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -46,7 +71,7 @@ export function normalizeSession(session) {
         localSessionId,
         organizationId,
         userId: String(session.userId ?? ''),
-        title: String(session.title ?? 'Offline Evidence'),
+        title: String(session.title ?? 'Offline Documentation'),
         sessionType: String(session.sessionType ?? 'General Evidence Report'),
         serverSessionId: typeof session.serverSessionId === 'string' ? session.serverSessionId : null,
         retryCount: Number(session.retryCount ?? 0),
@@ -77,7 +102,7 @@ export async function createSession(identity, input = {}) {
         serverSessionId: null,
         organizationId: identity.organizationId,
         userId: identity.userId,
-        title: input.title || `Offline Evidence ${new Date().toLocaleString()}`,
+        title: input.title || `Offline Documentation ${new Date().toLocaleString()}`,
         sessionType: input.sessionType || 'General Evidence Report',
         status: SESSION_STATUSES.capturing,
         idempotencyKey: createOfflineSessionIdempotencyKey(identity.organizationId, localSessionId),
@@ -100,7 +125,11 @@ export async function saveSession(session, patch = {}) {
     return updated;
 }
 export async function capturesForSession(localSessionId, identity = getOfflineIdentity()) {
-    return (await getAll('queuedCaptures')).filter((capture) => capture.localSessionId === localSessionId && (!identity || (capture.userId === identity.userId && capture.organizationId === identity.organizationId))).sort((a, b) => (a.metadata.reportOrder ?? 999999) - (b.metadata.reportOrder ?? 999999) || a.createdAt.localeCompare(b.createdAt));
+    const stored = await getAll('queuedCaptures');
+    const scoped = stored.filter((capture) => capture.localSessionId === localSessionId && (!identity || (capture.userId === identity.userId && capture.organizationId === identity.organizationId)));
+    const normalized = await Promise.all(scoped.map(normalizeCaptureForIndexedDb));
+    await Promise.all(normalized.map(putQueuedCapture));
+    return normalized.sort((a, b) => (a.metadata.reportOrder ?? 999999) - (b.metadata.reportOrder ?? 999999) || a.createdAt.localeCompare(b.createdAt));
 }
 export async function normalizeSessionReportOrders(localSessionId, identity = getOfflineIdentity()) {
     const captures = await capturesForSession(localSessionId, identity);
@@ -121,7 +150,10 @@ export async function sessionStats(localSessionId, identity = getOfflineIdentity
     const bytes = captures.reduce((sum, capture) => sum + (capture.metadata?.size || capture.blob?.size || 0), 0);
     return { captureCount: Math.max(captures.length, session?.originalCaptureCount ?? 0), pendingCount: pending.length, verifiedCount: Math.max(verified.length, session?.verifiedCaptureCount ?? 0), bytes };
 }
-export async function addCapture(session, file, order) {
+export async function addCapture(session, file, order, item = {
+    clientItemId: createId(),
+    attachmentOrder: 1,
+}) {
     const timestamp = now();
     const localId = createId();
     const serverSessionId = session.serverSessionId || null;
@@ -134,8 +166,11 @@ export async function addCapture(session, file, order) {
         workspaceId: null,
         sessionId: serverSessionId || session.localSessionId,
         userId: session.userId,
-        blob: new Blob([file], { type: file.type || 'application/octet-stream' }),
+        blob: file,
         metadata: {
+            clientItemId: item.clientItemId, documentationItemId: null, attachmentOrder: item.attachmentOrder,
+            sourceKind: 'observation', attachmentKind: item.attachmentOrder === 1 ? 'primary' : 'supporting',
+            sourceDocumentType: null, sourceDocumentLabel: null,
             captureIntent: 'auto_evidence', manualType: null, guidedStep: null, guidedLabel: null, workflow: null,
             technicianNote: '', transcriptStatus: 'not_started', noteSource: 'manual', reportOrder: order,
             includeInReport: true, filename: file.name || `capture-${timestamp}`, mimeType: file.type || 'application/octet-stream', size: file.size,

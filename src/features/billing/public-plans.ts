@@ -31,10 +31,10 @@ const PLAN_COPY: Record<BillingPlan, Omit<PublicCredPlan, 'billingKey' | 'tier' 
   individual: {
     shortName: 'Essentials',
     audience: 'Technicians, repair shops, inspectors, contractors, field-service teams, fleet teams, and property walkthrough teams.',
-    description: 'A complete documentation workflow for capturing field evidence, reviewing reports, approving them, and exporting polished records.',
+    description: 'A complete four-step workflow for capturing items and forms, reviewing the report, approving it, and exporting a polished record.',
     highlightedFeatures: [
       'Capture sessions for photos, forms, documents, voice notes, and text notes',
-      'Evidence Library and Existing Report workflow',
+      'Simple item review and executive report workflow',
       'Human review, approval, signatures, PDF/print, email, and secure sharing',
       'Team management with additional seats available',
     ],
@@ -43,23 +43,23 @@ const PLAN_COPY: Record<BillingPlan, Omit<PublicCredPlan, 'billingKey' | 'tier' 
   team: {
     shortName: 'Professional',
     audience: 'Adjusters, claims teams, compliance teams, larger inspection teams, and field organizations with more complex documentation.',
-    description: 'Everything in Essentials plus structured evidence review, organization, timelines, observations, suggestions, and deliverables.',
+    description: 'Everything in Essentials plus Advanced Review, timelines, factual observations, suggestions, and additional outputs.',
     highlightedFeatures: [
-      'Review Queue for structured evidence review',
+      'Advanced Review for complex documentation',
       'Timeline, Factual Observations, and Suggestions',
-      'Deliverables for larger-team report preparation',
+      'Additional Outputs for larger-team report preparation',
       'Larger-team workflow with additional seats available',
     ],
   },
   shop: {
     shortName: 'Investigation',
-    audience: 'Law firms, insurance investigators, forensic consultants, expert witnesses, dispute-resolution teams, and evidence-heavy services.',
-    description: 'Everything in Professional plus advanced evidence organization, entities, relationships, evidence linking, and investigation deliverables.',
+    audience: 'Law firms, insurance investigators, forensic consultants, expert witnesses, dispute-resolution teams, and document-intensive services.',
+    description: 'Everything in Professional plus advanced source organization, entities, connections, source linking, and investigation outputs.',
     highlightedFeatures: [
-      'Entities and Relationship Explorer',
-      'Evidence linking and chronology analysis support',
-      'Investigation deliverables and full investigation workspace',
-      'Advanced workspace for evidence-heavy teams',
+      'Entities and Connections',
+      'Source linking and chronology analysis support',
+      'Investigation outputs and full case workspace',
+      'Advanced workspace for complex cases',
     ],
   },
 }
@@ -86,20 +86,20 @@ export type PublicFeatureComparisonRow = {
 
 const COMPARISON_FEATURES: Array<{ label: string; feature: FeatureKey }> = [
   { label: 'Capture sessions', feature: 'capture' },
-  { label: 'Evidence Library', feature: 'evidence_library' },
-  { label: 'Existing Report', feature: 'existing_report' },
+  { label: 'Items', feature: 'evidence_library' },
+  { label: 'Report', feature: 'existing_report' },
   { label: 'PDF/print/export', feature: 'report_export' },
   { label: 'Secure report sharing', feature: 'report_export' },
   { label: 'Signatures', feature: 'report_export' },
   { label: 'Team management', feature: 'team_management' },
-  { label: 'Review Queue', feature: 'review_queue' },
+  { label: 'Advanced Review', feature: 'review_queue' },
   { label: 'Timeline', feature: 'timeline' },
   { label: 'Factual Observations', feature: 'factual_observations' },
   { label: 'Suggestions', feature: 'suggestions' },
-  { label: 'Deliverables', feature: 'deliverables' },
+  { label: 'Additional Outputs', feature: 'deliverables' },
   { label: 'Entities', feature: 'entities' },
-  { label: 'Relationship Explorer', feature: 'relationship_explorer' },
-  { label: 'Investigation deliverables', feature: 'investigation_deliverables' },
+  { label: 'Connections', feature: 'relationship_explorer' },
+  { label: 'Investigation outputs', feature: 'investigation_deliverables' },
 ]
 
 export const PUBLIC_FEATURE_COMPARISON: PublicFeatureComparisonRow[] = [

@@ -1961,7 +1961,7 @@ function detectDuplicateFlags(captures: CaptureLike[]) {
     const textKey = normalizeForMatch(`${capture.type ?? ''} ${capture.media_kind ?? ''} ${getCaptureDocumentText(capture)} ${capture.ai_summary ?? ''} ${JSON.stringify(getExtractionFields(capture.extracted_data))}`).slice(0, 500)
     if (textKey.length >= 12) {
       const duplicateOf = seen.get(textKey)
-      if (duplicateOf) flagOnce(capture.id, duplicateOf, 'Same document, upload, or highly similar extracted evidence was captured more than once. It was flagged for review and not deleted.')
+      if (duplicateOf) flagOnce(capture.id, duplicateOf, 'The same document, upload, or substantially similar item content was captured more than once. It was flagged for review and not deleted.')
       else seen.set(textKey, capture.id)
     }
     for (const [key, value] of Object.entries(getExtractionFields(capture.extracted_data))) {
@@ -1985,7 +1985,7 @@ function buildGeneratedFinding(title: string, fields: NormalizedReportField[], g
   if (hasBattery && !hasDefect) return { text: 'Battery, starter, and charging system operating within specification.', severity: 'pass' as const, confidence: 0.96 }
   if (hasDefect) return { text: `${title} has supported inspection findings requiring review.`, severity: 'fail' as const, confidence: 0.88 }
   if (hasAdvisory) return { text: `${title} has supported advisory observations.`, severity: 'advisory' as const, confidence: 0.84 }
-  return { text: `${title} evidence package prepared for review.`, severity: 'needs_review' as const, confidence: 0.72 }
+  return { text: `${title} item group prepared for review.`, severity: 'needs_review' as const, confidence: 0.72 }
 }
 
 export function buildEvidencePackages(captures: CaptureLike[], evidenceGroups: EvidenceGroup[] = buildEvidenceGroups(captures)): EvidencePackage[] {
@@ -1994,7 +1994,7 @@ export function buildEvidencePackages(captures: CaptureLike[], evidenceGroups: E
   for (const capture of captures) {
     const rule = getPackageRule(capture, groupByCapture.get(capture.id))
     const key = rule?.key ?? (isNoteCapture(capture) ? 'notes' : isDocumentCapture(capture) ? 'documents' : 'general')
-    const title = rule?.title ?? (key === 'notes' ? 'Technician Notes' : key === 'documents' ? 'Reference Documents' : 'General Supporting Evidence')
+    const title = rule?.title ?? (key === 'notes' ? 'Technician Notes' : key === 'documents' ? 'Reference Documents' : 'General Supporting Items')
     buckets.set(key, { title, captures: [...(buckets.get(key)?.captures ?? []), capture] })
   }
   const allFields = buildNormalizedReportFields(captures)
@@ -2008,7 +2008,7 @@ export function buildEvidencePackages(captures: CaptureLike[], evidenceGroups: E
     return {
       id: `${key}_${index + 1}`,
       title: bucket.title,
-      summary: `${bucket.captures.length} capture${bucket.captures.length === 1 ? '' : 's'} grouped as related evidence.`,
+      summary: `${bucket.captures.length} item${bucket.captures.length === 1 ? '' : 's'} grouped together.`,
       capture_ids: captureIds,
       confidence: Math.min(0.98, 0.68 + Math.min(captureIds.length, 5) * 0.06),
       generated_finding: { ...finding, source_values: sourceValues },
@@ -2227,11 +2227,11 @@ export function mapEvidenceToFormBlueprint(captures: CaptureLike[], blueprint: F
       capture_id: capture.id,
       field_id: candidate.field.id,
       section_id: candidate.section?.id ?? null,
-      section_title: candidate.section?.title ?? 'Unmapped evidence',
+      section_title: candidate.section?.title ?? 'Unmapped item',
       field_label: candidate.field.label,
       confidence: Number(candidate.confidence.toFixed(2)),
       truth_source: truthSourceForCapture(capture),
-      reason: 'Matched evidence text against extracted form section and field labels.',
+      reason: 'Matched item text against extracted form section and field labels.',
     }))
   })
 }

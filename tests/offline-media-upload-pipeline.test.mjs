@@ -11,8 +11,11 @@ const verifyRoute = readFileSync('app/api/offline/captures/verify/route.ts', 'ut
 const captureActions = readFileSync('src/features/capture/actions.ts', 'utf8')
 
 test('iPad/Safari-style File is stored and restored as the Blob with byte metadata and object URL previews', () => {
-  assert.match(store, /addCapture\(session: OfflineLocalSession, file: File, order: number\)/)
-  assert.match(store, /blob: new Blob\(\[file\]/)
+  assert.match(store, /export async function addCapture\([\s\S]*session: OfflineLocalSession,[\s\S]*file: File,[\s\S]*order: number/)
+  assert.match(store, /const blobBytes = await prepared\.blob\.arrayBuffer\(\)/)
+  assert.match(store, /put<PersistedOfflineCaptureRecord>\('queuedCaptures', \{ \.\.\.prepared, blob: blobBytes \}\)/)
+  assert.match(store, /source instanceof ArrayBuffer[\s\S]*new Blob\(\[source\]/)
+  assert.doesNotMatch(store, /put\('queuedCaptures', prepared\)/)
   assert.match(store, /normalizeCaptureForIndexedDb/)
   assert.match(store, /IndexedDB queued capture write failed while preparing Blob data/)
   assert.match(store, /filename: file\.name \|\|/)
@@ -76,7 +79,7 @@ test('notes and order survive failed media upload diagnostics', () => {
 
 test('retry Save cannot create duplicate capture records for the same upload', () => {
   assert.match(captureActions, /\.eq\('storage_path', storagePath\)/)
-  assert.match(captureActions, /if \(existingCapture\) \{\s*return \{ ok: true/s)
+  assert.match(captureActions, /if \(existingCapture\) \{[\s\S]*\.from\('documentation_items'\)[\s\S]*recovered: true/s)
   assert.match(captureActions, /captureErrorResult\?\.code === '23505'/)
 })
 
@@ -118,7 +121,7 @@ test('sync never sends reportOrder zero to finalize or verification', () => {
 })
 
 test('retry can verify recovered server row after legacy order normalization', () => {
-  assert.match(captureActions, /if \(existingCapture\) \{\s*return \{ ok: true/s)
+  assert.match(captureActions, /if \(existingCapture\) \{[\s\S]*\.from\('documentation_items'\)[\s\S]*recovered: true/s)
   assert.match(syncEngine, /const pendingBeforeNormalization = await getPendingCaptures\(userId\)/)
   assert.match(syncEngine, /const pending = await getPendingCaptures\(userId\)/)
   assert.match(syncEngine, /await recordVerifiedOfflineCapture\(\s*current\.localSessionId,\s*positiveReportOrder\(current\.metadata\.reportOrder\) \?\? 1,?\s*\)/)

@@ -39,17 +39,17 @@ type WorkspaceNavCard = WorkspaceNavItem & {
   description: string
 }
 
-// Standard labels: Evidence Library, Timeline, Entities, Factual Observations, Deliverables, Existing Report
+// User-facing labels stay plain while feature keys and route segments remain stable.
 const cards: WorkspaceNavCard[] = [
-  { feature: 'review_queue', label: 'Review Queue', shortLabel: 'Review', key: null, href: 'evidence/review', current: 'review', description: 'Process unresolved evidence and AI suggestions without opening detail pages.', priority: true },
-  { feature: 'evidence_library', label: EVIDENCE_WORKSPACE_LABELS.library, shortLabel: 'Evidence', key: 'evidenceItems', href: 'evidence', current: 'library', description: 'Review source items and choose what to include in outputs.', priority: true },
-  { feature: 'existing_report', label: EVIDENCE_WORKSPACE_LABELS.report, shortLabel: 'Report', key: null, href: 'report', current: 'report', description: 'Open the existing report review workspace.', priority: true },
-  { feature: 'timeline', label: EVIDENCE_WORKSPACE_LABELS.timeline, shortLabel: 'Timeline', key: 'timelineEvents', href: 'timeline', current: 'timeline', description: 'Organize dated events and linked evidence.', priority: true },
+  { feature: 'review_queue', label: 'Advanced Review', shortLabel: 'Review', key: null, href: 'evidence/review', current: 'review', description: 'Resolve items and AI suggestions that need attention.', priority: true },
+  { feature: 'evidence_library', label: EVIDENCE_WORKSPACE_LABELS.library, shortLabel: 'Items', key: 'evidenceItems', href: 'evidence', current: 'library', description: 'Review captured items and choose what to include in the report.', priority: true },
+  { feature: 'existing_report', label: EVIDENCE_WORKSPACE_LABELS.report, shortLabel: 'Report', key: null, href: 'report', current: 'report', description: 'Open the report review workspace.', priority: true },
+  { feature: 'timeline', label: EVIDENCE_WORKSPACE_LABELS.timeline, shortLabel: 'Timeline', key: 'timelineEvents', href: 'timeline', current: 'timeline', description: 'Organize dated events and linked items.', priority: true },
   { feature: 'entities', label: EVIDENCE_WORKSPACE_LABELS.entities, shortLabel: 'Entities', key: 'entities', href: 'entities', current: 'entities', description: 'Review people, places, assets, and organizations.', priority: true },
   { feature: 'factual_observations', label: EVIDENCE_WORKSPACE_LABELS.assertions, shortLabel: 'Observations', key: 'factualObservations', href: 'assertions', current: 'assertions', description: 'Review factual observations and supporting links.', priority: true },
-  { feature: 'relationship_explorer', label: EVIDENCE_WORKSPACE_LABELS.relationships, shortLabel: 'Relationships', key: 'relationships', href: 'relationships', current: 'relationships', description: 'Explore how evidence, events, entities, and observations connect.', priority: true },
-  { feature: 'suggestions', label: EVIDENCE_WORKSPACE_LABELS.suggestions, shortLabel: 'Suggestions', key: null, href: 'suggestions', current: 'suggestions', description: 'Review AI-proposed events, entities, observations, and relationships before accepting anything.', priority: false },
-  { feature: 'deliverables', label: EVIDENCE_WORKSPACE_LABELS.deliverables, shortLabel: 'Deliverables', key: null, href: 'deliverables', current: 'deliverables', description: 'Generate preview-only chronology, evidence index, and observation summary outputs.', priority: false },
+  { feature: 'relationship_explorer', label: EVIDENCE_WORKSPACE_LABELS.relationships, shortLabel: 'Connections', key: 'relationships', href: 'relationships', current: 'relationships', description: 'Explore how items, events, entities, and observations connect.', priority: true },
+  { feature: 'suggestions', label: EVIDENCE_WORKSPACE_LABELS.suggestions, shortLabel: 'Suggestions', key: null, href: 'suggestions', current: 'suggestions', description: 'Review AI-proposed events, entities, observations, and connections before accepting anything.', priority: false },
+  { feature: 'deliverables', label: EVIDENCE_WORKSPACE_LABELS.deliverables, shortLabel: 'Outputs', key: null, href: 'deliverables', current: 'deliverables', description: 'Generate a chronology, source index, and observation summary.', priority: false },
 ]
 
 export function EvidenceWorkspaceNav({ sessionId, counts, accessSubject }: { sessionId: string; counts: EvidenceWorkspaceCounts; accessSubject?: FeatureAccessSubject }) {
@@ -57,18 +57,18 @@ export function EvidenceWorkspaceNav({ sessionId, counts, accessSubject }: { ses
   const visibleCards = cards.filter((card) => canUseFeature(subject, card.feature))
   const visibleFeatures = getVisibleWorkspaceFeatures(subject)
   return (
-    <section className="card detail-card form-stack" aria-labelledby="evidence-workspace-heading">
+    <section className="card detail-card form-stack" aria-labelledby="advanced-review-heading">
       <div>
-        <p className="eyebrow">Evidence Workspace</p>
-        <h2 id="evidence-workspace-heading">Evidence Workspace overview</h2>
-        <p className="muted">Use one compact workspace for the features included in your CRED tier.</p>
+        <p className="eyebrow">Advanced tools</p>
+        <h2 id="advanced-review-heading">Advanced Review</h2>
+        <p className="muted">Use the review tools included in your CRED tier when a session needs more detail.</p>
       </div>
       <div className="metadata-list">
-        <div><dt>Evidence items</dt><dd>{counts.evidenceItems}</dd></div>
+        <div><dt>Items</dt><dd>{counts.evidenceItems}</dd></div>
         {visibleFeatures.some((feature) => feature.key === 'timeline') ? <div><dt>Timeline events</dt><dd>{counts.timelineEvents}</dd></div> : null}
         {visibleFeatures.some((feature) => feature.key === 'entities') ? <div><dt>Entities</dt><dd>{counts.entities}</dd></div> : null}
         {visibleFeatures.some((feature) => feature.key === 'factual_observations') ? <div><dt>Factual observations</dt><dd>{counts.factualObservations}</dd></div> : null}
-        {visibleFeatures.some((feature) => feature.key === 'relationship_explorer') ? <div><dt>Relationships</dt><dd>{counts.relationships}</dd></div> : null}
+        {visibleFeatures.some((feature) => feature.key === 'relationship_explorer') ? <div><dt>Connections</dt><dd>{counts.relationships}</dd></div> : null}
       </div>
       <div className="workspace-card-grid">
         {visibleCards.map((card) => <Link key={card.label} href={`/dashboard/sessions/${sessionId}/${card.href}`} className="workspace-destination-card touch-target"><strong>{card.label}</strong><span className="muted">{card.key ? counts[card.key] : 'Open'}</span><p className="muted">{card.description}</p></Link>)}
@@ -95,7 +95,7 @@ export function EvidenceWorkspaceNavBar({
       (!hideReport || card.current !== 'report'),
   )
   return (
-    <nav className="evidence-workspace-nav" aria-label="Evidence Workspace navigation">
+    <nav className="evidence-workspace-nav" aria-label="Advanced Review navigation">
       <div className="evidence-workspace-nav-scroll">
         {visibleCards.map((card) => (
           <Link key={card.label} href={`/dashboard/sessions/${sessionId}/${card.href}`} className={`evidence-workspace-nav-link touch-target${card.current === current ? ' active' : ''}`} aria-current={card.current === current ? 'page' : undefined}>

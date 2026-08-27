@@ -9,7 +9,7 @@ import type {
 } from "@/features/offline/types";
 
 export const OFFLINE_DB_NAME = "cred-offline";
-export const OFFLINE_DB_VERSION = 3;
+export const OFFLINE_DB_VERSION = 4;
 
 export interface CredOfflineSchema extends DBSchema {
   queuedCaptures: {
@@ -20,6 +20,7 @@ export interface CredOfflineSchema extends DBSchema {
       "by-local-session": string;
       "by-local-session-status": [string, string];
       "by-local-session-order": [string, number];
+      "by-local-session-item-order": [string, string, number];
       "by-user": string;
       "by-status": string;
       "by-created-at": string;
@@ -78,6 +79,7 @@ export function getOfflineDb() {
         store.createIndex("by-local-session", "localSessionId");
         store.createIndex("by-local-session-status", ["localSessionId", "status"]);
         store.createIndex("by-local-session-order", ["localSessionId", "metadata.reportOrder"]);
+        store.createIndex("by-local-session-item-order", ["localSessionId", "metadata.clientItemId", "metadata.attachmentOrder"]);
         store.createIndex("by-user", "userId");
         store.createIndex("by-status", "status");
         store.createIndex("by-created-at", "createdAt");
@@ -117,6 +119,7 @@ export function getOfflineDb() {
         if (!store.indexNames.contains("by-local-session")) store.createIndex("by-local-session", "localSessionId");
         if (!store.indexNames.contains("by-local-session-status")) store.createIndex("by-local-session-status", ["localSessionId", "status"]);
         if (!store.indexNames.contains("by-local-session-order")) store.createIndex("by-local-session-order", ["localSessionId", "metadata.reportOrder"]);
+        if (!store.indexNames.contains("by-local-session-item-order")) store.createIndex("by-local-session-item-order", ["localSessionId", "metadata.clientItemId", "metadata.attachmentOrder"]);
       }
 
       if (db.objectStoreNames.contains("offlineSessions")) {

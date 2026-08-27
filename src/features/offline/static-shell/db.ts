@@ -20,6 +20,7 @@ export function openOfflineDb(): Promise<IDBDatabase> {
         ensureIndex(store, 'by-local-session', 'localSessionId');
         ensureIndex(store, 'by-local-session-status', ['localSessionId', 'status']);
         ensureIndex(store, 'by-local-session-order', ['localSessionId', 'metadata.reportOrder']);
+        ensureIndex(store, 'by-local-session-item-order', ['localSessionId', 'metadata.clientItemId', 'metadata.attachmentOrder']);
         ensureIndex(store, 'by-user', 'userId');
         ensureIndex(store, 'by-status', 'status');
         ensureIndex(store, 'by-created-at', 'createdAt');
@@ -47,6 +48,7 @@ export function openOfflineDb(): Promise<IDBDatabase> {
         ensureIndex(store, 'by-local-session', 'localSessionId');
         ensureIndex(store, 'by-local-session-status', ['localSessionId', 'status']);
         ensureIndex(store, 'by-local-session-order', ['localSessionId', 'metadata.reportOrder']);
+        ensureIndex(store, 'by-local-session-item-order', ['localSessionId', 'metadata.clientItemId', 'metadata.attachmentOrder']);
       }
       if (tx && db.objectStoreNames.contains('offlineSessions')) {
         const store = tx.objectStore('offlineSessions');

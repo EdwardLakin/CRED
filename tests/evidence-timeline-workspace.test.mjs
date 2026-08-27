@@ -5,15 +5,14 @@ import { existsSync, readFileSync } from 'node:fs'
 const dataSource = readFileSync('src/features/evidence/timeline/data.ts', 'utf8')
 const actionSource = readFileSync('src/features/evidence/timeline/actions.ts', 'utf8')
 const validationSource = readFileSync('src/features/evidence/timeline/validation.ts', 'utf8')
-const sessionPage = readFileSync('app/dashboard/sessions/[id]/page.tsx', 'utf8')
 const timelinePage = readFileSync('app/dashboard/sessions/[id]/timeline/page.tsx', 'utf8')
 const timelineComponent = readFileSync('src/features/evidence/components/TimelineWorkspace.tsx', 'utf8')
 
-test('timeline route and session navigation are present', () => {
+test('timeline route remains available as an advanced Review tool', () => {
   assert.ok(existsSync('app/dashboard/sessions/[id]/timeline/page.tsx'))
   assert.match(timelinePage, /getTimelineData\(id, workspace\)/)
-  assert.match(sessionPage, /feature\.hrefSegment/)
-  assert.match(sessionPage, /feature\.label/)
+  assert.match(timelinePage, /EvidenceWorkspaceBacklinks/)
+  assert.match(timelinePage, /current="timeline"/)
 })
 
 test('timeline loader scopes session, events, evidence, and relationships to organization and session', () => {
@@ -54,8 +53,8 @@ test('timeline links evidence through accepted user documents or supports relati
   assert.match(actionSource, /softDeleteUpdate/)
 })
 
-test('timeline UI displays event details and evidence linking controls', () => {
-  for (const expected of ['event_type', 'title', 'description', 'event_date_precision', 'source_kind', 'review_status', 'Linked evidence', 'relationship_type', 'capture_item_id']) {
+test('timeline UI displays event details and item linking controls', () => {
+  for (const expected of ['event_type', 'title', 'description', 'event_date_precision', 'source_kind', 'review_status', 'Linked items', 'relationship_type', 'capture_item_id']) {
     assert.ok(timelineComponent.includes(expected), `missing ${expected}`)
   }
 })

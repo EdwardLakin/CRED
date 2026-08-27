@@ -29,7 +29,7 @@ export type DiagnosticStepCompleteness = {
   missingSelectedBranch: boolean
   missingRequiredEvidence: boolean
   hasExtractionWarnings: boolean
-  badges: Array<'Complete' | 'Needs reading' | 'Needs branch selection' | 'Needs evidence' | 'Blocked' | 'Review warning'>
+  badges: Array<'Complete' | 'Needs reading' | 'Needs branch selection' | 'Needs documentation' | 'Blocked' | 'Review warning'>
 }
 
 export type DiagnosticProcedureProgress = {
@@ -118,7 +118,7 @@ export function getDiagnosticStepCompleteness(section: AiReportDraftSection, cap
   if (isComplete) badges.push('Complete')
   if (missingRequiredReadings) badges.push('Needs reading')
   if (missingSelectedBranch) badges.push('Needs branch selection')
-  if (missingRequiredEvidence) badges.push('Needs evidence')
+  if (missingRequiredEvidence) badges.push('Needs documentation')
   if (isBlocked) badges.push('Blocked')
   if (hasExtractionWarnings) badges.push('Review warning')
   return { stepId, visible, status, isComplete, isNotTested, isBlocked, isNotApplicable, missingRequiredReadings, missingSelectedBranch, missingRequiredEvidence, hasExtractionWarnings, badges }

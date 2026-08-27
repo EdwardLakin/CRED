@@ -39,7 +39,7 @@ export default async function TemplatesSettingsPage({
           <Link href="/dashboard" className="secondary-link touch-target">← Dashboard</Link>
           <p className="eyebrow">Internal / Admin</p>
           <h1>Report context library</h1>
-          <p className="muted">Admin-only compatibility tools for reusable report context. Normal users can start capturing evidence without choosing or managing any setup.</p>
+          <p className="muted">Admin-only compatibility tools for reusable report context. Normal users can start adding items without choosing or managing any setup.</p>
         </div>
         <div className="page-actions">
           <ThemeToggle />

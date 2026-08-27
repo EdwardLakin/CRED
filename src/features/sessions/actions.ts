@@ -387,7 +387,7 @@ export async function applyExtractedEvidenceField(sessionId: string, formData: F
     .single()
 
   if (captureError || !capture) {
-    redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent('Evidence capture not found.')}`)
+    redirect(`/dashboard/sessions/${sessionId}?error=${encodeURIComponent('Captured item not found.')}`)
   }
 
   const suggestedDetails: Record<string, Json> = isRecord(session.suggested_details) ? { ...(session.suggested_details as Record<string, Json>) } : {}

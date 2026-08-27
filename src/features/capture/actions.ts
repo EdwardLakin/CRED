@@ -38,8 +38,10 @@ import {
   isCaptureIntent,
   isCaptureType,
   isSourceDocumentType,
+  type CaptureAttachmentKind,
   type CaptureIntent,
   type CaptureType,
+  type DocumentationItemKind,
   type SourceDocumentType,
 } from './types'
 
@@ -219,7 +221,7 @@ function getCaptureMetadata(
       timelineTitle: getCaptureEventTitle('photo', 'auto_image'),
       timelineDescription: sourceDocument
         ? `${sourceDocument.label} document captured for report details.`
-        : 'Evidence captured.',
+        : 'Item captured.',
     }
   }
 
@@ -370,8 +372,39 @@ export type CreateTextNoteCaptureRecordInput = {
 }
 
 const DIAGNOSTIC_EVIDENCE_ROLES = new Set(['meter_reading_photo', 'scan_tool_screenshot', 'connector_photo', 'wiring_reference', 'voice_note', 'technician_note', 'other'])
+const DOCUMENTATION_ITEM_KINDS = new Set<DocumentationItemKind>([
+  'observation',
+  'document',
+  'note',
+])
+const CAPTURE_ATTACHMENT_KINDS = new Set<CaptureAttachmentKind>([
+  'primary',
+  'supporting',
+  'document',
+  'note',
+])
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const CLIENT_ITEM_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,159}$/
 
 export type DiagnosticEvidenceRole = 'meter_reading_photo' | 'scan_tool_screenshot' | 'connector_photo' | 'wiring_reference' | 'voice_note' | 'technician_note' | 'other'
+
+function normalizeClientItemId(value: string | null | undefined) {
+  const normalized = value?.trim() ?? ''
+  return CLIENT_ITEM_ID_PATTERN.test(normalized) ? normalized : null
+}
+
+function getLegacyClientItemId(storagePath: string) {
+  const filename = storagePath.split('/').at(-1) ?? 'capture'
+  const safeFilename = filename
+    .replace(/[^a-zA-Z0-9._:-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[-.]+|[-.]+$/g, '')
+  return `legacy-${safeFilename || 'capture'}`.slice(0, 160)
+}
+
+function positiveInteger(value: number | null | undefined) {
+  return Number.isInteger(value) && Number(value) > 0 ? Number(value) : null
+}
 
 export type CreateUploadedCaptureRecordInput = {
   sessionId: string
@@ -400,11 +433,23 @@ export type CreateUploadedCaptureRecordInput = {
   source_document_label?: string | null
   diagnosticEvidenceRole?: DiagnosticEvidenceRole | null
   observationGroupId?: string | null
+  clientItemId?: string | null
+  documentationItemId?: string | null
+  attachmentOrder?: number | null
+  sourceKind?: DocumentationItemKind
+  attachmentKind?: CaptureAttachmentKind
 }
 
 export type CreateUploadedCaptureRecordResult =
   | CaptureActionFailure
-  | (CaptureActionSuccess & { captureItemId: string })
+  | (CaptureActionSuccess & {
+      captureItemId: string
+      documentationItemId: string
+      clientItemId: string
+      attachmentOrder: number
+      attachmentKind: CaptureAttachmentKind
+      sourceKind: DocumentationItemKind
+    })
 
 export type CreateTextNoteCaptureRecordResult =
   | CaptureActionFailure
@@ -518,7 +563,7 @@ export async function createTextNoteCaptureRecord(
   }
 
   if (!technicianNote) {
-    return captureError('Type a note before saving text evidence.', sessionId)
+    return captureError('Type a note before saving this item.', sessionId)
   }
 
   const { supabase, profile } = await requireSessionWorkspace()
@@ -566,7 +611,7 @@ export async function createTextNoteCaptureRecord(
       storage_path: null,
       captured_at: capturedAt,
       ai_status: 'extracted',
-      ai_summary: 'Text note saved as evidence.',
+      ai_summary: 'Text note saved as an item.',
       extracted_data: extractedData,
       technician_note: technicianNote,
       transcript:
@@ -588,7 +633,7 @@ export async function createTextNoteCaptureRecord(
       ...getSafeErrorDetails(captureErrorResult),
     })
     return captureError(
-      captureErrorResult?.message ?? 'Unable to save text note evidence.',
+      captureErrorResult?.message ?? 'Unable to save the text note.',
       session.id,
     )
   }
@@ -600,7 +645,7 @@ export async function createTextNoteCaptureRecord(
       organization_id: profile.organization_id,
       capture_item_id: captureItem.id,
       title: 'Text note captured',
-      description: 'Text note saved as evidence without a media upload.',
+      description: 'Text note saved as an item without a media upload.',
       event_time: capturedAt,
       event_type: 'capture',
     })
@@ -686,9 +731,24 @@ export async function createCaptureRecordFromUploadedFile(
       ).slice(0, 80)
     : null
   const requestedObservationGroupId = input.observationGroupId?.trim() || null
-  const safeObservationGroupId = requestedObservationGroupId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedObservationGroupId)
+  const safeObservationGroupId = requestedObservationGroupId && UUID_PATTERN.test(requestedObservationGroupId)
     ? requestedObservationGroupId
     : null
+  const rawClientItemId = input.clientItemId?.trim() ?? ''
+  const requestedClientItemId = normalizeClientItemId(rawClientItemId)
+  const rawDocumentationItemId = input.documentationItemId?.trim() ?? ''
+  const requestedDocumentationItemId = rawDocumentationItemId && UUID_PATTERN.test(rawDocumentationItemId)
+    ? rawDocumentationItemId
+    : null
+  const rawSourceKind = typeof input.sourceKind === 'string' ? input.sourceKind : ''
+  const requestedSourceKind = DOCUMENTATION_ITEM_KINDS.has(rawSourceKind as DocumentationItemKind)
+    ? rawSourceKind as DocumentationItemKind
+    : null
+  const rawAttachmentKind = typeof input.attachmentKind === 'string' ? input.attachmentKind : ''
+  const requestedAttachmentKind = CAPTURE_ATTACHMENT_KINDS.has(rawAttachmentKind as CaptureAttachmentKind)
+    ? rawAttachmentKind as CaptureAttachmentKind
+    : null
+  const requestedAttachmentOrder = positiveInteger(input.attachmentOrder)
 
   if (!sessionId) {
     return captureError('Missing documentation session.', undefined, {
@@ -729,6 +789,56 @@ export async function createCaptureRecordFromUploadedFile(
       stage: 'validation',
       code: 'file_validation_failed',
       recoverable: false,
+    })
+  }
+
+  if (rawClientItemId && !requestedClientItemId) {
+    return captureError('Item identifier is invalid. Retry this item.', sessionId, {
+      stage: 'grouping',
+      code: 'item_validation_failed',
+      recoverable: true,
+      storagePath,
+      storageUploaded: true,
+    })
+  }
+
+  if (rawDocumentationItemId && !requestedDocumentationItemId) {
+    return captureError('Item identifier is invalid. Retry this item.', sessionId, {
+      stage: 'grouping',
+      code: 'item_validation_failed',
+      recoverable: true,
+      storagePath,
+      storageUploaded: true,
+    })
+  }
+
+  if (rawSourceKind && !requestedSourceKind) {
+    return captureError('Choose a valid item type.', sessionId, {
+      stage: 'validation',
+      code: 'item_validation_failed',
+      recoverable: false,
+      storagePath,
+      storageUploaded: true,
+    })
+  }
+
+  if (rawAttachmentKind && !requestedAttachmentKind) {
+    return captureError('Choose a valid attachment type.', sessionId, {
+      stage: 'validation',
+      code: 'attachment_validation_failed',
+      recoverable: false,
+      storagePath,
+      storageUploaded: true,
+    })
+  }
+
+  if (input.attachmentOrder != null && !requestedAttachmentOrder) {
+    return captureError('Attachment order is invalid. Retry this item.', sessionId, {
+      stage: 'validation',
+      code: 'attachment_validation_failed',
+      recoverable: true,
+      storagePath,
+      storageUploaded: true,
     })
   }
 
@@ -885,6 +995,7 @@ export async function createCaptureRecordFromUploadedFile(
 
   let observationGroupId: string | null = null
   let groupOrder: number | null = null
+  let groupedDocumentationItemId: string | null = null
   if (requestedObservationGroupId && !safeObservationGroupId) {
     return captureError('Observation group not found.', session.id, {
       stage: 'grouping',
@@ -898,7 +1009,7 @@ export async function createCaptureRecordFromUploadedFile(
   if (safeObservationGroupId) {
     const { data: groupCaptures, error: groupError } = await supabase
       .from('capture_items')
-      .select('id, observation_group_id, group_order, captured_at')
+      .select('id, documentation_item_id, observation_group_id, group_order, captured_at')
       .eq('documentation_session_id', session.id)
       .eq('organization_id', profile.organization_id)
       .is('deleted_at', null)
@@ -928,6 +1039,7 @@ export async function createCaptureRecordFromUploadedFile(
 
     observationGroupId = groupCaptures[0]?.observation_group_id || safeObservationGroupId
     groupOrder = groupCaptures.reduce((max, capture) => Math.max(max, capture.group_order ?? 1), 1) + 1
+    groupedDocumentationItemId = groupCaptures[0]?.documentation_item_id ?? null
   }
 
   const limits = getPlanLimits(billingAccess.access.plan)
@@ -1011,7 +1123,7 @@ export async function createCaptureRecordFromUploadedFile(
 
   const { data: existingCapture, error: existingCaptureError } = await supabase
     .from('capture_items')
-    .select('id')
+    .select('id, documentation_item_id, attachment_order, attachment_kind')
     .eq('documentation_session_id', session.id)
     .eq('organization_id', profile.organization_id)
     .eq('storage_path', storagePath)
@@ -1033,8 +1145,205 @@ export async function createCaptureRecordFromUploadedFile(
   }
 
   if (existingCapture) {
-    return { ok: true, sessionId: session.id, captureItemId: existingCapture.id, processingStatus: 'saved', storagePath, recovered: true }
+    const { data: existingItem, error: existingItemError } = await supabase
+      .from('documentation_items')
+      .select('id, client_item_id, item_kind')
+      .eq('id', existingCapture.documentation_item_id)
+      .eq('documentation_session_id', session.id)
+      .eq('organization_id', profile.organization_id)
+      .maybeSingle()
+
+    if (existingItemError || !existingItem) {
+      return captureError('The image is saved, but its item could not be restored. Tap Retry.', session.id, {
+        stage: 'grouping',
+        code: 'item_recovery_required',
+        recoverable: true,
+        storagePath,
+        storageUploaded: true,
+      })
+    }
+
+    return {
+      ok: true,
+      sessionId: session.id,
+      captureItemId: existingCapture.id,
+      documentationItemId: existingItem.id,
+      clientItemId: existingItem.client_item_id,
+      attachmentOrder: existingCapture.attachment_order,
+      attachmentKind: existingCapture.attachment_kind,
+      sourceKind: existingItem.item_kind,
+      processingStatus: 'saved',
+      storagePath,
+      recovered: true,
+    }
   }
+
+  const inferredSourceKind: DocumentationItemKind = sourceDocument || itemCaptureType === 'document'
+    ? 'document'
+    : itemCaptureType === 'text_note' || itemCaptureType === 'voice_note' || itemMediaKind === 'note' || itemMediaKind === 'audio'
+      ? 'note'
+      : 'observation'
+  const sourceKind = requestedSourceKind ?? inferredSourceKind
+  const preferredDocumentationItemId = requestedDocumentationItemId ?? groupedDocumentationItemId
+  let documentationItem: {
+    id: string
+    client_item_id: string
+    item_kind: string
+  } | null = null
+
+  if (preferredDocumentationItemId) {
+    const { data: existingItem, error: existingItemError } = await supabase
+      .from('documentation_items')
+      .select('id, client_item_id, item_kind')
+      .eq('id', preferredDocumentationItemId)
+      .eq('documentation_session_id', session.id)
+      .eq('organization_id', profile.organization_id)
+      .is('deleted_at', null)
+      .maybeSingle()
+
+    if (existingItemError || !existingItem) {
+      return captureError('Item not found. Return to Capture and try again.', session.id, {
+        stage: 'grouping',
+        code: 'item_validation_failed',
+        recoverable: true,
+        storagePath,
+        storageUploaded: true,
+      })
+    }
+
+    if (
+      requestedDocumentationItemId &&
+      requestedClientItemId &&
+      existingItem.client_item_id !== requestedClientItemId
+    ) {
+      return captureError('This upload belongs to a different item. Return to Capture and try again.', session.id, {
+        stage: 'grouping',
+        code: 'item_scope_mismatch',
+        recoverable: true,
+        storagePath,
+        storageUploaded: true,
+      })
+    }
+
+    if (requestedSourceKind && existingItem.item_kind !== requestedSourceKind) {
+      return captureError('This attachment type does not match the selected item.', session.id, {
+        stage: 'grouping',
+        code: 'item_kind_mismatch',
+        recoverable: true,
+        storagePath,
+        storageUploaded: true,
+      })
+    }
+
+    documentationItem = existingItem
+  } else {
+    const clientItemId = requestedClientItemId ?? getLegacyClientItemId(storagePath)
+    const { data: existingItem, error: existingItemError } = await supabase
+      .from('documentation_items')
+      .select('id, client_item_id, item_kind')
+      .eq('documentation_session_id', session.id)
+      .eq('organization_id', profile.organization_id)
+      .eq('client_item_id', clientItemId)
+      .is('deleted_at', null)
+      .maybeSingle()
+
+    if (existingItemError) {
+      return captureError('The image uploaded, but its item could not be checked. Tap Retry.', session.id, {
+        stage: 'grouping',
+        code: 'item_recovery_required',
+        recoverable: true,
+        storagePath,
+        storageUploaded: true,
+      })
+    }
+
+    documentationItem = existingItem
+
+    if (!documentationItem) {
+      const { count: existingItemCount } = await supabase
+        .from('documentation_items')
+        .select('id', { count: 'exact', head: true })
+        .eq('documentation_session_id', session.id)
+        .eq('organization_id', profile.organization_id)
+        .is('deleted_at', null)
+
+      const { data: createdItem, error: createdItemError } = await supabase
+        .from('documentation_items')
+        .insert({
+          documentation_session_id: session.id,
+          organization_id: profile.organization_id,
+          client_item_id: clientItemId,
+          item_kind: sourceKind,
+          item_order: (existingItemCount ?? 0) + 1,
+          description: technicianNote || null,
+          include_in_report: input.includeInReport ?? true,
+        })
+        .select('id, client_item_id, item_kind')
+        .single()
+
+      if (!createdItemError && createdItem) {
+        documentationItem = createdItem
+      } else if (createdItemError?.code === '23505') {
+        const { data: recoveredItem, error: recoveredItemError } = await supabase
+          .from('documentation_items')
+          .select('id, client_item_id, item_kind')
+          .eq('documentation_session_id', session.id)
+          .eq('organization_id', profile.organization_id)
+          .eq('client_item_id', clientItemId)
+          .is('deleted_at', null)
+          .maybeSingle()
+
+        if (!recoveredItemError && recoveredItem) {
+          documentationItem = recoveredItem
+        }
+      }
+
+      if (!documentationItem) {
+        logCaptureFailure({
+          step: 'documentation_item_insert',
+          ...getSafeErrorDetails(createdItemError),
+        })
+        return captureError('The image uploaded, but CRED could not create its item. Tap Retry.', session.id, {
+          stage: 'grouping',
+          code: 'item_creation_failed',
+          recoverable: true,
+          storagePath,
+          storageUploaded: true,
+        })
+      }
+    }
+
+    if (requestedSourceKind && documentationItem.item_kind !== requestedSourceKind) {
+      return captureError('This attachment type does not match the selected item.', session.id, {
+        stage: 'grouping',
+        code: 'item_kind_mismatch',
+        recoverable: true,
+        storagePath,
+        storageUploaded: true,
+      })
+    }
+  }
+
+  const { data: lastAttachment } = await supabase
+    .from('capture_items')
+    .select('attachment_order')
+    .eq('documentation_item_id', documentationItem.id)
+    .eq('documentation_session_id', session.id)
+    .eq('organization_id', profile.organization_id)
+    .is('deleted_at', null)
+    .order('attachment_order', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const attachmentOrder = requestedAttachmentOrder ?? groupOrder ?? ((lastAttachment?.attachment_order ?? 0) + 1)
+  const resolvedSourceKind = documentationItem.item_kind as DocumentationItemKind
+  const attachmentKind: CaptureAttachmentKind = requestedAttachmentKind
+    ?? (resolvedSourceKind === 'document'
+      ? 'document'
+      : resolvedSourceKind === 'note'
+        ? 'note'
+        : attachmentOrder === 1
+          ? 'primary'
+          : 'supporting')
 
   const { count: existingCaptureCount } = await supabase
     .from('capture_items')
@@ -1078,15 +1387,18 @@ export async function createCaptureRecordFromUploadedFile(
       include_in_report: input.includeInReport ?? true,
       observation_group_id: observationGroupId,
       group_order: groupOrder,
+      documentation_item_id: documentationItem.id,
+      attachment_order: attachmentOrder,
+      attachment_kind: attachmentKind,
     })
-    .select('id')
+    .select('id, documentation_item_id, attachment_order, attachment_kind')
     .single()
 
   if (captureErrorResult || !captureItem) {
     if (captureErrorResult?.code === '23505') {
       const { data: recoveredCapture, error: recoveryError } = await supabase
         .from('capture_items')
-        .select('id')
+        .select('id, documentation_item_id, attachment_order, attachment_kind')
         .eq('documentation_session_id', session.id)
         .eq('organization_id', profile.organization_id)
         .eq('storage_path', storagePath)
@@ -1094,10 +1406,33 @@ export async function createCaptureRecordFromUploadedFile(
         .maybeSingle()
 
       if (!recoveryError && recoveredCapture) {
+        const { data: recoveredItem } = await supabase
+          .from('documentation_items')
+          .select('id, client_item_id, item_kind')
+          .eq('id', recoveredCapture.documentation_item_id)
+          .eq('documentation_session_id', session.id)
+          .eq('organization_id', profile.organization_id)
+          .maybeSingle()
+
+        if (!recoveredItem) {
+          return captureError('The image is saved, but its item could not be restored. Tap Retry.', session.id, {
+            stage: 'grouping',
+            code: 'item_recovery_required',
+            recoverable: true,
+            storagePath,
+            storageUploaded: true,
+          })
+        }
+
         return {
           ok: true,
           sessionId: session.id,
           captureItemId: recoveredCapture.id,
+          documentationItemId: recoveredItem.id,
+          clientItemId: recoveredItem.client_item_id,
+          attachmentOrder: recoveredCapture.attachment_order,
+          attachmentKind: recoveredCapture.attachment_kind,
+          sourceKind: recoveredItem.item_kind,
           processingStatus: 'saved',
           storagePath,
           recovered: true,
@@ -1192,7 +1527,19 @@ export async function createCaptureRecordFromUploadedFile(
   revalidatePath(`/dashboard/sessions/${session.id}`)
   revalidatePath(`/dashboard/sessions/${session.id}/capture`)
 
-  return { ok: true, sessionId: session.id, captureItemId: captureItem.id, processingStatus: 'saved', storagePath, recovered: false }
+  return {
+    ok: true,
+    sessionId: session.id,
+    captureItemId: captureItem.id,
+    documentationItemId: documentationItem.id,
+    clientItemId: documentationItem.client_item_id,
+    attachmentOrder: captureItem.attachment_order,
+    attachmentKind: captureItem.attachment_kind,
+    sourceKind: documentationItem.item_kind as DocumentationItemKind,
+    processingStatus: 'saved',
+    storagePath,
+    recovered: false,
+  }
 }
 
 export type CaptureClassificationActionState = {
@@ -2272,7 +2619,7 @@ export async function processPendingCapturesForSession(
   const trimmedSessionId = sessionId.trim()
   const summary: BackgroundCaptureProcessingSummary = {
     ok: true,
-    message: 'No pending evidence needed processing.',
+    message: 'No pending items need processing.',
     processed: 0,
     skipped: 0,
     failed: 0,
@@ -2324,7 +2671,7 @@ export async function processPendingCapturesForSession(
     return {
       ...summary,
       ok: false,
-      message: 'Unable to load pending evidence.',
+      message: 'Unable to load pending items.',
     }
   }
 
@@ -2355,8 +2702,8 @@ export async function processPendingCapturesForSession(
         capture,
         supabase,
         capture.media_kind === 'video'
-          ? 'Video-only evidence is saved for report review and can be processed later when thumbnail extraction is available.'
-          : 'This evidence type is saved but is not supported by background extraction yet.',
+          ? 'The video is saved for report review and can be processed later when thumbnail extraction is available.'
+          : 'This item is saved but is not supported by background extraction yet.',
       )
       summary.skipped += 1
       continue
@@ -2591,7 +2938,7 @@ export async function processPendingCapturesForSession(
   summary.ok = summary.failed === 0
   summary.message =
     summary.blockedByLimit > 0
-      ? 'Evidence is saved. Report preparation can be retried after your monthly allowance resets.'
+      ? 'Your items are saved. Report preparation can be retried after your monthly allowance resets.'
       : `Saved ${summary.processed} capture${summary.processed === 1 ? '' : 's'} for the report.`
 
   revalidatePath(`/dashboard/sessions/${session.id}`)
@@ -2736,14 +3083,14 @@ export async function removeCaptureItem(formData: FormData): Promise<{ ok: boole
   const captureId = getString(formData, 'capture_id')
 
   if (!captureId) {
-    return { ok: false, error: 'Missing evidence item.' }
+    return { ok: false, error: 'Missing item.' }
   }
 
   const { supabase, profile, capture } = await getAuthorizedCapture(captureId)
   const billingAccess = requireActiveBillingAccess(profile)
 
   if (!capture) {
-    return { ok: false, error: 'Evidence item not found.' }
+    return { ok: false, error: 'Item not found.' }
   }
 
   if (!billingAccess.ok) {
@@ -2762,7 +3109,7 @@ export async function removeCaptureItem(formData: FormData): Promise<{ ok: boole
       captureId: capture.id,
       ...getSafeErrorDetails(error),
     })
-    return { ok: false, error: 'Unable to delete evidence.', sessionId: capture.documentation_session_id }
+    return { ok: false, error: 'Unable to delete the item.', sessionId: capture.documentation_session_id }
   }
 
   // Phase 0 preserves individual capture deletion. List-level "Delete
@@ -2781,6 +3128,66 @@ export async function removeCaptureItem(formData: FormData): Promise<{ ok: boole
   return { ok: true, sessionId: capture.documentation_session_id }
 }
 
+export async function removeDocumentationItem(
+  formData: FormData,
+): Promise<{ ok: boolean; error?: string; sessionId?: string }> {
+  const sessionId = getString(formData, 'session_id')
+  const documentationItemId = getString(formData, 'documentation_item_id')
+
+  if (!UUID_PATTERN.test(sessionId) || !UUID_PATTERN.test(documentationItemId)) {
+    return { ok: false, error: 'Missing item.' }
+  }
+
+  const { supabase, profile } = await requireSessionWorkspace()
+  const billingAccess = requireActiveBillingAccess(profile)
+
+  if (!billingAccess.ok) {
+    return { ok: false, error: billingAccess.message, sessionId }
+  }
+
+  const { data: item, error: itemError } = await supabase
+    .from('documentation_items')
+    .select('id')
+    .eq('id', documentationItemId)
+    .eq('documentation_session_id', sessionId)
+    .eq('organization_id', profile.organization_id)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (itemError || !item) {
+    return { ok: false, error: 'Item not found.', sessionId }
+  }
+
+  const { data: deletedAttachments, error: deleteError } = await supabase.rpc(
+    'soft_delete_documentation_item',
+    {
+      p_session_id: sessionId,
+      p_documentation_item_id: documentationItemId,
+    },
+  )
+
+  if (deleteError) {
+    logCaptureFailure({
+      step: 'documentation_item_delete',
+      ...getSafeErrorDetails(deleteError),
+    })
+    return { ok: false, error: 'Unable to delete item.', sessionId }
+  }
+
+  const storagePaths = (deletedAttachments ?? [])
+    .map((attachment) => attachment.storage_path)
+    .filter((path): path is string => Boolean(path))
+  await Promise.allSettled(
+    storagePaths.map((storagePath) => removeUploadedObject(supabase, storagePath)),
+  )
+
+  revalidatePath(`/dashboard/sessions/${sessionId}`)
+  revalidatePath(`/dashboard/sessions/${sessionId}/capture`)
+  revalidatePath(`/dashboard/sessions/${sessionId}/report`)
+
+  return { ok: true, sessionId }
+}
+
 
 export async function updateCaptureItemNote(input: { sessionId: string; captureItemId: string; technicianNote: string }) {
   const sessionId = input.sessionId.trim()
@@ -2788,6 +3195,15 @@ export async function updateCaptureItemNote(input: { sessionId: string; captureI
   const technicianNote = input.technicianNote.trim().slice(0, 2000)
   if (!sessionId || !captureItemId) return { ok: false, error: 'Missing capture.' }
   const { supabase, profile } = await requireSessionWorkspace()
+  const { data: capture } = await supabase
+    .from('capture_items')
+    .select('id, documentation_item_id, attachment_kind')
+    .eq('id', captureItemId)
+    .eq('documentation_session_id', sessionId)
+    .eq('organization_id', profile.organization_id)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (!capture) return { ok: false, error: 'Item not found.' }
   const { error } = await supabase
     .from('capture_items')
     .update({
@@ -2801,6 +3217,22 @@ export async function updateCaptureItemNote(input: { sessionId: string; captureI
     .eq('documentation_session_id', sessionId)
     .eq('organization_id', profile.organization_id)
   if (error) return { ok: false, error: error.message }
+  if (
+    capture.documentation_item_id &&
+    capture.attachment_kind === 'primary'
+  ) {
+    const { error: itemError } = await supabase
+      .from('documentation_items')
+      .update({
+        description: technicianNote || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', capture.documentation_item_id)
+      .eq('documentation_session_id', sessionId)
+      .eq('organization_id', profile.organization_id)
+      .is('deleted_at', null)
+    if (itemError) return { ok: false, error: itemError.message }
+  }
   revalidatePath(`/dashboard/sessions/${sessionId}/capture`)
   revalidatePath(`/dashboard/sessions/${sessionId}/report`)
   return { ok: true }

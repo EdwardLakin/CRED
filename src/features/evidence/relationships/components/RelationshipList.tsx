@@ -4,7 +4,7 @@ import { RelationshipBadge } from '@/features/evidence/relationships/components/
 type Lookup = { evidenceItems: RelationshipEvidenceItem[]; timelineEvents: RelationshipTimelineEvent[]; entities: RelationshipEntity[]; assertions: RelationshipAssertion[] }
 
 export function objectLabel(type: string, id: string, lookup: Lookup) {
-  if (type === 'capture_item') return lookup.evidenceItems.find((item) => item.id === id)?.original_filename || lookup.evidenceItems.find((item) => item.id === id)?.technician_note || 'Untitled evidence item'
+  if (type === 'capture_item') return lookup.evidenceItems.find((item) => item.id === id)?.original_filename || lookup.evidenceItems.find((item) => item.id === id)?.technician_note || 'Untitled item'
   if (type === 'timeline_event') return lookup.timelineEvents.find((event) => event.id === id)?.title || 'Untitled timeline event'
   if (type === 'entity') return lookup.entities.find((entity) => entity.id === id)?.display_name || 'Untitled entity'
   if (type === 'assertion') return lookup.assertions.find((assertion) => assertion.id === id)?.statement || 'Untitled factual observation'
