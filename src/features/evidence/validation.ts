@@ -2,7 +2,7 @@ import { EVIDENCE_SUGGESTION_SOURCES, SUGGESTION_REVIEW_STATUSES } from '@/featu
 
 export type WorkspaceScopedRow = { documentation_session_id: string; organization_id: string }
 
-export function assertSameEvidenceWorkspace(left: WorkspaceScopedRow, right: WorkspaceScopedRow, message = 'Evidence relationships must stay within the same session and organization') {
+export function assertSameEvidenceWorkspace(left: WorkspaceScopedRow, right: WorkspaceScopedRow, message = 'Item connections must stay within the same session and organization') {
   if (left.documentation_session_id !== right.documentation_session_id || left.organization_id !== right.organization_id) {
     throw new Error(message)
   }

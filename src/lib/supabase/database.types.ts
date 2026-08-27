@@ -456,6 +456,69 @@ export interface Database {
           },
         ]
       }
+      documentation_items: {
+        Row: {
+          id: string
+          documentation_session_id: string
+          organization_id: string
+          client_item_id: string
+          item_kind: 'observation' | 'document' | 'note'
+          item_order: number
+          title: string | null
+          description: string | null
+          include_in_report: boolean
+          review_status: 'unreviewed' | 'reviewed' | 'needs_followup' | 'excluded'
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          documentation_session_id: string
+          organization_id: string
+          client_item_id: string
+          item_kind?: 'observation' | 'document' | 'note'
+          item_order?: number
+          title?: string | null
+          description?: string | null
+          include_in_report?: boolean
+          review_status?: 'unreviewed' | 'reviewed' | 'needs_followup' | 'excluded'
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          documentation_session_id?: string
+          organization_id?: string
+          client_item_id?: string
+          item_kind?: 'observation' | 'document' | 'note'
+          item_order?: number
+          title?: string | null
+          description?: string | null
+          include_in_report?: boolean
+          review_status?: 'unreviewed' | 'reviewed' | 'needs_followup' | 'excluded'
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'documentation_items_session_scope_fkey'
+            columns: ['documentation_session_id', 'organization_id']
+            isOneToOne: false
+            referencedRelation: 'documentation_sessions'
+            referencedColumns: ['id', 'organization_id']
+          },
+          {
+            foreignKeyName: 'documentation_items_organization_id_fkey'
+            columns: ['organization_id']
+            isOneToOne: false
+            referencedRelation: 'organizations'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       ai_report_drafts: {
         Row: {
           id: string
@@ -635,6 +698,9 @@ export interface Database {
           id: string
           documentation_session_id: string
           organization_id: string
+          documentation_item_id: string
+          attachment_order: number
+          attachment_kind: 'primary' | 'supporting' | 'document' | 'note'
           type: string
           storage_path: string | null
           thumbnail_path: string | null
@@ -685,6 +751,9 @@ export interface Database {
           id?: string
           documentation_session_id: string
           organization_id: string
+          documentation_item_id?: string
+          attachment_order?: number
+          attachment_kind?: 'primary' | 'supporting' | 'document' | 'note'
           type: string
           storage_path?: string | null
           thumbnail_path?: string | null
@@ -735,6 +804,9 @@ export interface Database {
           id?: string
           documentation_session_id?: string
           organization_id?: string
+          documentation_item_id?: string
+          attachment_order?: number
+          attachment_kind?: 'primary' | 'supporting' | 'document' | 'note'
           type?: string
           storage_path?: string | null
           thumbnail_path?: string | null
@@ -782,6 +854,13 @@ export interface Database {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: 'capture_items_documentation_item_scope_fkey'
+            columns: ['documentation_item_id', 'documentation_session_id', 'organization_id']
+            isOneToOne: false
+            referencedRelation: 'documentation_items'
+            referencedColumns: ['id', 'documentation_session_id', 'organization_id']
+          },
           {
             foreignKeyName: 'capture_items_documentation_session_id_fkey'
             columns: ['documentation_session_id']
@@ -1504,6 +1583,13 @@ export interface Database {
     }
     Views: Record<string, never>
     Functions: {
+      soft_delete_documentation_item: {
+        Args: {
+          p_session_id: string
+          p_documentation_item_id: string
+        }
+        Returns: Array<{ storage_path: string | null }>
+      }
       finalize_evidence_deliverable: {
         Args: {
           p_deliverable_id: string

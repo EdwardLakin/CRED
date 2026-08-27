@@ -114,7 +114,7 @@ function getCaptureLabel(capture: CaptureItem) {
   if (capture.media_kind === 'document') return 'File/document'
   if (capture.media_kind === 'video') return 'Video'
   if (capture.media_kind === 'audio') return 'Voice note'
-  return 'Photo/evidence'
+  return 'Photo'
 }
 
 function StepCard({
@@ -219,7 +219,7 @@ function StepCard({
         <div className="field-stack">
           <h3>Requested documentation prompts</h3>
           <ul className="muted">
-            {asStepArray<{ label?: string; evidence_type?: string }>(metadata.required_evidence).map((evidence, index) => <li key={`${evidence.label ?? index}`}>{evidence.label ?? 'Evidence'}{evidence.evidence_type ? ` (${evidence.evidence_type.replace(/_/g, ' ')})` : ''}</li>)}
+            {asStepArray<{ label?: string; evidence_type?: string }>(metadata.required_evidence).map((evidence, index) => <li key={`${evidence.label ?? index}`}>{evidence.label ?? 'Suggested capture'}{evidence.evidence_type ? ` (${evidence.evidence_type.replace(/_/g, ' ')})` : ''}</li>)}
           </ul>
         </div>
       ) : null}
@@ -282,12 +282,12 @@ function StepCard({
       </form>
 
       <section className="field-stack">
-        <h3>Attached step evidence</h3>
+        <h3>Attached step items</h3>
         {stepCaptures.length > 0 ? (
           <ul className="muted">
-            {stepCaptures.map((capture) => <li key={capture.id}>{formatEvidenceRole(capture) ? `${formatEvidenceRole(capture)} · ` : ''}{getCaptureLabel(capture)} · {capture.technician_note || capture.ai_summary || 'Saved evidence'}</li>)}
+            {stepCaptures.map((capture) => <li key={capture.id}>{formatEvidenceRole(capture) ? `${formatEvidenceRole(capture)} · ` : ''}{getCaptureLabel(capture)} · {capture.technician_note || capture.ai_summary || 'Saved item'}</li>)}
           </ul>
-        ) : <p className="muted">No evidence attached to this step yet.</p>}
+        ) : <p className="muted">No items attached to this step yet.</p>}
         <AddCaptureForm
           sessionId={sessionId}
           organizationId={organizationId}
@@ -387,7 +387,7 @@ export default async function DiagnosticProcedurePage({
 
       {error ? <p className="error">{error}</p> : null}
       {extracted ? <p className="success">Procedure workspace ready for technician review.</p> : null}
-      {captureSaved ? <p className="success">Step evidence saved.</p> : null}
+      {captureSaved ? <p className="success">Step item saved.</p> : null}
 
       {!diagnosticDraft ? (
         <section className="card detail-card form-stack">
@@ -419,7 +419,7 @@ export default async function DiagnosticProcedurePage({
 
           <section className="card detail-card form-stack">
             <div className="report-section-heading generated-report-heading">
-              <div><p className="eyebrow">Documentation progress</p><h2>{procedureProgress.percentComplete}% complete</h2><p className="muted">Documentation ready only when required technician-entered readings, branch selections, and evidence roles are complete.</p></div>
+              <div><p className="eyebrow">Documentation progress</p><h2>{procedureProgress.percentComplete}% complete</h2><p className="muted">Documentation is ready when required technician-entered readings, branch selections, and item roles are complete.</p></div>
               <span className={procedureProgress.reportReady ? 'status-pill success' : 'status-pill attention'}>{procedureProgress.reportReady ? 'Documentation ready' : 'Documentation incomplete'}</span>
             </div>
             <div className="inspection-metric-grid">

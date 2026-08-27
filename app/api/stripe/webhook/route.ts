@@ -8,7 +8,7 @@ import {
   type StripeSubscription,
   verifyStripeWebhookPayload,
 } from '@/lib/stripe'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
 
@@ -24,7 +24,7 @@ async function updateSubscription(input: {
   status?: string | null
   currentPeriodEnd?: string | null
 }) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
   const { error } = await supabase.rpc('sync_organization_subscription', {
     p_organization_id: input.organizationId ?? null,
     p_stripe_customer_id: input.customerId ?? null,

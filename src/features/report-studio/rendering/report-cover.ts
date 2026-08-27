@@ -53,7 +53,7 @@ function getCoverImageHtml(
   const coverCapture =
     eligibleImages.find((capture) => helpers.getUserEvidenceText(capture)) ??
     eligibleImages[0];
-  return `<div class="cover-image">${helpers.renderExportImage(imageAssets[coverCapture.id], helpers.getPrimaryEvidenceLabel(coverCapture), "Preview unavailable in printable export. Original evidence retained.")}</div>`;
+  return `<div class="cover-image">${helpers.renderExportImage(imageAssets[coverCapture.id], helpers.getPrimaryEvidenceLabel(coverCapture), "Preview unavailable in this report. The original item remains saved.")}</div>`;
 }
 
 export function buildReportCoverHtml(params: {

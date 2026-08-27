@@ -3,7 +3,7 @@ import type { Json } from '@/lib/supabase/database.types'
 export const DEFAULT_REPORT_TYPE = 'General Evidence Report'
 
 export const REPORT_TYPES = [
-  { value: 'General Evidence Report', label: 'General Evidence Report' },
+  { value: 'General Evidence Report', label: 'General Documentation Report' },
   { value: 'Vehicle Inspection', label: 'Vehicle Inspection' },
   { value: 'Property Inspection', label: 'Property Inspection' },
   { value: 'Insurance Claim', label: 'Insurance Claim' },
@@ -32,7 +32,7 @@ export const SESSION_METADATA_FIELDS: Array<{ name: keyof SessionMetadata; label
 
 export const BASELINE_REPORT_TEMPLATE = {
   title: DEFAULT_REPORT_TYPE,
-  sections: ['Report Summary', 'Findings', 'Evidence Captured', 'Recommendations', 'Final Summary / Report Notes'],
+  sections: ['Report Summary', 'Findings', 'Documented Items', 'Recommendations', 'Final Summary / Report Notes'],
 } as const
 
 const LEGACY_REPORT_TYPE_MAP: Record<string, ReportType> = {

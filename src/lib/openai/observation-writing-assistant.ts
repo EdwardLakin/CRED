@@ -49,7 +49,7 @@ const ACTION_INSTRUCTIONS: Record<ObservationWritingAction, string> = {
   make_more_concise: 'Make the customer-facing text shorter and easier to scan without dropping important documented facts.',
   expand_description: 'Expand the description with relevant documented context from notes and image descriptions only.',
   generate_observation: 'Generate a customer-facing observation from the technician note, existing fields, and supporting image descriptions.',
-  generate_recommendation: 'Generate a clear recommended action only from documented concerns, observations, and evidence. Avoid guarantees and legal language.',
+  generate_recommendation: 'Generate a clear recommended action only from documented concerns, observations, and captured items. Avoid guarantees and legal language.',
   explain_clearly: 'Explain the observation clearly for a non-technical customer while preserving the documented meaning.',
 }
 
@@ -57,7 +57,7 @@ function classificationInstruction(classification: string) {
   const normalized = classification.toLowerCase()
   if (normalized.includes('concern')) return 'Classification: Concern. Describe what was observed and why it matters. Avoid diagnosis unless explicitly documented.'
   if (normalized.includes('recommended')) return 'Classification: Recommended Action. Write a clear recommendation. Avoid guarantees, legal language, and unsupported urgency.'
-  if (normalized.includes('supporting')) return 'Classification: Supporting Evidence. Explain how the evidence supports another observation. Do not create a new finding.'
+  if (normalized.includes('supporting')) return 'Classification: Supporting Item. Explain how the item supports another observation. Do not create a new finding.'
   return 'Classification: Observation. Describe only documented facts. No urgency. No recommendations.'
 }
 
@@ -106,9 +106,10 @@ export async function generateObservationWriting(input: ObservationWritingInput)
             {
               type: 'input_text',
               text: `You are CRED's per-observation writing assistant. Return JSON only: {"text":"..."}.
-Technician Truth is mandatory: preserve the meaning of technician-authored notes, captions, transcripts, reviewed fields, and documented evidence. Never overwrite technician notes; write only the customer-facing report text.
+Technician Truth is mandatory: preserve the meaning of technician-authored notes, captions, transcripts, reviewed fields, and documented items. Never overwrite technician notes; write only the customer-facing report text.
 Use image AI descriptions, detected objects, and extracted metadata as supporting context, but do not hallucinate. If a photo description suggests something not supported by technician text, phrase cautiously as visible/appears and do not diagnose a source.
 Do not add new facts, measurements, severity, urgency, causes, repairs, guarantees, or legal conclusions unless explicitly documented.
+Use Item, Items, Documentation, Source, or Sources as appropriate. Never use the word "evidence" in the returned customer-facing text.
 ${classificationInstruction(input.classification)}
 Action: ${ACTION_INSTRUCTIONS[input.action]}`,
             },

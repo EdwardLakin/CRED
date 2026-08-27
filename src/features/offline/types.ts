@@ -1,3 +1,9 @@
+import type {
+  CaptureAttachmentKind,
+  DocumentationItemKind,
+  SourceDocumentType,
+} from "@/features/capture/types";
+
 export type QueueStatus =
   | "local"
   | "queued"
@@ -37,6 +43,13 @@ export type OfflineCaptureDiagnostics = {
 };
 
 export type OfflineCaptureMetadata = {
+  clientItemId: string;
+  documentationItemId: string | null;
+  attachmentOrder: number | null;
+  sourceKind: DocumentationItemKind;
+  attachmentKind: CaptureAttachmentKind;
+  sourceDocumentType: SourceDocumentType | null;
+  sourceDocumentLabel: string | null;
   captureIntent: string;
   manualType: string | null;
   guidedStep: string | null;

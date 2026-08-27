@@ -1,0 +1,81 @@
+.nextAction {
+  align-items: center;
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  max-width: none;
+  width: 100%;
+}
+
+.nextActionCopy {
+  display: grid;
+  gap: 5px;
+}
+
+.nextActionCopy h2,
+.nextActionCopy p {
+  margin: 0;
+}
+
+.exportLayout {
+  display: grid;
+  gap: 20px;
+}
+
+.approvalColumn {
+  display: grid;
+  gap: 16px;
+}
+
+.approvalColumn > * {
+  width: 100%;
+}
+
+.exportSummary {
+  align-items: center;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+  max-width: none;
+  width: 100%;
+}
+
+.exportSummaryCopy {
+  display: grid;
+  gap: 5px;
+}
+
+.exportSummaryCopy h2,
+.exportSummaryCopy p {
+  margin: 0;
+}
+
+.approvalStatus {
+  align-items: center;
+  background: var(--success-soft);
+  border: 1px solid color-mix(in srgb, var(--success) 40%, var(--border));
+  border-radius: 999px;
+  color: var(--success);
+  display: inline-flex;
+  font-size: 0.85rem;
+  font-weight: 800;
+  min-height: 40px;
+  padding: 8px 14px;
+  white-space: nowrap;
+}
+
+@media (max-width: 680px) {
+  .nextAction,
+  .exportSummary {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .nextAction a {
+    width: 100%;
+  }
+
+  .approvalStatus {
+    align-self: flex-start;
+  }
+}

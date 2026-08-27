@@ -263,6 +263,11 @@ async function verifySyncedCapture(
       filename: record.metadata.filename,
       mimeType: record.metadata.mimeType,
       technicianNote: record.metadata.technicianNote,
+      clientItemId: record.metadata.clientItemId,
+      documentationItemId: record.metadata.documentationItemId,
+      attachmentOrder: record.metadata.attachmentOrder,
+      sourceKind: record.metadata.sourceKind,
+      attachmentKind: record.metadata.attachmentKind,
       ...(reportOrder ? { reportOrder } : {}),
     }),
   });
@@ -550,8 +555,13 @@ export async function syncCapture(record: OfflineCaptureRecord) {
     noteSource: current.metadata.noteSource as "manual" | "voice" | "edited",
     reportOrder,
     includeInReport: current.metadata.includeInReport,
-    sourceDocumentType: null,
-    sourceDocumentLabel: null,
+    sourceDocumentType: current.metadata.sourceDocumentType,
+    sourceDocumentLabel: current.metadata.sourceDocumentLabel,
+    clientItemId: current.metadata.clientItemId,
+    documentationItemId: current.metadata.documentationItemId,
+    attachmentOrder: current.metadata.attachmentOrder,
+    sourceKind: current.metadata.sourceKind,
+    attachmentKind: current.metadata.attachmentKind,
   });
 
   if (!result.ok) {
@@ -600,6 +610,8 @@ export async function syncCapture(record: OfflineCaptureRecord) {
           localId: current.localId,
           sessionId: current.sessionId,
           captureItemId: result.captureItemId,
+          documentationItemId: result.documentationItemId,
+          clientItemId: result.clientItemId,
         },
       }),
     );
@@ -615,6 +627,11 @@ export async function syncCapture(record: OfflineCaptureRecord) {
     metadata: {
       ...current.metadata,
       captureItemId: result.captureItemId,
+      documentationItemId: result.documentationItemId,
+      clientItemId: result.clientItemId,
+      attachmentOrder: result.attachmentOrder,
+      sourceKind: result.sourceKind,
+      attachmentKind: result.attachmentKind,
       uploadStatus: "verifying",
       verified: false,
       diagnostics: buildDiagnostics(current, storagePath, null),
@@ -686,6 +703,11 @@ export async function syncCapture(record: OfflineCaptureRecord) {
     metadata: {
       ...current.metadata,
       captureItemId: result.captureItemId,
+      documentationItemId: result.documentationItemId,
+      clientItemId: result.clientItemId,
+      attachmentOrder: result.attachmentOrder,
+      sourceKind: result.sourceKind,
+      attachmentKind: result.attachmentKind,
       uploadStatus: "verified",
       verified: true,
     },

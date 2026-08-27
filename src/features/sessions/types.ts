@@ -19,7 +19,8 @@ export const SESSION_TYPES = REPORT_TYPES
 export type SessionType = ReportType
 
 export function getSessionTypeLabel(sessionType: string) {
-  return normalizeReportType(sessionType)
+  const normalized = normalizeReportType(sessionType)
+  return REPORT_TYPES.find((reportType) => reportType.value === normalized)?.label ?? normalized
 }
 
 export function getSessionStatusLabel(status: string) {

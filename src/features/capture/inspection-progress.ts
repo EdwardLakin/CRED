@@ -88,6 +88,6 @@ export function getInspectionProgress(captures: CaptureItem[], sessionType: stri
       ...(pendingAiCount > 0 ? ['AI analysis still running'] : []),
       ...(failedAiCount > 0 ? ['AI analysis failed — verify manually'] : []),
     ],
-    nextStep: nextMissing ? `Capture ${nextMissing} evidence.` : 'Review draft report and export when ready.',
+    nextStep: nextMissing ? `Capture ${nextMissing}.` : 'Review draft report and export when ready.',
   }
 }

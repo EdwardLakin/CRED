@@ -10,7 +10,7 @@ test('pending sync count ignores completed and recoverable server-backed records
   assert.match(queue, /isActionableQueuedCapture/)
   assert.match(queue, /record\.status === "synced"\) return false/)
   assert.match(queue, /finalized_unverified" \|\| record\.status === "verifying"\).*serverCaptureId/s)
-  assert.match(queue, /records\.filter\(isActionableQueuedCapture\)/)
+  assert.match(queue, /normalizedRecords\.filter\(isActionableQueuedCapture\)/)
 })
 
 test('offline banner exposes sync queue details and cleanup removes completed queue records', () => {

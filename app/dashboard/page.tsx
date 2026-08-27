@@ -12,17 +12,17 @@ interface DashboardPageProps {
   searchParams: Promise<{ billing?: string; checkout?: string; error?: string; notice?: string }>
 }
 
-function getCaptureCounts(captures: Array<{ documentation_session_id: string }> | null) {
-  const captureCountBySession = new Map<string, number>()
+function getItemCounts(items: Array<{ documentation_session_id: string }> | null) {
+  const itemCountBySession = new Map<string, number>()
 
-  for (const capture of captures ?? []) {
-    captureCountBySession.set(
-      capture.documentation_session_id,
-      (captureCountBySession.get(capture.documentation_session_id) ?? 0) + 1,
+  for (const item of items ?? []) {
+    itemCountBySession.set(
+      item.documentation_session_id,
+      (itemCountBySession.get(item.documentation_session_id) ?? 0) + 1,
     )
   }
 
-  return captureCountBySession
+  return itemCountBySession
 }
 
 function getContinueSession(sessions: Parameters<typeof getSessionWorkflowState>[0][]) {
@@ -35,9 +35,9 @@ function getDashboardAction(session: Parameters<typeof getSessionWorkflowState>[
   }
 
   const state = getSessionWorkflowState(session)
-  if (state === 'ready') return { label: 'Ready', title: 'Resume Review', description: 'Open the approved report workspace and prepare export.', href: `/dashboard/sessions/${session.id}/report` }
+  if (state === 'ready') return { label: 'Ready', title: 'Export Report', description: 'Your approved report is ready to download or share.', href: `/dashboard/sessions/${session.id}/export` }
   if (state === 'review_required') return { label: 'Review Required', title: 'Resume Review', description: 'Resolve review items and move the report toward delivery.', href: `/dashboard/sessions/${session.id}/report` }
-  return { label: 'In Progress', title: 'Continue Current Session', description: 'Keep capturing field evidence for the active report.', href: `/dashboard/sessions/${session.id}/capture` }
+  return { label: 'In Progress', title: 'Continue Current Session', description: 'Keep adding items to the active report.', href: `/dashboard/sessions/${session.id}/capture` }
 }
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
@@ -68,16 +68,17 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const continueSession = getContinueSession(recentSessions)
   const dashboardAction = getDashboardAction(continueSession)
   const sessionIds = recentSessions.map((session) => session.id)
-  const { data: captures } = sessionIds.length > 0
+  const { data: items } = sessionIds.length > 0
     ? await supabase
-        .from('capture_items')
+        .from('documentation_items')
         .select('documentation_session_id')
         .eq('organization_id', profile.organization_id)
         .in('documentation_session_id', sessionIds)
+        .eq('item_kind', 'observation')
         .is('deleted_at', null)
     : { data: null }
 
-  const captureCountBySession = getCaptureCounts(captures)
+  const itemCountBySession = getItemCounts(items)
   const reportDraftBySession = await loadCurrentReportDraftsBySession(
     (organizationId, ids) =>
       supabase
@@ -109,14 +110,14 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               <span className="action-kicker">{dashboardAction.label}</span>
               <strong>{dashboardAction.title}</strong>
               <span>{dashboardAction.description}</span>
-              <div className="workflow-mini" aria-label="Workflow"><span>Capture</span><span>Review</span><span>Export</span></div>
+              <div className="workflow-mini" aria-label="Workflow"><span>Capture</span><span>Review</span><span>Approve</span><span>Export</span></div>
             </Link>
           ) : (
             <form action={createQuickCaptureSession}>
               <button className="start-option-card action-card-primary touch-target start-option-button">
                 <span className="action-kicker">No Active Session</span>
                 <strong>Start New Session</strong>
-                <span>Capture evidence, review the report, and export documentation.</span>
+                <span>Capture items, review the report, approve it, and export.</span>
               </button>
             </form>
           )}
@@ -147,7 +148,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               <SessionCard
                 key={session.id}
                 session={session}
-                evidenceCount={captureCountBySession.get(session.id)}
+                evidenceCount={itemCountBySession.get(session.id) ?? 0}
                 showOperationalAction
                 showArchiveAction
                 showManagementActions
@@ -163,7 +164,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 📄
               </div>
               <h2>Start your first session.</h2>
-              <p className="muted">Press New Session and begin capturing evidence. No setup required.</p>
+              <p className="muted">Press New Session and begin adding items. No setup required.</p>
             </div>
             <form action={createQuickCaptureSession} className="empty-start-actions" aria-label="Start your first session">
               <button className="button button-primary touch-target">New Session</button>

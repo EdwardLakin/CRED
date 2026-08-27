@@ -16,7 +16,7 @@ const validation = readFileSync('src/features/evidence/deliverables/validation.t
 test('assembly UI renders on deliverables route with generation controls and preview', () => {
   assert.match(workspace, /DeliverableAssemblyPanel/)
   assert.match(panel, /Deliverable assembly/)
-  assert.match(options + data, /Chronology|Evidence Index|Observation Summary/)
+  assert.match(options + data, /Chronology|Source Index|Observation Summary/)
   assert.match(selector, /selectedImportBatchIds/)
   assert.match(selector, /selectedCaptureItemIds/)
   assert.match(selector, /selectedTimelineEventIds/)
@@ -26,7 +26,7 @@ test('assembly UI renders on deliverables route with generation controls and pre
 })
 
 test('source counts are shown deterministically before generation', () => {
-  for (const label of ['Evidence items selected', 'Import batches selected', 'Timeline events selected', 'Entities selected', 'Factual observations selected', 'Relationships selected']) assert.match(counts, new RegExp(label))
+  for (const label of ['Items selected', 'Import batches selected', 'Timeline events selected', 'Entities selected', 'Factual observations selected', 'Relationships selected']) assert.match(counts, new RegExp(label))
   assert.match(data, /getDeliverableSourceCounts/)
   assert.match(data, /new Set\(sourceData\.evidenceItems/)
 })

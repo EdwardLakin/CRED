@@ -6,14 +6,13 @@ const dataSource = readFileSync('src/features/evidence/entities/data.ts', 'utf8'
 const actionSource = readFileSync('src/features/evidence/entities/actions.ts', 'utf8')
 const validationSource = readFileSync('src/features/evidence/entities/validation.ts', 'utf8')
 const componentSource = readFileSync('src/features/evidence/components/EntitiesWorkspace.tsx', 'utf8')
-const sessionPage = readFileSync('app/dashboard/sessions/[id]/page.tsx', 'utf8')
 const entitiesPage = readFileSync('app/dashboard/sessions/[id]/entities/page.tsx', 'utf8')
 
-test('entities route and session navigation are present', () => {
+test('entities route remains available as an advanced Review tool', () => {
   assert.ok(existsSync('app/dashboard/sessions/[id]/entities/page.tsx'))
   assert.match(entitiesPage, /getEntitiesData\(id, workspace\)/)
-  assert.match(sessionPage, /feature\.hrefSegment/)
-  assert.match(sessionPage, /feature\.label/)
+  assert.match(entitiesPage, /EvidenceWorkspaceBacklinks/)
+  assert.match(entitiesPage, /current="entities"/)
 })
 
 test('entities loader scopes session, entities, evidence, timeline events, and relationships', () => {
@@ -59,7 +58,7 @@ test('entity relationships are accepted user links to entities and unlink by sof
 })
 
 test('entities UI exposes required fields, counts, and linking controls', () => {
-  for (const expected of ['entity_type', 'display_name', 'description', 'attributes', 'review_status', 'suggestion_source', 'Linked evidence count', 'Linked timeline event count', 'mentions', 'depicts', 'involves']) {
+  for (const expected of ['entity_type', 'display_name', 'description', 'attributes', 'review_status', 'suggestion_source', 'Linked items', 'Linked timeline events', 'mentions', 'depicts', 'involves']) {
     assert.ok(componentSource.includes(expected), `missing ${expected}`)
   }
 })

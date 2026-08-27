@@ -20,13 +20,16 @@
     "@supabase/supabase-js": "latest",
     "idb": "^8.0.3",
     "next": "latest",
+    "pdfkit": "^0.20.1",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@eslint/eslintrc": "latest",
     "@playwright/test": "^1.51.1",
     "@types/node": "latest",
+    "@types/pdfkit": "^0.17.6",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "eslint": "latest",

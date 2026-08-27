@@ -10,5 +10,5 @@ export default async function EvidenceReviewQueuePage({ params, searchParams }: 
   const workspace = await requireSessionWorkspace()
   requireWorkspaceFeatureOrRedirect(workspace.profile, 'review_queue', id)
   const data = await getReviewQueueData(id, parseReviewQueueSearchParams(await searchParams))
-  return <main className="page-shell dashboard-shell"><div className="section-header page-header"><div><Link href={`/dashboard/sessions/${data.session.id}`} className="secondary-link touch-target">← Session</Link><h1>Review Queue</h1><p className="muted">{data.session.title} · human review for unresolved evidence and AI suggestions</p></div></div><EvidenceWorkspaceBacklinks accessSubject={workspace.profile} sessionId={data.session.id} current="review" /><ReviewQueueWorkspace data={data} /></main>
+  return <main className="page-shell dashboard-shell"><div className="section-header page-header"><div><Link href={`/dashboard/sessions/${data.session.id}`} className="secondary-link touch-target">← Session</Link><h1>Advanced Review</h1><p className="muted">{data.session.title} · resolve items and AI suggestions that need attention</p></div></div><EvidenceWorkspaceBacklinks accessSubject={workspace.profile} sessionId={data.session.id} current="review" /><ReviewQueueWorkspace data={data} /></main>
 }

@@ -5,7 +5,6 @@ import { readFileSync } from 'node:fs'
 const dataSource = readFileSync('src/features/evidence/library/data.ts', 'utf8')
 const actionSource = readFileSync('src/features/evidence/library/actions.ts', 'utf8')
 const validationSource = readFileSync('src/features/evidence/library/validation.ts', 'utf8')
-const sessionPage = readFileSync('app/dashboard/sessions/[id]/page.tsx', 'utf8')
 const libraryPage = readFileSync('app/dashboard/sessions/[id]/evidence/page.tsx', 'utf8')
 const detailPage = readFileSync('app/dashboard/sessions/[id]/evidence/[captureId]/page.tsx', 'utf8')
 const listComponent = readFileSync('src/features/evidence/components/EvidenceLibraryList.tsx', 'utf8')
@@ -39,11 +38,11 @@ test('source date action validates event date precision and normalizes date valu
   assert.match(actionSource, /source_created_at: normalizeOptionalIsoDateTime/)
 })
 
-test('evidence routes and session navigation are present without changing capture or report routes', () => {
-  assert.match(libraryPage, /Evidence Library/)
-  assert.match(detailPage, /Evidence Details/)
-  assert.match(sessionPage, /feature\.hrefSegment/)
-  assert.match(sessionPage, /feature\.label/)
+test('item-library routes remain available as optional Review tools', () => {
+  assert.match(libraryPage, /<h1>Items<\/h1>/)
+  assert.match(detailPage, /<h1>Item details<\/h1>/)
+  assert.match(libraryPage, /EvidenceWorkspaceBacklinks/)
+  assert.match(libraryPage, /current="library"/)
 })
 
 test('library and details display requested evidence fields and import batch status', () => {

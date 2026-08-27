@@ -15,13 +15,13 @@ export default async function EvidenceLibraryPage({ params }: { params: Promise<
       <div className="section-header page-header">
         <div>
           <Link href={`/dashboard/sessions/${session.id}`} className="secondary-link touch-target">← Session</Link>
-          <h1>Evidence Library</h1>
+          <h1>Items</h1>
           <div className="evidence-library-header-actions">
             <Link
               href={`/dashboard/sessions/${session.id}/evidence/import`}
               className="button button-primary touch-target"
             >
-              Import evidence
+              Import files
             </Link>
             <Link
               href={`/dashboard/sessions/${session.id}/report`}

@@ -6,7 +6,7 @@ import { DIAGNOSTIC_EVENT_TYPES, EVIDENCE_SOURCE_KINDS, EVENT_DATE_PRECISIONS, S
 import { formatDateTime } from '@/features/sessions'
 
 function evidenceLabel(item: TimelineEvidenceItem) {
-  return item.original_filename || item.technician_note || `${item.media_kind} evidence`
+  return item.original_filename || item.technician_note || `${item.media_kind} item`
 }
 
 function eventDate(event: TimelineEvent, timeZone: string | null) {
@@ -26,7 +26,7 @@ export function TimelineWorkspace({ session, events, evidenceItems, relationship
         <div>
           <p className="eyebrow">Session timeline</p>
           <h2>{session.title}</h2>
-          <p className="muted">Manually organize evidence into reviewed timeline events. Reports and exports are unchanged.</p>
+          <p className="muted">Organize captured items into reviewed timeline events. Reports and exports are unchanged.</p>
         </div>
       </section>
 
@@ -46,8 +46,8 @@ export function TimelineWorkspace({ session, events, evidenceItems, relationship
             </div>
             {event.description ? <p>{event.description}</p> : <p className="muted">No description.</p>}
             <div>
-              <h3>Linked evidence ({eventRelationships.length})</h3>
-              {eventRelationships.length === 0 ? <p className="muted">No evidence linked.</p> : (
+              <h3>Linked items ({eventRelationships.length})</h3>
+              {eventRelationships.length === 0 ? <p className="muted">No items linked.</p> : (
                 <ul className="form-stack">
                   {eventRelationships.map((relationship) => {
                     const item = evidenceById.get(relationship.source_id)
@@ -92,7 +92,7 @@ function TimelineEventForm({ sessionId, event, timeZone }: { sessionId: string; 
 }
 
 function LinkEvidenceForm({ sessionId, eventId, evidenceItems }: { sessionId: string; eventId: string; evidenceItems: TimelineEvidenceItem[] }) {
-  return <form action={linkEvidenceToTimelineEvent.bind(null, sessionId, eventId)} className="form-actions"><select className="input" name="capture_item_id" required><option value="">Select evidence</option>{evidenceItems.map((item) => <option key={item.id} value={item.id}>{evidenceLabel(item)}</option>)}</select><select className="input" name="relationship_type" defaultValue="documents"><option value="documents">documents</option><option value="supports">supports</option></select><button className="button button-secondary touch-target">Link evidence</button></form>
+  return <form action={linkEvidenceToTimelineEvent.bind(null, sessionId, eventId)} className="form-actions"><select className="input" name="capture_item_id" required><option value="">Select item</option>{evidenceItems.map((item) => <option key={item.id} value={item.id}>{evidenceLabel(item)}</option>)}</select><select className="input" name="relationship_type" defaultValue="documents"><option value="documents">documents</option><option value="supports">supports</option></select><button className="button button-secondary touch-target">Link item</button></form>
 }
 
 function toLocalInput(value?: string | null) {

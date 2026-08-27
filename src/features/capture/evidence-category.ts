@@ -5,7 +5,7 @@ export type EvidenceCategory = (typeof EVIDENCE_CATEGORIES)[number]
 export const DEFAULT_EVIDENCE_CATEGORY: EvidenceCategory = 'supporting_evidence'
 
 export const EVIDENCE_CATEGORY_LABELS: Record<EvidenceCategory, string> = {
-  supporting_evidence: 'Supporting Evidence',
+  supporting_evidence: 'Supporting Item',
   observation: 'Observation',
   concern: 'Concern',
   recommended_action: 'Recommended Action',

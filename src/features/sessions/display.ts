@@ -1,7 +1,7 @@
 import type { Json } from '@/lib/supabase/database.types'
 
 import type { DocumentationSession } from './types'
-import { getDisplayReportTitle } from '@/features/reports/report-title'
+import { getCustomerFacingReportTitle, getDisplayReportTitle } from '@/features/reports/report-title'
 import { getSessionTypeLabel } from './types'
 import { formatDateTime } from './utils'
 
@@ -25,7 +25,7 @@ export function getSessionPrimaryTitle(session: DocumentationSession, currentRep
   if (currentReport) return getDisplayReportTitle(currentReport, session)
   return (
     getSessionReportField(session, 'report_title') ||
-    session.title?.trim() ||
+    getCustomerFacingReportTitle(session.title) ||
     session.customer_name?.trim() ||
     getSessionReportField(session, 'customer_client') ||
     getSessionReportField(session, 'subject') ||
@@ -42,7 +42,7 @@ export function getSessionSecondarySummary(session: DocumentationSession, eviden
   ].filter(Boolean)
 
   if (evidenceCount !== undefined) {
-    parts.push(`${evidenceCount} evidence item${evidenceCount === 1 ? '' : 's'}`)
+    parts.push(`${evidenceCount} item${evidenceCount === 1 ? '' : 's'}`)
   }
 
   return parts.join(' · ')

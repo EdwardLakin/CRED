@@ -46,8 +46,9 @@ import {
 } from "@/features/reports/review/ReviewComponents";
 import { AutoPrepareReport } from "@/features/reports/components/AutoPrepareReport";
 import { FinalNotesEditor } from "@/features/reports/components/FinalNotesEditor";
-import { EvidenceWorkspaceBacklinks } from "@/features/evidence/components/EvidenceWorkspaceNav";
 import { getIncludedCaptureReviewSummary, isCaptureIncludedInOutput } from "@/features/reports/capture-inclusion";
+
+import flowStyles from "./flow.module.css";
 
 type Tables = Database["public"]["Tables"];
 type CaptureItem = Tables["capture_items"]["Row"];
@@ -140,12 +141,12 @@ function getEvidenceTitle(item: CaptureItem) {
     return referenceTitle;
   if (item.type === "text_note" || item.media_kind === "note")
     return "Technician Note";
-  if (isPhotoCapture(item)) return "Evidence Photo";
+  if (isPhotoCapture(item)) return "Supporting Photo";
   if (item.media_kind === "video" || item.type === "video")
-    return "Evidence Video";
+    return "Supporting Video";
   if (item.media_kind === "audio" || item.type === "voice_note")
     return "Voice Note";
-  return "Supporting Evidence";
+  return "Supporting Item";
 }
 
 function getEvidenceNote(capture: CaptureItem) {
@@ -171,15 +172,17 @@ export default async function SessionReportPreviewPage({
     notes?: string;
     notes_generated?: string;
     prepare?: string;
+    flow_step?: "approve" | "export";
   }>;
 }) {
   const { id } = await params;
   const status = await searchParams;
+  const flowStep = status.flow_step ?? "review";
   const { supabase, profile } = await requireSessionWorkspace();
   const { data: session, error: sessionError } = await supabase
     .from("documentation_sessions")
     .select(
-      "id, title, session_type, session_metadata, organization_id, workflow_template_id, review_status, reviewed_at, reviewed_by, display_id, asset_label, vin, unit_number, customer_name, suggested_details, final_notes, final_notes_ai_generated, final_notes_updated_at, final_notes_edited_by_user, include_final_notes_in_export, created_at, updated_at",
+      "id, title, status, session_type, session_metadata, organization_id, workflow_template_id, review_status, reviewed_at, reviewed_by, display_id, asset_label, vin, unit_number, customer_name, suggested_details, final_notes, final_notes_ai_generated, final_notes_updated_at, final_notes_edited_by_user, include_final_notes_in_export, created_at, updated_at",
     )
     .eq("id", id)
     .eq("organization_id", profile.organization_id)
@@ -401,7 +404,9 @@ export default async function SessionReportPreviewPage({
       captureStatus === "ready_for_review"
     );
   });
-  const isReadyForExport = session.review_status === "ready_for_delivery";
+  const isReadyForExport =
+    session.review_status === "ready_for_delivery" ||
+    session.status === "finalized";
   const reviewedLabel = session.reviewed_at
     ? formatDateTime(session.reviewed_at, profile.timezone)
     : null;
@@ -415,11 +420,11 @@ export default async function SessionReportPreviewPage({
     session.id,
   );
   const saveFinalNotesAction = saveFinalNotes.bind(null, session.id);
-  const saveReportEditsAction = currentReport
+  const saveReportEditsAction = currentReport && !isReadyForExport
     ? saveReportEdits.bind(null, currentReport.id)
     : null;
   const shouldAutoPrepareReport = Boolean(
-    status.prepare && !status.error && !currentReport,
+    flowStep === "review" && status.prepare && !status.error && !currentReport,
   );
   const sourceFieldEntries = getDisplayEntries(currentReport?.header_fields);
   const isGenericEvidenceReport =
@@ -427,8 +432,14 @@ export default async function SessionReportPreviewPage({
   const displayReportTitle = getDisplayReportTitle(currentReport, session, {
     genericFallback: isGenericEvidenceReport,
   });
-  const isEditingReport = Boolean(currentReport && status.edit);
-  if (currentReport && getDiagnosticProcedureInfo(currentReport)) {
+  const isEditingReport = Boolean(
+    flowStep === "review" && currentReport && status.edit && !isReadyForExport,
+  );
+  if (
+    currentReport &&
+    getDiagnosticProcedureInfo(currentReport) &&
+    flowStep !== "export"
+  ) {
     return (
       <DiagnosticProcedureReport
         session={session}
@@ -439,6 +450,7 @@ export default async function SessionReportPreviewPage({
         reportPath={reportPath}
         origin={origin}
         markReviewedAction={markReviewedAction}
+        showApprovalAction={flowStep === "approve"}
         timeZone={profile.timezone}
       />
     );
@@ -447,11 +459,26 @@ export default async function SessionReportPreviewPage({
     <main className="page-shell dashboard-shell report-preview-shell report-review-shell">
       <div className="section-header page-header report-preview-header report-review-header">
         <div>
-          <p className="eyebrow guided-eyebrow">Review</p>
-          <h1>Your Report</h1>
+          <p className="eyebrow guided-eyebrow">
+            {flowStep === "approve"
+              ? "Approve"
+              : flowStep === "export"
+                ? "Export"
+                : "Review"}
+          </p>
+          <h1>
+            {flowStep === "approve"
+              ? "Approve report"
+              : flowStep === "export"
+                ? "Export report"
+                : "Review items"}
+          </h1>
           <p className="muted">
-            Review and organize captured evidence before approving the finished
-            report.
+            {flowStep === "approve"
+              ? "Confirm the finished report before approving it for delivery."
+              : flowStep === "export"
+                ? "Download, send, or securely share the approved report."
+                : "Check each item and make any final report changes."}
           </p>
         </div>
         <div className="page-actions report-preview-actions compact-report-actions">
@@ -462,30 +489,20 @@ export default async function SessionReportPreviewPage({
           >
             {isReadyForExport ? "Ready" : "Review Required"}
           </span>
-          {currentReport ? (
-            <>
-              <Link
-                href={
-                  isEditingReport
-                    ? `/dashboard/sessions/${session.id}/report`
-                    : `/dashboard/sessions/${session.id}/report?edit=1`
-                }
-                className="button button-secondary touch-target"
-              >
-                {isEditingReport ? "View Report" : "Edit Report"}
-              </Link>
-              <Link
-                href={`/dashboard/settings/branding?session=${session.id}&review_output=${currentReport.id ?? session.id}`}
-                className="button button-primary touch-target"
-              >
-                Open Report Studio
-              </Link>
-            </>
+          {currentReport && flowStep === "review" && !isReadyForExport ? (
+            <Link
+              href={
+                isEditingReport
+                  ? `/dashboard/sessions/${session.id}/report`
+                  : `/dashboard/sessions/${session.id}/report?edit=1`
+              }
+              className="button button-secondary touch-target"
+            >
+              {isEditingReport ? "View Report" : "Edit Report"}
+            </Link>
           ) : null}
         </div>
       </div>
-
-      <EvidenceWorkspaceBacklinks accessSubject={profile} sessionId={session.id} current="report" />
 
       {shouldAutoPrepareReport ? (
         <AutoPrepareReport
@@ -522,8 +539,9 @@ export default async function SessionReportPreviewPage({
         ) : null}
       </div>
 
-      <div className="report-review-layout report-document-layout">
-        <div className="report-workspace-column">
+      {flowStep !== "export" ? (
+        <div className="report-review-layout report-document-layout">
+          <div className="report-workspace-column">
           <ReportReview
             reportSections={reportSections ?? []}
             currentReport={currentReport}
@@ -574,29 +592,85 @@ export default async function SessionReportPreviewPage({
             signatureUrls={signatureUrls}
             isEditingReport={isEditingReport}
           />
+            {flowStep === "review" ? (
+              <section className={`card ${flowStyles.nextAction}`}>
+                <div className={flowStyles.nextActionCopy}>
+                  <p className="eyebrow">Next</p>
+                  <h2>Ready to approve?</h2>
+                  <p className="muted">
+                    Continue when the item details and report read correctly.
+                  </p>
+                </div>
+                {currentReport ? (
+                  <Link
+                    className="button button-primary touch-target"
+                    href={`/dashboard/sessions/${session.id}/approve`}
+                  >
+                    Continue to approval
+                  </Link>
+                ) : (
+                  <span
+                    className="button button-secondary touch-target"
+                    aria-disabled="true"
+                  >
+                    Preparing report…
+                  </span>
+                )}
+              </section>
+            ) : null}
+          </div>
+
+          {flowStep === "approve" ? (
+            <div className={flowStyles.approvalColumn}>
+              <InlineReviewPanel
+                isReadyForExport={isReadyForExport}
+                markReviewedAction={markReviewedAction}
+                missingEvidenceCount={evidence.missing.length}
+                reviewedBy={reviewer?.full_name ?? session.reviewed_by}
+                reviewedLabel={reviewedLabel}
+              />
+              {isReadyForExport ? (
+                <Link
+                  className="button button-primary touch-target"
+                  href={`/dashboard/sessions/${session.id}/export`}
+                >
+                  Continue to export
+                </Link>
+              ) : null}
+            </div>
+          ) : null}
         </div>
+      ) : (
+        <div className={flowStyles.exportLayout}>
+          <section className={`card ${flowStyles.exportSummary}`}>
+            <div className={flowStyles.exportSummaryCopy}>
+              <p className="eyebrow">Approved report</p>
+              <h2>{displayReportTitle}</h2>
+              <p className="muted">
+                {reviewedLabel
+                  ? `Approved ${reviewedLabel}${reviewer?.full_name ? ` by ${reviewer.full_name}` : ""}.`
+                  : "Approval is required before delivery options unlock."}
+              </p>
+            </div>
+            <span className={flowStyles.approvalStatus}>
+              {isReadyForExport ? "Approved" : "Approval required"}
+            </span>
+          </section>
 
-        <InlineReviewPanel
-          isReadyForExport={isReadyForExport}
-          markReviewedAction={markReviewedAction}
-          missingEvidenceCount={evidence.missing.length}
-          reviewedBy={reviewer?.full_name ?? session.reviewed_by}
-          reviewedLabel={reviewedLabel}
-        />
-
-        <ExportPanel
-          emailAction={emailAction}
-          isReadyForExport={isReadyForExport}
-          origin={origin}
-          reportPath={reportPath}
-          saveAction={saveAction}
-          sessionId={session.id}
-          shareAction={shareAction}
-          shareTokens={shareTokens ?? []}
-          timeZone={profile.timezone}
-          reportTemplates={reportTemplateRows ?? []}
-        />
-      </div>
+          <ExportPanel
+            emailAction={emailAction}
+            isReadyForExport={isReadyForExport}
+            origin={origin}
+            reportPath={reportPath}
+            saveAction={saveAction}
+            sessionId={session.id}
+            shareAction={shareAction}
+            shareTokens={shareTokens ?? []}
+            timeZone={profile.timezone}
+            reportTemplates={reportTemplateRows ?? []}
+          />
+        </div>
+      )}
     </main>
   );
 }

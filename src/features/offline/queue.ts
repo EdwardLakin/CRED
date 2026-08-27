@@ -1,3 +1,4 @@
+import { isSourceDocumentType } from "@/features/capture/types";
 import { getOfflineDb } from "@/features/offline/db";
 import { incrementOfflineSessionCaptureCount } from "@/features/offline/offline-sessions";
 import type { OfflineCaptureRecord, QueueStatus } from "@/features/offline/types";
@@ -41,20 +42,101 @@ function now() {
   return new Date().toISOString();
 }
 
+export function normalizeQueuedCaptureItemMetadata(
+  record: OfflineCaptureRecord,
+): OfflineCaptureRecord {
+  const metadata = record.metadata as OfflineCaptureRecord["metadata"] & {
+    clientItemId?: unknown;
+    documentationItemId?: unknown;
+    attachmentOrder?: unknown;
+    sourceKind?: unknown;
+    attachmentKind?: unknown;
+    sourceDocumentType?: unknown;
+    sourceDocumentLabel?: unknown;
+  };
+  const clientItemId =
+    typeof metadata.clientItemId === "string" && metadata.clientItemId.trim()
+      ? metadata.clientItemId.trim().slice(0, 160)
+      : record.localId;
+  const documentationItemId =
+    typeof metadata.documentationItemId === "string" &&
+    metadata.documentationItemId.trim()
+      ? metadata.documentationItemId.trim()
+      : null;
+  const rawSourceDocumentType =
+    typeof metadata.sourceDocumentType === "string" &&
+    metadata.sourceDocumentType.trim()
+      ? metadata.sourceDocumentType.trim()
+      : null;
+  const sourceDocumentType =
+    rawSourceDocumentType && isSourceDocumentType(rawSourceDocumentType)
+      ? rawSourceDocumentType
+      : null;
+  const sourceDocumentLabel =
+    typeof metadata.sourceDocumentLabel === "string" &&
+    metadata.sourceDocumentLabel.trim()
+      ? metadata.sourceDocumentLabel.trim().slice(0, 80)
+      : null;
+  const sourceKind =
+    metadata.sourceKind === "document" ||
+    metadata.sourceKind === "note" ||
+    metadata.sourceKind === "observation"
+      ? metadata.sourceKind
+      : sourceDocumentType || metadata.manualType === "document"
+        ? "document"
+        : metadata.manualType === "voice_note" ||
+            metadata.manualType === "text_note"
+          ? "note"
+          : "observation";
+  const attachmentOrder =
+    Number.isInteger(metadata.attachmentOrder) &&
+    Number(metadata.attachmentOrder) > 0
+      ? Number(metadata.attachmentOrder)
+      : 1;
+  const attachmentKind =
+    metadata.attachmentKind === "primary" ||
+    metadata.attachmentKind === "supporting" ||
+    metadata.attachmentKind === "document" ||
+    metadata.attachmentKind === "note"
+      ? metadata.attachmentKind
+      : sourceKind === "document"
+        ? "document"
+        : sourceKind === "note"
+          ? "note"
+          : attachmentOrder === 1
+            ? "primary"
+            : "supporting";
+
+  return {
+    ...record,
+    metadata: {
+      ...metadata,
+      clientItemId,
+      documentationItemId,
+      attachmentOrder,
+      sourceKind,
+      attachmentKind,
+      sourceDocumentType,
+      sourceDocumentLabel,
+    },
+  };
+}
+
 async function normalizeCaptureBlobForIndexedDb(record: OfflineCaptureRecord) {
-  const source = record.blob;
+  const normalizedRecord = normalizeQueuedCaptureItemMetadata(record);
+  const source = normalizedRecord.blob;
   if (!(source instanceof Blob)) {
     throw new Error("IndexedDB capture record does not contain Blob data.");
   }
 
   const blob = source instanceof File
     ? new Blob([await source.arrayBuffer()], {
-        type: record.metadata.mimeType || source.type || "application/octet-stream",
+        type: normalizedRecord.metadata.mimeType || source.type || "application/octet-stream",
       })
     : source;
 
   return {
-    ...record,
+    ...normalizedRecord,
     blob,
   };
 }
@@ -142,7 +224,21 @@ export async function clearQueue(userId?: string) {
 export async function getPendingCaptures(userId?: string) {
   const db = await getOfflineDb();
   const records = await db.getAll("queuedCaptures");
-  const pending = records.filter(isActionableQueuedCapture);
+  const normalizedRecords = records.map(normalizeQueuedCaptureItemMetadata);
+  const upgradedRecords = normalizedRecords.filter((record, index) => {
+    const previous = records[index]?.metadata as Partial<OfflineCaptureRecord["metadata"]> | undefined;
+    return (
+      previous?.clientItemId !== record.metadata.clientItemId ||
+      previous?.documentationItemId !== record.metadata.documentationItemId ||
+      previous?.attachmentOrder !== record.metadata.attachmentOrder ||
+      previous?.sourceKind !== record.metadata.sourceKind ||
+      previous?.attachmentKind !== record.metadata.attachmentKind ||
+      previous?.sourceDocumentType !== record.metadata.sourceDocumentType ||
+      previous?.sourceDocumentLabel !== record.metadata.sourceDocumentLabel
+    );
+  });
+  await Promise.all(upgradedRecords.map((record) => putQueuedCapture(record)));
+  const pending = normalizedRecords.filter(isActionableQueuedCapture);
 
   return userId ? pending.filter((record) => record.userId === userId) : pending;
 }

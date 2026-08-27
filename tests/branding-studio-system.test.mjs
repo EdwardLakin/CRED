@@ -16,7 +16,7 @@ test('all required palette presets exist and map full color tokens', () => {
 })
 
 test('human-readable color labels, swatch cards, chips, and invalid hex feedback render', () => {
-  for (const label of ['Header background','Header text','Footer background','Footer text','Section heading']) assert.match(types, new RegExp(`${label}`))
+  for (const label of ['Header background','Header text','Footer background','Footer text','Section heading','Item accent']) assert.match(types, new RegExp(`${label}`))
   assert.match(studio, /className="palette-card"/)
   assert.match(studio, /className="color-chip"/)
   assert.match(studio, /Enter a valid 6-digit hex color/)
@@ -30,7 +30,7 @@ test('typography presets exist and provide safe stack/token values', () => {
 })
 
 test('report templates exist, apply defaults, and preserve identity/logo fields', () => {
-  for (const name of ['Classic Letterhead','Modern Service Report','Bold Banner','Inspection Binder','Legal Evidence Package','Technical Diagnostic Report','Property Condition Report','Fleet Service Report','Minimal Clean','Executive Summary']) assert.match(types, new RegExp(`name:'${name}'`))
+  for (const name of ['Classic Letterhead','Modern Service Report','Bold Banner','Inspection Binder','Legal Source Package','Technical Diagnostic Report','Property Condition Report','Fleet Service Report','Minimal Clean','Executive Summary']) assert.match(types, new RegExp(`name:'${name}'`))
   assert.match(studio, /applyTemplate/)
   assert.match(studio, /Company identity, contact fields, logo, and signature assets will stay unchanged/)
   assert.doesNotMatch(studio.match(/patch\(\{\.\.\.brand[\s\S]*?report_style:\{[\s\S]*?\}\}\)/)?.[0] ?? '', /display_name|logo_storage_path|signature_storage_path/)

@@ -16,6 +16,7 @@ test('feature gates define tier visibility centrally', () => {
 test('UI consumes centralized feature visibility instead of hard-coded investigation links', () => {
   const sessionPage = readFileSync('app/dashboard/sessions/[id]/page.tsx', 'utf8')
   const nav = readFileSync('src/features/evidence/components/EvidenceWorkspaceNav.tsx', 'utf8')
-  assert.match(sessionPage, /getVisibleWorkspaceFeatures\(profile\)/)
+  assert.doesNotMatch(sessionPage, /getVisibleWorkspaceFeatures\(profile\)/)
+  assert.doesNotMatch(sessionPage, /entities|relationships|deliverables/)
   assert.match(nav, /canUseFeature\(subject, card\.feature\)/)
 })

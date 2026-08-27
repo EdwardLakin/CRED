@@ -22,6 +22,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+export function getCustomerFacingReportTitle(value: string | null | undefined) {
+  const title = stripConfidenceText(value ?? '').replace(/\s+/g, ' ').trim()
+  if (/^general evidence report$/i.test(title)) return 'General Documentation Report'
+  if (/^professional evidence report$/i.test(title)) return 'Professional Documentation Report'
+  if (/^evidence report$/i.test(title)) return 'Documentation Report'
+  return title
+}
+
 export function isPlaceholderReportTitle(value: string | null | undefined) {
   const title = stripConfidenceText(value ?? '').trim()
 
@@ -42,7 +50,7 @@ export function buildSubjectReportTitle(subject: string) {
   if (/\b(evidence report|inspection documentation|property documentation|documentation)\b/i.test(cleanSubject)) return cleanSubject
   if (/\b(property|site|facility|building|home|house|condo|address)\b/i.test(cleanSubject)) return `${cleanSubject} Documentation`
   if (/\b(inspection|inspect)\b/i.test(cleanSubject)) return `${cleanSubject} Documentation`
-  return `${cleanSubject} Evidence Report`
+  return `${cleanSubject} Documentation Report`
 }
 
 export function getReportInfoValue(draft: ReportTitleDraft, session: Pick<ReportTitleSession, 'suggested_details' | 'session_metadata' | 'customer_name' | 'asset_label'>, key: string) {
@@ -74,10 +82,10 @@ export function getReportInfoValue(draft: ReportTitleDraft, session: Pick<Report
 
 export function getDisplayReportTitle(draft: ReportTitleDraft, session: ReportTitleSession, options: { genericFallback?: boolean } = {}) {
   void options
-  const draftTitle = stripConfidenceText(draft?.title ?? '').trim()
+  const draftTitle = getCustomerFacingReportTitle(draft?.title)
   if (draftTitle && !isPlaceholderReportTitle(draftTitle)) return draftTitle
 
-  const sessionTitle = stripConfidenceText(session.title ?? '').trim()
+  const sessionTitle = getCustomerFacingReportTitle(session.title)
   if (sessionTitle && !isPlaceholderReportTitle(sessionTitle)) return sessionTitle
 
   const subject = getReportInfoValue(draft, session, 'subject_name')
@@ -96,7 +104,7 @@ export function getDisplayReportTitle(draft: ReportTitleDraft, session: ReportTi
   const selectedReportType = normalizeReportType(session.session_type)
   if (selectedReportType && selectedReportType !== 'General Evidence Report') return selectedReportType
 
-  return 'Professional Evidence Report'
+  return 'Professional Documentation Report'
 }
 
 function isGenericGeneratedReportTitle(value: string) {
@@ -171,12 +179,12 @@ export function buildSafeReportTitle(args: {
   }
 
   if (identity) {
-    return buildSubjectReportTitle(identity) ?? 'General Evidence Report'
+    return buildSubjectReportTitle(identity) ?? 'General Documentation Report'
   }
 
   if (sessionTitle && !isPlaceholderReportTitle(sessionTitle)) {
     return sessionTitle
   }
 
-  return 'General Evidence Report'
+  return 'General Documentation Report'
 }

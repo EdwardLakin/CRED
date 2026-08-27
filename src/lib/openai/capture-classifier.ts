@@ -83,15 +83,15 @@ const CLASSIFICATION_LABELS: Record<CaptureClassificationType, string> = {
   suspension_component: 'Suspension Component',
   defect_photo: 'Defect Photo',
   general_equipment_photo: 'General Equipment Photo',
-  general_evidence: 'General Evidence',
+  general_evidence: 'General Item',
   supporting_photo: 'Supporting Photo',
   unknown: 'Unknown',
 }
 
-const CLASSIFIER_SYSTEM_PROMPT = `You classify captured evidence images for CRED CVIP/commercial inspection workflows.
+const CLASSIFIER_SYSTEM_PROMPT = `You classify captured item images for CRED CVIP/commercial inspection workflows.
 Return JSON only, no markdown.
 Choose exactly one detected_type from the allowed list.
-Treat technician_note/transcript as high-value inspection context, especially for component, location, and measurement. Do not blindly override visual evidence, but prefer the inspection evidence label when the note is specific and visually plausible.
+Treat technician_note/transcript as high-value inspection context, especially for component, location, and measurement. Do not blindly override visible content, but prefer the inspection item label when the note is specific and visually plausible.
 Use unknown with low confidence if the image is too blurry, cropped, dark, or ambiguous.
 Do not perform OCR extraction. Only classify the image/video still category.
 Never return 0 confidence for a positive non-unknown classification.
@@ -111,36 +111,36 @@ odometer: dashboard mileage/odometer.
 hour_meter: engine/equipment hours display.
 unit_number: fleet/unit number decal or label.
 license_plate: exterior vehicle plate.
-brake_measurement: brake evidence with pad, rotor, lining, caliper, shoe, or drum context; includes brake pad/lining thickness or mm measurements near brake components.
-tire_tread_measurement: tire tread depth evidence, tread gauge photos, or notes about tread depth/tire measurements.
-battery_tester: battery tester display/printout or evidence with battery voltage, CCA, state of health, or load test result.
-battery_test: legacy battery tester/test reading evidence; prefer battery_tester for new classifications.
+brake_measurement: brake item with pad, rotor, lining, caliper, shoe, or drum context; includes brake pad/lining thickness or mm measurements near brake components.
+tire_tread_measurement: tire tread depth item, tread gauge photos, or notes about tread depth/tire measurements.
+battery_tester: battery tester display/printout or item with battery voltage, CCA, state of health, or load test result.
+battery_test: legacy battery tester/test reading item; prefer battery_tester for new classifications.
 multimeter: digital/analog multimeter display or probes measuring voltage, resistance, continuity, or current.
 amp_clamp: clamp meter/amp clamp display measuring current draw or amperage.
-oscilloscope: oscilloscope screen, waveform capture, or scope lead evidence.
+oscilloscope: oscilloscope screen, waveform capture, or scope lead item.
 battery_condition: battery physical condition such as corrosion, terminal, battery post, hold-down, case damage, or cable issues.
-fluid_leak: visible oil, coolant, fuel, hydraulic, brake fluid, or other leak evidence.
-fluid_level: dipstick, reservoir, sight glass, leak/level evidence, or note about a measured fluid level.
-tire: tire sidewall, tread, damage, wear, or tire assembly evidence that is not specifically a tread measurement.
-brake_component: brake pad, rotor, lining, caliper, shoe, drum, chamber, hose, or brake assembly evidence without a clear measurement.
-suspension_component: spring, airbag, shock, strut, bushing, axle, control arm, or suspension assembly evidence.
+fluid_leak: visible oil, coolant, fuel, hydraulic, brake fluid, or other leak item.
+fluid_level: dipstick, reservoir, sight glass, leak/level item, or note about a measured fluid level.
+tire: tire sidewall, tread, damage, wear, or tire assembly item that is not specifically a tread measurement.
+brake_component: brake pad, rotor, lining, caliper, shoe, drum, chamber, hose, or brake assembly item without a clear measurement.
+suspension_component: spring, airbag, shock, strut, bushing, axle, control arm, or suspension assembly item.
 vehicle_component: identifiable vehicle/equipment component not better covered by another class.
-corrosion: rust/corrosion evidence on terminals, frame, body, fasteners, wiring, or components.
-general_equipment_photo: general equipment/vehicle photo with no more specific evidence type.
+corrosion: rust/corrosion item on terminals, frame, body, fasteners, wiring, or components.
+general_equipment_photo: general equipment/vehicle photo with no more specific item type.
 defect_photo: visible failed/damaged/worn/broken/leaking/unsafe condition that is not better covered by a specific measurement/test label.
-general_evidence: inspection evidence photo with a specific vehicle/equipment context but no more specific label.
+general_evidence: inspection item photo with a specific vehicle/equipment context but no more specific label.
 supporting_photo: context/supporting photo with no specific document/plate/measurement/defect.
 unknown: unclear image.
 
 Inspection context rules:
-- If technician note/transcript mentions brake pad, rotor, lining, caliper, shoe, drum, or a mm measurement near brakes, prefer brake_measurement for measured brake evidence or brake_component for component photos over document/supporting/general labels when visually plausible.
+- If technician note/transcript mentions brake pad, rotor, lining, caliper, shoe, drum, or a mm measurement near brakes, prefer brake_measurement for measured brake items or brake_component for component photos over document/supporting/general labels when visually plausible.
 - If technician note/transcript mentions tire tread, tread depth, or tire measurement, prefer tire_tread_measurement.
-- If technician note/transcript mentions battery voltage, CCA, corrosion, terminal, or battery post, prefer battery_tester for tester displays/printouts, multimeter for multimeter readings, amp_clamp for current clamp readings and battery_condition for physical condition evidence.
+- If technician note/transcript mentions battery voltage, CCA, corrosion, terminal, or battery post, prefer battery_tester for tester displays/printouts, multimeter for multimeter readings, amp_clamp for current clamp readings and battery_condition for physical condition items.
 - Only use registration, work_order, inspection_sheet, or info_plate when the image actually shows paperwork, forms, work orders, registrations, labels, plates, or printed documents.
 
-Use cvip_relevance required for evidence usually required in CVIP/commercial inspection records, supporting for helpful evidence, optional for context-only images, and unknown when unclear.`
+Use cvip_relevance required for documentation usually required in CVIP/commercial inspection records, supporting for helpful items, optional for context-only images, and unknown when unclear.`
 
-const CLASSIFIER_USER_TEXT = `Classify this image for a CVIP/commercial inspection evidence workflow.
+const CLASSIFIER_USER_TEXT = `Classify this image for a CVIP/commercial inspection documentation workflow.
 Return exactly this JSON shape:
 {"detected_type":"...","confidence":0.0,"label":"...","reason":"...","cvip_relevance":"required|supporting|optional|unknown"}`
 
@@ -216,7 +216,7 @@ function getContextClassificationFromNote(
       confidence: 0.82,
       label: CLASSIFICATION_LABELS.brake_measurement,
       reason:
-        'Technician note/transcript identifies brake component measurement evidence.',
+        'Technician note/transcript identifies a brake component measurement item.',
       cvip_relevance: 'required',
     }
   }
@@ -232,7 +232,7 @@ function getContextClassificationFromNote(
       confidence: 0.82,
       label: CLASSIFICATION_LABELS.tire_tread_measurement,
       reason:
-        'Technician note/transcript identifies tire tread measurement evidence.',
+        'Technician note/transcript identifies a tire tread measurement item.',
       cvip_relevance: 'required',
     }
   }
@@ -247,7 +247,7 @@ function getContextClassificationFromNote(
       detected_type: 'battery_test',
       confidence: 0.78,
       label: CLASSIFICATION_LABELS.battery_test,
-      reason: 'Technician note/transcript identifies battery test evidence.',
+      reason: 'Technician note/transcript identifies a battery test item.',
       cvip_relevance: 'supporting',
     }
   }
@@ -263,7 +263,7 @@ function getContextClassificationFromNote(
       confidence: 0.78,
       label: CLASSIFICATION_LABELS.battery_condition,
       reason:
-        'Technician note/transcript identifies battery condition evidence.',
+        'Technician note/transcript identifies a battery condition item.',
       cvip_relevance: 'supporting',
     }
   }
@@ -365,7 +365,7 @@ export function validateCaptureClassification(
   )
   const reason = sanitizeShortText(
     value.reason,
-    'Image classified from visual evidence.',
+    'Image classified from visible content.',
   )
   const cvipRelevance = isCvipRelevance(value.cvip_relevance)
     ? value.cvip_relevance

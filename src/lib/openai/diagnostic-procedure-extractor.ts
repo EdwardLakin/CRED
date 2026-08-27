@@ -144,9 +144,10 @@ Hard rules:
 - Do not identify a failed component.
 - Do not override OEM flow logic.
 - Do not tell the technician what repair to perform or what branch applies.
-Extract only the document structure: title, manufacturer if visible, document type, ordered steps, step numbers/keys, step titles, OEM instruction text, required technician-entered measurements, requested evidence, OEM flow/branch text, and source page ranges, confidence, extraction warnings.
+Extract only the document structure: title, manufacturer if visible, document type, ordered steps, step numbers/keys, step titles, OEM instruction text, required technician-entered measurements, requested documentation items, OEM flow/branch text, and source page ranges, confidence, extraction warnings.
 If page-numbered source text chunks are provided, use them as the primary source and preserve page references on each step.
 If OEM text says "if X then go to Y", preserve it as oem_flow_text without deciding whether X is true.
+For generated labels, summaries, and warnings, use "item", "documentation", or "source" instead of "evidence". Preserve exact OEM wording only inside instruction and oem_flow_text.
 Never return fields named diagnosis, root_cause, repair_action, failed_component, recommendation, or generated_recommendation.
 Return JSON only.`
 
@@ -208,7 +209,7 @@ function fallbackExtraction(filename: string): DiagnosticProcedureExtractionResu
         step_number: '1',
         step_key: 'step_001',
         title: 'Review uploaded OEM procedure',
-        instruction: 'Review the uploaded diagnostic procedure and document technician-entered readings, notes, and evidence against the applicable OEM steps.',
+        instruction: 'Review the uploaded diagnostic procedure and document technician-entered readings, notes, and supporting items against the applicable OEM steps.',
         required_measurements: [],
         required_evidence: [{ label: 'Technician documentation', evidence_type: 'note' }],
         oem_flow_text: null,

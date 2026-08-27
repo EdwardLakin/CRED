@@ -59,7 +59,7 @@ const DETECTED_TYPE_LABELS: Record<string, string> = {
   suspension_component: 'Suspension Component',
   defect_photo: 'Defect Photo',
   general_equipment_photo: 'General Equipment Photo',
-  general_evidence: 'General Evidence',
+  general_evidence: 'General Item',
   supporting_photo: 'Supporting Photo',
   unknown: 'Unknown',
 }
@@ -160,7 +160,7 @@ function getClassificationSummary(extractedData: Json | null) {
       : 'pending'
   if (detectedType) {
     return {
-      label: `Evidence: ${formatDetectedType(detectedType)}`,
+      label: `Item: ${formatDetectedType(detectedType)}`,
       detectedType,
       status,
       confidence: null,
@@ -228,7 +228,7 @@ function formatExtractedDataSummary(type: string, extractedData: Json | null) {
   if (extractionStatusRaw === 'failed' || extractedData?.processing_status === 'analysis_failed')
     return 'Needs attention — manual review available'
   if (type === 'text_note')
-    return 'Text note evidence · No media upload required'
+    return 'Text note · No media upload required'
   if (type === 'video')
     return `${classification.label} · Video still/thumbnail used for report output`
   if (extractionStatusRaw === 'not_started' || extractionStatusRaw === 'pending' || !extractionStatusRaw)
@@ -271,7 +271,7 @@ function MediaPreview({
   return (
     <div className="evidence-media-frame">
       {mediaKind === 'note' ? (
-        <div className="evidence-file-placeholder">Text note evidence</div>
+        <div className="evidence-file-placeholder">Text note</div>
       ) : signedUrl && mediaKind === 'video' ? (
         <video
           src={signedUrl}
@@ -295,7 +295,7 @@ function MediaPreview({
           Open {mediaKind} file
         </a>
       ) : (
-        <div className="evidence-file-placeholder">Stored evidence</div>
+        <div className="evidence-file-placeholder">Stored item</div>
       )}
       <div
         className="evidence-note-overlay"
@@ -527,7 +527,7 @@ function EvidenceCard({
               placeholder={
                 capture.transcript_status === 'pending'
                   ? 'Transcribing…'
-                  : 'Type the technician note for this evidence'
+                  : 'Type the technician note for this item'
               }
               onChange={(event) => setNote(event.target.value)}
               rows={4}
@@ -596,7 +596,7 @@ function EvidenceCard({
               />{' '}
               Include in report
             </label>
-            <div className="evidence-category-pills" role="radiogroup" aria-label="Evidence category">
+            <div className="evidence-category-pills" role="radiogroup" aria-label="Item category">
               {EVIDENCE_CATEGORIES.map((category) => (
                 <label key={category} className={`status-pill compact evidence-category-pill ${category === normalizeEvidenceCategory(capture.evidence_category) ? 'success' : 'neutral'}`}>
                   <input type="radio" name="evidence_category" value={category} defaultChecked={category === normalizeEvidenceCategory(capture.evidence_category)} />
@@ -641,7 +641,7 @@ export function CaptureList({
   if (visibleCaptures.length === 0) {
     return (
       <div className="empty-state capture-empty-state">
-        No captures yet. Tap Capture Evidence to add photo/video evidence with a
+        No captures yet. Tap Capture Item to add a photo or video with a
         reviewable note.
       </div>
     )
@@ -652,7 +652,7 @@ export function CaptureList({
     .map((capture) => ({
       id: capture.id,
       src: signedUrls[capture.id],
-      title: capture.technician_note?.trim() || CAPTURE_TYPE_LABELS[capture.type as CaptureType] || 'Captured evidence',
+      title: capture.technician_note?.trim() || CAPTURE_TYPE_LABELS[capture.type as CaptureType] || 'Captured item',
       note: capture.technician_note?.trim() || capture.transcript?.trim() || null,
     }))
 

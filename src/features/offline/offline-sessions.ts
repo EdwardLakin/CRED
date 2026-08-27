@@ -47,7 +47,7 @@ export async function createOfflineSessionDraft(input: {
     localSessionId,
     organizationId: input.organizationId,
     userId: input.userId,
-    title: input.title || `Offline Evidence ${new Date().toLocaleString()}`,
+    title: input.title || `Offline Documentation ${new Date().toLocaleString()}`,
     sessionType: input.sessionType || "General Evidence Report",
     status: "capturing",
     serverSessionId: null,

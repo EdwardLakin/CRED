@@ -15,7 +15,7 @@ const suggestionServiceSource = readFileSync('src/features/evidence/suggestions/
 
 test('batch review route renders review workspace', () => {
   assert.match(pageSource, /EvidenceImportBatchReview/)
-  for (const expected of ['Evidence Library', 'Suggestions', 'Relationship Explorer', 'Deliverables']) assert.match(reviewSource, new RegExp(expected))
+  for (const expected of ['Items', 'Suggestions', 'Connections', 'Deliverables']) assert.match(reviewSource, new RegExp(expected))
 })
 
 test('progress counts are correct', () => {
@@ -29,7 +29,7 @@ test('per-item review actions validate statuses', () => {
   assert.match(actionsSource, /parseBatchEvidenceReviewStatus/)
   assert.match(itemSource, /Mark reviewed/)
   assert.match(itemSource, /Mark needs follow-up/)
-  assert.match(itemSource, /Exclude from evidence review/)
+  assert.match(itemSource, /Exclude from item review/)
 })
 
 test('output inclusion actions preserve include_in_report behavior', () => {
@@ -72,5 +72,5 @@ test('AI suggestions remain suggested and source evidence IDs are preserved', ()
 test('existing Suggestions workspace and report/export behavior remain unchanged', () => {
   assert.doesNotMatch(actionsSource, /accepted|verified/)
   assert.match(suggestionPanelSource, /not generated yet/)
-  assert.match(bulkSource, /Generate suggestions from selected evidence/)
+  assert.match(bulkSource, /Generate suggestions from selected items/)
 })

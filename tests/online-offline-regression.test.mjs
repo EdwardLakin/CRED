@@ -58,6 +58,6 @@ test('existing server session receives queued backup captures automatically once
 });
 
 test('manual Sync is not required while online', () => {
-  assert.match(captureForm, /void resumeQueuedMediaUpload\(resumableFiles\)/);
+  assert.match(captureForm, /(?:void|await) resumeQueuedMediaUpload\(resumableFiles\)/);
   assert.match(syncEngine, /start\(\) \{[\s\S]*void this\.refreshPendingCount\(\);/);
 });

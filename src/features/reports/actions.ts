@@ -168,6 +168,18 @@ function getReportRedirectPath(sessionId: string, params: Record<string, string 
   return `/dashboard/sessions/${sessionId}/report${query ? `?${query}` : ''}`
 }
 
+function getSessionStepRedirectPath(
+  sessionId: string,
+  step: 'approve' | 'export',
+  params: Record<string, string | number> = {},
+) {
+  const searchParams = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => searchParams.set(key, String(value)))
+  const query = searchParams.toString()
+
+  return `/dashboard/sessions/${sessionId}/${step}${query ? `?${query}` : ''}`
+}
+
 function getPublicAppUrl() {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim()
 
@@ -188,7 +200,7 @@ async function requireOwnedSession(sessionId: string) {
   const workspace = await requireSessionWorkspace()
   const { data: session, error } = await workspace.supabase
     .from('documentation_sessions')
-    .select('id, title, organization_id, review_status')
+    .select('id, title, organization_id, review_status, status')
     .eq('id', sessionId)
     .eq('organization_id', workspace.profile.organization_id)
     .single()
@@ -196,15 +208,17 @@ async function requireOwnedSession(sessionId: string) {
   return { ...workspace, session }
 }
 
-
-function reportIsReadyForDelivery(session: { review_status?: string | null }) {
-  return session.review_status === 'ready_for_delivery'
+function reportIsReadyForDelivery(session: { review_status?: string | null; status?: string | null }) {
+  return session.review_status === 'ready_for_delivery' || session.status === 'finalized'
 }
 
-function requireReportReadyForDelivery(sessionId: string, session: { review_status?: string | null }) {
+function requireReportReadyForDelivery(
+  sessionId: string,
+  session: { review_status?: string | null; status?: string | null },
+) {
   if (!reportIsReadyForDelivery(session)) {
     redirect(
-      getReportRedirectPath(sessionId, {
+      getSessionStepRedirectPath(sessionId, 'approve', {
         error: 'Approve this report before exporting.',
       }),
     )
@@ -247,7 +261,7 @@ export async function runObservationWritingAction(_state: ObservationWritingActi
   const sessionId = getString(formData, 'session_id')
   const captureId = getString(formData, 'capture_id')
   const action = getObservationWritingAction(getString(formData, 'action'))
-  if (!sessionId || !captureId || !action) return { ok: false, error: 'Select one evidence capture before using the writing assistant.' }
+  if (!sessionId || !captureId || !action) return { ok: false, error: 'Select one item before using the writing assistant.' }
 
   const allowance = await requireSummaryAssistantAllowance(workspace)
   if (!allowance.ok) return { ok: false, error: allowance.error }
@@ -281,7 +295,7 @@ export async function runObservationWritingAction(_state: ObservationWritingActi
 
     const includedCaptures = (captures ?? []).filter(isCaptureIncludedInOutput)
     const primary = includedCaptures.find((capture) => capture.id === captureId)
-    if (!primary) return { ok: false, error: 'Evidence capture not found.' }
+    if (!primary) return { ok: false, error: 'Item not found.' }
     const supportsCapture = primary.observation_group_id
       ? includedCaptures.find((capture) => capture.id === primary.observation_group_id)
       : null
@@ -384,6 +398,16 @@ export async function saveReportSummaryFromStudio(_state: SaveReportSummaryState
   const { supabase, profile } = workspace
   const sessionId = getString(formData, 'session_id')
   if (!sessionId) return { ok: false, error: 'Select a session before saving the summary.' }
+
+  const { data: session } = await supabase
+    .from('documentation_sessions')
+    .select('review_status, status')
+    .eq('id', sessionId)
+    .eq('organization_id', profile.organization_id)
+    .maybeSingle()
+  if (session && reportIsReadyForDelivery(session)) {
+    return { ok: false, error: 'This report is approved and read-only.' }
+  }
 
   const { data: drafts, error: draftError } = await supabase
     .from('ai_report_drafts')
@@ -645,7 +669,7 @@ export async function markReportReviewed(sessionId: string, formData: FormData) 
 
   if (missingEvidenceCount > 0 && !missingEvidenceAcknowledged) {
     redirect(
-      getReportRedirectPath(session.id, {
+      getSessionStepRedirectPath(session.id, 'approve', {
         error: 'Please confirm you considered the suggestions before approving this report.',
       }),
     )
@@ -653,15 +677,24 @@ export async function markReportReviewed(sessionId: string, formData: FormData) 
 
   const { data: reportDrafts } = await supabase
     .from('ai_report_drafts')
-    .select('report_structure')
+    .select('id, status, report_structure')
     .eq('documentation_session_id', session.id)
     .eq('organization_id', profile.organization_id)
     .not('status', 'eq', 'superseded')
     .order('generated_at', { ascending: false })
 
+  const reportDraft = reportDrafts?.[0] ?? null
+  if (!reportDraft) {
+    redirect(
+      getSessionStepRedirectPath(session.id, 'approve', {
+        error: 'The report is still preparing. Review it before approval.',
+      }),
+    )
+  }
+
   const reportStructure = (reportDrafts ?? []).map((draft) => draft.report_structure).find((structure) => isRecord(structure) && structure.mode === 'diagnostic_procedure')
   if (isRecord(reportStructure) && reportStructure.signed_off !== true) {
-    redirect(getReportRedirectPath(session.id, { error: 'Technician sign-off is required before approving diagnostic documentation for export.' }))
+    redirect(getSessionStepRedirectPath(session.id, 'approve', { error: 'Technician sign-off is required before approving diagnostic documentation for export.' }))
   }
 
   const { error } = await supabase
@@ -674,13 +707,17 @@ export async function markReportReviewed(sessionId: string, formData: FormData) 
     .eq('id', session.id)
     .eq('organization_id', profile.organization_id)
 
-  if (error) redirect(getReportRedirectPath(session.id, { error: error.message }))
+  if (error) {
+    redirect(getSessionStepRedirectPath(session.id, 'approve', { error: error.message }))
+  }
 
   await appendDiagnosticReportApprovedAuditEvent(session.id)
 
   revalidatePath(`/dashboard/sessions/${session.id}`)
   revalidatePath(`/dashboard/sessions/${session.id}/report`)
-  redirect(getReportRedirectPath(session.id, { reviewed: 1 }))
+  revalidatePath(`/dashboard/sessions/${session.id}/approve`)
+  revalidatePath(`/dashboard/sessions/${session.id}/export`)
+  redirect(getSessionStepRedirectPath(session.id, 'export', { reviewed: 1 }))
 }
 
 async function getOrCreateActiveShareToken({
@@ -702,6 +739,8 @@ async function getOrCreateActiveShareToken({
     .select('id, token, expires_at')
     .eq('documentation_session_id', sessionId)
     .eq('organization_id', organizationId)
+    .eq('link_kind', 'report')
+    .is('deliverable_id', null)
     .is('disabled_at', null)
     .order('created_at', { ascending: false })
 
@@ -763,14 +802,14 @@ export async function emailReport(sessionId: string, formData: FormData) {
     recipients = validateReportEmailRecipients(getRecipients(formData))
   } catch (error) {
     const message = error instanceof ReportEmailError ? error.message : 'Check the recipient email addresses.'
-    redirect(getReportRedirectPath(sessionId, { error: message }))
+    redirect(getSessionStepRedirectPath(sessionId, 'export', { error: message }))
   }
 
   const { supabase, profile, session } = await requireOwnedSession(sessionId)
   requireReportReadyForDelivery(session.id, session)
   const billingAccess = requireActiveBillingAccess(profile)
   if (!billingAccess.ok) {
-    redirect(getReportRedirectPath(session.id, { error: billingAccess.message }))
+    redirect(getSessionStepRedirectPath(session.id, 'export', { error: billingAccess.message }))
   }
 
   const emailAllowance = await requireUsageAllowance({
@@ -781,7 +820,7 @@ export async function emailReport(sessionId: string, formData: FormData) {
   })
 
   if (!emailAllowance.ok) {
-    redirect(getReportRedirectPath(session.id, { error: emailAllowance.message }))
+    redirect(getSessionStepRedirectPath(session.id, 'export', { error: emailAllowance.message }))
   }
 
   const subject = `CRED Report - ${session.title}`
@@ -808,7 +847,7 @@ export async function emailReport(sessionId: string, formData: FormData) {
     recipients = result.recipients
   } catch (error) {
     const message = error instanceof ReportEmailError ? error.message : 'Email could not be sent. Please try again.'
-    redirect(getReportRedirectPath(session.id, { error: message }))
+    redirect(getSessionStepRedirectPath(session.id, 'export', { error: message }))
   }
 
   const metadata: Json = {
@@ -828,7 +867,7 @@ export async function emailReport(sessionId: string, formData: FormData) {
     created_by: profile.id,
     metadata,
   })
-  if (error) redirect(getReportRedirectPath(session.id, { error: error.message }))
+  if (error) redirect(getSessionStepRedirectPath(session.id, 'export', { error: error.message }))
   await recordUsageEvent({
     supabase,
     organizationId: profile.organization_id,
@@ -838,7 +877,8 @@ export async function emailReport(sessionId: string, formData: FormData) {
   })
   revalidatePath(`/dashboard/sessions/${session.id}`)
   revalidatePath(`/dashboard/sessions/${session.id}/report`)
-  redirect(getReportRedirectPath(session.id, { emailed: 1 }))
+  revalidatePath(`/dashboard/sessions/${session.id}/export`)
+  redirect(getSessionStepRedirectPath(session.id, 'export', { emailed: 1 }))
 }
 
 export async function createReportShareLink(sessionId: string, formData: FormData) {
@@ -847,7 +887,7 @@ export async function createReportShareLink(sessionId: string, formData: FormDat
   requireReportReadyForDelivery(session.id, session)
   const billingAccess = requireActiveBillingAccess(profile)
   if (!billingAccess.ok) {
-    redirect(getReportRedirectPath(session.id, { error: billingAccess.message }))
+    redirect(getSessionStepRedirectPath(session.id, 'export', { error: billingAccess.message }))
   }
 
   const shareAllowance = await requireUsageAllowance({
@@ -858,7 +898,7 @@ export async function createReportShareLink(sessionId: string, formData: FormDat
   })
 
   if (!shareAllowance.ok) {
-    redirect(getReportRedirectPath(session.id, { error: shareAllowance.message }))
+    redirect(getSessionStepRedirectPath(session.id, 'export', { error: shareAllowance.message }))
   }
 
   const token = randomBytes(24).toString('hex')
@@ -869,7 +909,7 @@ export async function createReportShareLink(sessionId: string, formData: FormDat
     expires_at: expiresAt,
     created_by: profile.id,
   })
-  if (error) redirect(getReportRedirectPath(session.id, { error: error.message }))
+  if (error) redirect(getSessionStepRedirectPath(session.id, 'export', { error: error.message }))
   await recordUsageEvent({
     supabase,
     organizationId: profile.organization_id,
@@ -878,15 +918,17 @@ export async function createReportShareLink(sessionId: string, formData: FormDat
     createdBy: profile.id,
   })
   revalidatePath(`/dashboard/sessions/${session.id}/report`)
-  redirect(getReportRedirectPath(session.id, { shared: 1 }))
+  revalidatePath(`/dashboard/sessions/${session.id}/export`)
+  redirect(getSessionStepRedirectPath(session.id, 'export', { shared: 1 }))
 }
 
 export async function disableReportShareLink(sessionId: string, tokenId: string) {
   const { supabase, profile, session } = await requireOwnedSession(sessionId)
   const { error } = await supabase.from('report_share_tokens').update({ disabled_at: new Date().toISOString() }).eq('id', tokenId).eq('organization_id', profile.organization_id)
-  if (error) redirect(getReportRedirectPath(session.id, { error: error.message }))
+  if (error) redirect(getSessionStepRedirectPath(session.id, 'export', { error: error.message }))
   revalidatePath(`/dashboard/sessions/${session.id}/report`)
-  redirect(getReportRedirectPath(session.id, { disabled: 1 }))
+  revalidatePath(`/dashboard/sessions/${session.id}/export`)
+  redirect(getSessionStepRedirectPath(session.id, 'export', { disabled: 1 }))
 }
 
 export async function saveReport(sessionId: string, formData?: FormData) {
@@ -894,7 +936,7 @@ export async function saveReport(sessionId: string, formData?: FormData) {
   requireReportReadyForDelivery(session.id, session)
   const billingAccess = requireActiveBillingAccess(profile)
   if (!billingAccess.ok) {
-    redirect(getReportRedirectPath(session.id, { error: billingAccess.message }))
+    redirect(getSessionStepRedirectPath(session.id, 'export', { error: billingAccess.message }))
   }
 
   const { error } = await supabase.from('exports').insert({
@@ -905,9 +947,10 @@ export async function saveReport(sessionId: string, formData?: FormData) {
     created_by: profile.id,
     metadata: { retention: 'indefinite_until_deleted', report_template_id: typeof formData?.get('report_template_id') === 'string' ? String(formData.get('report_template_id')) : 'workspace-default' },
   })
-  if (error) redirect(getReportRedirectPath(session.id, { error: error.message }))
+  if (error) redirect(getSessionStepRedirectPath(session.id, 'export', { error: error.message }))
   revalidatePath(`/dashboard/sessions/${session.id}`)
-  redirect(getReportRedirectPath(session.id, { saved: 1 }))
+  revalidatePath(`/dashboard/sessions/${session.id}/export`)
+  redirect(getSessionStepRedirectPath(session.id, 'export', { saved: 1 }))
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1033,6 +1076,22 @@ export async function completeCaptureAndPrepareReport(sessionId: string, formDat
   void formData
   const { supabase, profile, session } = await requireOwnedSession(sessionId)
 
+  const { count: itemCount, error: itemCountError } = await supabase
+    .from('documentation_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('documentation_session_id', session.id)
+    .eq('organization_id', profile.organization_id)
+    .eq('item_kind', 'observation')
+    .is('deleted_at', null)
+
+  if (itemCountError) {
+    redirect(`/dashboard/sessions/${session.id}/capture?error=item_check_failed`)
+  }
+
+  if (!itemCount) {
+    redirect(`/dashboard/sessions/${session.id}/capture?error=no_items`)
+  }
+
   const { error } = await supabase
     .from('documentation_sessions')
     .update({ status: 'review', updated_at: new Date().toISOString() })
@@ -1045,7 +1104,7 @@ export async function completeCaptureAndPrepareReport(sessionId: string, formDat
 
   const { data: activeReport } = await supabase
     .from('ai_report_drafts')
-    .select('id, observation_group_id')
+    .select('id')
     .eq('documentation_session_id', session.id)
     .eq('organization_id', profile.organization_id)
     .not('status', 'in', '(superseded)')
@@ -1060,7 +1119,7 @@ export async function completeCaptureAndPrepareReport(sessionId: string, formDat
   revalidatePath(`/dashboard/sessions/${session.id}/capture`)
   revalidatePath(`/dashboard/sessions/${session.id}/report`)
 
-  if (activeReport || !true) {
+  if (activeReport) {
     redirect(getReportRedirectPath(session.id))
   }
 
@@ -1483,13 +1542,16 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
 
   const { data: session, error: sessionError } = await supabase
     .from('documentation_sessions')
-    .select('id, organization_id, session_type, session_metadata, asset_label, customer_name, suggested_details')
+    .select('id, organization_id, session_type, session_metadata, asset_label, customer_name, suggested_details, review_status, status')
     .eq('id', draft.documentation_session_id)
     .eq('organization_id', profile.organization_id)
     .single()
 
   if (sessionError || !session) {
     redirect(getReportRedirectPath(draft.documentation_session_id, { error: 'Documentation session not found.' }))
+  }
+  if (reportIsReadyForDelivery(session)) {
+    redirect(getSessionStepRedirectPath(session.id, 'export', { notice: 'Approved reports are read-only.' }))
   }
 
   const fieldCount = Number(getString(formData, 'field_count') || 0)
@@ -1506,7 +1568,7 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
 
   Object.entries(reportInfoFields).forEach(([key, value]) => { if (value) editedHeaderFields[key] = value })
 
-  const reportTitle = sanitizeReportText(formData.get('report_title'), 180) || draft.title || session.asset_label || session.customer_name || 'Professional Evidence Report'
+  const reportTitle = sanitizeReportText(formData.get('report_title'), 180) || draft.title || session.asset_label || session.customer_name || 'Professional Documentation Report'
   const includeEvidenceAppendix = formData.get('include_evidence_appendix') === 'on'
   const baseSessionMetadata = sessionMetadataToJson(reportInfoFields)
   const reportOptions = {

@@ -8,7 +8,7 @@ import { EvidenceInclusionForm, EvidenceReviewForm } from './EvidenceForms'
 function fmt(value: string | null, timeZone: string | null) { return value ? formatDateTime(value, timeZone) : 'Not set' }
 
 export function EvidenceLibraryList({ sessionId, items, importBatches, signedUrls, timeZone }: { sessionId: string; items: EvidenceLibraryItem[]; importBatches: EvidenceLibraryBatch[]; signedUrls: Record<string, string>; timeZone: string | null }) {
-  if (items.length === 0) return <div className="empty-state">No evidence items yet.</div>
+  if (items.length === 0) return <div className="empty-state">No items yet.</div>
   const batchById = new Map(importBatches.map((batch) => [batch.id, batch]))
   return (
     <div className="evidence-library-grid">
@@ -16,7 +16,7 @@ export function EvidenceLibraryList({ sessionId, items, importBatches, signedUrl
         <article key={item.id} className="card evidence-card">
           <EvidencePreview item={item} signedUrl={signedUrls[item.id]} />
           <div className="evidence-card-body">
-            <h2><Link href={`/dashboard/sessions/${sessionId}/evidence/${item.id}`}>{item.original_filename || item.technician_note || 'Evidence item'}</Link></h2>
+            <h2><Link href={`/dashboard/sessions/${sessionId}/evidence/${item.id}`}>{item.original_filename || item.technician_note || 'Untitled item'}</Link></h2>
             <dl className="metadata-list">
               <div><dt>Media/source</dt><dd>{item.media_kind} · {item.source_kind}</dd></div>
               <div><dt>Processing/AI</dt><dd>{item.processing_status}{item.ai_status ? ` · ${item.ai_status}` : ''}</dd></div>

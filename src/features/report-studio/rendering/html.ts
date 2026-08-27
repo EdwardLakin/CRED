@@ -2,11 +2,13 @@ import { stripConfidenceText } from "@/features/reports/report-structure";
 
 const UUID_PATTERN =
   /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
+const CAPTURE_ID_PATTERN = new RegExp(`Capture ID\\s*:?\\s*${UUID_PATTERN.source}`, "gi");
 
 export function customerText(value: unknown) {
   return stripConfidenceText(String(value ?? ""))
-    .replace(/Capture ID\s*:?\s*/gi, "Evidence ")
-    .replace(UUID_PATTERN, "evidence item");
+    .replace(CAPTURE_ID_PATTERN, "Item reference")
+    .replace(/Capture ID\s*:?\s*/gi, "Item reference")
+    .replace(UUID_PATTERN, "item");
 }
 
 export function escapeHtml(value: unknown) {

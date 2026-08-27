@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import {
   useCallback,
@@ -19,21 +20,69 @@ import {
   updateCaptureItemNote,
   validateCaptureBillingAccess,
 } from "@/features/capture/actions";
-import { type CaptureIntent, type CaptureType } from "@/features/capture/types";
+import {
+  type CaptureIntent,
+  type CaptureType,
+  type SourceDocumentType,
+} from "@/features/capture/types";
 import {
   getPendingCaptures,
   getQueuedCapture,
   removeCapture as removeOfflineCapture,
   saveQueuedCapture,
 } from "@/features/offline/queue";
+import { getOfflineSyncEngine } from "@/features/offline/sync-engine";
 import type {
   OfflineCaptureRecord,
   QueueStatus,
 } from "@/features/offline/types";
 import { createClient } from "@/lib/supabase/client";
 
+import styles from "./CaptureComposer.module.css";
+
 const MAX_BATCH_FILES = 50;
 const MEDIA_NOTE_AUTOSAVE_DELAY_MS = 800;
+
+type ComposerSourceKind = "observation" | "document" | "note";
+type ComposerAttachmentKind =
+  | "primary"
+  | "supporting"
+  | "document"
+  | "note";
+
+function createClientItemId() {
+  return typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `item-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function CameraIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M8.5 6.5 10 4h4l1.5 2.5H19a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8.5a2 2 0 0 1 2-2h3.5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <circle cx="12" cy="13" r="3.25" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function GalleryIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="3" y="4" width="18" height="16" rx="2.5" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="8.2" cy="9" r="1.5" fill="currentColor" />
+      <path d="m5.5 17 4.2-4.2 3 2.8 2.2-2.1 3.6 3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function DocumentIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M6 3h8l4 4v14H6V3Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M14 3v5h4M9 12h6M9 16h6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 function storageObjectAlreadyExists(message: string) {
   const normalized = message.toLowerCase();
@@ -89,12 +138,21 @@ type SelectedEvidenceFile = {
   storagePath?: string;
   storageUploaded?: boolean;
   noteSaveStatus?: "idle" | "unsaved" | "saving" | "saved" | "failed";
+  clientItemId: string;
+  documentationItemId?: string;
+  attachmentOrder: number;
+  sourceKind: ComposerSourceKind;
+  attachmentKind: ComposerAttachmentKind;
+  sourceDocumentType?: SourceDocumentType;
+  sourceDocumentLabel?: string;
 };
 
 type OfflineCaptureSyncedDetail = {
   localId: string;
   sessionId: string;
   captureItemId: string;
+  documentationItemId?: string;
+  clientItemId?: string;
 };
 
 type SpeechRecognitionResultLike = {
@@ -209,6 +267,7 @@ type PersistedSelectedEvidenceFile = Omit<
   sessionId: string;
   organizationId: string;
   storagePath?: string;
+  queuedAt?: string;
 };
 
 function isLocalUploadPending(status: UploadStatus) {
@@ -280,16 +339,6 @@ function getUploadStatusLabel(status: UploadStatus, error?: string) {
   if (status === "needs_queue_retry") return "Needs attention";
   if (status === "saved") return "Synced";
   if (status === "failed") return error ?? "Upload failed. Please retry.";
-  return "Saved on device";
-}
-
-function getNoteSaveStatusLabel(
-  status: SelectedEvidenceFile["noteSaveStatus"],
-) {
-  if (status === "unsaved") return "Unsaved";
-  if (status === "saving") return "Saving…";
-  if (status === "saved") return "Saved";
-  if (status === "failed") return "Save failed";
   return "Saved on device";
 }
 
@@ -410,7 +459,6 @@ export function AddCaptureForm({
   maxCaptureFileSizeBytes,
   maxVideoFileSizeBytes,
   maxFileSizeLabel,
-  imageAiAssistEnabled = true,
   observationGroupId = null,
 }: {
   sessionId: string;
@@ -437,15 +485,24 @@ export function AddCaptureForm({
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const voiceNoteTimeoutRef = useRef<number | null>(null);
   const selectedFilesRef = useRef<SelectedEvidenceFile[]>([]);
+  const clientItemIdRef = useRef<string | null>(null);
+  const documentationItemIdsRef = useRef(new Map<string, string>());
+  const legacyGroupIdsRef = useRef(new Map<string, string>());
+  const activeObservationGroupIdRef = useRef<string | null>(
+    observationGroupId,
+  );
   const isSavingRef = useRef(false);
   const uploadStartedFileIdsRef = useRef(new Set<string>());
   const noteAutosaveTimeoutsRef = useRef(new Map<string, number>());
   const [actionError, setActionError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [backgroundSyncCount, setBackgroundSyncCount] = useState(0);
   const [clientError, setClientError] = useState<string | null>(null);
   const [captureIntent, setCaptureIntent] =
     useState<CaptureIntent>("auto_evidence");
+  const [composerSourceKind, setComposerSourceKind] =
+    useState<ComposerSourceKind>("observation");
   const [diagnosticEvidenceRole, setDiagnosticEvidenceRole] =
     useState<DiagnosticEvidenceRole>("other");
   const manualType: CaptureType = "document";
@@ -453,9 +510,7 @@ export function AddCaptureForm({
   const [selectedFiles, setSelectedFiles] = useState<SelectedEvidenceFile[]>(
     [],
   );
-  const [activeObservationGroupId, setActiveObservationGroupId] = useState<
-    string | null
-  >(observationGroupId);
+  const [itemDescription, setItemDescription] = useState("");
   const [note, setNote] = useState("");
   const [showTextNoteEditor, setShowTextNoteEditor] = useState(false);
   const [noteSource, setNoteSource] = useState<"manual" | "voice" | "edited">(
@@ -480,24 +535,25 @@ export function AddCaptureForm({
     : "general";
   const fileInputId = `capture-file-${guidanceKey}`;
   const supportsMultipleFiles =
-    captureIntent === "auto_evidence" || captureIntent === "auto_image";
+    !preferCameraCapture &&
+    (captureIntent === "auto_evidence" || captureIntent === "auto_image");
   const captureSizeLabel =
     maxFileSizeLabel ?? formatFileSize(maxCaptureFileSizeBytes);
   const videoSizeLabel = formatFileSize(maxVideoFileSizeBytes);
   const failedFiles = selectedFiles.filter(
     (file) => file.status === "failed" || file.status === "metadata_recovery",
   );
-  const observationFiles = selectedFiles.filter(
-    (file) => file.status !== "failed",
-  );
-  const savedObservationFiles = observationFiles.filter(
-    (file) => file.status === "saved",
-  );
-  const imageCountLabel = `${savedObservationFiles.length || observationFiles.length} image${(savedObservationFiles.length || observationFiles.length) === 1 ? "" : "s"}`;
+  const selectedFileCount = selectedFiles.length;
+  const selectedFileCountLabel = `${selectedFileCount} ${composerSourceKind === "document" ? "file" : "photo"}${selectedFileCount === 1 ? "" : "s"}`;
   const uploadableFiles =
     failedFiles.length > 0
       ? failedFiles
       : selectedFiles.filter((file) => file.status === "queued");
+
+  function getActiveClientItemId() {
+    clientItemIdRef.current ??= createClientItemId();
+    return clientItemIdRef.current;
+  }
 
   async function writeUploadQueueRecord(record: PersistedSelectedEvidenceFile) {
     const existing = await getQueuedCapture(record.id);
@@ -519,8 +575,9 @@ export function AddCaptureForm({
           : userId,
       blob: record.file,
       metadata: {
-        captureIntent,
-        manualType: captureIntent === "manual" ? manualType : null,
+        captureIntent:
+          record.sourceKind === "document" ? "manual" : "auto_evidence",
+        manualType: record.sourceKind === "document" ? "document" : null,
         guidedStep: guidedStep ?? null,
         guidedLabel: guidedLabel ?? null,
         workflow: workflow ?? null,
@@ -537,6 +594,13 @@ export function AddCaptureForm({
         captureItemId: record.captureItemId,
         storageUploaded: record.storageUploaded,
         noteSaveStatus: record.noteSaveStatus,
+        clientItemId: record.clientItemId,
+        documentationItemId: record.documentationItemId ?? null,
+        attachmentOrder: record.attachmentOrder,
+        sourceKind: record.sourceKind,
+        attachmentKind: record.attachmentKind,
+        sourceDocumentType: record.sourceDocumentType ?? null,
+        sourceDocumentLabel: record.sourceDocumentLabel ?? null,
       },
       status: mapUploadStatusToQueueStatus(record.status),
       retryCount: existing?.retryCount ?? 0,
@@ -612,8 +676,29 @@ export function AddCaptureForm({
         noteSaveStatus: metadata.noteSaveStatus as
           | SelectedEvidenceFile["noteSaveStatus"]
           | undefined,
+        clientItemId: metadata.clientItemId || `legacy-${record.sessionId}`,
+        documentationItemId: metadata.documentationItemId ?? undefined,
+        attachmentOrder:
+          typeof metadata.attachmentOrder === "number" &&
+          metadata.attachmentOrder > 0
+            ? metadata.attachmentOrder
+            : (metadata.reportOrder ?? 1),
+        sourceKind:
+          metadata.sourceKind === "document" || metadata.sourceKind === "note"
+            ? metadata.sourceKind
+            : "observation",
+        attachmentKind:
+          metadata.attachmentKind === "document" ||
+          metadata.attachmentKind === "note" ||
+          metadata.attachmentKind === "supporting"
+            ? metadata.attachmentKind
+            : "primary",
+        sourceDocumentType:
+          metadata.sourceDocumentType as SourceDocumentType | undefined,
+        sourceDocumentLabel: metadata.sourceDocumentLabel ?? undefined,
         sessionId: record.sessionId,
         organizationId: record.organizationId,
+        queuedAt: record.createdAt,
       };
     });
   }
@@ -623,7 +708,7 @@ export function AddCaptureForm({
   }
 
   function getFileTooLargeMessage(file: File) {
-    return `This file is larger than your plan allows. ${fileIsVideo(file) ? "Video" : "Capture"} files can be up to ${formatFileSize(getMaxFileSizeForFile(file))}.`;
+    return `This file is larger than your plan allows. ${fileIsVideo(file) ? "Video" : "Image"} files can be up to ${formatFileSize(getMaxFileSizeForFile(file))}.`;
   }
 
   useEffect(() => {
@@ -639,6 +724,14 @@ export function AddCaptureForm({
       );
     };
   }, []);
+
+  useEffect(() => {
+    activeObservationGroupIdRef.current = observationGroupId;
+    if (observationGroupId) {
+      clientItemIdRef.current = observationGroupId;
+      legacyGroupIdsRef.current.set(observationGroupId, observationGroupId);
+    }
+  }, [observationGroupId]);
 
   useEffect(() => {
     function handleOfflineCaptureSynced(event: Event) {
@@ -663,6 +756,8 @@ export function AddCaptureForm({
             status: "saved" as UploadStatus,
             error: undefined,
             captureItemId: detail.captureItemId,
+            documentationItemId:
+              detail.documentationItemId ?? file.documentationItemId,
             storageUploaded: true,
             noteSaveStatus:
               file.noteSaveStatus === "failed"
@@ -677,9 +772,16 @@ export function AddCaptureForm({
 
       uploadStartedFileIdsRef.current.add(detail.localId);
 
+      if (detail.documentationItemId && detail.clientItemId) {
+        documentationItemIdsRef.current.set(
+          detail.clientItemId,
+          detail.documentationItemId,
+        );
+      }
+
       if (matchedCapture) {
         setActionError(null);
-        setSaveMessage("Queued capture synced successfully. Ready for review.");
+        setSaveMessage("Item synced. Ready for review.");
       }
 
       router.refresh();
@@ -740,6 +842,12 @@ export function AddCaptureForm({
     }
   }
 
+  function clearFilePicker() {
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+
   function clearVisibleFileSelectionPreservingQueue() {
     selectedFilesRef.current.forEach((file) => {
       URL.revokeObjectURL(file.previewUrl);
@@ -759,17 +867,41 @@ export function AddCaptureForm({
   }
 
   function buildSelectedEvidenceFiles(files: File[]): SelectedEvidenceFile[] {
-    return files.map((file, index) => ({
-      id: `${getSelectedEvidenceFileId(file, index)}-${typeof crypto.randomUUID === "function" ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`,
-      file,
-      name: file.name,
-      type: file.type,
-      size: file.size,
-      previewUrl: URL.createObjectURL(file),
-      status: "queued",
-      note: "",
-      noteSaveStatus: "idle",
-    }));
+    const clientItemId = getActiveClientItemId();
+    const sourceKind: ComposerSourceKind =
+      captureIntent === "manual" ? "document" : "observation";
+    const existingAttachmentCount = selectedFilesRef.current.filter(
+      (file) => file.clientItemId === clientItemId,
+    ).length;
+
+    return files.map((file, index) => {
+      const attachmentOrder = existingAttachmentCount + index + 1;
+      const isDocument = sourceKind === "document";
+
+      return {
+        id: `${getSelectedEvidenceFileId(file, index)}-${typeof crypto.randomUUID === "function" ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`,
+        file,
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        previewUrl: URL.createObjectURL(file),
+        status: "queued" as UploadStatus,
+        note: isDocument || attachmentOrder > 1 ? "" : itemDescription,
+        noteSaveStatus: "idle" as const,
+        clientItemId,
+        documentationItemId:
+          documentationItemIdsRef.current.get(clientItemId),
+        attachmentOrder,
+        sourceKind,
+        attachmentKind: isDocument
+          ? ("document" as const)
+          : attachmentOrder === 1
+            ? ("primary" as const)
+            : ("supporting" as const),
+        sourceDocumentType: isDocument ? ("other" as const) : undefined,
+        sourceDocumentLabel: isDocument ? "Form or document" : undefined,
+      };
+    });
   }
 
   function updateSelectedFileStatus(
@@ -819,14 +951,13 @@ export function AddCaptureForm({
     const files = Array.from(fileInputRef.current?.files ?? []);
 
     if (files.length === 0) {
-      replaceSelectedFiles([]);
       setClientError(null);
       return;
     }
 
     if (files.length > MAX_BATCH_FILES) {
       setClientError(`Upload up to ${MAX_BATCH_FILES} files at a time.`);
-      resetFileSelection();
+      clearFilePicker();
       return;
     }
 
@@ -836,7 +967,7 @@ export function AddCaptureForm({
 
     if (oversizedFile) {
       setClientError(getFileTooLargeMessage(oversizedFile));
-      resetFileSelection();
+      clearFilePicker();
       return;
     }
 
@@ -844,8 +975,8 @@ export function AddCaptureForm({
       (captureIntent === "auto_image" || captureIntent === "auto_evidence") &&
       files.some((file) => !fileIsImage(file) && !fileIsVideo(file))
     ) {
-      setClientError("Capture Evidence accepts photo or video files only.");
-      resetFileSelection();
+      setClientError("Choose a supported photo file.");
+      clearFilePicker();
       return;
     }
 
@@ -853,15 +984,18 @@ export function AddCaptureForm({
       captureIntent === "manual" &&
       files.some((file) => !fileHasAllowedType(file, manualType))
     ) {
-      setClientError("That file type is not allowed for this capture.");
-      resetFileSelection();
+      setClientError("Choose a PDF or image file for this form.");
+      clearFilePicker();
       return;
     }
 
     const evidenceFiles = buildSelectedEvidenceFiles(files);
+    setComposerSourceKind(
+      evidenceFiles[0]?.sourceKind === "document" ? "document" : "observation",
+    );
 
     setSaveMessage(
-      `Saving ${evidenceFiles.length} capture${evidenceFiles.length === 1 ? "" : "s"} on this device…`,
+      `Saving ${evidenceFiles.length} ${evidenceFiles[0]?.sourceKind === "document" ? "file" : "photo"}${evidenceFiles.length === 1 ? "" : "s"} on this device…`,
     );
 
     try {
@@ -877,7 +1011,7 @@ export function AddCaptureForm({
     } catch (error) {
       console.warn("Unable to save capture locally", error);
       setClientError(
-        "CRED could not save this capture on your device. Do not leave this page yet.",
+        "CRED could not save this item on your device. Do not leave this page yet.",
       );
       return;
     }
@@ -887,7 +1021,7 @@ export function AddCaptureForm({
     setSelectedFiles(nextFiles);
     setClientError(null);
     setSaveMessage(
-      `${evidenceFiles.length} capture${evidenceFiles.length === 1 ? "" : "s"} saved on this device. CRED will sync when it can.`,
+      `Saved on this device. ${navigator.onLine ? "Syncing now." : "CRED will sync when you reconnect."}`,
     );
 
     if (fileInputRef.current) {
@@ -919,6 +1053,74 @@ export function AddCaptureForm({
     });
 
     scheduleSelectedFileNoteSave(fileId);
+  }
+
+  function updateItemDescriptionValue(description: string) {
+    setItemDescription(description);
+    setNoteSource("edited");
+
+    const primaryFile = [...selectedFilesRef.current]
+      .filter((file) => file.sourceKind === "observation")
+      .sort((left, right) => left.attachmentOrder - right.attachmentOrder)[0];
+
+    if (primaryFile) {
+      updateSelectedFileNote(primaryFile.id, description);
+    }
+  }
+
+  function moveSelectedFile(fileId: string, direction: -1 | 1) {
+    const currentFiles = selectedFilesRef.current;
+    const currentIndex = currentFiles.findIndex((file) => file.id === fileId);
+    const targetIndex = currentIndex + direction;
+
+    if (
+      currentIndex < 0 ||
+      targetIndex < 0 ||
+      targetIndex >= currentFiles.length ||
+      currentFiles[currentIndex]?.status === "uploading" ||
+      currentFiles[currentIndex]?.status === "finishing" ||
+      currentFiles[targetIndex]?.status === "uploading" ||
+      currentFiles[targetIndex]?.status === "finishing"
+    ) {
+      return;
+    }
+
+    const reordered = [...currentFiles];
+    [reordered[currentIndex], reordered[targetIndex]] = [
+      reordered[targetIndex],
+      reordered[currentIndex],
+    ];
+
+    const normalized = reordered.map((file, index) => ({
+      ...file,
+      attachmentOrder: index + 1,
+      attachmentKind:
+        file.sourceKind === "document"
+          ? ("document" as const)
+          : index === 0
+            ? ("primary" as const)
+            : ("supporting" as const),
+      note:
+        file.sourceKind === "observation"
+          ? index === 0
+            ? itemDescription
+            : ""
+          : file.note,
+      noteSaveStatus:
+        file.captureItemId && file.sourceKind === "observation"
+          ? ("unsaved" as const)
+          : file.noteSaveStatus,
+    }));
+
+    selectedFilesRef.current = normalized;
+    setSelectedFiles(normalized);
+    normalized.forEach(persistSelectedFile);
+    normalized
+      .filter(
+        (file) =>
+          file.captureItemId && file.sourceKind === "observation",
+      )
+      .forEach((file) => scheduleSelectedFileNoteSave(file.id));
   }
 
   function scheduleSelectedFileNoteSave(fileId: string) {
@@ -1001,7 +1203,7 @@ export function AddCaptureForm({
 
     if (
       !window.confirm(
-        "Discard this local capture? It will no longer be available to retry from this device.",
+        "Remove this file? It will no longer be available to retry from this device.",
       )
     ) {
       return;
@@ -1028,12 +1230,16 @@ export function AddCaptureForm({
 
   async function openCameraPicker() {
     await flushMediaNoteSaves();
+    if (selectedFilesRef.current.length === 0) {
+      clientItemIdRef.current ??= createClientItemId();
+    }
     setCaptureIntent("auto_evidence");
+    setComposerSourceKind("observation");
     setPreferCameraCapture(true);
     window.setTimeout(() => fileInputRef.current?.click(), 0);
   }
 
-  async function startNewObservation() {
+  async function startNewItem(openCamera = false) {
     const currentFiles = [...selectedFilesRef.current];
     const pendingLocalUploads = currentFiles.filter((file) =>
       isLocalUploadPending(file.status),
@@ -1052,34 +1258,36 @@ export function AddCaptureForm({
         );
       } catch (queueError) {
         console.warn(
-          "Unable to preserve capture before starting another observation",
+          "Unable to preserve capture before starting another item",
           queueError,
         );
         setClientError(
-          "CRED could not save the current observation on this device. Try again before continuing.",
+          "CRED could not save the current item on this device. Try again before continuing.",
         );
         return;
       }
 
       clearVisibleFileSelectionPreservingQueue();
       setSaveMessage(
-        `${pendingLocalUploads.length} capture${pendingLocalUploads.length === 1 ? "" : "s"} saved on this device. CRED will sync them when it can.`,
+        "Item saved on this device. CRED will finish syncing when it can.",
       );
     } else {
       const notesSaved = await flushMediaNoteSaves();
 
       if (!notesSaved) {
         setClientError(
-          "Could not save one media note. Retry before starting a new observation.",
+          "Could not save the item description. Retry before starting a new item.",
         );
         return;
       }
 
       resetFileSelection();
-      setSaveMessage("Ready for a new observation.");
+      setSaveMessage("Item saved. Ready for the next one.");
     }
 
-    setActiveObservationGroupId(null);
+    clientItemIdRef.current = null;
+    activeObservationGroupIdRef.current = null;
+    setItemDescription("");
     setNote("");
     setNoteSource("manual");
     setTranscriptStatus("not_started");
@@ -1087,14 +1295,33 @@ export function AddCaptureForm({
     setClientError(null);
     setActionError(null);
     setCaptureIntent("auto_evidence");
+    setComposerSourceKind("observation");
     setPreferCameraCapture(true);
 
-    window.setTimeout(() => fileInputRef.current?.click(), 0);
+    if (openCamera) {
+      clientItemIdRef.current = createClientItemId();
+      window.setTimeout(() => fileInputRef.current?.click(), 0);
+    }
   }
 
   async function openGalleryPicker() {
     await flushMediaNoteSaves();
+    if (selectedFilesRef.current.length === 0) {
+      clientItemIdRef.current ??= createClientItemId();
+    }
     setCaptureIntent("auto_evidence");
+    setComposerSourceKind("observation");
+    setPreferCameraCapture(false);
+    window.setTimeout(() => fileInputRef.current?.click(), 0);
+  }
+
+  async function openDocumentPicker() {
+    await flushMediaNoteSaves();
+    if (selectedFilesRef.current.length === 0) {
+      clientItemIdRef.current = createClientItemId();
+    }
+    setCaptureIntent("manual");
+    setComposerSourceKind("document");
     setPreferCameraCapture(false);
     window.setTimeout(() => fileInputRef.current?.click(), 0);
   }
@@ -1122,9 +1349,10 @@ export function AddCaptureForm({
       return;
     }
 
+    setBackgroundSyncCount((count) => count + 1);
     setActionError(null);
     setSaveMessage(
-      `Uploading ${pendingFiles.length} file${pendingFiles.length === 1 ? "" : "s"} in background…`,
+      `Syncing ${pendingFiles.length} file${pendingFiles.length === 1 ? "" : "s"}…`,
     );
 
     try {
@@ -1132,14 +1360,17 @@ export function AddCaptureForm({
 
       if (result.savedCount > 0) {
         cleanupRecognition();
+        const savedDocument = pendingFiles.every(
+          (file) => file.sourceKind === "document",
+        );
         setSaveMessage(
           observationGroupId
-            ? `${result.savedCount} supporting image${result.savedCount === 1 ? "" : "s"} added to this item.`
+            ? `${result.savedCount} photo${result.savedCount === 1 ? "" : "s"} added to this item.`
             : isDiagnosticProcedureAttachment
               ? `${result.savedCount} attachment${result.savedCount === 1 ? "" : "s"} saved for this procedure step.`
-              : imageAiAssistEnabled
-                ? `${result.savedCount} capture${result.savedCount === 1 ? "" : "s"} saved. Ready for review.`
-                : `${result.savedCount} capture${result.savedCount === 1 ? "" : "s"} saved. Ready for review.`,
+              : savedDocument
+                ? "Form saved."
+                : "Item synced.",
         );
         triggerBackgroundProcessing();
         router.refresh();
@@ -1161,7 +1392,7 @@ export function AddCaptureForm({
         );
       }
     } finally {
-      // Background uploads should not block camera/gallery controls.
+      setBackgroundSyncCount((count) => Math.max(0, count - 1));
     }
   }
 
@@ -1180,11 +1411,49 @@ export function AddCaptureForm({
       .then((records) => {
         if (cancelled || records.length === 0) return;
 
-        const restoredFiles = records.map((record) => ({
+        const recordsByItem = new Map<string, PersistedSelectedEvidenceFile[]>();
+        records.forEach((record) => {
+          recordsByItem.set(record.clientItemId, [
+            ...(recordsByItem.get(record.clientItemId) ?? []),
+            record,
+          ]);
+        });
+        const orderedItemGroups = Array.from(recordsByItem.values()).sort(
+          (left, right) =>
+            (right.at(-1)?.queuedAt ?? "").localeCompare(
+              left.at(-1)?.queuedAt ?? "",
+            ),
+        );
+        const activeRecords = orderedItemGroups[0] ?? [];
+        const restoredFiles = activeRecords.map((record) => ({
           ...record,
           status: record.status === "uploading" ? "queued" : record.status,
           previewUrl: URL.createObjectURL(record.file),
         }));
+
+        const restoredPrimary = [...restoredFiles].sort(
+          (left, right) => left.attachmentOrder - right.attachmentOrder,
+        )[0];
+        if (restoredPrimary) {
+          clientItemIdRef.current = restoredPrimary.clientItemId;
+          if (restoredPrimary.documentationItemId) {
+            documentationItemIdsRef.current.set(
+              restoredPrimary.clientItemId,
+              restoredPrimary.documentationItemId,
+            );
+          }
+          setComposerSourceKind(restoredPrimary.sourceKind);
+          setCaptureIntent(
+            restoredPrimary.sourceKind === "document"
+              ? "manual"
+              : "auto_evidence",
+          );
+          setItemDescription(
+            restoredFiles.find(
+              (file) => file.attachmentKind === "primary",
+            )?.note ?? "",
+          );
+        }
         const nextFiles = [...selectedFilesRef.current, ...restoredFiles];
         selectedFilesRef.current = nextFiles;
         setSelectedFiles(nextFiles);
@@ -1194,9 +1463,13 @@ export function AddCaptureForm({
         );
         if (resumableFiles.length > 0) {
           setSaveMessage(
-            `Resuming ${resumableFiles.length} pending upload${resumableFiles.length === 1 ? "" : "s"}…`,
+            `Resuming ${resumableFiles.length} pending file${resumableFiles.length === 1 ? "" : "s"}…`,
           );
-          void resumeQueuedMediaUpload(resumableFiles);
+          void resumeQueuedMediaUpload(resumableFiles).then(() =>
+            getOfflineSyncEngine().syncNow(),
+          );
+        } else {
+          void getOfflineSyncEngine().syncNow();
         }
       })
       .catch((error: unknown) => {
@@ -1215,7 +1488,9 @@ export function AddCaptureForm({
     const supabase = createClient();
     let savedCount = 0;
     let failedCount = 0;
-    let currentObservationGroupId = activeObservationGroupId;
+    let currentObservationGroupId =
+      legacyGroupIdsRef.current.get(filesToUpload[0]?.clientItemId ?? "") ??
+      activeObservationGroupIdRef.current;
     const failedMessages: string[] = [];
 
     if (!navigator.onLine) {
@@ -1380,8 +1655,12 @@ export function AddCaptureForm({
           filename: file.name,
           mimeType: file.type,
           size: file.size,
-          captureIntent,
-          manualType: captureIntent === "manual" ? manualType : null,
+          captureIntent:
+            selectedFile.sourceKind === "document"
+              ? "manual"
+              : "auto_evidence",
+          manualType:
+            selectedFile.sourceKind === "document" ? "document" : null,
           guidedStep,
           guidedLabel,
           workflow,
@@ -1390,12 +1669,22 @@ export function AddCaptureForm({
           noteSource,
           reportOrder: null,
           includeInReport: true,
-          sourceDocumentType: null,
-          sourceDocumentLabel: null,
+          sourceDocumentType: selectedFile.sourceDocumentType ?? null,
+          sourceDocumentLabel: selectedFile.sourceDocumentLabel ?? null,
           diagnosticEvidenceRole: isDiagnosticProcedureAttachment
             ? diagnosticEvidenceRole
             : null,
-          observationGroupId: currentObservationGroupId,
+          observationGroupId:
+            legacyGroupIdsRef.current.get(selectedFile.clientItemId) ??
+            currentObservationGroupId,
+          clientItemId: selectedFile.clientItemId,
+          documentationItemId:
+            documentationItemIdsRef.current.get(selectedFile.clientItemId) ??
+            selectedFile.documentationItemId ??
+            null,
+          attachmentOrder: selectedFile.attachmentOrder,
+          sourceKind: selectedFile.sourceKind,
+          attachmentKind: selectedFile.attachmentKind,
         });
 
         if (
@@ -1409,8 +1698,12 @@ export function AddCaptureForm({
             filename: file.name,
             mimeType: file.type,
             size: file.size,
-            captureIntent,
-            manualType: captureIntent === "manual" ? manualType : null,
+            captureIntent:
+              selectedFile.sourceKind === "document"
+                ? "manual"
+                : "auto_evidence",
+            manualType:
+              selectedFile.sourceKind === "document" ? "document" : null,
             guidedStep,
             guidedLabel,
             workflow,
@@ -1419,12 +1712,22 @@ export function AddCaptureForm({
             noteSource,
             reportOrder: null,
             includeInReport: true,
-            sourceDocumentType: null,
-            sourceDocumentLabel: null,
+            sourceDocumentType: selectedFile.sourceDocumentType ?? null,
+            sourceDocumentLabel: selectedFile.sourceDocumentLabel ?? null,
             diagnosticEvidenceRole: isDiagnosticProcedureAttachment
               ? diagnosticEvidenceRole
               : null,
-            observationGroupId: currentObservationGroupId,
+            observationGroupId:
+              legacyGroupIdsRef.current.get(selectedFile.clientItemId) ??
+              currentObservationGroupId,
+            clientItemId: selectedFile.clientItemId,
+            documentationItemId:
+              documentationItemIdsRef.current.get(selectedFile.clientItemId) ??
+              selectedFile.documentationItemId ??
+              null,
+            attachmentOrder: selectedFile.attachmentOrder,
+            sourceKind: selectedFile.sourceKind,
+            attachmentKind: selectedFile.attachmentKind,
           });
         }
 
@@ -1450,9 +1753,44 @@ export function AddCaptureForm({
         }
 
         savedCount += 1;
+        if (result.documentationItemId) {
+          documentationItemIdsRef.current.set(
+            selectedFile.clientItemId,
+            result.documentationItemId,
+          );
+          setSelectedFiles((currentFiles) => {
+            const nextFiles = currentFiles.map((currentFile) =>
+              currentFile.clientItemId === selectedFile.clientItemId
+                ? {
+                    ...currentFile,
+                    documentationItemId: result.documentationItemId,
+                    ...(currentFile.id === selectedFile.id
+                      ? {
+                          attachmentOrder: result.attachmentOrder,
+                          attachmentKind: result.attachmentKind,
+                          sourceKind: result.sourceKind,
+                        }
+                      : {}),
+                  }
+                : currentFile,
+            );
+            selectedFilesRef.current = nextFiles;
+            nextFiles
+              .filter(
+                (currentFile) =>
+                  currentFile.clientItemId === selectedFile.clientItemId,
+              )
+              .forEach(persistSelectedFile);
+            return nextFiles;
+          });
+        }
         if (!currentObservationGroupId) {
           currentObservationGroupId = result.captureItemId;
-          setActiveObservationGroupId(result.captureItemId);
+          legacyGroupIdsRef.current.set(
+            selectedFile.clientItemId,
+            result.captureItemId,
+          );
+          activeObservationGroupIdRef.current = result.captureItemId;
         }
         updateSelectedFileStatus(
           selectedFile.id,
@@ -1522,8 +1860,13 @@ export function AddCaptureForm({
       return;
     }
 
+    if (backgroundSyncCount > 0) {
+      setClientError("This item is still syncing. You can continue in a moment.");
+      return;
+    }
+
     if (!note.trim()) {
-      setClientError("Type a note before saving text evidence.");
+      setClientError("Type a note before saving.");
       return;
     }
 
@@ -1628,7 +1971,7 @@ export function AddCaptureForm({
       setNoteSource("voice");
       voiceNoteTimeoutRef.current = window.setTimeout(() => {
         stopVoiceNote(
-          "Voice note stopped after the time limit. Review your note, then save evidence.",
+          "Voice note stopped after the time limit. Review your note, then save it.",
         );
       }, 120_000);
     } catch {
@@ -1646,19 +1989,19 @@ export function AddCaptureForm({
       return;
     }
 
-    if (voiceNoteStatus === "listening") {
-      stopVoiceNote("Voice note stopped.");
-      setClientError(
-        "Voice note stopped. Review your note, then save evidence.",
-      );
+    const filesToUpload = uploadableFiles;
+
+    if (selectedFiles.length === 0) {
+      setClientError("Take a photo, choose photos, or add a form first.");
       return;
     }
 
-    const filesToUpload = uploadableFiles;
-    const hasTextNote = note.trim().length > 0;
-
-    if (filesToUpload.length === 0 && !hasTextNote) {
-      setClientError("Choose a file or type a text note to save evidence.");
+    if (
+      selectedFiles.some(
+        (file) => file.status === "uploading" || file.status === "finishing",
+      )
+    ) {
+      setClientError("This item is still syncing. You can continue in a moment.");
       return;
     }
 
@@ -1667,8 +2010,11 @@ export function AddCaptureForm({
       return;
     }
 
-    if (captureIntent === "manual" && selectedFiles.length > 1) {
-      setClientError("Advanced manual uploads support one file at a time.");
+    if (
+      selectedFiles.some((file) => file.sourceKind === "document") &&
+      selectedFiles.length > 1
+    ) {
+      setClientError("Add one form or document at a time.");
       return;
     }
 
@@ -1689,18 +2035,24 @@ export function AddCaptureForm({
     }
 
     if (
-      (captureIntent === "auto_image" || captureIntent === "auto_evidence") &&
-      filesToUpload.some(({ file }) => !fileIsImage(file) && !fileIsVideo(file))
+      filesToUpload.some(
+        ({ file, sourceKind }) =>
+          sourceKind === "observation" &&
+          !fileIsImage(file) &&
+          !fileIsVideo(file),
+      )
     ) {
       setClientError("This file type is not currently supported.");
       return;
     }
 
     if (
-      captureIntent === "manual" &&
-      filesToUpload.some(({ file }) => !fileHasAllowedType(file, manualType))
+      filesToUpload.some(
+        ({ file, sourceKind }) =>
+          sourceKind === "document" && !fileHasAllowedType(file, "document"),
+      )
     ) {
-      setClientError("That file type is not allowed for this capture.");
+      setClientError("Choose a PDF or image file for this form.");
       return;
     }
 
@@ -1714,21 +2066,12 @@ export function AddCaptureForm({
       const result =
         filesToUpload.length > 0
           ? await uploadSelectedFiles(filesToUpload)
-          : {
-              savedCount: (await saveTextNoteOnly()) ? 1 : 0,
-              failedCount: 0,
-              failedMessages: [],
-            };
+          : { savedCount: 0, failedCount: 0, failedMessages: [] };
 
       if (result.savedCount > 0 && filesToUpload.length > 0) {
         cleanupRecognition();
-        setSaveMessage("Saved. Keep capturing or tap Done.");
         triggerBackgroundProcessing();
         router.refresh();
-      }
-
-      if (result.savedCount === 0 && filesToUpload.length === 0) {
-        return;
       }
 
       if (result.failedCount > 0) {
@@ -1741,22 +2084,25 @@ export function AddCaptureForm({
         return;
       }
 
-      window.setTimeout(() => {
-        resetFileSelection();
-        setNote("");
-        setNoteSource("manual");
-        setTranscriptStatus("not_started");
-        setVoiceNoteStatus("idle");
-        setPreferCameraCapture(true);
-      }, 900);
-
-      if (returnPath) {
-        window.setTimeout(() => {
-          window.location.assign(
-            `${returnPath}${returnPath.includes("?") ? "&" : "?"}captureSaved=1`,
-          );
-        }, 900);
+      const notesSaved = await flushMediaNoteSaves();
+      if (!notesSaved) {
+        setClientError("Could not save the item description. Try again.");
+        return;
       }
+
+      if (returnPath && isDiagnosticProcedureAttachment) {
+        window.location.assign(
+          `${returnPath}${returnPath.includes("?") ? "&" : "?"}captureSaved=1`,
+        );
+        return;
+      }
+
+      if (returnPath && observationGroupId) {
+        window.location.assign(returnPath);
+        return;
+      }
+
+      await startNewItem(false);
     } finally {
       isSavingRef.current = false;
       setIsSaving(false);
@@ -1850,6 +2196,12 @@ export function AddCaptureForm({
   }, [cleanupRecognition]);
 
   async function handleDoneNavigation(event: MouseEvent<HTMLAnchorElement>) {
+    if (isSaving || backgroundSyncCount > 0) {
+      event.preventDefault();
+      setClientError("This item is still syncing. Review will open when it is saved.");
+      return;
+    }
+
     const pendingLocalUploads = selectedFilesRef.current.filter((file) =>
       isLocalUploadPending(file.status),
     );
@@ -1857,7 +2209,7 @@ export function AddCaptureForm({
     if (pendingLocalUploads.length > 0) {
       event.preventDefault();
       setClientError(
-        `Still uploading ${pendingLocalUploads.length} file${pendingLocalUploads.length === 1 ? "" : "s"}. Done will unlock after uploads are persisted.`,
+        `Still syncing ${pendingLocalUploads.length} file${pendingLocalUploads.length === 1 ? "" : "s"}. Review will open when they are saved.`,
       );
       void autoSaveSelectedMedia(
         pendingLocalUploads.filter((file) => file.status !== "uploading"),
@@ -1874,11 +2226,11 @@ export function AddCaptureForm({
       return;
     }
 
-    setClientError("Could not save one media note. Try again before leaving.");
+    setClientError("Could not save the item description. Try again before leaving.");
   }
 
   return (
-    <form onSubmit={handleSubmit} className="capture-form form-stack">
+    <form onSubmit={handleSubmit} className={styles.form}>
       <input type="hidden" name="session_id" value={sessionId} />
       <input type="hidden" name="capture_intent" value={captureIntent} />
       <input type="hidden" name="manual_type" value={manualType} />
@@ -1897,8 +2249,8 @@ export function AddCaptureForm({
         <input type="hidden" name="return_path" value={returnPath} />
       ) : null}
       {isDiagnosticProcedureAttachment ? (
-        <label className="field-stack capture-secondary-panel">
-          <span className="label">Evidence role for this step attachment</span>
+        <label className="field-stack">
+          <span className="label">Attachment type</span>
           <select
             className="input"
             value={diagnosticEvidenceRole}
@@ -1919,348 +2271,378 @@ export function AddCaptureForm({
       ) : null}
 
       {clientError || actionError ? (
-        <p className="error">{clientError ?? actionError}</p>
+        <p className={styles.errorMessage} role="alert">
+          {clientError ?? actionError}
+        </p>
       ) : null}
-      {saveMessage ? <p className="success">{saveMessage}</p> : null}
+      {saveMessage ? (
+        <p className={styles.statusMessage} role="status" aria-live="polite">
+          {saveMessage}
+        </p>
+      ) : null}
 
-      <div className="capture-start-panel observation-workspace-hero field-stack">
-        <div>
-          <p className="eyebrow">Observation Workspace</p>
-          <h2>Document one observation</h2>
-          <p className="muted">
-            Add images and notes here until this observation is complete.
-          </p>
-        </div>
-        <div
-          className="capture-primary-action-grid"
-          aria-label="Primary capture actions"
-        >
-          <button
-            type="button"
-            className="capture-evidence-button touch-target"
-            onClick={openCameraPicker}
-            disabled={isSaving}
-          >
-            <span className="capture-evidence-icon" aria-hidden="true">
-              📷
-            </span>
-            <span>
-              <strong>Add Image</strong>
-              <small>Camera photo for this observation</small>
-            </span>
-          </button>
-          <button
-            type="button"
-            className="capture-evidence-button touch-target"
-            onClick={openGalleryPicker}
-            disabled={isSaving}
-          >
-            <span className="capture-evidence-icon" aria-hidden="true">
-              🖼️
-            </span>
-            <span>
-              <strong>Gallery</strong>
-              <small>Add existing supporting images</small>
-            </span>
-          </button>
-        </div>
-      </div>
-
-      <div className="standalone-text-note-panel">
-        {showTextNoteEditor ? (
-          <div className="compact-text-note-editor field-stack">
-            <label className="field-stack" htmlFor={`${fileInputId}-text-note`}>
-              <span className="label">Text note</span>
-              <textarea
-                id={`${fileInputId}-text-note`}
-                className="input note-textarea"
-                value={note}
-                placeholder="Type a short evidence note."
-                onChange={(event) => setNote(event.target.value)}
-                rows={4}
-                disabled={isSaving}
-              />
-            </label>
-            <div className="form-actions compact-text-note-actions">
-              <button
-                type="button"
-                className="button button-primary touch-target"
-                onClick={handleStandaloneTextNoteSave}
-                disabled={isSaving || !note.trim()}
-              >
-                {isSaving ? "Saving…" : "Save Note"}
-              </button>
-              {voiceNoteStatus === "listening" ? (
-                <button
-                  type="button"
-                  className="button button-secondary touch-target"
-                  onClick={() =>
-                    stopVoiceNote(
-                      "Voice note stopped. Review your note, then save evidence.",
-                    )
-                  }
-                  disabled={isSaving}
-                >
-                  Stop Voice Note
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className="button button-secondary touch-target"
-                onClick={cancelStandaloneTextNote}
-                disabled={isSaving}
-              >
-                Cancel
-              </button>
-            </div>
+      {selectedFiles.length === 0 ? (
+        <section className={styles.startPanel} aria-labelledby={`${fileInputId}-title`}>
+          <div className={styles.startCopy}>
+            <p className={styles.eyebrow}>
+              {observationGroupId ? "Add photos" : "Capture"}
+            </p>
+            <h2 id={`${fileInputId}-title`}>
+              {observationGroupId ? "Add photos to this item" : "Add an item"}
+            </h2>
+            <p>
+              {observationGroupId
+                ? "New photos will stay together with the item you selected."
+                : "Keep photos of the same subject together as one item."}
+            </p>
           </div>
-        ) : (
-          <div className="standalone-note-actions" aria-label="Add notes">
+          <div className={styles.actionGrid} aria-label="Capture options">
             <button
               type="button"
-              className="secondary-link standalone-text-note-toggle touch-target"
-              onClick={() => {
-                setClientError(null);
-                setActionError(null);
-                setShowTextNoteEditor(true);
-              }}
+              className={`${styles.actionButton} ${styles.primaryAction}`}
+              onClick={openCameraPicker}
               disabled={isSaving}
             >
-              + Add Text Note
+              <span className={styles.actionIcon}>
+                <CameraIcon />
+              </span>
+              <span className={styles.actionLabel}>
+                <strong>Take photo</strong>
+                <small>Use the camera</small>
+              </span>
             </button>
             <button
               type="button"
-              className="secondary-link standalone-text-note-toggle touch-target"
-              onClick={startStandaloneVoiceNote}
+              className={styles.actionButton}
+              onClick={openGalleryPicker}
               disabled={isSaving}
             >
-              + Add Voice Note
+              <span className={styles.actionIcon}>
+                <GalleryIcon />
+              </span>
+              <span className={styles.actionLabel}>
+                <strong>Choose photos</strong>
+                <small>Select one or several</small>
+              </span>
             </button>
-          </div>
-        )}
-      </div>
-
-      <div className="field-stack capture-file-field capture-secondary-panel">
-        <label htmlFor={fileInputId} className="label visually-hidden">
-          Capture evidence file
-        </label>
-        <input
-          ref={fileInputRef}
-          key={`${captureIntent}-${activeType}-${preferCameraCapture ? "camera" : "gallery"}`}
-          id={fileInputId}
-          type="file"
-          accept={fileConfig.accept}
-          capture={fileConfig.capture}
-          multiple={supportsMultipleFiles}
-          className="input file-input camera-file-input"
-          onChange={validateFileSelection}
-          disabled={isSaving}
-        />
-        {selectedFiles.length > 0 ? (
-          <section
-            className="observation-workspace-panel"
-            aria-label="Active observation workspace"
-          >
-            <div className="observation-workspace-header">
-              <div>
-                <p className="eyebrow">Observation</p>
-                <h2>Supporting Images</h2>
-                <p className="muted">
-                  {imageCountLabel}. Review, add, remove, or reorder images
-                  without leaving this workspace.
-                </p>
-              </div>
-            </div>
-
-            {observationFiles.length > 0 ? (
-              <div
-                className="observation-image-gallery"
-                aria-label="Supporting image thumbnails"
+            {!observationGroupId ? (
+              <button
+                type="button"
+                className={styles.actionButton}
+                onClick={openDocumentPicker}
+                disabled={isSaving}
               >
-                {observationFiles.map((file, index) => (
-                  <article key={file.id} className="observation-image-tile">
-                    <div className="observation-image-frame">
-                      {file.type.startsWith("video/") ? (
-                        <video
-                          src={file.previewUrl}
-                          controls
-                          preload="metadata"
-                          className="evidence-media"
-                        />
-                      ) : file.type.startsWith("image/") ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={file.previewUrl}
-                          alt={`Supporting image ${index + 1} for this observation`}
-                          className="evidence-media"
-                        />
-                      ) : (
-                        <div className="evidence-file-placeholder">
-                          Preview unavailable
-                        </div>
-                      )}
-                    </div>
-                    <div className="observation-image-tile-footer">
-                      <span>{index + 1}</span>
-                      <span className="muted">
-                        {getUploadStatusLabel(file.status, file.error)}
-                      </span>
-                    </div>
-                    <div
-                      className="observation-reorder-actions"
-                      aria-label={`Reorder image ${index + 1}`}
+                <span className={styles.actionIcon}>
+                  <DocumentIcon />
+                </span>
+                <span className={styles.actionLabel}>
+                  <strong>Scan or upload form</strong>
+                  <small>PDF or photographed document</small>
+                </span>
+              </button>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      <input
+        ref={fileInputRef}
+        key={`${captureIntent}-${activeType}-${preferCameraCapture ? "camera" : "gallery"}`}
+        id={fileInputId}
+        type="file"
+        accept={fileConfig.accept}
+        capture={fileConfig.capture}
+        multiple={supportsMultipleFiles}
+        className="visually-hidden"
+        onChange={validateFileSelection}
+        disabled={isSaving}
+      />
+
+      {selectedFiles.length > 0 ? (
+        <section className={styles.composerPanel} aria-label="Current item">
+          <header className={styles.composerHeader}>
+            <div>
+              <p className={styles.eyebrow}>
+                {composerSourceKind === "document"
+                  ? "Forms & documents"
+                  : observationGroupId
+                    ? "Existing item"
+                    : "New item"}
+              </p>
+              <h2>
+                {composerSourceKind === "document"
+                  ? "Form or document"
+                  : observationGroupId
+                    ? "Add photos"
+                    : "Item photos"}
+              </h2>
+              <p>
+                {composerSourceKind === "document"
+                  ? "This will stay separate from documented items."
+                  : "Every photo in this strip belongs to the same item."}
+              </p>
+            </div>
+            <span className={styles.countBadge}>{selectedFileCountLabel}</span>
+          </header>
+
+          <div className={styles.thumbnailStrip} aria-label="Selected files">
+            {selectedFiles.map((file, index) => {
+              const canChangeOrder =
+                file.status === "queued" ||
+                file.status === "failed" ||
+                file.status === "metadata_recovery" ||
+                file.status === "needs_queue_retry";
+              const canRemove = canChangeOrder && file.status !== "uploading";
+
+              return (
+                <article key={file.id} className={styles.thumbnailTile}>
+                  <div className={styles.thumbnailFrame}>
+                    {file.type.startsWith("video/") ? (
+                      <video src={file.previewUrl} controls preload="metadata" />
+                    ) : file.type.startsWith("image/") ? (
+                      <Image
+                        src={file.previewUrl}
+                        alt={
+                          composerSourceKind === "document"
+                            ? "Selected form or document"
+                            : `Photo ${index + 1} for this item`
+                        }
+                        fill
+                        sizes="116px"
+                        unoptimized
+                      />
+                    ) : (
+                      <div className={styles.documentPreview}>
+                        <DocumentIcon />
+                        <span>Document selected</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className={styles.thumbnailMeta}>
+                    <strong>
+                      {composerSourceKind === "document"
+                        ? "Document"
+                        : `Photo ${index + 1}`}
+                    </strong>
+                    <span
+                      className={`${styles.quietStatus} ${file.status === "failed" || file.status === "metadata_recovery" ? styles.attentionStatus : ""}`}
+                      role="status"
                     >
+                      {getUploadStatusLabel(file.status, file.error)}
+                    </span>
+                  </div>
+                  {composerSourceKind !== "document" ? (
+                    <div className={styles.thumbnailControls}>
                       <button
                         type="button"
-                        className="secondary-link"
-                        disabled
-                        title="Reorder coming soon"
+                        className={styles.thumbnailControl}
+                        onClick={() => moveSelectedFile(file.id, -1)}
+                        disabled={!canChangeOrder || index === 0}
+                        aria-label={`Move photo ${index + 1} left`}
+                        title="Move left"
                       >
-                        ↕ Reorder
+                        ←
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.thumbnailControl}
+                        onClick={() => moveSelectedFile(file.id, 1)}
+                        disabled={
+                          !canChangeOrder || index === selectedFiles.length - 1
+                        }
+                        aria-label={`Move photo ${index + 1} right`}
+                        title="Move right"
+                      >
+                        →
+                      </button>
+                      <button
+                        type="button"
+                        className={`${styles.thumbnailControl} ${styles.removeControl}`}
+                        onClick={() => removeSelectedFile(file.id)}
+                        disabled={!canRemove}
+                        aria-label={`Remove photo ${index + 1}`}
+                        title={
+                          canRemove
+                            ? "Remove photo"
+                            : "Synced photos can be removed during review"
+                        }
+                      >
+                        ×
                       </button>
                     </div>
-                  </article>
-                ))}
-              </div>
-            ) : null}
+                  ) : canRemove ? (
+                    <button
+                      type="button"
+                      className={`${styles.textButton} ${styles.removeControl}`}
+                      onClick={() => removeSelectedFile(file.id)}
+                    >
+                      Remove file
+                    </button>
+                  ) : null}
+                </article>
+              );
+            })}
+          </div>
 
-            <div className="field-stack observation-note-panel">
-              <span className="label">Technician Note</span>
-              {observationFiles.map((file, index) => (
-                <label
-                  key={file.id}
-                  className="field-stack"
-                  htmlFor={`file-note-${file.id}`}
-                >
-                  <span className="muted">Image {index + 1} note</span>
-                  <textarea
-                    id={`file-note-${file.id}`}
-                    className="input note-textarea"
-                    value={file.note}
-                    placeholder={
-                      index === 0
-                        ? "Describe the observation, defect, or condition."
-                        : "Optional supporting detail for this image."
-                    }
-                    onChange={(event) =>
-                      updateSelectedFileNote(file.id, event.target.value)
-                    }
-                    rows={3}
-                  />
-                  <span
-                    className={
-                      file.noteSaveStatus === "failed" ? "error" : "muted"
-                    }
-                    role="status"
-                    aria-live="polite"
-                  >
-                    {getNoteSaveStatusLabel(file.noteSaveStatus)}
-                  </span>
-                </label>
-              ))}
-            </div>
-
-            <div className="form-actions observation-workspace-actions">
-              <button
-                type="submit"
-                className="button button-primary touch-target"
-                disabled={
-                  isSaving ||
-                  !selectedFiles.some(
-                    (file) =>
-                      file.status === "queued" ||
-                      file.noteSaveStatus === "unsaved" ||
-                      file.noteSaveStatus === "failed",
-                  )
+          {composerSourceKind === "observation" && !observationGroupId ? (
+            <div className={styles.descriptionField}>
+              <label htmlFor={`${fileInputId}-item-description`}>
+                What did you document?
+              </label>
+              <textarea
+                id={`${fileInputId}-item-description`}
+                value={itemDescription}
+                placeholder="Example: Coolant level below minimum before service."
+                onChange={(event) =>
+                  updateItemDescriptionValue(event.target.value)
                 }
-              >
-                {isSaving ? "Saving…" : "Save Observation"}
-              </button>
-              <button
-                type="button"
-                className="button button-secondary touch-target"
-                onClick={openCameraPicker}
+                rows={3}
+                maxLength={2000}
                 disabled={isSaving}
-              >
-                Add Supporting Image
-              </button>
-
-              <button
-                type="button"
-                className="button button-secondary touch-target"
-                onClick={() => void startNewObservation()}
-                disabled={isSaving}
-              >
-                New Observation
-              </button>
+              />
+              <span className={styles.quietStatus}>
+                One description applies to the complete item.
+              </span>
             </div>
-          </section>
-        ) : null}
+          ) : null}
 
-        {failedFiles.length > 0 ? (
-          <section className="failed-uploads-panel" aria-label="Failed uploads">
-            <div>
-              <p className="eyebrow">Failed Uploads</p>
-              <h2>Uploads Needing Attention</h2>
-            </div>
-            {failedFiles.map((file) => (
-              <article key={file.id} className="failed-upload-card">
-                <span className="muted">{file.name}</span>
-                <strong>{file.error ?? "Upload failed"}</strong>
-                <div className="form-actions">
-                  <button
-                    type="submit"
-                    className="button button-primary touch-target"
-                    disabled={isSaving}
-                  >
-                    {file.storageUploaded ? "Retry Save" : "Retry Upload"}
-                  </button>
+          <div className={styles.composerActions}>
+            <button
+              type="submit"
+              className={styles.primaryButton}
+              disabled={
+                isSaving ||
+                backgroundSyncCount > 0 ||
+                selectedFiles.some(
+                  (file) =>
+                    file.status === "uploading" || file.status === "finishing",
+                )
+              }
+            >
+              {isSaving
+                ? "Saving…"
+                : failedFiles.length > 0
+                  ? "Retry save"
+                  : composerSourceKind === "document"
+                    ? "Save form"
+                    : observationGroupId
+                      ? "Save photos"
+                      : "Save item"}
+            </button>
+            {composerSourceKind === "observation" ? (
+              <>
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  onClick={openCameraPicker}
+                  disabled={isSaving}
+                >
+                  Add another photo
+                </button>
+                <button
+                  type="button"
+                  className={styles.textButton}
+                  onClick={openGalleryPicker}
+                  disabled={isSaving}
+                >
+                  Choose photos
+                </button>
+              </>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      {selectedFiles.length === 0 ? (
+        <div className={styles.noteActions} aria-label="Add a note instead">
+          {showTextNoteEditor ? (
+            <div className={styles.noteEditor}>
+              <label className="field-stack" htmlFor={`${fileInputId}-text-note`}>
+                <span className="label">Note</span>
+                <textarea
+                  id={`${fileInputId}-text-note`}
+                  className="input note-textarea"
+                  value={note}
+                  placeholder="Type a note for this session."
+                  onChange={(event) => setNote(event.target.value)}
+                  rows={4}
+                  disabled={isSaving}
+                />
+              </label>
+              <div className={styles.composerActions}>
+                <button
+                  type="button"
+                  className={styles.primaryButton}
+                  onClick={handleStandaloneTextNoteSave}
+                  disabled={isSaving || !note.trim()}
+                >
+                  {isSaving ? "Saving…" : "Save note"}
+                </button>
+                {voiceNoteStatus === "listening" ? (
                   <button
                     type="button"
-                    className="button button-secondary touch-target danger-link"
-                    onClick={() => removeSelectedFile(file.id)}
+                    className={styles.secondaryButton}
+                    onClick={() =>
+                      stopVoiceNote(
+                        "Voice note stopped. Review your note, then save it.",
+                      )
+                    }
                     disabled={isSaving}
                   >
-                    Delete
+                    Stop listening
                   </button>
-                </div>
-              </article>
-            ))}
-          </section>
-        ) : null}
-        <p className="muted capture-upload-hint">
-          Maximum file size is {captureSizeLabel} per capture file and{" "}
-          {videoSizeLabel} per video.
-        </p>
-      </div>
+                ) : null}
+                <button
+                  type="button"
+                  className={styles.textButton}
+                  onClick={cancelStandaloneTextNote}
+                  disabled={isSaving}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <button
+                type="button"
+                className={styles.textButton}
+                onClick={() => {
+                  setClientError(null);
+                  setActionError(null);
+                  setShowTextNoteEditor(true);
+                }}
+                disabled={isSaving}
+              >
+                Add a note instead
+              </button>
+              <button
+                type="button"
+                className={styles.textButton}
+                onClick={startStandaloneVoiceNote}
+                disabled={isSaving}
+              >
+                Dictate note
+              </button>
+            </>
+          )}
+        </div>
+      ) : null}
+
+      <p className={styles.limits}>
+        Files can be up to {captureSizeLabel}. Video remains limited to {videoSizeLabel}.
+      </p>
 
       {stickyDoneHref ? (
-        <div className="guided-sticky-actions focused-capture-done-actions">
-          <button
-            type="button"
-            className="button button-primary touch-target"
-            onClick={() => void startNewObservation()}
-            disabled={isSaving}
+        <div className={styles.stickyActions}>
+          <Link
+            href={stickyDoneHref}
+            className={styles.primaryButton}
+            onClick={handleDoneNavigation}
+            aria-disabled={isSaving}
           >
-            New Observation
-          </button>
-          {isSaving ? (
-            <button
-              type="button"
-              className="button button-secondary touch-target"
-              disabled
-            >
-              Done
-            </button>
-          ) : (
-            <Link
-              href={stickyDoneHref}
-              className="button button-secondary touch-target"
-              onClick={handleDoneNavigation}
-            >
-              Done
-            </Link>
-          )}
+            {isSaving ? "Saving…" : "Review items"}
+          </Link>
         </div>
       ) : null}
     </form>

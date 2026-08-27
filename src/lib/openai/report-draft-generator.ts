@@ -173,12 +173,13 @@ export type GeneratedReportDraft = {
   sections: GeneratedReportDraftSection[]
 }
 
-const REPORT_DRAFT_SYSTEM_PROMPT = `You generate editable drafts for CRED evidence-first, form-structured reports.
+const REPORT_DRAFT_SYSTEM_PROMPT = `You generate editable drafts for CRED item-first, form-structured reports.
 Return JSON only, no markdown.
 If a captured source document/form/report/template/checklist exists, use that uploaded document as the report structure. Extract or infer its sections, labels, and field groups generically from that document; do not require or invent a form type selection. Use any selected context only as secondary terminology.
-If no structure-defining document exists, use a generic evidence report structure only. Photos, meter screenshots, component photos, videos, voice notes, text notes, and general evidence captures must not suggest the report title/type, findings, recommendations, severity, components, or observed conditions unless technician-authored notes/transcripts or user-verified fields explicitly provide that content.
-Technicians capture evidence naturally; synthesize technician-captured evidence into a professional, human-reviewable draft instead of dumping captures.
+If no structure-defining document exists, use a generic documentation report structure only. Photos, meter screenshots, component photos, videos, voice notes, text notes, and general captured items must not suggest the report title/type, findings, recommendations, severity, components, or observed conditions unless technician-authored notes/transcripts or user-verified fields explicitly provide that content.
+Technicians capture items naturally; synthesize technician-captured items into a professional, human-reviewable draft instead of dumping captures.
 Do not invent unsupported facts.
+Customer-facing titles, headings, summaries, findings, recommendations, and labels must use Item, Items, Documentation, Source, or Sources as appropriate. Never use the word "evidence" in customer-facing report copy.
 Executive summary rules are strict:
 - Summarize only technician-authored notes, voice transcripts, verified user-entered fields, and explicit source-document text.
 - Write one calm, objective, professional paragraph of 100–150 words that reads like a commercial inspection or property condition report.
@@ -186,7 +187,7 @@ Executive summary rules are strict:
 - Group observations into broad documented themes instead of rewriting each defect; do not create Observation 1 / Observation 2 lists and do not use the phrase "Key issues include".
 - Describe overall condition and overall impression neutrally, then direct the reader to the detailed observations.
 - Do not say recommendations, repairs, replacement, monitoring, corrective actions, severity, urgency, diagnosis, conclusions, or follow-up are provided unless those ideas are explicitly present in technician-authored or verified source text.
-- Do not claim that visual evidence independently proves, confirms, diagnoses, or establishes a condition.
+- Do not claim that visual content independently proves, confirms, diagnoses, or establishes a condition.
 - Use neutral wording such as documents, records, includes, and technician observed.
 - If no technician-authored recommendation exists, the summary must describe observations only and must not mention recommendations.
 Executive-summary grounding is strict:
@@ -197,17 +198,17 @@ Executive-summary grounding is strict:
 - Do not convert image appearance into a factual statement.
 - Every condition and location named in the summary must be supported by technician-authored text, verified user-entered fields, or explicit source-document text.
 Technician Truth precedence is mandatory: technician notes, manual captions, voice transcripts, and verified findings are primary source-of-truth observations. You may organize and summarize them, but must not replace, reinterpret, embellish, overwrite, or contradict technician-provided observations.
-Prioritize draft inputs in this order: 1) technician notes/manual captions/voice transcripts/verified findings on evidence captures, 2) OCR/text extracted from uploaded source documents/forms/reports/images, 3) verified form fields, 4) selected Form Profile/report context. Do not create findings, recommendations, severity, components, or observed conditions from image interpretation, visual appearance, image classification, or unverified image-derived fields.
-Source documents/forms provide the report skeleton, field labels, filled values, documented tester results, and neutral section summaries when OCR/text exists. OCR/text from a user-uploaded report/form/image is document truth; summarize it as documented/tester-reported, not as independent AI diagnosis. Do not convert prior work-order lines into findings unless technician evidence or document text explicitly supports them.
-Each section should include metadata for form/evidence rendering when available: section_type ('form_section' or 'evidence_group'), source_field_group, fields [{key,label,value,source_capture_id}], related_capture_ids, observations, findings, recommendations. Attach findings/recommendations to the evidence capture IDs that support them.
+Prioritize draft inputs in this order: 1) technician notes/manual captions/voice transcripts/verified findings on captured items, 2) OCR/text extracted from uploaded source documents/forms/reports/images, 3) verified form fields, 4) selected Form Profile/report context. Do not create findings, recommendations, severity, components, or observed conditions from image interpretation, visual appearance, image classification, or unverified image-derived fields.
+Source documents/forms provide the report skeleton, field labels, filled values, documented tester results, and neutral section summaries when OCR/text exists. OCR/text from a user-uploaded report/form/image is document truth; summarize it as documented/tester-reported, not as independent AI diagnosis. Do not convert prior work-order lines into findings unless technician-authored item notes or document text explicitly support them.
+Each section should include metadata for form/item rendering when available: section_type ('form_section' or the compatibility key 'evidence_group'), source_field_group, fields [{key,label,value,source_capture_id}], related_capture_ids, observations, findings, recommendations. Attach findings/recommendations to the source item capture IDs that support them.
 Every finding or recommendation must be based on technician-authored notes/transcripts, verified fields, or explicit OCR/document text and must reference those source_capture_ids. Do not invent unsupported findings/recommendations; if OCR states results such as GOOD BATTERY, STARTER SYSTEM CRANKING NORMAL, or CHARGING SYSTEM EXCESSIVE RIPPLE, phrase them as documented/tester-reported results.
-Use needs_review when uncertain or when evidence is incomplete.
-Organize around captured form/report/template/checklist sections first when a structure-defining document is present, then supporting evidence. When no structure-defining document is present, organize into the generic CRED evidence report structure: Report Summary, Evidence Captured, Technician Notes, Findings, Recommendations, Final Summary / Report Notes, Inspector / Facility Details, Signoff.
+Use needs_review when uncertain or when documentation is incomplete.
+Organize around captured form/report/template/checklist sections first when a structure-defining document is present, then supporting items. When no structure-defining document is present, organize into the generic CRED documentation report structure: Report Summary, Items Captured, Technician Notes, Findings, Recommendations, Final Summary / Report Notes, Inspector / Facility Details, Signoff.
 Do not claim official CVIP/compliance completion, automatic compliance, or final inspection approval.
 Do not assume pass/fail status for unmentioned items.
 Never use visual guesswork for location, component, measurement, condition, severity, finding, or recommendation.
 Preserve original technician wording wherever it states an observation, finding, measurement, or recommendation.
-Include unmapped_evidence for captures that do not fit a section.
+Include the unmapped_evidence compatibility field for captures that do not fit a section, but label that content as Unmapped Items in customer-facing copy.
 AI Drafts require human review before delivery.`
 
 function getOpenAiApiKey() {
@@ -525,7 +526,7 @@ export async function generateReportDraft(input: GenerateReportDraftInput): Prom
           content: [
             {
               type: 'input_text',
-              text: `Create an editable CRED report draft from this context. Use captured form/report/template/checklist/source-document sections as the structure only when a structure-defining document is present. Otherwise use the generic evidence report structure and never infer the main layout from photos or image classifications. Keep evidence as the anchor: findings, recommendations, measurements, details, notes, and transcripts must attach to their source capture IDs where possible. Return the strict JSON shape only.\n${JSON.stringify(buildDraftContext(input)).slice(0, 70000)}`,
+              text: `Create an editable CRED report draft from this context. Use captured form/report/template/checklist/source-document sections as the structure only when a structure-defining document is present. Otherwise use the generic documentation report structure and never infer the main layout from photos or image classifications. Keep captured items as the anchor: findings, recommendations, measurements, details, notes, and transcripts must attach to their source capture IDs where possible. Use Item, Items, Documentation, Source, or Sources in customer-facing copy; never use the word "evidence" there. Return the strict JSON shape only.\n${JSON.stringify(buildDraftContext(input)).slice(0, 70000)}`,
             },
           ],
         },

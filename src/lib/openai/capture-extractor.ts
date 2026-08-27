@@ -110,7 +110,7 @@ const EMPTY_FIELDS = Object.fromEntries(
 
 const EXTRACTION_SYSTEM_PROMPT = `You extract cautious structured text from CRED classified captures for commercial vehicle/equipment documentation and field service reports.
 Return JSON only, no markdown.
-Use null for any field that is not visible, unclear, or supported by technician context. Technician note/transcript is high-value context for evidence captures, but do not blindly override image evidence.
+Use null for any field that is not visible, unclear, or supported by technician context. Technician note/transcript is high-value context for captured items, but do not blindly override visible image content.
 Do not invent values or error codes. Do not infer text/readings that are not clearly visible. If a meter screen is unclear, partially cut off, blurry, or ambiguous, leave reading fields null, set reading_status to unclear, confidence low, and technician_verification_required true. Preserve exact VIN, plate, unit, serial, and reference strings as shown.
 VIN values must be exactly 17 characters after removing spaces. If a possible VIN is not exactly 17 characters or is uncertain, put it in notes instead of vin.
 For unit number, extract fleet/unit decals or obvious unit identifiers.
@@ -118,7 +118,7 @@ Source documents are used for identity/header context. Do not convert work order
 For source document captures such as work_order, registration, VIN plate, data plate, odometer, licence plate, and unit number, extract only identity/context fields when visible: customer/account name, VIN, unit number, asset id/label, licence plate, odometer, hours, work order number, purchase order number, job number, date, year, make, model, manufacturer, serial number, GVWR/GAWR, registered owner, and jurisdiction/province.
 For source documents, do not extract complaint, cause of failure, correction, job line descriptions, labour operations, parts lines, historic notes, prior recommendations, unrelated comments, or report findings into condition/recommendation/technician note fields unless the technician note explicitly says to use the document content as a finding (for example “use this as finding” or “include line 3”).
 For hour meters, put the hour reading in hour_meter; the app may suggest it to the odometer/session reading if no hour field exists.
-Extract raw OCR text into extracted_text, including printed reports and handwritten notes where possible. Put numeric readings and units in extracted_values as an array of objects with key, value, and confidence. Use normalized keys such as voltage, current_draw, cca, ripple_voltage, resistance, tire_tread_depth, brake_lining, odometer, hour_meter, or meter_reading. Generate a concise technician-style generated_note that describes what the evidence shows without overwriting any technician-entered note.
+Extract raw OCR text into extracted_text, including printed reports and handwritten notes where possible. Put numeric readings and units in extracted_values as an array of objects with key, value, and confidence. Use normalized keys such as voltage, current_draw, cca, ripple_voltage, resistance, tire_tread_depth, brake_lining, odometer, hour_meter, or meter_reading. Generate a concise technician-style generated_note that describes what the item shows without overwriting any technician-entered note.
 Keep summary brief and human readable. For brake_measurement, always populate component, location, measurement, condition, recommendation, and severity when visible or supported by technician context. Example note 'left front brake pads at wear limit of 2mm' should extract component brake pads, location left front, measurement 2mm, condition at wear limit, severity red, recommendation replace front brake pads when visually plausible.`
 
 const TARGET_INSTRUCTIONS: Partial<Record<ExtractionTargetType, string>> = {
@@ -636,7 +636,7 @@ export async function extractCaptureImageDetails(
 
   const targetInstruction =
     TARGET_INSTRUCTIONS[detectedType] ??
-    'Extract only clearly visible useful inspection, document, asset, or evidence details.'
+    'Extract only clearly visible useful inspection, document, asset, or item details.'
   const sourceDocumentContext = sourceDocument
     ? `\nSource document tag selected by technician: ${sourceDocument.label} (${sourceDocument.type}). Prioritize identity/session/header fields only for this source document, but do not force extraction if unclear. Do not convert work order line descriptions, complaints, corrections, prior recommendations, labour/parts lines, or historic comments into findings unless the technician note explicitly asks to include them. Use null for unsupported fields and notes for values that need review.`
     : ''

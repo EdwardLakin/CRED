@@ -114,7 +114,7 @@ export const DIAGNOSTIC_EVENT_TYPES = [
 
 export const DIAGNOSTIC_EVENT_TYPE_LABELS: Record<(typeof DIAGNOSTIC_EVENT_TYPES)[number], string> = {
   manual: 'Manual note',
-  capture: 'Evidence capture',
+  capture: 'Captured item',
   read_codes: 'Read codes',
   freeze_frame: 'Freeze frame',
   live_data: 'Live data',
@@ -133,15 +133,15 @@ export function formatDiagnosticEventType(value: string | null | undefined) {
 }
 
 export const EVIDENCE_WORKSPACE_LABELS = {
-  library: 'Evidence Library',
+  library: 'Items',
   timeline: 'Timeline',
   entities: 'Entities',
   assertions: 'Factual Observations',
-  relationships: 'Relationship Explorer',
+  relationships: 'Connections',
   suggestions: 'Suggestions',
-  deliverables: 'Deliverables',
-  report: 'Existing Report',
-  includeInOutputs: 'Include in outputs',
+  deliverables: 'Additional Outputs',
+  report: 'Report',
+  includeInOutputs: 'Include in report',
   suggested: 'Suggested',
   accepted: 'Accepted',
   edited: 'Edited',

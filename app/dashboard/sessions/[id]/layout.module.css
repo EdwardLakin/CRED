@@ -1,0 +1,39 @@
+.shell {
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 24px 12px;
+}
+
+.inner {
+  display: grid;
+  gap: 14px;
+  margin: 0 auto;
+  max-width: 1120px;
+  width: 100%;
+}
+
+.utilityRow {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  min-height: 32px;
+}
+
+.backLink {
+  align-items: center;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 0.88rem;
+  font-weight: 700;
+  min-height: 32px;
+}
+
+.backLink:hover {
+  color: var(--primary);
+}
+
+@media (max-width: 640px) {
+  .shell {
+    padding: 10px 14px 8px;
+  }
+}

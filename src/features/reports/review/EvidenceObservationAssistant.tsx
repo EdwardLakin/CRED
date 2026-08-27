@@ -134,7 +134,7 @@ export function EvidenceObservationAssistant({
       <section className="report-ai-writing-actions observation-ai-writing-assistant compact-evidence-ai" data-no-autosave aria-label={`AI Observation Assistant for ${observationTitle}`}>
         <div className="observation-ai-heading">
           <strong>AI Observation Assistant</strong>
-          <span className="status-pill neutral compact">This evidence only</span>
+          <span className="status-pill neutral compact">This item only</span>
         </div>
         <div className="observation-ai-action-grid">
           {ACTIONS.map((action) => (

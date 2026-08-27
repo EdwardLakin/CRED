@@ -66,9 +66,9 @@ export function EvidenceImageTrigger({
             </div>
             {safeItems.length > 1 ? (
               <div className="evidence-lightbox-nav">
-                <button type="button" onClick={() => setActiveIndex((displayedIndex + safeItems.length - 1) % safeItems.length)} aria-label="Previous evidence image">‹</button>
+                <button type="button" onClick={() => setActiveIndex((displayedIndex + safeItems.length - 1) % safeItems.length)} aria-label="Previous image">‹</button>
                 <span>{displayedIndex + 1} / {safeItems.length}</span>
-                <button type="button" onClick={() => setActiveIndex((displayedIndex + 1) % safeItems.length)} aria-label="Next evidence image">›</button>
+                <button type="button" onClick={() => setActiveIndex((displayedIndex + 1) % safeItems.length)} aria-label="Next image">›</button>
               </div>
             ) : null}
           </div>

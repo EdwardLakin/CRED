@@ -66,7 +66,8 @@ test('detail UI displays stored source-selection provenance', () => {
   assert.match(detail, /Source provenance/)
   assert.match(detail, /immutable provenance stored on this deliverable version/)
   for (const key of ['selectedImportBatchIds', 'selectedCaptureItemIds', 'selectedAssertionIds', 'selectedTimelineEventIds', 'selectedEntityIds', 'includeNeedsFollowUpEvidence', 'includeOutputExcludedEvidence', 'includeAcceptedSuggestions', 'includeEditedSuggestions']) assert.match(detail, new RegExp(key))
-  assert.match(detail, /Raw provenance JSON for debugging/)
+  assert.match(detail, /formatDeliverableOrigin\(provenanceRecord\.generated_from\)/)
+  assert.doesNotMatch(detail, /Raw provenance JSON for debugging/)
 })
 
 test('print UI displays version and lifecycle metadata', () => {

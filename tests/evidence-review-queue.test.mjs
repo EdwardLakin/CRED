@@ -17,7 +17,7 @@ test('review queue route renders the dedicated workspace', () => {
 
 test('queue counts cover all pending review categories', () => {
   for (const counter of ['unreviewedEvidence', 'evidenceNeedsFollowup', 'suggestedEntities', 'suggestedAssertions', 'suggestedTimelineEvents', 'suggestedRelationships']) assert.match(dataSource + workspaceSource, new RegExp(counter))
-  for (const label of ['Unreviewed Evidence', 'Evidence Needs Follow-up', 'Suggested Entities', 'Suggested Assertions', 'Suggested Timeline Events', 'Suggested Relationships']) assert.match(workspaceSource, new RegExp(label))
+  for (const label of ['Unreviewed Items', 'Items Needing Follow-up', 'Suggested Entities', 'Suggested Observations', 'Suggested Timeline Events', 'Suggested Connections']) assert.match(workspaceSource, new RegExp(label))
 })
 
 test('pending-only filtering excludes accepted and rejected items by default', () => {
@@ -50,7 +50,7 @@ test('session org isolation and deleted record filtering are enforced', () => {
 })
 
 test('review queue navigation links are present in workspaces', () => {
-  assert.match(navSource, /Review Queue/)
+  assert.match(navSource, /Advanced Review/)
   assert.match(navSource, /evidence\/review/)
-  assert.match(batchRouteSource, /Open Review Queue/)
+  assert.match(batchRouteSource, /Open Advanced Review/)
 })

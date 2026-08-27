@@ -4,7 +4,7 @@ import type { CaptureItem } from './types'
 export const WORKFLOW_LABELS: Record<string, string> = {
   cvip: 'CVIP / Commercial Inspection',
   general_inspection: 'General Inspection',
-  default: 'Field Evidence',
+  default: 'Field Documentation',
 }
 
 export type GuidedEvidenceStep = {
@@ -86,7 +86,7 @@ const CVIP_STEPS: GuidedEvidenceStep[] = [
   {
     key: 'supporting_evidence',
     shortLabel: 'Supporting Photos',
-    label: 'General supporting evidence',
+    label: 'General supporting items',
     instruction: 'Add context photos that help explain the condition or inspection location.',
     examples: ['full vehicle view', 'work area', 'supporting field photo'],
     acceptedTypes: ['general_field_photo', 'unknown'],
@@ -98,7 +98,7 @@ const GENERAL_INSPECTION_STEPS: GuidedEvidenceStep[] = [
     key: 'asset_id_vin',
     shortLabel: 'VIN',
     label: 'VIN plate or asset ID',
-    instruction: 'Capture the VIN, serial, asset, or unit identifier that ties evidence to the asset.',
+    instruction: 'Capture the VIN, serial, asset, or unit identifier that ties the item to the asset.',
     examples: ['VIN plate', 'asset tag', 'unit label'],
     acceptedTypes: ['vin_plate', 'unit_number'],
   },
@@ -145,7 +145,7 @@ const GENERAL_INSPECTION_STEPS: GuidedEvidenceStep[] = [
   {
     key: 'supporting_evidence',
     shortLabel: 'Supporting Photos',
-    label: 'Supporting evidence',
+    label: 'Supporting items',
     instruction: 'Add any other helpful photos or documents for review.',
     examples: ['field context', 'supporting document', 'overview photo'],
     acceptedTypes: ['general_field_photo', 'other_document', 'unknown'],
@@ -188,8 +188,8 @@ const DEFAULT_STEPS: GuidedEvidenceStep[] = [
   {
     key: 'supporting_evidence',
     shortLabel: 'Supporting Photos',
-    label: 'Supporting evidence',
-    instruction: 'Add anything else useful for the evidence record.',
+    label: 'Supporting items',
+    instruction: 'Add anything else useful for the documentation record.',
     examples: ['context photo', 'additional label', 'unknown supporting image'],
     acceptedTypes: ['general_field_photo', 'unknown'],
   },
@@ -318,7 +318,7 @@ function normalizeEvidenceRules(value: Json | null | undefined): RequiredEvidenc
     }
 
     if (isRecord(item)) {
-      const label = typeof item.label === 'string' ? item.label : typeof item.key === 'string' ? item.key : 'Evidence'
+      const label = typeof item.label === 'string' ? item.label : typeof item.key === 'string' ? item.key : 'Item'
       const terms = Array.isArray(item.matchTerms)
         ? item.matchTerms.filter((term): term is string => typeof term === 'string')
         : Array.isArray(item.match_terms)

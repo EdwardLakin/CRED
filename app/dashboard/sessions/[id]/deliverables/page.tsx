@@ -10,5 +10,5 @@ export default async function DeliverablesPage({ params }: { params: Promise<{ i
   const workspace = await requireSessionWorkspace()
   requireWorkspaceFeatureOrRedirect(workspace.profile, 'deliverables', id)
   const data = await getDeliverablesData(id, workspace)
-  return <main className="page-shell dashboard-shell"><div className="section-header page-header"><div><Link href={`/dashboard/sessions/${data.session.id}`} className="secondary-link touch-target">← Session</Link><h1>Deliverables</h1><p className="muted">{data.session.title} · Preview-only evidence outputs</p></div></div><EvidenceWorkspaceBacklinks accessSubject={workspace.profile} sessionId={data.session.id} current="deliverables" /><DeliverablesWorkspace data={data} /></main>
+  return <main className="page-shell dashboard-shell"><div className="section-header page-header"><div><Link href={`/dashboard/sessions/${data.session.id}/review`} className="secondary-link touch-target">← Review</Link><h1>Additional Outputs</h1><p className="muted">{data.session.title} · Versioned professional and investigation outputs</p></div></div><EvidenceWorkspaceBacklinks accessSubject={workspace.profile} sessionId={data.session.id} current="deliverables" /><DeliverablesWorkspace data={data} /></main>
 }

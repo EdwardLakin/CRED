@@ -14,7 +14,7 @@ test('Report Studio v2 controls write draft, preview classes/styles, and save fi
   for (const field of ['cover_page','showCoverLogo','showCoverReportId','showCoverDate','header_layout','header_gradient_preset','typography_headingWeight','section_style','section_spacing','showSectionLabels','showSectionDividers','showSectionNumbers','evidence_style','evidence_image_size','evidence_numbering','timestamps','capture_metadata','evidence_notes','footer_text','footer_layout','show_page_date','show_report_id','show_signature_block','signature_layout','typed_signature','signature_date']) {
     assert.match(files.fields, new RegExp(field))
   }
-  for (const marker of ['cover-${rs.coverPage}','header-layout-${brand.header_layout}','client-style-${rs.sectionStyle}','client-spacing-${rs.sectionSpacing}','evidence-size-${rs.evidenceImageSize}','evidence-style-${rs.evidenceStyle}','footer-layout-${brand.footer_layout}','signature-${rs.signatureLayout}','--rsv2-header-bg','--rsv2-heading-weight','--rsv2-section-spacing']) {
+  for (const marker of ['cover-${rs.coverPage}','header-layout-${brand.header_layout}','client-style-${reportStyle.sectionStyle}','client-spacing-${reportStyle.sectionSpacing}','evidence-size-${reportStyle.evidenceImageSize}','evidence-style-${reportStyle.evidenceStyle}','footer-layout-${brand.footer_layout}','signature-${rs.signatureLayout}','--rsv2-header-bg','--rsv2-heading-weight','--rsv2-section-spacing']) {
     assert.ok(`${files.document}${files.cover}${files.header}${files.client}${files.evidence}${files.footer}${files.signature}`.includes(marker), marker)
   }
 })

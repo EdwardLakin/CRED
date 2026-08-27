@@ -264,7 +264,7 @@ function inferSubjectLabel(input: Pick<SummaryAssistantInput, "sessionTitle" | "
 
 function deterministicUnderstandReport(input: PreparedSummaryInput): ReportUnderstanding {
   const sourceText = getSummarySourceText(input);
-  const subject = inferSubjectLabel(input, sourceText) || "documented evidence";
+  const subject = inferSubjectLabel(input, sourceText) || "documented items";
   const title = sanitizeSummary(input.sessionTitle);
   const mode: DocumentationMode = hasInventorySignals(`${title} ${sourceText}`)
     ? "inventory"
@@ -276,12 +276,12 @@ function deterministicUnderstandReport(input: PreparedSummaryInput): ReportUnder
           ? "condition assessment"
           : "general documentation";
   return {
-    reportType: title || (mode === "inventory" ? "Inventory Report" : "Evidence Documentation Report"),
+    reportType: title || (mode === "inventory" ? "Inventory Report" : "Documentation Report"),
     subject,
-    purpose: mode === "inventory" ? "document the items and storage shown in the captured evidence" : "document the available evidence for review",
+    purpose: mode === "inventory" ? "document the captured items and storage shown" : "document the available items for review",
     intendedAudience: "customer or internal reviewer",
     documentationMode: mode,
-    overallFinding: mode === "inventory" ? "the report documents an inventory record based on the captured evidence" : "the report provides a factual documentation record based on the available evidence",
+    overallFinding: mode === "inventory" ? "the report documents an inventory record based on the captured items" : "the report provides a factual record based on the available items",
     confidence: sourceText.trim() ? "medium" : "low",
   };
 }
@@ -291,7 +291,7 @@ function evidenceTypeForCapture(capture: SummaryAssistantCaptureEvidence) {
   if (capture.transcript?.trim()) return "transcripts";
   if (capture.caption?.trim()) return "captions";
   if (capture.media_kind?.trim()) return `${capture.media_kind.trim()} records`;
-  return "evidence records";
+  return "captured items";
 }
 
 function deterministicUnderstandEvidence(input: PreparedSummaryInput): EvidenceUnderstanding {
@@ -303,8 +303,8 @@ function deterministicUnderstandEvidence(input: PreparedSummaryInput): EvidenceU
   const types = uniquePhrases(input.captures.map(evidenceTypeForCapture).concat(input.evidence.length ? ["reviewed sections"] : [])).slice(0, 4);
   return {
     majorThemes: cleaned.slice(0, 5),
-    notableEvidenceTypes: types.length ? types : ["evidence records"],
-    summaryFacts: cleaned.slice(0, 4).map((label) => `The evidence references ${label}.`),
+    notableEvidenceTypes: types.length ? types : ["captured items"],
+    summaryFacts: cleaned.slice(0, 4).map((label) => `The record references ${label}.`),
     unsupportedOrWeakAreas: cleaned.length ? [] : ["Limited notes or captions were available."],
     confidence: cleaned.length >= 3 ? "high" : cleaned.length ? "medium" : "low",
   };
@@ -377,9 +377,9 @@ export async function understandReport(input: PreparedSummaryInput): Promise<Rep
       buildUserPayload(input),
     );
     return {
-      reportType: sanitizeSummary(parsed.reportType) || "Evidence Documentation Report",
-      subject: sanitizeSummary(parsed.subject) || "documented evidence",
-      purpose: sanitizeSummary(parsed.purpose) || "document the available evidence for review",
+      reportType: sanitizeSummary(parsed.reportType) || "Documentation Report",
+      subject: sanitizeSummary(parsed.subject) || "documented items",
+      purpose: sanitizeSummary(parsed.purpose) || "document the available items for review",
       intendedAudience: sanitizeSummary(parsed.intendedAudience) || "customer or internal reviewer",
       documentationMode: normalizeDocumentationMode(parsed.documentationMode),
       overallFinding: sanitizeSummary(parsed.overallFinding) || "the report provides a factual documentation record",
@@ -413,9 +413,9 @@ export async function understandEvidence(input: PreparedSummaryInput, report: Re
 function safeFallbackSummary(report: ReportUnderstanding, input: PreparedSummaryInput) {
   const subjectLabel = sanitizeSummary(report.subject) || inferSubjectLabel(input);
   if (subjectLabel) {
-    return `This report summarizes the documented evidence for ${subjectLabel}. The available records provide a factual reference of the items, observations, or conditions captured during the documentation process. Detailed observations and supporting evidence are provided in the following sections.`;
+    return `This report summarizes the documented items for ${subjectLabel}. The available records provide a factual reference of the items, observations, or conditions captured during the documentation process. Detailed observations and supporting photos are provided in the following sections.`;
   }
-  return "This report summarizes the documented evidence captured for review. The available records provide a factual reference of the items, observations, or conditions captured during the documentation process. Detailed observations and supporting evidence are provided in the following sections.";
+  return "This report summarizes the documented items captured for review. The available records provide a factual reference of the items, observations, or conditions captured during the documentation process. Detailed observations and supporting photos are provided in the following sections.";
 }
 
 function deterministicExecutiveSummary(report: ReportUnderstanding, evidence: EvidenceUnderstanding, input: PreparedSummaryInput) {
@@ -423,10 +423,10 @@ function deterministicExecutiveSummary(report: ReportUnderstanding, evidence: Ev
   const subject = sanitizeSummary(report.subject) || inferSubjectLabel(input) || "the documented subject";
   if (!themes.length) return safeFallbackSummary(report, input);
   if (report.documentationMode === "inventory") {
-    return sanitizeSummary(`This report documents an inventory record for ${subject}. The captured records show documented items and storage areas, including ${formatPhraseList(themes)}. The report provides a factual record of the documented inventory at the time of capture. Detailed item notes and supporting evidence are included in the following sections.`);
+    return sanitizeSummary(`This report documents an inventory record for ${subject}. The captured records show documented items and storage areas, including ${formatPhraseList(themes)}. The report provides a factual record of the documented inventory at the time of capture. Detailed item notes and supporting photos are included in the following sections.`);
   }
-  const modePhrase = report.documentationMode === "diagnostic" ? "diagnostic documentation" : report.documentationMode === "service documentation" || report.documentationMode === "field service" ? "service documentation" : report.documentationMode === "condition assessment" || report.documentationMode === "inspection" ? "documented condition" : "documented evidence";
-  return sanitizeSummary(`This report summarizes the ${modePhrase} for ${subject}. The available records describe ${formatPhraseList(themes)}, providing a factual picture of what was captured during the documentation process. Overall, ${report.overallFinding}. Detailed observations and supporting evidence are provided in the following sections.`);
+  const modePhrase = report.documentationMode === "diagnostic" ? "diagnostic documentation" : report.documentationMode === "service documentation" || report.documentationMode === "field service" ? "service documentation" : report.documentationMode === "condition assessment" || report.documentationMode === "inspection" ? "documented condition" : "documentation record";
+  return sanitizeSummary(`This report summarizes the ${modePhrase} for ${subject}. The available records describe ${formatPhraseList(themes)}, providing a factual picture of what was captured during the documentation process. Overall, ${report.overallFinding}. Detailed observations and supporting photos are provided in the following sections.`);
 }
 
 function validateSummary(summary: string, report: ReportUnderstanding, evidence: EvidenceUnderstanding, sourceText: string): SummaryValidationResult {
@@ -450,7 +450,7 @@ async function generateSummaryWithAi(report: ReportUnderstanding, evidence: Evid
   const parsed = await requestStructuredOutput<{ summary: string }>(
     "executive_summary",
     { type: "object", additionalProperties: false, properties: { summary: { type: "string" } }, required: ["summary"] },
-    `Write one customer-facing CRED Executive Summary using only the internal structured report and evidence understanding. Return JSON only. The summary must be one paragraph, ${PROFESSIONAL_SUMMARY_WORD_RANGE} when enough content exists, shorter for limited notes, premium and professional, and it must summarize what was documented, the overall picture, only the most important themes, and direct the reader to detailed observations that follow. Do not list every finding, repeat every caption, mention observation count unless needed, mention photos unless necessary, use canned wording, assign severity, urgency, or liability, or add recommendations. Do not mention inspection unless documentationMode supports inspection. Do not mention property unless the report is actually about property. Do not mention deficiencies, repairs, or replacement unless documented. ${retryReasons.length ? `Previous validation failed for: ${retryReasons.join("; ")}. Retry with stricter factual neutrality.` : ""}`,
+    `Write one customer-facing CRED Executive Summary using only the internal structured report and item understanding. Return JSON only. The summary must be one paragraph, ${PROFESSIONAL_SUMMARY_WORD_RANGE} when enough content exists, shorter for limited notes, premium and professional, and it must summarize what was documented, the overall picture, only the most important themes, and direct the reader to detailed observations that follow. In customer-facing prose, call captures items, photos, documents, or records; never use the term evidence. Do not list every finding, repeat every caption, mention observation count unless needed, mention photos unless necessary, use canned wording, assign severity, urgency, or liability, or add recommendations. Do not mention inspection unless documentationMode supports inspection. Do not mention property unless the report is actually about property. Do not mention deficiencies, repairs, or replacement unless documented. ${retryReasons.length ? `Previous validation failed for: ${retryReasons.join("; ")}. Retry with stricter factual neutrality.` : ""}`,
     `Report understanding JSON:\n${JSON.stringify(report)}\nEvidence understanding JSON:\n${JSON.stringify(evidence)}\nOriginal input excerpt JSON:\n${JSON.stringify({ title: input.sessionTitle, reportContext: input.reportContext }).slice(0, 4000)}`,
   );
   return sanitizeSummary(parsed.summary);

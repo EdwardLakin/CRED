@@ -32,6 +32,8 @@ async function validateShareTokenAccess(
     .from("report_share_tokens")
     .select("*, documentation_sessions(*)")
     .eq("token", token)
+    .eq("link_kind", "report")
+    .is("deliverable_id", null)
     .maybeSingle();
 
   const sharedSession = Array.isArray(shareToken?.documentation_sessions)
@@ -43,6 +45,7 @@ async function validateShareTokenAccess(
     !shareToken ||
     !sharedSession ||
     shareToken.disabled_at ||
+    sharedSession.deleted_at ||
     sharedSession.id !== sessionId ||
     sharedSession.organization_id !== shareToken.organization_id ||
     (shareToken.expires_at && new Date(shareToken.expires_at) < new Date())
@@ -82,6 +85,7 @@ export async function GET(request: Request, { params }: RouteContext) {
         .select("id, created_by")
         .eq("id", id)
         .eq("organization_id", organizationId)
+        .is("deleted_at", null)
         .single();
       if (sessionError || !ownedSession) notFound();
       session = ownedSession;

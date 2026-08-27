@@ -31,10 +31,10 @@ test('acceptance, edit-and-accept, and rejection flows update review status only
   for (const decision of ['accepted', 'edited', 'rejected']) assert.match(cardSource, new RegExp(`value="${decision}"`))
 })
 
-test('provenance and source evidence are preserved and displayed', () => {
+test('provenance and source items are preserved and displayed', () => {
   assert.match(serviceSource, /source_evidence_ids/)
   assert.match(serviceSource, /reasoning_summary/)
-  assert.match(cardSource, /Source evidence/)
+  assert.match(cardSource, /Source items/)
   assert.match(cardSource, /provenanceSummary/)
   assert.match(cardSource, /sourceEvidenceSummary/)
 })
@@ -48,11 +48,11 @@ test('suggestions are scoped to session and organization', () => {
 })
 
 test('workspace shows all suggestion categories and navigation includes suggestions', () => {
-  for (const heading of ['Timeline Suggestions', 'Entity Suggestions', 'Observation Suggestions', 'Relationship Suggestions']) assert.match(workspaceSource, new RegExp(heading))
+  for (const heading of ['Timeline Suggestions', 'Entity Suggestions', 'Observation Suggestions', 'Connection Suggestions']) assert.match(workspaceSource, new RegExp(heading))
   assert.match(navSource, /suggestions/)
   assert.match(navSource, /Suggestions/)
 })
 
 test('prompt forbids conclusions and requires confidence reasoning and source IDs', () => {
-  for (const phrase of ['liability', 'fault', 'diagnosis', 'compliance outcome', 'legal conclusions', 'financial recommendations', 'source evidence IDs', 'confidence', 'reasoning summary']) assert.match(validationSource, new RegExp(phrase))
+  for (const phrase of ['liability', 'fault', 'diagnosis', 'compliance outcome', 'legal conclusions', 'financial recommendations', 'source item IDs', 'source_evidence_ids', 'confidence', 'reasoning summary']) assert.match(validationSource, new RegExp(phrase))
 })

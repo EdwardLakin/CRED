@@ -17,8 +17,8 @@ export default async function RelationshipsPage({ params }: { params: Promise<{ 
       <div className="section-header page-header">
         <div>
           <Link href={`/dashboard/sessions/${data.session.id}`} className="secondary-link touch-target">← Session</Link>
-          <h1>Relationship Explorer</h1>
-          <p className="muted">{data.session.title} · {data.relationships.length} relationships</p>
+          <h1>Connections</h1>
+          <p className="muted">{data.session.title} · {data.relationships.length} connections</p>
         </div>
       </div>
       <EvidenceWorkspaceBacklinks accessSubject={workspace.profile} sessionId={data.session.id} current="relationships" />

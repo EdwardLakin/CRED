@@ -105,7 +105,7 @@ function getSectionDisplayTitle(section: AiReportDraftSection) {
   if (/freeze frame/i.test(title)) return "Freeze Frame";
   if (/live data/i.test(title)) return "Live Data";
   if (/technician observations/i.test(title)) return "Observations";
-  if (/evidence appendix/i.test(title)) return "Evidence";
+  if (/evidence appendix/i.test(title)) return "Source Index";
   return title;
 }
 
@@ -161,12 +161,12 @@ function getEvidenceTitle(item: CaptureItem) {
     return referenceTitle;
   if (item.type === "text_note" || item.media_kind === "note")
     return "Technician Note";
-  if (isPhotoCapture(item)) return "Evidence Photo";
+  if (isPhotoCapture(item)) return "Supporting Photo";
   if (item.media_kind === "video" || item.type === "video")
-    return "Evidence Video";
+    return "Supporting Video";
   if (item.media_kind === "audio" || item.type === "voice_note")
     return "Voice Note";
-  return "Supporting Evidence";
+  return "Supporting Item";
 }
 
 function getDiagnosticStepMetadata(section: AiReportDraftSection) {
@@ -249,6 +249,7 @@ export function DiagnosticProcedureReport({
   reportPath,
   origin,
   markReviewedAction,
+  showApprovalAction,
   timeZone,
 }: {
   session: Pick<
@@ -262,6 +263,7 @@ export function DiagnosticProcedureReport({
   reportPath: string;
   origin: string;
   markReviewedAction: ServerAction;
+  showApprovalAction: boolean;
   timeZone: string | null;
   reportTemplates?: Array<{ id: string; name: string; is_default: boolean }>;
 }) {
@@ -380,14 +382,14 @@ export function DiagnosticProcedureReport({
                 <strong>{progress.missingRequiredDocumentationCount}</strong>
               </div>
               <div>
-                <span>Evidence linked to sections</span>
+                <span>Items linked to sections</span>
                 <strong>{referencedCaptureCount}</strong>
               </div>
             </div>
             {hasUnlinkedIncludedEvidence ? (
               <p className="notice warning">
-                Some included evidence is not linked to a procedure step and is
-                retained in the compact evidence index.
+                Some included items are not linked to a procedure step and are
+                retained in the compact source index.
               </p>
             ) : null}
           </section>
@@ -481,7 +483,7 @@ export function DiagnosticProcedureReport({
                 ) : null}
                 {stepCaptures.length > 0 ? (
                   <div>
-                    <strong>Attached evidence</strong>
+                    <strong>Attached items</strong>
                     {Array.from(
                       new Set(stepCaptures.map(getDiagnosticEvidenceRole)),
                     ).map((role) => (
@@ -501,7 +503,7 @@ export function DiagnosticProcedureReport({
                               );
                               return (
                                 <li key={capture.id}>
-                                  {item?.title ?? "Evidence"}
+                                  {item?.title ?? "Item"}
                                   {capture.technician_note
                                     ? ` — ${capture.technician_note}`
                                     : ""}
@@ -513,13 +515,20 @@ export function DiagnosticProcedureReport({
                     ))}
                   </div>
                 ) : (
-                  <p className="muted">No step evidence attached.</p>
+                  <p className="muted">No items attached to this step.</p>
                 )}
               </article>
             );
           })}
         </div>
-        {info?.signedOff ? (
+        {!showApprovalAction ? (
+          <Link
+            className="button button-primary touch-target"
+            href={`/dashboard/sessions/${session.id}/approve`}
+          >
+            Continue to approval
+          </Link>
+        ) : info?.signedOff ? (
           <form
             action={markReviewedAction}
             className="form-actions report-inline-actions"
@@ -643,7 +652,7 @@ export function ReportReview({
     { label: "Cover/title present", ok: Boolean(displayReportTitle.trim()) },
     { label: "Executive summary ready", ok: hasSummary },
     { label: `${uniqueObservationCount} observations documented`, ok: uniqueObservationCount > 0 },
-    { label: missingEvidenceCount ? `${missingEvidenceCount} observations missing photo evidence` : `${includedEvidenceCount} supporting evidence items included`, ok: missingEvidenceCount === 0 && includedEvidenceCount > 0 },
+    { label: missingEvidenceCount ? `${missingEvidenceCount} observations missing supporting photos` : `${includedEvidenceCount} items included`, ok: missingEvidenceCount === 0 && includedEvidenceCount > 0 },
     { label: "Technician notes present", ok: observationEntries.some((entry) => getEvidenceNote(entry.capture)) },
     { label: "Approval complete", ok: currentReport?.status === "approved" },
     { label: "Blank unused sections tucked away", ok: unusedReportSections.length === 0 || visibleReportSections.length > 0 },
@@ -653,7 +662,7 @@ export function ReportReview({
     { label: "Cover", href: "report-cover-editor", ok: Boolean(displayReportTitle.trim()) },
     { label: hasSummary ? "Executive Summary" : "Executive Summary missing", href: "report-summary-editor", ok: hasSummary },
     { label: `Observations (${uniqueObservationCount})`, href: "report-observations-editor", ok: uniqueObservationCount > 0 },
-    { label: missingEvidenceCount ? `${missingEvidenceCount} observations missing evidence` : `Supporting Evidence (${includedEvidenceCount})`, href: "report-evidence-editor", ok: missingEvidenceCount === 0 && includedEvidenceCount > 0 },
+    { label: missingEvidenceCount ? `${missingEvidenceCount} observations missing required items` : `Included Items (${includedEvidenceCount})`, href: "report-evidence-editor", ok: missingEvidenceCount === 0 && includedEvidenceCount > 0 },
     { label: "Signature", href: "report-signoff-editor", ok: hasSignature },
     { label: currentReport?.status === "approved" ? "Ready to Export" : "Not ready yet", href: "report-export-actions", ok: currentReport?.status === "approved" },
   ];
@@ -702,9 +711,9 @@ export function ReportReview({
           <div className="form-actions report-inline-actions">
             <Link
               href={`/dashboard/sessions/${session.id}/capture`}
-              className="button button-primary touch-target"
+              className="button button-secondary touch-target"
             >
-              Add More Evidence
+              Add more items
             </Link>
             {currentReport ? (
               <form action={generateReportAction}>
@@ -754,7 +763,7 @@ export function ReportReview({
           <div>
             <h3>Preparing your report…</h3>
             <p className="muted">
-              CRED is organizing your evidence into a professional report.
+              CRED is organizing your saved items into a professional report.
             </p>
           </div>
           <div className="form-actions report-inline-actions">
@@ -821,7 +830,7 @@ export function ReportReview({
                 name="include_evidence_appendix"
                 defaultChecked={getIncludeEvidenceAppendixDefault(session)}
               />
-              Include Evidence Appendix
+              Include Source Index (advanced)
             </label>
             <p className="muted">
               This report-level setting overrides the workspace/template appendix default for this report only.
@@ -916,7 +925,7 @@ export function ReportReview({
                       <input
                         className="input"
                         name={`section_title_${section.id}`}
-                        defaultValue={stripConfidenceText(section.title)}
+                        defaultValue={getSectionDisplayTitle(section)}
                       />
                     </label>
                     <div className="field-stack">
@@ -1009,9 +1018,9 @@ export function ReportReview({
 
           <details id="report-evidence-editor" className="report-subsection report-edit-panel" open>
             <summary>
-              <h3>Supporting Evidence</h3>
+              <h3>Included Items</h3>
               <p className="muted">
-                Edit notes, categories, and original evidence files.
+                Edit notes, categories, and original item files.
               </p>
             </summary>
             <EvidenceGallery
@@ -1282,12 +1291,14 @@ function getObservationCategoryLabel(
     entry.purpose === "supporting_evidence" ||
     entry.purpose === "reference_document"
   )
-    return "Supporting Evidence";
+    return "Supporting Item";
   return "Observation";
 }
 
 function getObservationGroupKey(capture: CaptureItem) {
-  return capture.observation_group_id ?? capture.id;
+  return (
+    capture.documentation_item_id ?? capture.observation_group_id ?? capture.id
+  );
 }
 
 function getGroupedEvidenceItems(
@@ -1300,8 +1311,12 @@ function getGroupedEvidenceItems(
     .filter((item) => getObservationGroupKey(item.capture) === groupKey)
     .sort(
       (a, b) =>
-        (a.capture.group_order ?? (a.capture.id === groupKey ? 1 : 999)) -
-          (b.capture.group_order ?? (b.capture.id === groupKey ? 1 : 999)) ||
+        (a.capture.attachment_order ??
+          a.capture.group_order ??
+          (a.capture.id === groupKey ? 1 : 999)) -
+          (b.capture.attachment_order ??
+            b.capture.group_order ??
+            (b.capture.id === groupKey ? 1 : 999)) ||
         a.capture.captured_at.localeCompare(b.capture.captured_at),
     );
 }
@@ -1636,6 +1651,8 @@ function EvidenceGallery({
                 </label>
                 <DeleteEvidenceButton
                   captureId={item.capture.id}
+                  documentationItemId={item.capture.documentation_item_id}
+                  sessionId={item.capture.documentation_session_id}
                   className="button button-secondary touch-target danger-action"
                 />
               </div>
@@ -1655,39 +1672,10 @@ function EvidenceGallery({
                 ) : null}
                 <strong>{item.title}</strong>
               </div>
-              <label className="field-stack compact-field">
-                <span className="label">Supports</span>
-                <select
-                  className="input"
-                  name={`capture_group_with_${item.capture.id}`}
-                  defaultValue={
-                    item.capture.observation_group_id ?? item.capture.id
-                  }
-                >
-                  <option value={item.capture.id}>
-                    Standalone
-                  </option>
-                  {evidenceItems
-                    .filter(
-                      (candidate) => candidate.capture.id !== item.capture.id,
-                    )
-                    .map((candidate) => (
-                      <option
-                        key={candidate.capture.id}
-                        value={
-                          candidate.capture.observation_group_id ??
-                          candidate.capture.id
-                        }
-                      >
-                        {candidate.title}
-                      </option>
-                    ))}
-                </select>
-              </label>
               <div
                 className="evidence-category-pills"
                 role="radiogroup"
-                aria-label="Evidence category"
+                aria-label="Item category"
               >
                 {EVIDENCE_CATEGORIES.map((category) => (
                   <label
@@ -1711,7 +1699,7 @@ function EvidenceGallery({
               </div>
               <label className="field-stack">
                 <span className="label">
-                  Technician notes / evidence caption
+                  Technician notes / item caption
                 </span>
                 <textarea
                   className="input text-area"
@@ -1930,7 +1918,7 @@ export function ExportPanel({
           <span className="eyebrow">Export Report</span>
           <span className="export-panel-title">Export Report</span>
           <span className="muted delivery-helper">
-            Deliver, preview, or save your approved documentation.
+            Download, share, or save your approved report.
           </span>
         </span>
         <span className="export-panel-chevron" aria-hidden="true">
@@ -1946,7 +1934,22 @@ export function ExportPanel({
         ) : null}
 
 
-        <div className="field-stack report-template-export-selector"><label className="label" htmlFor="report_template_id">Report Template</label><select id="report_template_id" name="report_template_id" className="input" defaultValue="workspace-default" form="print-report-form"><option value="workspace-default">Workspace default</option>{reportTemplates.map(t=><option key={t.id} value={t.id}>{t.name}{t.is_default?' — default':''}</option>)}<option value="system">System default</option></select><p className="muted">Using workspace default unless you choose a saved template or system default. Templates only change report appearance.</p></div>
+        <div className="field-stack report-template-export-selector"><label className="label" htmlFor="report_template_id">Report Template</label><select id="report_template_id" name="report_template_id" className="input" defaultValue="workspace-default" form="download-report-form"><option value="workspace-default">Workspace default</option>{reportTemplates.map(t=><option key={t.id} value={t.id}>{t.name}{t.is_default?' — default':''}</option>)}<option value="system">System default</option></select><p className="muted">Using workspace default unless you choose a saved template or system default. Templates only change report appearance.</p></div>
+
+        <form
+          id="download-report-form"
+          action={reportPath}
+          method="get"
+          target="_blank"
+          className="export-primary-download"
+        >
+          <button
+            className="button button-primary touch-target"
+            disabled={!isReadyForExport}
+          >
+            Download PDF
+          </button>
+        </form>
 
         <div
           className="export-action-tiles"
@@ -2087,25 +2090,6 @@ export function ExportPanel({
             ) : null}
           </details>
 
-          {isReadyForExport ? (
-            <form id="print-report-form" action={reportPath} method="get" target="_blank" className="export-action-tile export-action-link">
-              <button className="button-link-reset" disabled={!isReadyForExport}>Preview / Print</button>
-            </form>
-          ) : (
-            <span
-              className="export-action-tile export-action-link disabled-action"
-              aria-disabled="true"
-            >
-              <span
-                className="export-tile-icon export-tile-icon-print"
-                aria-hidden="true"
-              >
-                ⎙
-              </span>
-              Preview / Print
-            </span>
-          )}
-
           <details
             className="export-action-tile"
             aria-disabled={!isReadyForExport}
@@ -2137,8 +2121,8 @@ export function ExportPanel({
         </div>
 
         <p className="muted export-print-note">
-          Open the browser-friendly report. Use your browser’s Print or Share
-          menu to save as PDF.
+          Downloads a true PDF with controlled pages, optimized photographs,
+          and no browser URL or print footer.
         </p>
       </div>
     </details>

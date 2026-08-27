@@ -88,7 +88,7 @@ export function EvidenceDetail({
 
         <dl className="metadata-list evidence-summary-list">
 
-          <div><dt>Evidence title</dt><dd>{show(item.technician_note || item.original_filename)}</dd></div>
+          <div><dt>Item title</dt><dd>{show(item.technician_note || item.original_filename)}</dd></div>
 
           <div><dt>Added to workspace</dt><dd>{fmt(item.captured_at ?? item.created_at, timeZone)}</dd></div>
 
@@ -114,7 +114,7 @@ export function EvidenceDetail({
 
           <summary className="touch-target">
 
-            <span>Evidence details</span>
+            <span>Item details</span>
 
             <span className="muted">{isInvestigation ? 'Investigation view' : 'More details'}</span>
 
@@ -122,7 +122,7 @@ export function EvidenceDetail({
 
           <dl className="metadata-list">
 
-            <div><dt>Evidence type</dt><dd>{label(item.media_kind)}</dd></div>
+            <div><dt>Item type</dt><dd>{label(item.media_kind)}</dd></div>
 
             <div><dt>Source</dt><dd>{label(item.source_kind)}</dd></div>
 
@@ -150,7 +150,7 @@ export function EvidenceDetail({
 
           <section className="card detail-card form-stack">
 
-            <h2>Evidence text</h2>
+            <h2>Item text</h2>
 
             <h3>Note</h3>
 
@@ -180,7 +180,7 @@ export function EvidenceDetail({
 
           <section className="card detail-card form-stack">
 
-            <h2>Evidence dates</h2>
+            <h2>Source dates</h2>
 
             <EvidenceDateForm item={item} />
 
