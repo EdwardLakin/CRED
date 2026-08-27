@@ -71,8 +71,12 @@ test.afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
 
-test.beforeEach(async ({ context }) => {
+test.beforeEach(async ({ context, page }) => {
   reachability = { ok: true, status: 'ready', userId: 'user-mobile', organizationId: 'org-mobile' };
+  page.on('pageerror', (error) => console.error('[offline-shell pageerror]', error));
+  page.on('console', (message) => {
+    if (message.type() === 'error') console.error('[offline-shell console]', message.text());
+  });
   await context.setOffline(false);
 });
 
