@@ -2,11 +2,11 @@ import Link from 'next/link'
 
 import type { DocumentationSession } from '../types'
 import { formatDateTime } from '../utils'
-import { archiveDocumentationSession, deleteDocumentationSession, restoreDocumentationSession } from '../actions'
+import { archiveDocumentationSession, restoreDocumentationSession } from '../actions'
 import { SessionStatusBadge } from './SessionStatusBadge'
 import { getSessionOperationalAction, getSessionWorkflowStatus } from '../status'
 import { getSessionPrimaryTitle, getSessionSecondarySummary, type SessionCardTitleDraft } from '../display'
-import { ConfirmSubmitButton } from './ConfirmSubmitButton'
+import { DeleteSessionButton } from './DeleteSessionButton'
 
 function canArchiveFromCard(session: DocumentationSession) {
   return !session.archived_at
@@ -37,7 +37,6 @@ export function SessionCard({
   const isArchived = Boolean(session.archived_at)
   const archiveAction = archiveDocumentationSession.bind(null, session.id)
   const restoreAction = restoreDocumentationSession.bind(null, session.id)
-  const deleteAction = deleteDocumentationSession.bind(null, session.id)
   const primaryTitle = getSessionPrimaryTitle(session, currentReport)
   const secondarySummary = getSessionSecondarySummary(session, evidenceCount, timeZone)
   const renderArchiveAction = showArchiveAction && (isArchived || canArchiveFromCard(session))
@@ -82,11 +81,7 @@ export function SessionCard({
                 <button className="button button-secondary touch-target">{isArchived ? 'Restore' : 'Archive'}</button>
               </form>
             ) : null}
-            <form action={deleteAction} className="session-card-inline-action">
-              <ConfirmSubmitButton className="button button-secondary touch-target danger-action" message={`Delete ${primaryTitle}? This safely removes the session from normal and archived lists without deleting capture files.`}>
-                Delete
-              </ConfirmSubmitButton>
-            </form>
+            <DeleteSessionButton sessionId={session.id} sessionTitle={primaryTitle} />
           </div>
         </details>
       ) : null}

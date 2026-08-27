@@ -27,12 +27,12 @@ test("main card link remains separate from management forms", () => {
   const linkCloseIndex = sessionCard.indexOf("</Link>");
   const managementIndex = sessionCard.indexOf("{showManagementActions ? (");
   const archiveFormIndex = sessionCard.indexOf("<form action={isArchived ? restoreAction : archiveAction}");
-  const deleteFormIndex = sessionCard.indexOf("<form action={deleteAction}");
+  const deleteControlIndex = sessionCard.indexOf("<DeleteSessionButton");
 
   assert.ok(linkCloseIndex > -1, "card link closes");
   assert.ok(managementIndex > linkCloseIndex, "management disclosure renders after the link closes");
   assert.ok(archiveFormIndex > linkCloseIndex, "archive/restore form renders outside the link");
-  assert.ok(deleteFormIndex > linkCloseIndex, "delete form renders outside the link");
+  assert.ok(deleteControlIndex > linkCloseIndex, "delete control renders outside the link");
 });
 
 test("dashboard still excludes archived and deleted sessions", () => {
