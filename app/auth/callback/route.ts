@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
   }
 
   const profile = await getCurrentProfile()
-  const destination = profile ? next ?? '/dashboard' : '/onboarding'
+  const destination = profile ? next ?? '/dashboard/sessions' : '/onboarding'
 
   return NextResponse.redirect(new URL(destination, requestUrl.origin))
 }

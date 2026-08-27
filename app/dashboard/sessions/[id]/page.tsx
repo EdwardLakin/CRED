@@ -27,7 +27,7 @@ export default async function SessionResumePage({
     session.review_status === "ready_for_delivery" ||
     session.status === "finalized"
   ) {
-    redirect(`/dashboard/sessions/${session.id}/export`);
+    redirect(`/dashboard/sessions/${session.id}/report`);
   }
 
   if (

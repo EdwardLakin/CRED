@@ -420,7 +420,7 @@ export default async function SessionReportPreviewPage({
     session.id,
   );
   const saveFinalNotesAction = saveFinalNotes.bind(null, session.id);
-  const saveReportEditsAction = currentReport && !isReadyForExport
+  const saveReportEditsAction = currentReport
     ? saveReportEdits.bind(null, currentReport.id)
     : null;
   const shouldAutoPrepareReport = Boolean(
@@ -433,7 +433,10 @@ export default async function SessionReportPreviewPage({
     genericFallback: isGenericEvidenceReport,
   });
   const isEditingReport = Boolean(
-    flowStep === "review" && currentReport && status.edit && !isReadyForExport,
+    flowStep === "review" && currentReport && status.edit,
+  );
+  const isCompletedReportView = Boolean(
+    flowStep === "review" && isReadyForExport && !isEditingReport,
   );
   if (
     currentReport &&
@@ -460,21 +463,27 @@ export default async function SessionReportPreviewPage({
       <div className="section-header page-header report-preview-header report-review-header">
         <div>
           <p className="eyebrow guided-eyebrow">
-            {flowStep === "approve"
+            {isCompletedReportView
+              ? "Completed"
+              : flowStep === "approve"
               ? "Approve"
               : flowStep === "export"
                 ? "Export"
                 : "Review"}
           </p>
           <h1>
-            {flowStep === "approve"
+            {isCompletedReportView
+              ? "Completed report"
+              : flowStep === "approve"
               ? "Approve report"
               : flowStep === "export"
                 ? "Export report"
                 : "Review items"}
           </h1>
           <p className="muted">
-            {flowStep === "approve"
+            {isCompletedReportView
+              ? "Review the approved report, make changes, or export the finished document."
+              : flowStep === "approve"
               ? "Confirm the finished report before approving it for delivery."
               : flowStep === "export"
                 ? "Download, send, or securely share the approved report."
@@ -484,12 +493,18 @@ export default async function SessionReportPreviewPage({
         <div className="page-actions report-preview-actions compact-report-actions">
           <span
             className={
-              isReadyForExport ? "status-pill success" : "status-pill neutral"
+              isReadyForExport && !isEditingReport
+                ? "status-pill success"
+                : "status-pill neutral"
             }
           >
-            {isReadyForExport ? "Ready" : "Review Required"}
+            {isEditingReport && isReadyForExport
+              ? "Editing approved report"
+              : isReadyForExport
+                ? "Approved"
+                : "Review Required"}
           </span>
-          {currentReport && flowStep === "review" && !isReadyForExport ? (
+          {currentReport && flowStep === "review" ? (
             <Link
               href={
                 isEditingReport
@@ -498,7 +513,15 @@ export default async function SessionReportPreviewPage({
               }
               className="button button-secondary touch-target"
             >
-              {isEditingReport ? "View Report" : "Edit Report"}
+              {isEditingReport ? "View report" : "Edit report"}
+            </Link>
+          ) : null}
+          {isReadyForExport && flowStep === "review" && !isEditingReport ? (
+            <Link
+              href={`/dashboard/sessions/${session.id}/export`}
+              className="button button-primary touch-target"
+            >
+              Export report
             </Link>
           ) : null}
         </div>
@@ -536,6 +559,12 @@ export default async function SessionReportPreviewPage({
         {status.notes ? <p className="success">Final notes saved.</p> : null}
         {status.notes_generated ? (
           <p className="success">Executive summary prepared.</p>
+        ) : null}
+        {isEditingReport && isReadyForExport ? (
+          <p className="notice warning">
+            This report is approved. Saving a change will return it to approval
+            before it can be exported again.
+          </p>
         ) : null}
       </div>
 
@@ -595,13 +624,51 @@ export default async function SessionReportPreviewPage({
             {flowStep === "review" ? (
               <section className={`card ${flowStyles.nextAction}`}>
                 <div className={flowStyles.nextActionCopy}>
-                  <p className="eyebrow">Next</p>
-                  <h2>Ready to approve?</h2>
+                  <p className="eyebrow">
+                    {isEditingReport
+                      ? "Editing"
+                      : isReadyForExport
+                        ? "Completed"
+                        : "Next"}
+                  </p>
+                  <h2>
+                    {isEditingReport
+                      ? "Finish your changes"
+                      : isReadyForExport
+                        ? "Approved report"
+                        : "Ready to approve?"}
+                  </h2>
                   <p className="muted">
-                    Continue when the item details and report read correctly.
+                    {isEditingReport
+                      ? "Changes save automatically. Return to the report view when you are finished."
+                      : isReadyForExport
+                        ? "This report is approved and ready to export. You can still edit it; saved changes require approval again."
+                        : "Continue when the item details and report read correctly."}
                   </p>
                 </div>
-                {currentReport ? (
+                {currentReport && isEditingReport ? (
+                  <Link
+                    className="button button-secondary touch-target"
+                    href={`/dashboard/sessions/${session.id}/report`}
+                  >
+                    View report
+                  </Link>
+                ) : currentReport && isReadyForExport ? (
+                  <div className="form-actions report-inline-actions">
+                    <Link
+                      className="button button-secondary touch-target"
+                      href={`/dashboard/sessions/${session.id}/report?edit=1`}
+                    >
+                      Edit report
+                    </Link>
+                    <Link
+                      className="button button-primary touch-target"
+                      href={`/dashboard/sessions/${session.id}/export`}
+                    >
+                      Export report
+                    </Link>
+                  </div>
+                ) : currentReport ? (
                   <Link
                     className="button button-primary touch-target"
                     href={`/dashboard/sessions/${session.id}/approve`}
@@ -655,6 +722,20 @@ export default async function SessionReportPreviewPage({
             <span className={flowStyles.approvalStatus}>
               {isReadyForExport ? "Approved" : "Approval required"}
             </span>
+            <div className="form-actions report-inline-actions">
+              <Link
+                className="button button-secondary touch-target"
+                href={`/dashboard/sessions/${session.id}/report`}
+              >
+                View report
+              </Link>
+              <Link
+                className="button button-secondary touch-target"
+                href={`/dashboard/sessions/${session.id}/report?edit=1`}
+              >
+                Edit report
+              </Link>
+            </div>
           </section>
 
           <ExportPanel

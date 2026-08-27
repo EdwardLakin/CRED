@@ -95,6 +95,9 @@ function buildFixture(buildFinalReportSnapshot) {
     summary:
       "The reviewed session documents the customer-reported condition and technician-authored observations. /api/dashboard/sessions/session-123/internal",
     status: "needs_review",
+    approved: true,
+    approvedAt: "August 27, 2026 at 7:42 AM",
+    reviewedBy: "Jordan Lee",
     media: [
       {
         id: "photo-1",
@@ -135,6 +138,20 @@ function buildFixture(buildFinalReportSnapshot) {
         mediaId: "form-1",
       },
     ],
+    sections: [
+      {
+        id: "source-index",
+        title: "Source Index",
+        summary: "Optional reference list for the supporting photos included in this report.",
+        rows: Array.from({ length: 11 }, (_, index) => ({
+          label: `Item ${index + 1}`,
+          value:
+            index === 9
+              ? "Supporting photo captured August 27, 2026 at 7:36 AM · documented item reference 10"
+              : `Supporting photo captured August 27, 2026 at 7:${String(20 + index).padStart(2, "0")} AM`,
+        })),
+      },
+    ],
   });
 }
 
@@ -146,7 +163,7 @@ test("final report snapshot removes internal labels, URLs, and filenames", async
 
     assert.equal(snapshot.reportTitle, "Documentation report");
     assert.equal(snapshot.reportType, "General documentation report");
-    assert.equal(snapshot.approval.status, "In review");
+    assert.equal(snapshot.approval.status, "Approved");
     assert.equal(snapshot.items[0].title, "Documented item 01");
     assert.equal(snapshot.documents.length, 1);
     assert.equal(snapshot.totals.items, 1);
@@ -191,6 +208,13 @@ test("executive renderer emits a valid PDF binary with separated forms", async (
   } finally {
     rmSync(modules.directory, { recursive: true, force: true });
   }
+});
+
+test("detail rows reserve their measured group height before rendering", () => {
+  assert.match(rendererSource, /Math\.max\(minimumContentHeight, valueOffset \+ valueHeight\) \+ bottomPadding/);
+  assert.match(rendererSource, /ensureSpace\(doc, groupHeight\);\s+const y = doc\.y;/);
+  assert.match(rendererSource, /compact: section\.title === "Source Index"/);
+  assert.doesNotMatch(rendererSource, /ensureSpace\(doc, 42\)/);
 });
 
 test("report route reserves HTML for preview and sends production PDF headers", () => {

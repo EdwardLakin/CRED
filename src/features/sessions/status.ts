@@ -21,7 +21,7 @@ export function getSessionOperationalAction(session: DocumentationSession) {
   const workflowState = getSessionWorkflowState(session)
 
   if (workflowState === 'ready') {
-    return { href: `/dashboard/sessions/${session.id}/export`, label: 'Export report' }
+    return { href: `/dashboard/sessions/${session.id}/report`, label: 'View report' }
   }
 
   if (workflowState === 'review_required') {

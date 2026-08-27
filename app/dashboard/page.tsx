@@ -35,7 +35,7 @@ function getDashboardAction(session: Parameters<typeof getSessionWorkflowState>[
   }
 
   const state = getSessionWorkflowState(session)
-  if (state === 'ready') return { label: 'Ready', title: 'Export Report', description: 'Your approved report is ready to download or share.', href: `/dashboard/sessions/${session.id}/export` }
+  if (state === 'ready') return { label: 'Completed', title: 'View Report', description: 'Open the approved report to review, edit, or export it.', href: `/dashboard/sessions/${session.id}/report` }
   if (state === 'review_required') return { label: 'Review Required', title: 'Resume Review', description: 'Resolve review items and move the report toward delivery.', href: `/dashboard/sessions/${session.id}/report` }
   return { label: 'In Progress', title: 'Continue Current Session', description: 'Keep adding items to the active report.', href: `/dashboard/sessions/${session.id}/capture` }
 }

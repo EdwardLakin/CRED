@@ -30,6 +30,7 @@ const sessionPage = readFileSync(
   "app/dashboard/sessions/[id]/page.tsx",
   "utf8",
 );
+const sessionStatus = readFileSync("src/features/sessions/status.ts", "utf8");
 const dashboardPage = readFileSync("app/dashboard/page.tsx", "utf8");
 const sessionsPage = readFileSync("app/dashboard/sessions/page.tsx", "utf8");
 
@@ -55,13 +56,15 @@ test("session shell exposes exactly four plain-language workflow steps", () => {
 
 test("session root resumes the next incomplete step without a feature hub", () => {
   assert.match(sessionPage, /review_status === "ready_for_delivery"/);
-  assert.match(sessionPage, /redirect\(`\/dashboard\/sessions\/\$\{session\.id\}\/export`\)/);
+  assert.match(sessionPage, /redirect\(`\/dashboard\/sessions\/\$\{session\.id\}\/report`\)/);
   assert.match(sessionPage, /status === "review"/);
   assert.match(sessionPage, /redirect\(`\/dashboard\/sessions\/\$\{session\.id\}\/report`\)/);
   assert.match(sessionPage, /redirect\(`\/dashboard\/sessions\/\$\{session\.id\}\/capture`\)/);
   assert.doesNotMatch(sessionPage, /What do you want to do|EvidenceWorkspaceNav|getVisibleWorkspaceFeatures/);
-  assert.match(dashboardPage, /title: 'Export Report'/);
-  assert.match(dashboardPage, /href: `\/dashboard\/sessions\/\$\{session\.id\}\/export`/);
+  assert.match(dashboardPage, /title: 'View Report'/);
+  assert.match(dashboardPage, /href: `\/dashboard\/sessions\/\$\{session\.id\}\/report`/);
+  assert.match(sessionStatus, /label: 'View report'/);
+  assert.doesNotMatch(sessionStatus, /workflowState === 'ready'[\s\S]*?label: 'Export report'/);
 });
 
 test("capture completion runs the canonical prepare action and continues to Review", () => {
@@ -94,9 +97,25 @@ test("review, approval, and export have distinct routes and one forward action",
   assert.match(reportPage, /flowStep === "approve"[\s\S]*<InlineReviewPanel/);
   assert.match(reportPage, /flowStep !== "export"/);
   assert.match(reportPage, /<ExportPanel/);
+  assert.match(reportPage, /href=\{`\/dashboard\/sessions\/\$\{session\.id\}\/report\?edit=1`\}/);
+  assert.match(reportPage, /href=\{`\/dashboard\/sessions\/\$\{session\.id\}\/export`\}/);
+  assert.match(reportPage, /This report is approved\. Saving a change will return it to approval/);
+  assert.match(reportPage, /isReadyForExport && flowStep === "review" && !isEditingReport/);
+  assert.doesNotMatch(reportPage, /status\.edit && !isReadyForExport/);
   assert.doesNotMatch(reportPage, /Open Report Studio/);
   assert.match(reportActions, /getSessionStepRedirectPath\(session\.id, 'export', \{ reviewed: 1 \}\)/);
   assert.match(reportActions, /session\.status === 'finalized'/);
   assert.doesNotMatch(reportPage, /EvidenceWorkspaceBacklinks/);
   assert.match(reviewComponents, /defaultValue=\{getSectionDisplayTitle\(section\)\}/);
+});
+
+test("saving an approved report invalidates approval before delivery", () => {
+  assert.match(reportActions, /async function invalidateReportApproval/);
+  assert.match(reportActions, /review_status: 'draft'/);
+  assert.match(reportActions, /reviewed_at: null/);
+  assert.match(reportActions, /reviewed_by: null/);
+  assert.match(reportActions, /status: 'needs_review'/);
+  assert.match(reportActions, /approved_at: null/);
+  assert.match(reportActions, /approved_by: null/);
+  assert.doesNotMatch(reportActions, /Approved reports are read-only\./);
 });
