@@ -14,6 +14,7 @@ export function DeleteSessionButton({
   sessionTitle: string
 }) {
   const router = useRouter()
+  const deleteButtonRef = useRef<HTMLButtonElement>(null)
   const cancelButtonRef = useRef<HTMLButtonElement>(null)
   const [isConfirming, setIsConfirming] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -24,24 +25,34 @@ export function DeleteSessionButton({
   }, [isConfirming])
 
   function confirmDelete() {
+    const sessionCard = deleteButtonRef.current?.closest('.session-card')
+
     setError(null)
+    setIsConfirming(false)
+    if (sessionCard instanceof HTMLElement) sessionCard.style.display = 'none'
 
     startTransition(async () => {
-      const result = await deleteDocumentationSession(sessionId)
+      try {
+        const result = await deleteDocumentationSession(sessionId)
 
-      if (!result.ok) {
-        setError(result.error)
-        return
+        if (!result.ok) {
+          if (sessionCard instanceof HTMLElement) sessionCard.style.display = ''
+          setError(result.error)
+          return
+        }
+
+        router.refresh()
+      } catch {
+        if (sessionCard instanceof HTMLElement) sessionCard.style.display = ''
+        setError('Unable to delete the session. Check your connection and try again.')
       }
-
-      setIsConfirming(false)
-      router.refresh()
     })
   }
 
   return (
     <>
       <button
+        ref={deleteButtonRef}
         type="button"
         className="button button-secondary touch-target danger-action"
         disabled={isPending}
