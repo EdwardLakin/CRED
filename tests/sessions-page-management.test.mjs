@@ -39,13 +39,20 @@ test("delete action uses an accessible confirmation dialog with pending and erro
   assert.match(deleteSessionButton, /Deleting…/);
   assert.match(deleteSessionButton, /role="alert"/);
   assert.match(deleteSessionButton, /deleteDocumentationSession\(sessionId\)/);
+  assert.match(deleteSessionButton, /closest\('\.session-card'\)/);
+  assert.match(deleteSessionButton, /sessionCard\.style\.display = 'none'/);
+  assert.match(deleteSessionButton, /sessionCard\.style\.display = ''/);
+  assert.match(deleteSessionButton, /Check your connection and try again/);
 });
 
-test("delete action verifies the session mutation and returns a result to the card", () => {
+test("delete action authorizes with the user before performing the scoped mutation", () => {
   const deleteAction = sessionActions.match(/export async function deleteDocumentationSession[\s\S]*?export async function restoreDocumentationSession/);
   assert.ok(deleteAction, "delete action is present");
   const source = deleteAction[0];
 
+  assert.match(source, /authorizedSession/);
+  assert.match(source, /createAdminClient\(\)/);
+  assert.match(source, /\.eq\('organization_id', profile\.organization_id\)/);
   assert.match(source, /\.is\('deleted_at', null\)/);
   assert.match(source, /\.select\('id'\)/);
   assert.match(source, /\.maybeSingle\(\)/);

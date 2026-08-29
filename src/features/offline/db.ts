@@ -2,9 +2,9 @@ import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 
 import type {
   CachedSessionRecord,
-  OfflineCaptureRecord,
   OfflineSessionRecord,
   OfflineSettings,
+  PersistedOfflineCaptureRecord,
   SyncStateRecord,
 } from "@/features/offline/types";
 
@@ -14,7 +14,7 @@ export const OFFLINE_DB_VERSION = 4;
 export interface CredOfflineSchema extends DBSchema {
   queuedCaptures: {
     key: string;
-    value: OfflineCaptureRecord;
+    value: PersistedOfflineCaptureRecord;
     indexes: {
       "by-session": string;
       "by-local-session": string;

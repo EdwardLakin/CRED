@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 
 import { requireActiveBillingAccess } from '@/features/billing'
 import { formatDateTimeInTimeZone } from '@/lib/date-format'
+import { createAdminClient } from '@/lib/supabase/admin'
 import {
   FIELD_SERVICE_FIELD_LABELS,
   FIELD_SERVICE_FIELD_NAMES,
@@ -264,8 +265,27 @@ export async function deleteDocumentationSession(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const { supabase, profile } = await requireSessionWorkspace()
 
+  const { data: authorizedSession, error: authorizationError } = await supabase
+    .from('documentation_sessions')
+    .select('id')
+    .eq('id', sessionId)
+    .eq('organization_id', profile.organization_id)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (authorizationError || !authorizedSession) {
+    if (authorizationError) {
+      console.error('Unable to authorize documentation session deletion.', {
+        code: authorizationError.code,
+        sessionId,
+      })
+    }
+    return { ok: false, error: 'Session not found or already deleted.' }
+  }
+
   const deletedAt = new Date().toISOString()
-  const { data: deletedSession, error } = await supabase
+  const admin = createAdminClient()
+  const { data: deletedSession, error } = await admin
     .from('documentation_sessions')
     .update({ deleted_at: deletedAt, updated_at: deletedAt })
     .eq('id', sessionId)

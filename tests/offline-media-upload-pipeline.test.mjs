@@ -10,12 +10,16 @@ const workspace = readFileSync('src/features/offline/components/OfflineCaptureWo
 const verifyRoute = readFileSync('app/api/offline/captures/verify/route.ts', 'utf8')
 const captureActions = readFileSync('src/features/capture/actions.ts', 'utf8')
 
-test('iPad/Safari-style File is stored and restored as the Blob with byte metadata and object URL previews', () => {
+test('iPad/Safari-style File is stored as bytes and restored as a Blob across both capture surfaces', () => {
   assert.match(store, /export async function addCapture\([\s\S]*session: OfflineLocalSession,[\s\S]*file: File,[\s\S]*order: number/)
   assert.match(store, /const blobBytes = await prepared\.blob\.arrayBuffer\(\)/)
   assert.match(store, /put<PersistedOfflineCaptureRecord>\('queuedCaptures', \{ \.\.\.prepared, blob: blobBytes \}\)/)
   assert.match(store, /source instanceof ArrayBuffer[\s\S]*new Blob\(\[source\]/)
   assert.doesNotMatch(store, /put\('queuedCaptures', prepared\)/)
+  assert.match(queue, /const blobBytes = await prepared\.blob\.arrayBuffer\(\)/)
+  assert.match(queue, /dbPutQueuedCapture\(\{ \.\.\.prepared, blob: blobBytes \}\)/)
+  assert.match(queue, /source instanceof ArrayBuffer[\s\S]*new Blob\(\[source\]/)
+  assert.doesNotMatch(queue, /dbPutQueuedCapture\(await normalizeCaptureBlobForIndexedDb\(record\)\)/)
   assert.match(store, /normalizeCaptureForIndexedDb/)
   assert.match(store, /IndexedDB queued capture write failed while preparing Blob data/)
   assert.match(store, /filename: file\.name \|\|/)
@@ -24,6 +28,12 @@ test('iPad/Safari-style File is stored and restored as the Blob with byte metada
   assert.match(store, /localSessionId: session\.localSessionId/)
   assert.match(shell, /URL\.createObjectURL\(capture\.blob\)/)
   assert.match(workspace, /URL\.createObjectURL\(record\.blob\)/)
+})
+
+test('interrupted upload and record-creation states are retryable after Safari reloads', () => {
+  const retryPolicy = syncEngine.match(/function canAutomaticallyRetry[\s\S]*?\n}/)?.[0] ?? ''
+  assert.match(retryPolicy, /record\.status === "uploading"/)
+  assert.match(retryPolicy, /record\.status === "creating_record"/)
 })
 
 test('sync refuses zero-byte or missing local Blobs before storage upload', () => {
