@@ -11,6 +11,7 @@ type OfflineContextValue = {
   pendingCaptures: number;
   lastError: string | null;
   syncNow: () => Promise<void>;
+  clearStaleUploads: () => Promise<number>;
 };
 
 const OfflineContext = createContext<OfflineContextValue | null>(null);
@@ -46,6 +47,11 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     await getOfflineSyncEngine().syncNow();
   }, []);
 
+  const clearStaleUploads = useCallback(
+    () => getOfflineSyncEngine().clearStaleCaptures(),
+    [],
+  );
+
   const value = useMemo(
     () => ({
       online,
@@ -53,8 +59,9 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       pendingCaptures,
       lastError,
       syncNow,
+      clearStaleUploads,
     }),
-    [lastError, online, pendingCaptures, syncNow, syncing],
+    [clearStaleUploads, lastError, online, pendingCaptures, syncNow, syncing],
   );
 
   return <OfflineContext.Provider value={value}>{children}</OfflineContext.Provider>;
@@ -70,6 +77,7 @@ export function useOffline() {
       pendingCaptures: 0,
       lastError: null,
       syncNow: async () => {},
+      clearStaleUploads: async () => 0,
     };
   }
 

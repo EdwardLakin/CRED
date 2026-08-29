@@ -246,6 +246,36 @@ export async function clearQueue(userId?: string) {
   );
 }
 
+export async function getQueuedServerSessionIds(userId: string) {
+  const db = await getOfflineDb();
+  const records = await db.getAll("queuedCaptures");
+
+  return Array.from(new Set(
+    records
+      .filter((record) => record.userId === userId && record.serverSessionId)
+      .map((record) => record.serverSessionId as string),
+  ));
+}
+
+export async function removeQueuedCapturesForMissingServerSessions(
+  userId: string,
+  existingSessionIds: ReadonlySet<string>,
+) {
+  const db = await getOfflineDb();
+  const records = await db.getAll("queuedCaptures");
+  const stale = records.filter(
+    (record) =>
+      record.userId === userId &&
+      Boolean(record.serverSessionId) &&
+      !existingSessionIds.has(record.serverSessionId as string),
+  );
+
+  await Promise.all(
+    stale.map((record) => db.delete("queuedCaptures", record.localId)),
+  );
+  return stale.length;
+}
+
 export async function getPendingCaptures(userId?: string) {
   const db = await getOfflineDb();
   const records = await db.getAll("queuedCaptures");
@@ -416,5 +446,5 @@ export async function getSyncQueueDebugItems(userId?: string) {
   const db = await getOfflineDb();
   const records = await db.getAll("queuedCaptures");
   const scoped = userId ? records.filter((record) => record.userId === userId) : records;
-  return scoped.map((record) => ({ localId: record.localId, status: record.status, serverCaptureId: record.serverCaptureId, updatedAt: record.updatedAt, lastError: record.lastError, actionable: isActionableQueuedCapture(record) }));
+  return scoped.map((record) => ({ localId: record.localId, filename: record.metadata.filename, status: record.status, serverCaptureId: record.serverCaptureId, updatedAt: record.updatedAt, lastError: record.lastError, actionable: isActionableQueuedCapture(record) }));
 }

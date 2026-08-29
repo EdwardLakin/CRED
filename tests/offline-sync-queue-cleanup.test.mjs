@@ -21,7 +21,17 @@ test('compact sync status exposes queue details without taking page layout space
   assert.match(banner, /className="offline-status"/)
   assert.match(banner, /<details className="offline-status-control">/)
   assert.match(details, /View sync queue/)
+  assert.match(details, /Clear stale uploads/)
+  assert.doesNotMatch(details, /<code>\{item\.localId\}<\/code>/)
   assert.match(css, /\.offline-status \{[^}]*position: fixed;/)
   assert.match(css, /\.offline-status-panel \{[^}]*position: absolute;/)
   assert.doesNotMatch(css, /\.offline-status \{[^}]*position: static;/)
+})
+
+test('stale queue cleanup only removes current-user captures for missing server sessions', () => {
+  assert.match(queue, /getQueuedServerSessionIds/)
+  assert.match(queue, /record\.userId === userId && record\.serverSessionId/)
+  assert.match(queue, /removeQueuedCapturesForMissingServerSessions/)
+  assert.match(queue, /!existingSessionIds\.has\(record\.serverSessionId as string\)/)
+  assert.match(queue, /db\.delete\("queuedCaptures", record\.localId\)/)
 })

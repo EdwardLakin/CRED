@@ -6,9 +6,11 @@ import type { CaptureIntent, CaptureType } from "@/features/capture/types";
 import { getCurrentStatus, subscribe } from "@/features/offline/connectivity";
 import {
   getPendingCaptures,
+  getQueuedServerSessionIds,
   normalizeSessionReportOrders,
   positiveReportOrder,
   removeCapture,
+  removeQueuedCapturesForMissingServerSessions,
   retargetQueuedCaptures,
   saveQueuedCapture,
 } from "@/features/offline/queue";
@@ -138,6 +140,29 @@ async function getAuthenticatedUserId() {
   } = await supabase.auth.getUser();
 
   return user?.id ?? null;
+}
+
+async function removeStaleServerSessionCaptures(
+  userId: string,
+  supabase: ReturnType<typeof createClient>,
+) {
+  const sessionIds = await getQueuedServerSessionIds(userId);
+  if (sessionIds.length === 0) return 0;
+
+  const { data, error } = await supabase
+    .from("documentation_sessions")
+    .select("id")
+    .in("id", sessionIds)
+    .is("deleted_at", null);
+
+  if (error) {
+    throw new Error("CRED could not check for stale uploads. Try again.");
+  }
+
+  return removeQueuedCapturesForMissingServerSessions(
+    userId,
+    new Set((data ?? []).map((session) => session.id)),
+  );
 }
 
 function canAutomaticallyRetry(record: OfflineCaptureRecord) {
@@ -800,6 +825,28 @@ export class OfflineSyncEngine {
     return this.getState();
   }
 
+  async clearStaleCaptures() {
+    if (!getCurrentStatus().online) {
+      throw new Error("Connect to the internet to check stale uploads.");
+    }
+
+    const supabase = createClient();
+    if (!(await refreshAuthSession(supabase))) {
+      throw new Error("Sign in again to clear stale uploads.");
+    }
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error("Sign in again to clear stale uploads.");
+
+    const removed = await removeStaleServerSessionCaptures(user.id, supabase);
+    if (removed > 0) this.lastError = null;
+    await this.refreshPendingCount();
+    this.emit();
+    return removed;
+  }
+
   async processQueue() {
     const userId = await getAuthenticatedUserId();
 
@@ -809,6 +856,8 @@ export class OfflineSyncEngine {
       );
     }
 
+    const supabase = createClient();
+    await removeStaleServerSessionCaptures(userId, supabase);
     await syncOfflineSessions(userId);
 
     const pendingBeforeNormalization = await getPendingCaptures(userId);
