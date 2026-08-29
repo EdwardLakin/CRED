@@ -93,6 +93,13 @@ export type OfflineCaptureRecord = {
   updatedAt: string;
 };
 
+export type PersistedOfflineCaptureRecord = Omit<
+  OfflineCaptureRecord,
+  "blob"
+> & {
+  blob: Blob | ArrayBuffer;
+};
+
 export type CachedSessionRecord = {
   sessionId: string;
   organizationId: string;

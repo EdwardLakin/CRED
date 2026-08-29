@@ -1,7 +1,11 @@
 import { isSourceDocumentType } from "@/features/capture/types";
 import { getOfflineDb } from "@/features/offline/db";
 import { incrementOfflineSessionCaptureCount } from "@/features/offline/offline-sessions";
-import type { OfflineCaptureRecord, QueueStatus } from "@/features/offline/types";
+import type {
+  OfflineCaptureRecord,
+  PersistedOfflineCaptureRecord,
+  QueueStatus,
+} from "@/features/offline/types";
 
 export type QueueCaptureInput = Omit<
   OfflineCaptureRecord,
@@ -42,9 +46,9 @@ function now() {
   return new Date().toISOString();
 }
 
-export function normalizeQueuedCaptureItemMetadata(
-  record: OfflineCaptureRecord,
-): OfflineCaptureRecord {
+export function normalizeQueuedCaptureItemMetadata<
+  T extends OfflineCaptureRecord | PersistedOfflineCaptureRecord,
+>(record: T): T {
   const metadata = record.metadata as OfflineCaptureRecord["metadata"] & {
     clientItemId?: unknown;
     documentationItemId?: unknown;
@@ -119,21 +123,32 @@ export function normalizeQueuedCaptureItemMetadata(
       sourceDocumentType,
       sourceDocumentLabel,
     },
-  };
+  } as T;
 }
 
-async function normalizeCaptureBlobForIndexedDb(record: OfflineCaptureRecord) {
+async function normalizeCaptureBlobForIndexedDb(
+  record: PersistedOfflineCaptureRecord,
+): Promise<OfflineCaptureRecord> {
   const normalizedRecord = normalizeQueuedCaptureItemMetadata(record);
   const source = normalizedRecord.blob;
-  if (!(source instanceof Blob)) {
-    throw new Error("IndexedDB capture record does not contain Blob data.");
+  if (!(source instanceof Blob) && !(source instanceof ArrayBuffer)) {
+    throw new Error("IndexedDB capture record does not contain media byte data.");
   }
 
-  const blob = source instanceof File
-    ? new Blob([await source.arrayBuffer()], {
-        type: normalizedRecord.metadata.mimeType || source.type || "application/octet-stream",
-      })
-    : source;
+  const blob =
+    source instanceof ArrayBuffer
+      ? new Blob([source], {
+          type:
+            normalizedRecord.metadata.mimeType || "application/octet-stream",
+        })
+      : source instanceof File
+        ? new Blob([await source.arrayBuffer()], {
+            type:
+              normalizedRecord.metadata.mimeType ||
+              source.type ||
+              "application/octet-stream",
+          })
+        : source;
 
   return {
     ...normalizedRecord,
@@ -143,17 +158,25 @@ async function normalizeCaptureBlobForIndexedDb(record: OfflineCaptureRecord) {
 
 async function putQueuedCapture(record: OfflineCaptureRecord) {
   try {
-    return dbPutQueuedCapture(await normalizeCaptureBlobForIndexedDb(record));
+    const prepared = await normalizeCaptureBlobForIndexedDb(record);
+    const blobBytes = await prepared.blob.arrayBuffer();
+    await dbPutQueuedCapture({ ...prepared, blob: blobBytes });
+    return prepared;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`IndexedDB queued capture write failed while preparing Blob data: ${message}`);
   }
 }
 
-async function dbPutQueuedCapture(record: OfflineCaptureRecord) {
+async function dbPutQueuedCapture(record: PersistedOfflineCaptureRecord) {
   const db = await getOfflineDb();
   await db.put("queuedCaptures", record);
-  return record;
+}
+
+async function getAllQueuedCaptures() {
+  const db = await getOfflineDb();
+  const records = await db.getAll("queuedCaptures");
+  return Promise.all(records.map(normalizeCaptureBlobForIndexedDb));
 }
 
 export async function queueCapture(input: QueueCaptureInput) {
@@ -187,11 +210,13 @@ export async function removeCapture(localId: string) {
 
 export async function retryCapture(localId: string) {
   const db = await getOfflineDb();
-  const record = await db.get("queuedCaptures", localId);
+  const storedRecord = await db.get("queuedCaptures", localId);
 
-  if (!record) {
+  if (!storedRecord) {
     return null;
   }
+
+  const record = await normalizeCaptureBlobForIndexedDb(storedRecord);
 
   const updated: OfflineCaptureRecord = {
     ...record,
@@ -224,7 +249,9 @@ export async function clearQueue(userId?: string) {
 export async function getPendingCaptures(userId?: string) {
   const db = await getOfflineDb();
   const records = await db.getAll("queuedCaptures");
-  const normalizedRecords = records.map(normalizeQueuedCaptureItemMetadata);
+  const normalizedRecords = await Promise.all(
+    records.map(normalizeCaptureBlobForIndexedDb),
+  );
   const upgradedRecords = normalizedRecords.filter((record, index) => {
     const previous = records[index]?.metadata as Partial<OfflineCaptureRecord["metadata"]> | undefined;
     return (
@@ -245,7 +272,8 @@ export async function getPendingCaptures(userId?: string) {
 
 export async function getQueuedCapture(localId: string) {
   const db = await getOfflineDb();
-  return db.get("queuedCaptures", localId);
+  const record = await db.get("queuedCaptures", localId);
+  return record ? normalizeCaptureBlobForIndexedDb(record) : undefined;
 }
 
 
@@ -278,9 +306,11 @@ export async function updateQueuedCapture(
     return null;
   }
 
+  const normalizedCurrent = await normalizeCaptureBlobForIndexedDb(current);
+
   const updated: OfflineCaptureRecord = {
-    ...updater(current),
-    localId: current.localId,
+    ...updater(normalizedCurrent),
+    localId: normalizedCurrent.localId,
     updatedAt: now(),
   };
 
@@ -291,8 +321,7 @@ export async function updateQueuedCapture(
 }
 
 export async function getCapturesForLocalSession(localSessionId: string, userId?: string) {
-  const db = await getOfflineDb();
-  const records = await db.getAll("queuedCaptures");
+  const records = await getAllQueuedCaptures();
   return records.filter((record) => record.localSessionId === localSessionId && (!userId || record.userId === userId));
 }
 
@@ -316,8 +345,7 @@ export async function normalizeSessionReportOrders(
   localSessionId: string,
   identity: { userId: string; organizationId: string },
 ) {
-  const db = await getOfflineDb();
-  const records = await db.getAll("queuedCaptures");
+  const records = await getAllQueuedCaptures();
   const matching = sortCapturesForReportOrder(
     records.filter(
       (record) =>
@@ -354,8 +382,7 @@ export async function retargetQueuedCaptures(
   toSessionId: string,
   userId: string,
 ) {
-  const db = await getOfflineDb();
-  const records = await db.getAll("queuedCaptures");
+  const records = await getAllQueuedCaptures();
   const matching = records.filter(
     (record) =>
       record.localSessionId === localSessionId &&

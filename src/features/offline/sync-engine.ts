@@ -148,6 +148,8 @@ function canAutomaticallyRetry(record: OfflineCaptureRecord) {
   return (
     record.status === "local" ||
     record.status === "queued" ||
+    record.status === "uploading" ||
+    record.status === "creating_record" ||
     record.status === "failed" ||
     record.status === "blocked" ||
     record.status === "finalized_unverified"
