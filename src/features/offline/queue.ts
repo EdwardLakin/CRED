@@ -246,34 +246,56 @@ export async function clearQueue(userId?: string) {
   );
 }
 
-export async function getQueuedServerSessionIds(userId: string) {
+export type QueuedServerSessionSnapshot = {
+  localId: string;
+  localSessionId: string;
+  serverSessionId: string;
+};
+
+export async function getQueuedServerSessionSnapshot(userId: string) {
   const db = await getOfflineDb();
   const records = await db.getAll("queuedCaptures");
 
-  return Array.from(new Set(
-    records
-      .filter((record) => record.userId === userId && record.serverSessionId)
-      .map((record) => record.serverSessionId as string),
-  ));
+  return records.flatMap((record): QueuedServerSessionSnapshot[] =>
+    record.userId === userId && record.serverSessionId
+      ? [{
+          localId: record.localId,
+          localSessionId: record.localSessionId,
+          serverSessionId: record.serverSessionId,
+        }]
+      : [],
+  );
 }
 
 export async function removeQueuedCapturesForMissingServerSessions(
   userId: string,
-  existingSessionIds: ReadonlySet<string>,
+  staleSnapshot: readonly QueuedServerSessionSnapshot[],
 ) {
-  const db = await getOfflineDb();
-  const records = await db.getAll("queuedCaptures");
-  const stale = records.filter(
-    (record) =>
-      record.userId === userId &&
-      Boolean(record.serverSessionId) &&
-      !existingSessionIds.has(record.serverSessionId as string),
-  );
+  if (staleSnapshot.length === 0) {
+    return { removedCount: 0, localSessionIds: new Set<string>() };
+  }
 
-  await Promise.all(
-    stale.map((record) => db.delete("queuedCaptures", record.localId)),
-  );
-  return stale.length;
+  const db = await getOfflineDb();
+  const transaction = db.transaction("queuedCaptures", "readwrite");
+  const store = transaction.objectStore("queuedCaptures");
+  const localSessionIds = new Set<string>();
+  let removedCount = 0;
+
+  for (const candidate of staleSnapshot) {
+    const current = await store.get(candidate.localId);
+    if (
+      current?.userId === userId &&
+      current.localSessionId === candidate.localSessionId &&
+      current.serverSessionId === candidate.serverSessionId
+    ) {
+      await store.delete(candidate.localId);
+      localSessionIds.add(candidate.localSessionId);
+      removedCount += 1;
+    }
+  }
+
+  await transaction.done;
+  return { removedCount, localSessionIds };
 }
 
 export async function getPendingCaptures(userId?: string) {
@@ -442,9 +464,9 @@ export async function cleanupCompletedQueuedCaptures(maxAgeMs = 7 * 24 * 60 * 60
   return completed.length;
 }
 
-export async function getSyncQueueDebugItems(userId?: string) {
+export async function getSyncQueueDebugItems(userId: string) {
   const db = await getOfflineDb();
   const records = await db.getAll("queuedCaptures");
-  const scoped = userId ? records.filter((record) => record.userId === userId) : records;
+  const scoped = records.filter((record) => record.userId === userId);
   return scoped.map((record) => ({ localId: record.localId, filename: record.metadata.filename, status: record.status, serverCaptureId: record.serverCaptureId, updatedAt: record.updatedAt, lastError: record.lastError, actionable: isActionableQueuedCapture(record) }));
 }

@@ -6,7 +6,8 @@ import type { CaptureIntent, CaptureType } from "@/features/capture/types";
 import { getCurrentStatus, subscribe } from "@/features/offline/connectivity";
 import {
   getPendingCaptures,
-  getQueuedServerSessionIds,
+  getQueuedServerSessionSnapshot,
+  getSyncQueueDebugItems,
   normalizeSessionReportOrders,
   positiveReportOrder,
   removeCapture,
@@ -17,6 +18,7 @@ import {
 import {
   getPendingOfflineSessions,
   recordVerifiedOfflineCapture,
+  removeOfflineSessionsForMissingServerSessions,
   updateOfflineSessionStatus,
 } from "@/features/offline/offline-sessions";
 import type {
@@ -36,6 +38,7 @@ export type OfflineSyncEngineState = {
   syncing: boolean;
   pendingCount: number;
   lastError: string | null;
+  userId: string | null;
 };
 
 function sanitizeFilename(filename: string) {
@@ -146,23 +149,45 @@ async function removeStaleServerSessionCaptures(
   userId: string,
   supabase: ReturnType<typeof createClient>,
 ) {
-  const sessionIds = await getQueuedServerSessionIds(userId);
+  const snapshot = await getQueuedServerSessionSnapshot(userId);
+  const sessionIds = Array.from(
+    new Set(snapshot.map((record) => record.serverSessionId)),
+  );
   if (sessionIds.length === 0) return 0;
 
-  const { data, error } = await supabase
-    .from("documentation_sessions")
-    .select("id")
-    .in("id", sessionIds)
-    .is("deleted_at", null);
+  const activeSessionIds = new Set<string>();
+  const batchSize = 100;
+  for (let index = 0; index < sessionIds.length; index += batchSize) {
+    const batch = sessionIds.slice(index, index + batchSize);
+    const { data, error } = await supabase
+      .from("documentation_sessions")
+      .select("id")
+      .in("id", batch)
+      .is("deleted_at", null);
 
-  if (error) {
-    throw new Error("CRED could not check for stale uploads. Try again.");
+    if (error) {
+      throw new Error("CRED could not check for stale uploads. Try again.");
+    }
+
+    for (const session of data ?? []) activeSessionIds.add(session.id);
   }
 
-  return removeQueuedCapturesForMissingServerSessions(
-    userId,
-    new Set((data ?? []).map((session) => session.id)),
+  const staleSnapshot = snapshot.filter(
+    (record) => !activeSessionIds.has(record.serverSessionId),
   );
+  const missingSessionIds = new Set(
+    staleSnapshot.map((record) => record.serverSessionId),
+  );
+  const removed = await removeQueuedCapturesForMissingServerSessions(
+    userId,
+    staleSnapshot,
+  );
+  await removeOfflineSessionsForMissingServerSessions(
+    userId,
+    missingSessionIds,
+    removed.localSessionIds,
+  );
+  return removed.removedCount;
 }
 
 function canAutomaticallyRetry(record: OfflineCaptureRecord) {
@@ -756,6 +781,7 @@ export class OfflineSyncEngine {
   private unsubscribeConnectivity: (() => void) | null = null;
   private pendingCount = 0;
   private lastError: string | null = null;
+  private userId: string | null = null;
 
   start() {
     if (this.running) {
@@ -796,6 +822,7 @@ export class OfflineSyncEngine {
       syncing: this.syncing,
       pendingCount: this.pendingCount,
       lastError: this.lastError,
+      userId: this.userId,
     };
   }
 
@@ -826,6 +853,10 @@ export class OfflineSyncEngine {
   }
 
   async clearStaleCaptures() {
+    if (this.syncing) {
+      throw new Error("Wait for the current sync to finish, then try again.");
+    }
+
     if (!getCurrentStatus().online) {
       throw new Error("Connect to the internet to check stale uploads.");
     }
@@ -841,7 +872,11 @@ export class OfflineSyncEngine {
     if (!user) throw new Error("Sign in again to clear stale uploads.");
 
     const removed = await removeStaleServerSessionCaptures(user.id, supabase);
-    if (removed > 0) this.lastError = null;
+    const remaining = await getSyncQueueDebugItems(user.id);
+    this.userId = user.id;
+    this.lastError =
+      remaining.find((item) => item.actionable && item.lastError)?.lastError ??
+      null;
     await this.refreshPendingCount();
     this.emit();
     return removed;
@@ -907,10 +942,13 @@ export class OfflineSyncEngine {
     try {
       const userId = await getAuthenticatedUserId();
 
+      this.userId = userId;
+
       this.pendingCount = userId
         ? (await getPendingCaptures(userId)).length
         : 0;
     } catch {
+      this.userId = null;
       this.pendingCount = 0;
     }
   }

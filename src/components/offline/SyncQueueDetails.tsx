@@ -15,14 +15,16 @@ function statusLabel(status: string) {
 }
 
 export function SyncQueueDetails() {
-  const { clearStaleUploads } = useOffline();
+  const { clearStaleUploads, queueUserId } = useOffline();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<QueueItem[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [isClearing, startClearing] = useTransition();
   const loadItems = useCallback(
-    () => getSyncQueueDebugItems().then(setItems).catch(() => setItems([])),
-    [],
+    () => queueUserId
+      ? getSyncQueueDebugItems(queueUserId).then(setItems).catch(() => setItems([]))
+      : Promise.resolve().then(() => setItems([])),
+    [queueUserId],
   );
 
   useEffect(() => {
