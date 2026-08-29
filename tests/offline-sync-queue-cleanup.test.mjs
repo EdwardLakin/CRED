@@ -3,6 +3,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 const queue = readFileSync('src/features/offline/queue.ts', 'utf8')
+const syncEngine = readFileSync('src/features/offline/sync-engine.ts', 'utf8')
+const offlineSessions = readFileSync('src/features/offline/offline-sessions.ts', 'utf8')
 const banner = readFileSync('src/components/offline/OfflineBanner.tsx', 'utf8')
 const details = readFileSync('src/components/offline/SyncQueueDetails.tsx', 'utf8')
 const css = readFileSync('app/globals.css', 'utf8')
@@ -21,7 +23,33 @@ test('compact sync status exposes queue details without taking page layout space
   assert.match(banner, /className="offline-status"/)
   assert.match(banner, /<details className="offline-status-control">/)
   assert.match(details, /View sync queue/)
+  assert.match(details, /Clear stale uploads/)
+  assert.doesNotMatch(details, /<code>\{item\.localId\}<\/code>/)
   assert.match(css, /\.offline-status \{[^}]*position: fixed;/)
   assert.match(css, /\.offline-status-panel \{[^}]*position: absolute;/)
   assert.doesNotMatch(css, /\.offline-status \{[^}]*position: static;/)
+})
+
+test('stale queue cleanup only removes current-user captures for missing server sessions', () => {
+  assert.match(queue, /getQueuedServerSessionSnapshot/)
+  assert.match(queue, /record\.userId === userId && record\.serverSessionId/)
+  assert.match(queue, /removeQueuedCapturesForMissingServerSessions/)
+  assert.match(queue, /current\.serverSessionId === candidate\.serverSessionId/)
+  assert.match(queue, /store\.delete\(candidate\.localId\)/)
+})
+
+test('stale cleanup is snapshot-safe, batched, and retires matching offline sessions', () => {
+  assert.match(syncEngine, /const batchSize = 100/)
+  assert.match(syncEngine, /sessionIds\.slice\(index, index \+ batchSize\)/)
+  assert.match(syncEngine, /staleSnapshot = snapshot\.filter/)
+  assert.match(syncEngine, /removeOfflineSessionsForMissingServerSessions/)
+  assert.match(offlineSessions, /missingServerSessionIds\.has\(record\.serverSessionId as string\)/)
+  assert.match(offlineSessions, /db\.delete\("offlineSessions", record\.localSessionId\)/)
+})
+
+test('queue details are user-scoped and stale cleanup preserves unrelated errors', () => {
+  assert.match(details, /getSyncQueueDebugItems\(queueUserId\)/)
+  assert.match(queue, /export async function getSyncQueueDebugItems\(userId: string\)/)
+  assert.match(queue, /records\.filter\(\(record\) => record\.userId === userId\)/)
+  assert.match(syncEngine, /remaining\.find\(\(item\) => item\.actionable && item\.lastError\)/)
 })

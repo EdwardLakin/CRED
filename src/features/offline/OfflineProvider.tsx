@@ -11,6 +11,8 @@ type OfflineContextValue = {
   pendingCaptures: number;
   lastError: string | null;
   syncNow: () => Promise<void>;
+  clearStaleUploads: () => Promise<number>;
+  queueUserId: string | null;
 };
 
 const OfflineContext = createContext<OfflineContextValue | null>(null);
@@ -20,6 +22,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
   const [syncing, setSyncing] = useState(false);
   const [pendingCaptures, setPendingCaptures] = useState(0);
   const [lastError, setLastError] = useState<string | null>(null);
+  const [queueUserId, setQueueUserId] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribeConnectivity = subscribeConnectivity((status) => {
@@ -31,6 +34,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       setSyncing(state.syncing);
       setPendingCaptures(state.pendingCount);
       setLastError(state.lastError);
+      setQueueUserId(state.userId);
     });
 
     engine.start();
@@ -46,6 +50,11 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     await getOfflineSyncEngine().syncNow();
   }, []);
 
+  const clearStaleUploads = useCallback(
+    () => getOfflineSyncEngine().clearStaleCaptures(),
+    [],
+  );
+
   const value = useMemo(
     () => ({
       online,
@@ -53,8 +62,10 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
       pendingCaptures,
       lastError,
       syncNow,
+      clearStaleUploads,
+      queueUserId,
     }),
-    [lastError, online, pendingCaptures, syncNow, syncing],
+    [clearStaleUploads, lastError, online, pendingCaptures, queueUserId, syncNow, syncing],
   );
 
   return <OfflineContext.Provider value={value}>{children}</OfflineContext.Provider>;
@@ -70,6 +81,8 @@ export function useOffline() {
       pendingCaptures: 0,
       lastError: null,
       syncNow: async () => {},
+      clearStaleUploads: async () => 0,
+      queueUserId: null,
     };
   }
 

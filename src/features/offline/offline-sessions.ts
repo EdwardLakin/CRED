@@ -84,6 +84,30 @@ export async function getPendingOfflineSessions(userId: string) {
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 }
 
+export async function removeOfflineSessionsForMissingServerSessions(
+  userId: string,
+  missingServerSessionIds: ReadonlySet<string>,
+  removedLocalSessionIds: ReadonlySet<string>,
+) {
+  if (missingServerSessionIds.size === 0 || removedLocalSessionIds.size === 0) {
+    return 0;
+  }
+
+  const db = await getOfflineDb();
+  const records = await db.getAllFromIndex("offlineSessions", "by-user", userId);
+  const stale = records.filter(
+    (record) =>
+      Boolean(record.serverSessionId) &&
+      missingServerSessionIds.has(record.serverSessionId as string) &&
+      removedLocalSessionIds.has(record.localSessionId),
+  );
+
+  await Promise.all(
+    stale.map((record) => db.delete("offlineSessions", record.localSessionId)),
+  );
+  return stale.length;
+}
+
 export async function saveOfflineSession(record: OfflineSessionRecord) {
   const db = await getOfflineDb();
   const updated = normalizeSession({ ...record, updatedAt: now() });
