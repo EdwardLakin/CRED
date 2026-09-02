@@ -29,7 +29,7 @@ export async function createLiveRlsFixture() {
   const deletedEndpoint = await insertOne(service,'evidence_entities',{ documentation_session_id:a1.id, organization_id:a.organization.id, entity_type:'asset', display_name:'deleted endpoint' })
   const softDeletedRelationship = await insertOne(service,'evidence_relationships',{ documentation_session_id:a1.id, organization_id:a.organization.id, source_type:'entity', source_id:a1Seed.entity.id, target_type:'entity', target_id:deletedEndpoint.id, relationship_type:'related_to', deleted_at:new Date().toISOString() })
   await must('soft delete endpoint', service.from('evidence_entities').update({ deleted_at:new Date().toISOString() }).eq('id', deletedEndpoint.id))
-  return { runId, service, cleanup, a, b, sessions:{ a1, a2, b1 }, seed:{ a1:a1Seed, a2:a2Seed, b1:b1Seed, deletedEndpoint, softDeletedRelationship } }
+  return { runId, service, cleanup, a, b, sessions:{ a1, a2, b1 }, seed:{ a1:a1Seed, a2:a2Seed, b1:b1Seed, deletedEndpoint, softDeletedRelationship }, ids }
 }
 export function expectDeniedRead(result) { if (result.error) return; if (Array.isArray(result.data)) { if (result.data.length !== 0) throw new Error('expected denied read to return no rows'); return } if (result.data != null) throw new Error('expected denied read to return null') }
 export function expectDeniedInsert(result) { if (!result.error) throw new Error('expected RLS denied insert to return an error') }
