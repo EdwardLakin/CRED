@@ -21,9 +21,17 @@ name: Integration and E2E tests
 #   access, including a compromised dependency bump) would otherwise get the
 #   Supabase service-role key and E2E account credentials just by opening a
 #   PR. Running only on `push` to main means secrets are only used against
-#   code that has already landed, and `workflow_dispatch` (which itself
-#   requires write access) covers an on-demand run against a specific
-#   ref/PR branch when needed.
+#   code that has already landed.
+# - `workflow_dispatch` is still allowed for an on-demand run, but each job's
+#   `if:` requires `github.ref == 'refs/heads/main'` for any dispatch (a
+#   push is always evaluated against whatever branch it targets, which the
+#   trigger above already restricts to main). `workflow_dispatch` itself
+#   only requires write access, but write access to push a branch is not the
+#   same as trust to run with these secrets — a collaborator who can push a
+#   branch but not to protected main could otherwise dispatch this workflow
+#   against their own branch and exfiltrate the service-role key or E2E
+#   credentials. `github` (unlike `secrets`) is available in `jobs.<job_id>.if`,
+#   so this check is a plain job-level condition, no extra step needed.
 # - `push` is restricted to `main` only (not `work`, unlike offline-browser.yml).
 #   Both jobs share one Supabase test project, and `supabase db push` only
 #   ever advances a database — it doesn't reset it. If pushes to `work` and
@@ -33,8 +41,7 @@ name: Integration and E2E tests
 #   main-triggered run would test against the wrong schema (or hit a
 #   migration-history conflict) instead of the commit it's actually running.
 #   Restricting to `main` keeps exactly one branch as the source of truth for
-#   this shared database; `workflow_dispatch` still allows a deliberate
-#   on-demand run against `work` or any other ref when needed.
+#   this shared database.
 # - `concurrency` serializes runs: both suites mutate a single shared
 #   Supabase test project / E2E test account, so two overlapping runs would
 #   corrupt each other's state.
@@ -48,6 +55,12 @@ name: Integration and E2E tests
 #   missing secrets still reports success), e2e-browser is skipped too,
 #   rather than running e2e against a project a real RLS regression just
 #   flagged.
+# - Secrets are attached with step-level `env:`, not job-level. A job-level
+#   `env:` would hand every secret to every step, including `npm ci` — which
+#   runs arbitrary install scripts from third-party packages (this repo's
+#   lockfile already has some, e.g. sharp). Each secret is scoped only to
+#   the step that actually needs it, so a compromised install script (or any
+#   action/step that doesn't need credentials) never sees them.
 #
 # Configure these secrets in Settings -> Secrets and variables -> Actions to
 # activate each job:
@@ -58,9 +71,12 @@ name: Integration and E2E tests
 #   "cred-test-multi-workspace-rls" — see tests/helpers/supabase-test-environment.mjs),
 #   SUPABASE_PRODUCTION_URLS (comma-separated; the suite refuses to run
 #   against any URL listed here), SUPABASE_TEST_DB_URL (a percent-encoded
-#   Postgres connection string for the same test project, used to apply the
-#   committed migration chain with `supabase db push` before the RLS suite
-#   runs — see docs/testing/evidence-workspace-integration.md)
+#   Postgres connection string — direct or pooler — for the same test
+#   project, used to apply the committed migration chain with
+#   `supabase db push` before the RLS suite runs — see
+#   docs/testing/evidence-workspace-integration.md). SUPABASE_TEST_DB_URL
+#   must point at the same project as SUPABASE_TEST_URL; the validation step
+#   below checks this and refuses to proceed on a mismatch.
 #
 # e2e-browser:
 #   E2E_BASE_URL, E2E_TEST_USER_EMAIL, E2E_TEST_USER_PASSWORD,
@@ -73,7 +89,11 @@ name: Integration and E2E tests
 # and E2E_BASE_URL are self-checked by their respective test scripts against
 # the *_PRODUCTION_URLS lists and abort if they match; SUPABASE_TEST_DB_URL
 # is checked separately by the "Validate Supabase test database target" step
-# below, since it's a raw connection string the test scripts never see, and
+# below (by Supabase project ref, extracted from either a direct `db.<ref>.
+# supabase.co` connection string or a pooler `postgres.<ref>@*.pooler.
+# supabase.com` one — a plain hostname substring check silently misses
+# pooler URLs, since the project ref lives in the username, not the host),
+# since it's a raw connection string the test scripts never see and
 # `supabase db push` runs before either script's own check would catch a
 # misconfigured target. E2E_BASE_URL is a fixed deployment (e.g. a staging
 # environment tracking main), not a per-PR preview, since this workflow no
@@ -95,13 +115,7 @@ jobs:
     name: Live Supabase RLS integration tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      SUPABASE_TEST_URL: ${{ secrets.SUPABASE_TEST_URL }}
-      SUPABASE_TEST_ANON_KEY: ${{ secrets.SUPABASE_TEST_ANON_KEY }}
-      SUPABASE_TEST_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_TEST_SERVICE_ROLE_KEY }}
-      SUPABASE_TEST_ALLOW_DESTRUCTIVE: ${{ secrets.SUPABASE_TEST_ALLOW_DESTRUCTIVE }}
-      SUPABASE_PRODUCTION_URLS: ${{ secrets.SUPABASE_PRODUCTION_URLS }}
-      SUPABASE_TEST_DB_URL: ${{ secrets.SUPABASE_TEST_DB_URL }}
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -115,6 +129,13 @@ jobs:
       - name: Check required secrets
         id: check
         shell: bash
+        env:
+          SUPABASE_TEST_URL: ${{ secrets.SUPABASE_TEST_URL }}
+          SUPABASE_TEST_ANON_KEY: ${{ secrets.SUPABASE_TEST_ANON_KEY }}
+          SUPABASE_TEST_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_TEST_SERVICE_ROLE_KEY }}
+          SUPABASE_TEST_ALLOW_DESTRUCTIVE: ${{ secrets.SUPABASE_TEST_ALLOW_DESTRUCTIVE }}
+          SUPABASE_PRODUCTION_URLS: ${{ secrets.SUPABASE_PRODUCTION_URLS }}
+          SUPABASE_TEST_DB_URL: ${{ secrets.SUPABASE_TEST_DB_URL }}
         run: |
           missing=()
           [ -z "$SUPABASE_TEST_URL" ] && missing+=(SUPABASE_TEST_URL)
@@ -132,30 +153,57 @@ jobs:
 
       - name: Validate Supabase test database target
         if: steps.check.outputs.ready == 'true'
+        env:
+          SUPABASE_TEST_URL: ${{ secrets.SUPABASE_TEST_URL }}
+          SUPABASE_TEST_DB_URL: ${{ secrets.SUPABASE_TEST_DB_URL }}
+          SUPABASE_PRODUCTION_URLS: ${{ secrets.SUPABASE_PRODUCTION_URLS }}
         run: |
           node -e '
-            const dbUrl = process.env.SUPABASE_TEST_DB_URL;
-            const prodUrls = (process.env.SUPABASE_PRODUCTION_URLS || "").split(",").map((s) => s.trim()).filter(Boolean);
-            let dbHost;
+            function extractProjectRef(rawUrl) {
+              const u = new URL(rawUrl);
+              const userMatch = decodeURIComponent(u.username || "").match(/^postgres\.([a-z0-9]+)$/i);
+              if (userMatch) return userMatch[1].toLowerCase();
+              const hostMatch = u.hostname.toLowerCase().match(/^db\.([a-z0-9]+)\.supabase\.co$/);
+              if (hostMatch) return hostMatch[1];
+              return u.hostname.toLowerCase().split(".")[0];
+            }
+
+            let dbRef;
             try {
-              dbHost = new URL(dbUrl).hostname.toLowerCase();
+              dbRef = extractProjectRef(process.env.SUPABASE_TEST_DB_URL);
             } catch {
               console.error("SUPABASE_TEST_DB_URL is not a valid connection string.");
               process.exit(1);
             }
+
+            let testRef;
+            try {
+              testRef = extractProjectRef(process.env.SUPABASE_TEST_URL);
+            } catch {
+              console.error("SUPABASE_TEST_URL is not a valid URL.");
+              process.exit(1);
+            }
+
+            if (dbRef !== testRef) {
+              console.error(`Refusing to push migrations: SUPABASE_TEST_DB_URL project ref "${dbRef}" does not match SUPABASE_TEST_URL project ref "${testRef}" — they must point at the same Supabase project.`);
+              process.exit(1);
+            }
+
+            const prodUrls = (process.env.SUPABASE_PRODUCTION_URLS || "").split(",").map((s) => s.trim()).filter(Boolean);
             for (const prodUrl of prodUrls) {
               let prodRef;
               try {
-                prodRef = new URL(prodUrl).hostname.toLowerCase().split(".")[0];
+                prodRef = extractProjectRef(prodUrl);
               } catch {
                 continue;
               }
-              if (prodRef && dbHost.includes(prodRef)) {
-                console.error(`Refusing to push migrations: SUPABASE_TEST_DB_URL host "${dbHost}" matches production project ref "${prodRef}" from SUPABASE_PRODUCTION_URLS.`);
+              if (prodRef && dbRef === prodRef) {
+                console.error(`Refusing to push migrations: project ref "${prodRef}" matches an entry in SUPABASE_PRODUCTION_URLS.`);
                 process.exit(1);
               }
             }
-            console.log(`Supabase test database target OK: ${dbHost}`);
+
+            console.log(`Supabase test database target OK: project ref ${dbRef}`);
           '
 
       - name: Install dependencies
@@ -164,6 +212,8 @@ jobs:
 
       - name: Apply migrations to the Supabase test project
         if: steps.check.outputs.ready == 'true'
+        env:
+          SUPABASE_TEST_DB_URL: ${{ secrets.SUPABASE_TEST_DB_URL }}
         # Pinned so an unrelated CLI release can't silently change migration
         # behavior on an otherwise-unchanged commit — see the CLI version
         # this was validated against in the PR description.
@@ -171,6 +221,12 @@ jobs:
 
       - name: Run live Supabase RLS integration tests
         if: steps.check.outputs.ready == 'true'
+        env:
+          SUPABASE_TEST_URL: ${{ secrets.SUPABASE_TEST_URL }}
+          SUPABASE_TEST_ANON_KEY: ${{ secrets.SUPABASE_TEST_ANON_KEY }}
+          SUPABASE_TEST_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_TEST_SERVICE_ROLE_KEY }}
+          SUPABASE_TEST_ALLOW_DESTRUCTIVE: ${{ secrets.SUPABASE_TEST_ALLOW_DESTRUCTIVE }}
+          SUPABASE_PRODUCTION_URLS: ${{ secrets.SUPABASE_PRODUCTION_URLS }}
         run: npm run test:integration
 
   e2e-browser:
@@ -178,12 +234,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: live-rls-integration
-    env:
-      E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
-      E2E_TEST_USER_EMAIL: ${{ secrets.E2E_TEST_USER_EMAIL }}
-      E2E_TEST_USER_PASSWORD: ${{ secrets.E2E_TEST_USER_PASSWORD }}
-      E2E_ALLOW_TEST_RUN: ${{ secrets.E2E_ALLOW_TEST_RUN }}
-      E2E_PRODUCTION_URLS: ${{ secrets.E2E_PRODUCTION_URLS }}
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -197,6 +248,12 @@ jobs:
       - name: Check required secrets
         id: check
         shell: bash
+        env:
+          E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
+          E2E_TEST_USER_EMAIL: ${{ secrets.E2E_TEST_USER_EMAIL }}
+          E2E_TEST_USER_PASSWORD: ${{ secrets.E2E_TEST_USER_PASSWORD }}
+          E2E_ALLOW_TEST_RUN: ${{ secrets.E2E_ALLOW_TEST_RUN }}
+          E2E_PRODUCTION_URLS: ${{ secrets.E2E_PRODUCTION_URLS }}
         run: |
           missing=()
           [ -z "$E2E_BASE_URL" ] && missing+=(E2E_BASE_URL)
@@ -221,6 +278,12 @@ jobs:
 
       - name: Run e2e tests
         if: steps.check.outputs.ready == 'true'
+        env:
+          E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
+          E2E_TEST_USER_EMAIL: ${{ secrets.E2E_TEST_USER_EMAIL }}
+          E2E_TEST_USER_PASSWORD: ${{ secrets.E2E_TEST_USER_PASSWORD }}
+          E2E_ALLOW_TEST_RUN: ${{ secrets.E2E_ALLOW_TEST_RUN }}
+          E2E_PRODUCTION_URLS: ${{ secrets.E2E_PRODUCTION_URLS }}
         run: npm run test:e2e
 
       - name: Upload Playwright failure artifacts
