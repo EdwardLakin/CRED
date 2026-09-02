@@ -1,0 +1,96 @@
+name: Integration and E2E tests
+
+# Wires tests/*.integration.test.mjs (live Supabase RLS/tenancy checks) and
+# the Playwright e2e/ suite into CI. Both were previously only runnable
+# locally: offline-browser.yml runs `npm test`, which explicitly excludes
+# *.integration.test.mjs, and never runs `npm run test:e2e`.
+#
+# Both jobs require live credentials (a real Supabase test project for
+# integration tests; a reachable deployment plus a test user for e2e) that
+# can only be supplied as repository/environment secrets. Until those
+# secrets are configured, each job's guard condition evaluates to false and
+# the job is skipped (shown as skipped, not failed) so CI stays green for
+# any fork or contributor that hasn't set them up. Configure the secrets
+# below in Settings -> Secrets and variables -> Actions to activate them:
+#
+# live-rls-integration:
+#   SUPABASE_TEST_URL, SUPABASE_TEST_ANON_KEY, SUPABASE_TEST_SERVICE_ROLE_KEY,
+#   SUPABASE_TEST_ALLOW_DESTRUCTIVE (must be "evidence-workspace-rls" or
+#   "cred-test-multi-workspace-rls" — see tests/helpers/supabase-test-environment.mjs),
+#   SUPABASE_PRODUCTION_URLS (comma-separated; the suite refuses to run
+#   against any URL listed here)
+#
+# e2e-browser:
+#   E2E_BASE_URL, E2E_TEST_USER_EMAIL, E2E_TEST_USER_PASSWORD,
+#   E2E_ALLOW_TEST_RUN (must be "cred-e2e" — see scripts/run-e2e.mjs),
+#   E2E_PRODUCTION_URLS (comma-separated; the suite refuses to run against
+#   any URL listed here)
+#
+# SUPABASE_TEST_URL and E2E_BASE_URL must point at a disposable test
+# project/deployment, never at production — both scripts self-check this
+# against the *_PRODUCTION_URLS lists and abort if they match.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, work]
+  workflow_dispatch: {}
+
+jobs:
+  live-rls-integration:
+    name: Live Supabase RLS integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: ${{ secrets.SUPABASE_TEST_URL != '' }}
+    env:
+      SUPABASE_TEST_URL: ${{ secrets.SUPABASE_TEST_URL }}
+      SUPABASE_TEST_ANON_KEY: ${{ secrets.SUPABASE_TEST_ANON_KEY }}
+      SUPABASE_TEST_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_TEST_SERVICE_ROLE_KEY }}
+      SUPABASE_TEST_ALLOW_DESTRUCTIVE: ${{ secrets.SUPABASE_TEST_ALLOW_DESTRUCTIVE }}
+      SUPABASE_PRODUCTION_URLS: ${{ secrets.SUPABASE_PRODUCTION_URLS }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run live Supabase RLS integration tests
+        run: npm run test:integration
+
+  e2e-browser:
+    name: Playwright e2e (chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: ${{ secrets.E2E_BASE_URL != '' }}
+    env:
+      E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
+      E2E_TEST_USER_EMAIL: ${{ secrets.E2E_TEST_USER_EMAIL }}
+      E2E_TEST_USER_PASSWORD: ${{ secrets.E2E_TEST_USER_PASSWORD }}
+      E2E_ALLOW_TEST_RUN: ${{ secrets.E2E_ALLOW_TEST_RUN }}
+      E2E_PRODUCTION_URLS: ${{ secrets.E2E_PRODUCTION_URLS }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run e2e tests
+        run: npm run test:e2e
