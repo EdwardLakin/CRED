@@ -14,8 +14,15 @@
 
 -- Bucket-level limits matching the app-level validation already enforced
 -- in src/features/templates/actions.ts (PDF/DOCX/JPEG/PNG/WEBP/HEIC/HEIF).
+-- The cap must be at least as large as the highest plan's file-size limit:
+-- importTemplate() passes file.size through requireUsageAllowance(), which
+-- validates against PLAN_LIMITS[plan].maxCaptureFileSizeBytes in
+-- src/features/billing/limits.ts — 25 MB (individual), 50 MB (team), and
+-- 100 MB (shop, the same STORAGE_BUCKET_MAX_BYTES ceiling documentation-
+-- captures already uses). A lower bucket cap would let the app approve an
+-- upload that Storage then rejects for team/shop workspaces.
 update storage.buckets
-set file_size_limit = 26214400, -- 25 MB
+set file_size_limit = 104857600, -- 100 MB
     allowed_mime_types = array[
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
