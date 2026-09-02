@@ -20,13 +20,34 @@ name: Integration and E2E tests
 #   *forked* pull requests; a same-repository branch (anyone with push
 #   access, including a compromised dependency bump) would otherwise get the
 #   Supabase service-role key and E2E account credentials just by opening a
-#   PR. Running only on `push` to main/work means secrets are only used
-#   against code that has already landed, and `workflow_dispatch` (which
-#   itself requires write access) covers an on-demand run against a
-#   specific ref/PR branch when needed.
+#   PR. Running only on `push` to main means secrets are only used against
+#   code that has already landed, and `workflow_dispatch` (which itself
+#   requires write access) covers an on-demand run against a specific
+#   ref/PR branch when needed.
+# - `push` is restricted to `main` only (not `work`, unlike offline-browser.yml).
+#   Both jobs share one Supabase test project, and `supabase db push` only
+#   ever advances a database — it doesn't reset it. If pushes to `work` and
+#   `main` both ran migrations against that same database, a migration that
+#   landed on `work` but not yet on `main` would leave the shared database
+#   ahead of what main's live-rls-integration run checks out, so a later
+#   main-triggered run would test against the wrong schema (or hit a
+#   migration-history conflict) instead of the commit it's actually running.
+#   Restricting to `main` keeps exactly one branch as the source of truth for
+#   this shared database; `workflow_dispatch` still allows a deliberate
+#   on-demand run against `work` or any other ref when needed.
 # - `concurrency` serializes runs: both suites mutate a single shared
 #   Supabase test project / E2E test account, so two overlapping runs would
 #   corrupt each other's state.
+# - `e2e-browser` declares `needs: live-rls-integration` so it never starts
+#   until migrations have finished applying to the shared test project —
+#   without that, a push whose e2e flow depends on a new migration could run
+#   Playwright against the backend mid-migration or before it, per
+#   docs/testing/evidence-workspace-integration.md's requirement that the
+#   migration chain be applied before browser smoke tests. If
+#   live-rls-integration fails outright (not just skips — a skip due to
+#   missing secrets still reports success), e2e-browser is skipped too,
+#   rather than running e2e against a project a real RLS regression just
+#   flagged.
 #
 # Configure these secrets in Settings -> Secrets and variables -> Actions to
 # activate each job:
@@ -48,16 +69,21 @@ name: Integration and E2E tests
 #   any URL listed here)
 #
 # SUPABASE_TEST_URL/SUPABASE_TEST_DB_URL and E2E_BASE_URL must point at a
-# disposable test project/deployment, never at production — both scripts
-# self-check this against the *_PRODUCTION_URLS lists and abort if they
-# match. E2E_BASE_URL is a fixed deployment (e.g. a staging environment
-# tracking main), not a per-PR preview, since this workflow no longer runs
-# on pull_request: it exercises whatever is currently deployed there after
-# each push to main, as a post-merge smoke test rather than a merge gate.
+# disposable test project/deployment, never at production. SUPABASE_TEST_URL
+# and E2E_BASE_URL are self-checked by their respective test scripts against
+# the *_PRODUCTION_URLS lists and abort if they match; SUPABASE_TEST_DB_URL
+# is checked separately by the "Validate Supabase test database target" step
+# below, since it's a raw connection string the test scripts never see, and
+# `supabase db push` runs before either script's own check would catch a
+# misconfigured target. E2E_BASE_URL is a fixed deployment (e.g. a staging
+# environment tracking main), not a per-PR preview, since this workflow no
+# longer runs on pull_request: it exercises whatever is currently deployed
+# there after each push to main, as a post-merge smoke test rather than a
+# merge gate.
 
 on:
   push:
-    branches: [main, work]
+    branches: [main]
   workflow_dispatch: {}
 
 concurrency:
@@ -104,13 +130,44 @@ jobs:
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Validate Supabase test database target
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          node -e '
+            const dbUrl = process.env.SUPABASE_TEST_DB_URL;
+            const prodUrls = (process.env.SUPABASE_PRODUCTION_URLS || "").split(",").map((s) => s.trim()).filter(Boolean);
+            let dbHost;
+            try {
+              dbHost = new URL(dbUrl).hostname.toLowerCase();
+            } catch {
+              console.error("SUPABASE_TEST_DB_URL is not a valid connection string.");
+              process.exit(1);
+            }
+            for (const prodUrl of prodUrls) {
+              let prodRef;
+              try {
+                prodRef = new URL(prodUrl).hostname.toLowerCase().split(".")[0];
+              } catch {
+                continue;
+              }
+              if (prodRef && dbHost.includes(prodRef)) {
+                console.error(`Refusing to push migrations: SUPABASE_TEST_DB_URL host "${dbHost}" matches production project ref "${prodRef}" from SUPABASE_PRODUCTION_URLS.`);
+                process.exit(1);
+              }
+            }
+            console.log(`Supabase test database target OK: ${dbHost}`);
+          '
+
       - name: Install dependencies
         if: steps.check.outputs.ready == 'true'
         run: npm ci
 
       - name: Apply migrations to the Supabase test project
         if: steps.check.outputs.ready == 'true'
-        run: npx supabase db push --db-url "$SUPABASE_TEST_DB_URL" --yes
+        # Pinned so an unrelated CLI release can't silently change migration
+        # behavior on an otherwise-unchanged commit — see the CLI version
+        # this was validated against in the PR description.
+        run: npx --yes supabase@2.116.0 db push --db-url "$SUPABASE_TEST_DB_URL" --yes
 
       - name: Run live Supabase RLS integration tests
         if: steps.check.outputs.ready == 'true'
@@ -120,6 +177,7 @@ jobs:
     name: Playwright e2e (chromium)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    needs: live-rls-integration
     env:
       E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
       E2E_TEST_USER_EMAIL: ${{ secrets.E2E_TEST_USER_EMAIL }}
