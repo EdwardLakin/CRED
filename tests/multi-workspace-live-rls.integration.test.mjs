@@ -49,7 +49,6 @@ test('seed workspace memberships for live Phase 1 RLS checks', async () => {
 
   for (const [owner, workspace] of [[fx.a, fx.a.organization], [fx.b, fx.b.organization]]) {
     const account = await must('create billing account', fx.service.from('billing_accounts').insert({ owner_user_id: owner.userId, name: `${fx.runId} ${workspace.name}` }).select('*').single())
-    fx.ids ??= { billingAccounts: [] }
     fx.ids.billingAccounts.push(account.id)
     await must('assign billing account', fx.service.from('organizations').update({ billing_account_id: account.id }).eq('id', workspace.id))
   }
