@@ -5,20 +5,41 @@ name: Integration and E2E tests
 # locally: offline-browser.yml runs `npm test`, which explicitly excludes
 # *.integration.test.mjs, and never runs `npm run test:e2e`.
 #
-# Both jobs require live credentials (a real Supabase test project for
-# integration tests; a reachable deployment plus a test user for e2e) that
-# can only be supplied as repository/environment secrets. Until those
-# secrets are configured, each job's guard condition evaluates to false and
-# the job is skipped (shown as skipped, not failed) so CI stays green for
-# any fork or contributor that hasn't set them up. Configure the secrets
-# below in Settings -> Secrets and variables -> Actions to activate them:
+# Design notes (why this looks the way it does):
+#
+# - Both jobs run unconditionally, not gated by `if: secrets.X != ''` at the
+#   job level — GitHub does not expose the `secrets` context to
+#   `jobs.<job_id>.if` and rejects the whole workflow file if you try. Each
+#   job instead starts with a "Check required secrets" step that checks
+#   every secret the job needs and sets a `ready` output; every later step
+#   is gated on `steps.check.outputs.ready == 'true'`. Until every secret
+#   below is configured, the job runs, logs which secrets are missing, and
+#   its later steps report as skipped rather than failed — so this can't
+#   break CI for anyone who hasn't set them up yet.
+# - No `pull_request` trigger. GitHub only withholds repository secrets from
+#   *forked* pull requests; a same-repository branch (anyone with push
+#   access, including a compromised dependency bump) would otherwise get the
+#   Supabase service-role key and E2E account credentials just by opening a
+#   PR. Running only on `push` to main/work means secrets are only used
+#   against code that has already landed, and `workflow_dispatch` (which
+#   itself requires write access) covers an on-demand run against a
+#   specific ref/PR branch when needed.
+# - `concurrency` serializes runs: both suites mutate a single shared
+#   Supabase test project / E2E test account, so two overlapping runs would
+#   corrupt each other's state.
+#
+# Configure these secrets in Settings -> Secrets and variables -> Actions to
+# activate each job:
 #
 # live-rls-integration:
 #   SUPABASE_TEST_URL, SUPABASE_TEST_ANON_KEY, SUPABASE_TEST_SERVICE_ROLE_KEY,
 #   SUPABASE_TEST_ALLOW_DESTRUCTIVE (must be "evidence-workspace-rls" or
 #   "cred-test-multi-workspace-rls" — see tests/helpers/supabase-test-environment.mjs),
 #   SUPABASE_PRODUCTION_URLS (comma-separated; the suite refuses to run
-#   against any URL listed here)
+#   against any URL listed here), SUPABASE_TEST_DB_URL (a percent-encoded
+#   Postgres connection string for the same test project, used to apply the
+#   committed migration chain with `supabase db push` before the RLS suite
+#   runs — see docs/testing/evidence-workspace-integration.md)
 #
 # e2e-browser:
 #   E2E_BASE_URL, E2E_TEST_USER_EMAIL, E2E_TEST_USER_PASSWORD,
@@ -26,29 +47,35 @@ name: Integration and E2E tests
 #   E2E_PRODUCTION_URLS (comma-separated; the suite refuses to run against
 #   any URL listed here)
 #
-# SUPABASE_TEST_URL and E2E_BASE_URL must point at a disposable test
-# project/deployment, never at production — both scripts self-check this
-# against the *_PRODUCTION_URLS lists and abort if they match.
+# SUPABASE_TEST_URL/SUPABASE_TEST_DB_URL and E2E_BASE_URL must point at a
+# disposable test project/deployment, never at production — both scripts
+# self-check this against the *_PRODUCTION_URLS lists and abort if they
+# match. E2E_BASE_URL is a fixed deployment (e.g. a staging environment
+# tracking main), not a per-PR preview, since this workflow no longer runs
+# on pull_request: it exercises whatever is currently deployed there after
+# each push to main, as a post-merge smoke test rather than a merge gate.
 
 on:
-  pull_request:
-    branches: [main]
   push:
     branches: [main, work]
   workflow_dispatch: {}
+
+concurrency:
+  group: cred-integration-e2e-shared-account
+  cancel-in-progress: false
 
 jobs:
   live-rls-integration:
     name: Live Supabase RLS integration tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    if: ${{ secrets.SUPABASE_TEST_URL != '' }}
     env:
       SUPABASE_TEST_URL: ${{ secrets.SUPABASE_TEST_URL }}
       SUPABASE_TEST_ANON_KEY: ${{ secrets.SUPABASE_TEST_ANON_KEY }}
       SUPABASE_TEST_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_TEST_SERVICE_ROLE_KEY }}
       SUPABASE_TEST_ALLOW_DESTRUCTIVE: ${{ secrets.SUPABASE_TEST_ALLOW_DESTRUCTIVE }}
       SUPABASE_PRODUCTION_URLS: ${{ secrets.SUPABASE_PRODUCTION_URLS }}
+      SUPABASE_TEST_DB_URL: ${{ secrets.SUPABASE_TEST_DB_URL }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -59,17 +86,40 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Check required secrets
+        id: check
+        shell: bash
+        run: |
+          missing=()
+          [ -z "$SUPABASE_TEST_URL" ] && missing+=(SUPABASE_TEST_URL)
+          [ -z "$SUPABASE_TEST_ANON_KEY" ] && missing+=(SUPABASE_TEST_ANON_KEY)
+          [ -z "$SUPABASE_TEST_SERVICE_ROLE_KEY" ] && missing+=(SUPABASE_TEST_SERVICE_ROLE_KEY)
+          [ -z "$SUPABASE_TEST_ALLOW_DESTRUCTIVE" ] && missing+=(SUPABASE_TEST_ALLOW_DESTRUCTIVE)
+          [ -z "$SUPABASE_PRODUCTION_URLS" ] && missing+=(SUPABASE_PRODUCTION_URLS)
+          [ -z "$SUPABASE_TEST_DB_URL" ] && missing+=(SUPABASE_TEST_DB_URL)
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping live RLS integration tests — missing secrets: ${missing[*]}"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install dependencies
+        if: steps.check.outputs.ready == 'true'
         run: npm ci
 
+      - name: Apply migrations to the Supabase test project
+        if: steps.check.outputs.ready == 'true'
+        run: npx supabase db push --db-url "$SUPABASE_TEST_DB_URL" --yes
+
       - name: Run live Supabase RLS integration tests
+        if: steps.check.outputs.ready == 'true'
         run: npm run test:integration
 
   e2e-browser:
     name: Playwright e2e (chromium)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    if: ${{ secrets.E2E_BASE_URL != '' }}
     env:
       E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
       E2E_TEST_USER_EMAIL: ${{ secrets.E2E_TEST_USER_EMAIL }}
@@ -86,11 +136,42 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Check required secrets
+        id: check
+        shell: bash
+        run: |
+          missing=()
+          [ -z "$E2E_BASE_URL" ] && missing+=(E2E_BASE_URL)
+          [ -z "$E2E_TEST_USER_EMAIL" ] && missing+=(E2E_TEST_USER_EMAIL)
+          [ -z "$E2E_TEST_USER_PASSWORD" ] && missing+=(E2E_TEST_USER_PASSWORD)
+          [ -z "$E2E_ALLOW_TEST_RUN" ] && missing+=(E2E_ALLOW_TEST_RUN)
+          [ -z "$E2E_PRODUCTION_URLS" ] && missing+=(E2E_PRODUCTION_URLS)
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping e2e tests — missing secrets: ${missing[*]}"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install dependencies
+        if: steps.check.outputs.ready == 'true'
         run: npm ci
 
       - name: Install Playwright browsers
+        if: steps.check.outputs.ready == 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Run e2e tests
+        if: steps.check.outputs.ready == 'true'
         run: npm run test:e2e
+
+      - name: Upload Playwright failure artifacts
+        if: always() && steps.check.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 14
+          if-no-files-found: ignore
