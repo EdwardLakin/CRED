@@ -210,14 +210,25 @@ jobs:
         if: steps.check.outputs.ready == 'true'
         run: npm ci
 
+      - name: Install Supabase CLI
+        if: steps.check.outputs.ready == 'true'
+        # Installed as its own secret-free step so the `npm install` (and any
+        # postinstall scripts belonging to it or its transitive deps) never
+        # runs with SUPABASE_TEST_DB_URL in the environment. Pinned so an
+        # unrelated CLI release can't silently change migration behavior on
+        # an otherwise-unchanged commit — see the version this was validated
+        # against in the PR description. `--no-save` keeps it out of
+        # package.json/package-lock.json.
+        run: npm install --no-save supabase@2.116.0
+
       - name: Apply migrations to the Supabase test project
         if: steps.check.outputs.ready == 'true'
         env:
           SUPABASE_TEST_DB_URL: ${{ secrets.SUPABASE_TEST_DB_URL }}
-        # Pinned so an unrelated CLI release can't silently change migration
-        # behavior on an otherwise-unchanged commit — see the CLI version
-        # this was validated against in the PR description.
-        run: npx --yes supabase@2.116.0 db push --db-url "$SUPABASE_TEST_DB_URL" --yes
+        # `npx` here resolves to the already-installed local copy from the
+        # previous step — no network/install activity happens with the
+        # secret present.
+        run: npx supabase db push --db-url "$SUPABASE_TEST_DB_URL" --yes
 
       - name: Run live Supabase RLS integration tests
         if: steps.check.outputs.ready == 'true'
@@ -286,13 +297,24 @@ jobs:
           E2E_PRODUCTION_URLS: ${{ secrets.E2E_PRODUCTION_URLS }}
         run: npm run test:e2e
 
-      - name: Upload Playwright failure artifacts
+      - name: Upload Playwright failure screenshots
         if: always() && steps.check.outputs.ready == 'true'
         uses: actions/upload-artifact@v4
+        # Screenshots only — deliberately not test-results/ wholesale or
+        # playwright-report/. playwright.config.js sets `trace:
+        # 'on-first-retry'`, and a trace records full request/response
+        # bodies; the specs sign in through app/sign-in/actions.ts, which
+        # puts E2E_TEST_USER_PASSWORD in that request. The HTML report can
+        # also embed a copy of the same trace data for its trace viewer.
+        # GitHub does not scan/mask secrets inside uploaded artifact files,
+        # so uploading either would let anyone with permission to download
+        # Actions artifacts read the test account's password and an
+        # authenticated session out of a failed run. Screenshots carry none
+        # of that (password fields render masked), at the cost of losing the
+        # trace viewer for local repro — pull the trace by re-running the
+        # failing spec locally instead.
         with:
-          name: playwright-report
-          path: |
-            test-results/
-            playwright-report/
+          name: playwright-screenshots
+          path: test-results/**/*.png
           retention-days: 14
           if-no-files-found: ignore
