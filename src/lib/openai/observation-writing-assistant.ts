@@ -1,8 +1,16 @@
+import { containsRecommendationSignal, stripUnsupportedRecommendationSentences } from './recommendation-guard'
+
 export const OBSERVATION_WRITING_MODEL = 'gpt-4.1-mini'
-export const OBSERVATION_WRITING_PROMPT_VERSION = 'observation-writing-v1'
+export const OBSERVATION_WRITING_PROMPT_VERSION = 'observation-writing-v2'
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 
+// There is deliberately no "generate_recommendation" (or any other
+// recommendation-authoring) action here. The inspector is the source of
+// truth for recommendations: this assistant may rewrite, reorganize, or
+// clarify text the inspector already wrote, but it must never be the one to
+// decide that a repair, replacement, service, or corrective action is
+// warranted. See src/lib/openai/recommendation-guard.ts.
 export type ObservationWritingAction =
   | 'improve_writing'
   | 'rewrite_for_customer'
@@ -10,7 +18,6 @@ export type ObservationWritingAction =
   | 'make_more_concise'
   | 'expand_description'
   | 'generate_observation'
-  | 'generate_recommendation'
   | 'explain_clearly'
 
 export type ObservationWritingInput = {
@@ -48,17 +55,16 @@ const ACTION_INSTRUCTIONS: Record<ObservationWritingAction, string> = {
   make_more_technical: 'Use more precise technical wording while preserving documented facts and avoiding unsupported diagnosis.',
   make_more_concise: 'Make the customer-facing text shorter and easier to scan without dropping important documented facts.',
   expand_description: 'Expand the description with relevant documented context from notes and image descriptions only.',
-  generate_observation: 'Generate a customer-facing observation from the technician note, existing fields, and supporting image descriptions.',
-  generate_recommendation: 'Generate a clear recommended action only from documented concerns, observations, and captured items. Avoid guarantees and legal language.',
+  generate_observation: 'Generate a customer-facing observation from the technician note, existing fields, and supporting image descriptions. Describe only what was observed — never state or imply that a repair, replacement, service, or corrective action is warranted.',
   explain_clearly: 'Explain the observation clearly for a non-technical customer while preserving the documented meaning.',
 }
 
 function classificationInstruction(classification: string) {
   const normalized = classification.toLowerCase()
   if (normalized.includes('concern')) return 'Classification: Concern. Describe what was observed and why it matters. Avoid diagnosis unless explicitly documented.'
-  if (normalized.includes('recommended')) return 'Classification: Recommended Action. Write a clear recommendation. Avoid guarantees, legal language, and unsupported urgency.'
+  if (normalized.includes('recommended')) return 'Classification: Recommended Action. The inspector already wrote this recommendation themselves; you may only reword or reorganize it for clarity and tone. Do not add a new repair, replacement, service, monitoring, or corrective action beyond what the inspector already wrote. Avoid guarantees, legal language, and unsupported urgency.'
   if (normalized.includes('supporting')) return 'Classification: Supporting Item. Explain how the item supports another observation. Do not create a new finding.'
-  return 'Classification: Observation. Describe only documented facts. No urgency. No recommendations.'
+  return 'Classification: Observation. Describe only documented facts. No urgency. No recommendations — never state or imply that a repair, replacement, service, or corrective action is warranted, even if the observation seems to call for one.'
 }
 
 function safeJson(value: unknown, maxLength = 20000) {
@@ -134,5 +140,16 @@ Action: ${ACTION_INSTRUCTIONS[input.action]}`,
   }
   const outputText = extractOutputText(body)
   if (!outputText) throw new Error('Observation writing assistant returned an empty response.')
-  return parseGeneratedText(outputText).slice(0, 4000)
+  const generated = parseGeneratedText(outputText).slice(0, 4000)
+
+  // Enforced backstop, not just a prompt instruction: the inspector's own
+  // technician note is the only acceptable source for a recommendation. If
+  // this rewrite introduced recommendation-shaped language that wasn't
+  // already present in the inspector's note, drop those sentences rather
+  // than trust the model to have followed the prompt.
+  const inspectorAlreadyRecommended = containsRecommendationSignal(input.technicianNote)
+  if (inspectorAlreadyRecommended) return generated
+  const sanitized = stripUnsupportedRecommendationSentences(generated, input.technicianNote)
+  if (!sanitized) throw new Error('AI writing assistant could not complete this edit without adding a recommendation the inspector did not write. Please write the recommendation yourself.')
+  return sanitized
 }

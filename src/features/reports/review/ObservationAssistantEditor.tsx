@@ -4,6 +4,9 @@ import { useId, useMemo, useState } from "react";
 
 import { runObservationWritingAction } from "@/features/reports/actions";
 
+// There is deliberately no "generate_recommendation" action — the inspector
+// is the source of truth for recommendations. This assistant may rewrite
+// text the inspector already wrote; it must never author a recommendation.
 type ActionKey =
   | "improve_writing"
   | "rewrite_for_customer"
@@ -11,7 +14,6 @@ type ActionKey =
   | "make_more_concise"
   | "expand_description"
   | "generate_observation"
-  | "generate_recommendation"
   | "explain_clearly";
 
 const ACTIONS: Array<{ key: ActionKey; label: string }> = [
@@ -21,7 +23,6 @@ const ACTIONS: Array<{ key: ActionKey; label: string }> = [
   { key: "make_more_concise", label: "Make More Concise" },
   { key: "expand_description", label: "Expand Description" },
   { key: "generate_observation", label: "Generate Observation" },
-  { key: "generate_recommendation", label: "Generate Recommendation" },
   { key: "explain_clearly", label: "Explain Clearly" },
 ];
 
