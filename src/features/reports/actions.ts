@@ -237,7 +237,11 @@ function getObservationAssistantErrorMessage(error: unknown) {
 }
 
 function getObservationWritingAction(value: string): ObservationWritingAction | null {
-  const allowed: ObservationWritingAction[] = ['improve_writing', 'rewrite_for_customer', 'make_more_technical', 'make_more_concise', 'expand_description', 'generate_observation', 'generate_recommendation', 'explain_clearly']
+  // No 'generate_recommendation' here, deliberately — the inspector is the
+  // source of truth for recommendations. A stale client or a hand-crafted
+  // request sending that action string must still be rejected server-side,
+  // not just hidden from the UI.
+  const allowed: ObservationWritingAction[] = ['improve_writing', 'rewrite_for_customer', 'make_more_technical', 'make_more_concise', 'expand_description', 'generate_observation', 'explain_clearly']
   return allowed.includes(value as ObservationWritingAction) ? value as ObservationWritingAction : null
 }
 

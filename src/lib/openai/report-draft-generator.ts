@@ -1,7 +1,12 @@
 import type { Json } from '@/lib/supabase/database.types'
+import {
+  looksLikeRecommendationSection,
+  sanitizeRecommendationField,
+  stripUnsupportedRecommendationSentences,
+} from './recommendation-guard'
 
 export const AI_REPORT_DRAFT_MODEL = 'gpt-4.1-mini'
-export const AI_REPORT_DRAFT_PROMPT_VERSION = 'form-evidence-report-v6'
+export const AI_REPORT_DRAFT_PROMPT_VERSION = 'form-evidence-report-v7'
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const MAX_SECTIONS = 24
@@ -202,6 +207,7 @@ Prioritize draft inputs in this order: 1) technician notes/manual captions/voice
 Source documents/forms provide the report skeleton, field labels, filled values, documented tester results, and neutral section summaries when OCR/text exists. OCR/text from a user-uploaded report/form/image is document truth; summarize it as documented/tester-reported, not as independent AI diagnosis. Do not convert prior work-order lines into findings unless technician-authored item notes or document text explicitly support them.
 Each section should include metadata for form/item rendering when available: section_type ('form_section' or the compatibility key 'evidence_group'), source_field_group, fields [{key,label,value,source_capture_id}], related_capture_ids, observations, findings, recommendations. Attach findings/recommendations to the source item capture IDs that support them.
 Every finding or recommendation must be based on technician-authored notes/transcripts, verified fields, or explicit OCR/document text and must reference those source_capture_ids. Do not invent unsupported findings/recommendations; if OCR states results such as GOOD BATTERY, STARTER SYSTEM CRANKING NORMAL, or CHARGING SYSTEM EXCESSIVE RIPPLE, phrase them as documented/tester-reported results.
+The inspector is the sole source of truth for recommendations. You may reword or clean up a recommendation the inspector already wrote in their own technician note or transcript, but you must never state, imply, or add a recommendation, required repair, required replacement, required service, monitoring instruction, or corrective/follow-up action that the inspector did not themselves write for that same item. An observation, defect, or measurement alone — however severe — is never grounds to add a recommendation on your own; leave the recommendation field null and omit recommendation language from that item's section body unless the inspector's own words already state one.
 Use needs_review when uncertain or when documentation is incomplete.
 Organize around captured form/report/template/checklist sections first when a structure-defining document is present, then supporting items. When no structure-defining document is present, organize into the generic CRED documentation report structure: Report Summary, Items Captured, Technician Notes, Findings, Recommendations, Final Summary / Report Notes, Inspector / Facility Details, Signoff.
 Do not claim official CVIP/compliance completion, automatic compliance, or final inspection approval.
@@ -428,14 +434,64 @@ function sanitizeSummaryAgainstSourceTruth(
   return safeSummary || null
 }
 
+// Inspector-authored text only (technician_note/transcript) — never
+// ocr_text or other extracted/AI fields. Recommendation grounding must come
+// from the inspector's own words, not from a document the AI read or a
+// description the AI generated.
+function getInspectorSourceText(input: GenerateReportDraftInput, captureIds: Iterable<string>): string {
+  const ids = new Set(captureIds)
+  return input.captures
+    .filter((capture) => ids.has(capture.id))
+    .flatMap((capture) => [capture.technician_note, capture.transcript])
+    .filter((value): value is string => typeof value === 'string' && Boolean(value.trim()))
+    .join(' ')
+}
+
+// The inspector is the source of truth: the model may rewrite/organize the
+// inspector's own words, but must never originate a recommendation. Every
+// recommendation-shaped value coming out of the model is dropped (or, for
+// prose, has just its recommendation-shaped sentences dropped) unless the
+// inspector's own technician_note/transcript for that same capture already
+// states one — being evidence-grounded is not enough on its own.
+export function applyRecommendationGuard(
+  draft: GeneratedReportDraft,
+  input: GenerateReportDraftInput,
+): GeneratedReportDraft {
+  const findings = Array.isArray(draft.findings)
+    ? draft.findings.map((finding) => {
+        if (!isRecord(finding)) return finding
+        const sourceCaptureId = typeof finding.source_capture_id === 'string' ? finding.source_capture_id : null
+        const inspectorText = sourceCaptureId ? getInspectorSourceText(input, [sourceCaptureId]) : ''
+        return {
+          ...finding,
+          recommendation: sanitizeRecommendationField(
+            typeof finding.recommendation === 'string' ? finding.recommendation : null,
+            inspectorText,
+          ),
+        }
+      })
+    : draft.findings
+
+  const sections = draft.sections.map((section) => {
+    if (!looksLikeRecommendationSection(section.title, section.body)) return section
+    const inspectorText = getInspectorSourceText(input, section.source_capture_ids)
+    return { ...section, body: stripUnsupportedRecommendationSentences(section.body, inspectorText) }
+  })
+
+  return { ...draft, findings: findings as Json, sections }
+}
+
 function applySourceTruthSummaryGuard(
   draft: GeneratedReportDraft,
   input: GenerateReportDraftInput,
 ): GeneratedReportDraft {
-  return {
-    ...draft,
-    summary: sanitizeSummaryAgainstSourceTruth(draft.summary, input),
-  }
+  return applyRecommendationGuard(
+    {
+      ...draft,
+      summary: sanitizeSummaryAgainstSourceTruth(draft.summary, input),
+    },
+    input,
+  )
 }
 
 export function validateGeneratedReportDraft(value: unknown, allowedCaptureIds = new Set<string>()): GeneratedReportDraft {

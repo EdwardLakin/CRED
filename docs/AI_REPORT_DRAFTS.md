@@ -48,6 +48,15 @@ The OpenAI helper at `src/lib/openai/report-draft-generator.ts` sends this conte
 
 Older non-approved drafts for the same session are marked `superseded` when a new draft is created.
 
+## Recommendation policy
+
+The inspector is the sole source of truth for recommendations. The AI may rewrite, reorganize, or clean up an observation or a recommendation the inspector already wrote in their own technician note or transcript, but it must never originate one — an observation, defect, or measurement, however severe, is never grounds on its own for the AI to add a recommendation, required repair, required replacement, required service, monitoring instruction, or corrective/follow-up action.
+
+This is enforced in two layers, not just prompt instructions:
+
+- The generation prompts (`report-draft-generator.ts`, `final-notes-generator.ts`, `observation-writing-assistant.ts`) instruct the model accordingly.
+- `src/lib/openai/recommendation-guard.ts` is the backstop for when a model doesn't comply. Every `findings[].recommendation` value and every recommendation-flavored section body is checked against the inspector's own `technician_note`/`transcript` for that same capture (never OCR text, image descriptions, or any other AI-derived field) before it is kept; a recommendation with no such grounding is dropped, and an otherwise-fine section has only its recommendation-shaped sentences removed. `capture-extractor.ts`'s `generated_recommendation` and `final-notes-generator.ts`'s output text go through the same guard. There is no "generate a recommendation" AI action anywhere in the product — the per-observation writing assistant (`observation-writing-assistant.ts`) can rewrite text the inspector already wrote, including an existing recommendation, but has no action that authors one from scratch, and its rewrite actions are themselves checked against this same guard afterward.
+
 ## Source capture references
 
 Sections include `source_capture_ids` so technicians can trace a draft statement back to the captured Evidence that supports it. The generator validates source IDs against the captures supplied to the model and drops unknown IDs.

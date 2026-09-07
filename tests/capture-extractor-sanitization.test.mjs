@@ -5,16 +5,24 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import ts from "typescript";
 
-async function loadCaptureExtractor() {
-  let source = readFileSync("src/lib/openai/capture-extractor.ts", "utf8");
+function transpileTs(path) {
+  let source = readFileSync(path, "utf8");
   source = source.replace(/^import type .*\n/gm, "");
   const transpiled = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 },
   }).outputText;
+  // Node ESM requires explicit extensions on relative specifiers; ts.transpileModule doesn't add them.
+  return transpiled.replace(/from '(\.\/[^']+)'/g, "from '$1.mjs'");
+}
+
+async function loadCaptureExtractor() {
   const dir = mkdtempSync(join(tmpdir(), "cred-capture-extractor-"));
-  const modulePath = join(dir, "capture-extractor.mjs");
-  writeFileSync(modulePath, transpiled);
-  return import(modulePath);
+  // capture-extractor.ts imports ./recommendation-guard as a real (non-type)
+  // module, so that file must be transpiled into the same temp directory
+  // for the relative import to resolve.
+  writeFileSync(join(dir, "recommendation-guard.mjs"), transpileTs("src/lib/openai/recommendation-guard.ts"));
+  writeFileSync(join(dir, "capture-extractor.mjs"), transpileTs("src/lib/openai/capture-extractor.ts"));
+  return import(join(dir, "capture-extractor.mjs"));
 }
 
 const baseExtraction = {
@@ -58,4 +66,42 @@ test("extracted_text sanitizer enforces max length without flattening newlines",
 
   assert.equal(result.extracted_text.length, 4000);
   assert.ok(result.extracted_text.includes("\n"));
+});
+
+test("generated_recommendation is dropped unless the inspector's own note/transcript already recommends something", async () => {
+  const { buildExtractedCaptureData, buildCaptureAiAnalysis } = await loadCaptureExtractor();
+  const extraction = {
+    ...baseExtraction,
+    generated_recommendation: "Recommend replacing the front brake pads.",
+  };
+
+  // No inspector source text at all: dropped.
+  const noSource = buildExtractedCaptureData(null, extraction, "extracted");
+  assert.equal(noSource.extraction.generated_recommendation, null);
+  assert.equal(buildCaptureAiAnalysis(null, extraction, "extracted").generated_recommendation, null);
+
+  // Inspector described the condition but never asked for a repair: still
+  // dropped — the AI is not allowed to be the one to decide a repair is
+  // warranted, however grounded the observation is.
+  const observationOnly = buildExtractedCaptureData(null, extraction, "extracted", "Pads measured at 2mm.");
+  assert.equal(observationOnly.extraction.generated_recommendation, null);
+
+  // Inspector's own note already states a recommendation: the AI-authored
+  // (rephrased) recommendation is kept.
+  const grounded = buildExtractedCaptureData(null, extraction, "extracted", "Pads at 2mm, recommend replacement.");
+  assert.equal(grounded.extraction.generated_recommendation, "Recommend replacing the front brake pads.");
+  assert.equal(
+    buildCaptureAiAnalysis(null, extraction, "extracted", "Pads at 2mm, recommend replacement.").generated_recommendation,
+    "Recommend replacing the front brake pads.",
+  );
+
+  // Still dropped when the extraction itself needs technician verification,
+  // even if the inspector's note would otherwise ground it.
+  const needsVerification = buildExtractedCaptureData(
+    null,
+    { ...extraction, technician_verification_required: true },
+    "needs_review",
+    "Pads at 2mm, recommend replacement.",
+  );
+  assert.equal(needsVerification.extraction.generated_recommendation, null);
 });

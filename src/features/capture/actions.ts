@@ -2300,6 +2300,12 @@ async function updateCaptureExtraction(
       ? 'extracted'
       : 'needs_review'
 
+  // The inspector's own words are the only acceptable source for a
+  // recommendation — never OCR text, AI descriptions, or anything else.
+  const inspectorSourceText = [capture.technician_note, capture.transcript]
+    .filter((value): value is string => typeof value === 'string' && Boolean(value.trim()))
+    .join(' ')
+
   const { error } = await supabase
     .from('capture_items')
     .update({
@@ -2310,11 +2316,13 @@ async function updateCaptureExtraction(
         capture.extracted_data,
         extraction,
         status,
+        inspectorSourceText,
       ),
       extracted_data: buildExtractedCaptureData(
         capture.extracted_data,
         extraction,
         status,
+        inspectorSourceText,
       ),
       updated_at: new Date().toISOString(),
     })

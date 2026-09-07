@@ -1,7 +1,9 @@
 import type { Json } from '@/lib/supabase/database.types'
 
+import { stripUnsupportedRecommendationSentences } from './recommendation-guard'
+
 export const FINAL_NOTES_MODEL = 'gpt-4.1-mini'
-export const FINAL_NOTES_PROMPT_VERSION = 'report-final-notes-v1'
+export const FINAL_NOTES_PROMPT_VERSION = 'report-final-notes-v2'
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 
@@ -94,6 +96,15 @@ function buildNeutralEvidenceSummary(input: GenerateFinalNotesInput) {
   return `${evidenceLabel} Technician notes: ${technicianNotes.join(' ')}`.slice(0, 6000)
 }
 
+// Inspector-authored text only — never OCR text or other AI-derived fields.
+// Recommendation grounding must come from the inspector's own words.
+function getInspectorSourceText(input: GenerateFinalNotesInput) {
+  return input.captures
+    .flatMap((capture) => [capture.technician_note, capture.transcript])
+    .filter((value): value is string => typeof value === 'string' && Boolean(value.trim()))
+    .join(' ')
+}
+
 export async function generateFinalNotes(input: GenerateFinalNotesInput) {
   const neutralSummary = buildNeutralEvidenceSummary(input)
   if (neutralSummary) return neutralSummary
@@ -124,5 +135,11 @@ export async function generateFinalNotes(input: GenerateFinalNotesInput) {
   const body = await response.json()
   const text = extractOutputText(body)?.trim()
   if (!text) throw new Error('Final notes generation returned no text.')
-  return text.slice(0, 6000)
+  // The inspector is the source of truth for recommendations: drop any
+  // recommendation-shaped sentence the model wrote unless the inspector's
+  // own technician_note/transcript already states one somewhere in this
+  // session.
+  const sanitized = stripUnsupportedRecommendationSentences(text.slice(0, 6000), getInspectorSourceText(input))
+  if (!sanitized) throw new Error('Final notes generation returned no text.')
+  return sanitized
 }

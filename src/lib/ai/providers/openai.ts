@@ -76,8 +76,8 @@ export const openAiCaptureProvider: CaptureAiProvider = {
     const status = extraction.confidence >= 0.65 ? 'analyzed' : 'needs_review'
     const extractionStatus = status === 'analyzed' ? 'extracted' : 'needs_review'
     return {
-      analysis: buildCaptureAiAnalysis({}, extraction, extractionStatus) as NormalizedCaptureAnalysis,
-      extractedDataPatch: buildExtractedCaptureData({}, extraction, extractionStatus),
+      analysis: buildCaptureAiAnalysis({}, extraction, extractionStatus, request.note ?? null) as NormalizedCaptureAnalysis,
+      extractedDataPatch: buildExtractedCaptureData({}, extraction, extractionStatus, request.note ?? null),
       summary: getCaptureExtractionSummary(extraction),
       status,
       usage: estimateUsage('extract_capture'),

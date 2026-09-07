@@ -1,6 +1,7 @@
 import type { Json } from '@/lib/supabase/database.types'
 
 import { type CaptureClassificationType } from './capture-classifier'
+import { sanitizeRecommendationField } from './recommendation-guard'
 
 type ExtractionTargetType = CaptureClassificationType | 'other'
 type SourceDocumentContext = {
@@ -548,6 +549,7 @@ export function buildExtractedCaptureData(
   existingData: Json | null,
   extraction: CaptureExtractionResult,
   status: 'extracted' | 'needs_review',
+  inspectorSourceText: string | null = null,
 ): Json {
   const existingObject = isRecord(existingData) ? existingData : {}
 
@@ -571,7 +573,14 @@ export function buildExtractedCaptureData(
       extracted_values: extraction.extracted_values,
       generated_note: extraction.generated_note,
       generated_observation: extraction.generated_observation,
-      generated_recommendation: extraction.technician_verification_required ? null : extraction.generated_recommendation,
+      // The inspector is the source of truth for recommendations: keep the
+      // model's generated_recommendation only when the inspector's own
+      // technician_note/transcript for this same capture already states
+      // one. Being evidence-grounded (technician_verification_required ===
+      // false) is not enough on its own.
+      generated_recommendation: extraction.technician_verification_required
+        ? null
+        : sanitizeRecommendationField(extraction.generated_recommendation, inspectorSourceText),
       reading_status: extraction.reading_status,
       technician_verification_required: extraction.technician_verification_required,
     },
@@ -579,6 +588,7 @@ export function buildExtractedCaptureData(
       existingObject,
       extraction,
       status,
+      inspectorSourceText,
     ),
   }
 }
@@ -587,6 +597,7 @@ export function buildCaptureAiAnalysis(
   existingData: Json | null,
   extraction: CaptureExtractionResult,
   status: 'extracted' | 'needs_review' | 'failed' | 'processing' | 'pending',
+  inspectorSourceText: string | null = null,
 ): Json {
   const existingObject = isRecord(existingData) ? existingData : {}
   const classification = isRecord(existingObject.classification)
@@ -608,7 +619,9 @@ export function buildCaptureAiAnalysis(
     extracted_values: extraction.extracted_values,
     generated_note: extraction.generated_note,
     generated_observation: extraction.generated_observation,
-    generated_recommendation: extraction.technician_verification_required ? null : extraction.generated_recommendation,
+    generated_recommendation: extraction.technician_verification_required
+      ? null
+      : sanitizeRecommendationField(extraction.generated_recommendation, inspectorSourceText),
     reading_status: extraction.reading_status,
     technician_verification_required: extraction.technician_verification_required,
     ai_status: status,
