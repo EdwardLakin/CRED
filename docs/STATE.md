@@ -37,6 +37,30 @@ How that sync was reached matters, because it was not a clean `supabase db push`
   something behaves oddly in an area touched between June and September, suspect
   a hand-applied variant before suspecting the application code.
 
+### Known repo/production parity gap
+
+Code review on PR #373 surfaced that the drift runs deeper than the migration
+history. These objects exist in production but are created by **no migration in
+this chain**, so a database built purely from the repository does not reproduce
+production:
+
+| Object | Status |
+| --- | --- |
+| `public.set_updated_at()` and its 8 `updated_at` triggers | **Fixed** by `20260910000100_restore_updated_at_function_and_triggers.sql` |
+| `public.documentation_templates` table | Still missing from the chain |
+| `public.findings` table | Still missing from the chain |
+| `public.subscriptions` table | Still missing from the chain |
+
+The three tables were left for a separate change: reconstructing their columns,
+indexes, constraints and RLS policies from production is exactly the kind of
+work that produced `20260609180000_core_schema_foundation.sql`, and it deserves
+its own review rather than being folded into a hardening PR. Until that lands,
+**treat a from-scratch database build as incomplete** — this is the reason
+`CRED test` cannot simply be replayed and trusted.
+
+Assume this list is not exhaustive. It was found by pulling one thread; a full
+schema diff between production and a scratch replay is the only way to know.
+
 `CRED test` has **not** been reconciled. Its history also stops at
 `20260623131000` and its schema is a different partial state again (it has the
 deliverable-lifecycle objects but no `billing_accounts`, `workspace_memberships`,

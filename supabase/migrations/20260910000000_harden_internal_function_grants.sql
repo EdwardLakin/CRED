@@ -29,10 +29,14 @@
 
 -- 1. Trigger functions: no direct EXECUTE grant is required.
 
+-- public.set_updated_at() is deliberately absent from this list. No migration
+-- in this chain creates it, so referencing it here would abort a clean replay
+-- on a fresh database. It is defined, granted, and pinned by the migration that
+-- immediately follows this one, which also restores the triggers that use it.
+
 revoke execute on function public.assign_documentation_session_report_identifier() from public, anon, authenticated;
 revoke execute on function public.prevent_capture_item_scope_retarget() from public, anon, authenticated;
 revoke execute on function public.validate_evidence_relationship_endpoints() from public, anon, authenticated;
-revoke execute on function public.set_updated_at() from public, anon, authenticated;
 revoke execute on function public.touch_updated_at() from public, anon, authenticated;
 revoke execute on function public.touch_capture_processing_jobs_updated_at() from public, anon, authenticated;
 revoke execute on function public.default_ai_evidence_review_status_to_suggested() from public, anon, authenticated;
@@ -53,7 +57,6 @@ grant execute on function public.queue_missing_capture_processing_jobs() to serv
 --    objects, so pinning `public` preserves current behaviour while removing
 --    the role-mutable resolution path.
 
-alter function public.set_updated_at() set search_path = public;
 alter function public.touch_updated_at() set search_path = public;
 alter function public.touch_capture_processing_jobs_updated_at() set search_path = public;
 alter function public.default_ai_evidence_review_status_to_suggested() set search_path = public;
