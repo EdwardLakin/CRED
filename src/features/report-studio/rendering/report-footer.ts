@@ -11,5 +11,6 @@ export function buildPrintFooterHtml(params: { organizationName: string; reportI
   if (brand?.footer_text) parts.push(escapeHtml(brand.footer_text));
   if (brand?.show_confidentiality_note) parts.push("Confidential");
   if (brand?.show_report_id !== false) parts.push(escapeHtml(reportId));
+  if (brand?.show_page_date !== false) parts.push(escapeHtml(params.generatedAt));
   return `<footer class="print-page-footer branded-report-footer" aria-hidden="true">${parts.map((part) => `<span>${part}</span>`).join("")}</footer>`;
 }
