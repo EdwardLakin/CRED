@@ -169,6 +169,17 @@ function drawImage(
   }
 }
 
+function getPrimaryMediaHeight(style: ExecutivePdfStyle | undefined) {
+  const size = style?.evidenceImageSize ?? "standard";
+  return size === "compact"
+    ? 112
+    : size === "large"
+      ? 224
+      : size === "full_width"
+        ? 270
+        : 190;
+}
+
 function drawItemMedia(
   doc: PDFKit.PDFDocument,
   mediaIds: readonly string[],
@@ -178,8 +189,7 @@ function drawItemMedia(
 ) {
   if (!mediaIds.length) return;
   const size = style?.evidenceImageSize ?? "standard";
-  const height =
-    size === "compact" ? 112 : size === "large" ? 214 : size === "full_width" ? 260 : 158;
+  const height = getPrimaryMediaHeight(style);
   const gridStyle = [
     "two_column_photo_grid",
     "insurance_photo_grid",
@@ -188,7 +198,7 @@ function drawItemMedia(
   if (gridStyle) {
     const gap = 10;
     const width = (CONTENT_WIDTH - gap) / 2;
-    const cellHeight = Math.min(height, 170);
+    const cellHeight = Math.min(height, 180);
     for (let index = 0; index < mediaIds.length; index += 2) {
       ensureSpace(doc, cellHeight + gap);
       const rowY = doc.y;
@@ -213,7 +223,7 @@ function drawItemMedia(
   const primaryY = doc.y;
   const primaryWidth = Math.min(
     CONTENT_WIDTH,
-    mediaIds.length === 1 && size !== "full_width" ? 360 : CONTENT_WIDTH,
+    mediaIds.length === 1 && size === "compact" ? 360 : CONTENT_WIDTH,
   );
   drawImage(
     doc,
@@ -390,7 +400,7 @@ function drawCover(
     .font("Helvetica-Bold")
     .fontSize(8.5)
     .fillColor(primary)
-    .text("EXECUTIVE REPORT", MARGIN_X, 134, {
+    .text(snapshot.reportType.toUpperCase(), MARGIN_X, 134, {
       characterSpacing: 1.5,
     });
   if (style?.showCoverTitle !== false) {
@@ -399,24 +409,12 @@ function drawCover(
       .fontSize(31)
       .fillColor("#111827")
       .text(snapshot.reportTitle, MARGIN_X, 158, {
-        width: 388,
+        width: CONTENT_WIDTH,
         lineGap: 2,
         align: style?.coverTitleAlignment ?? "left",
       });
   }
   const titleBottom = doc.y;
-  doc
-    .roundedRect(PAGE_WIDTH - MARGIN_X - 92, 158, 92, 27, 13.5)
-    .fill(snapshot.approval.status === "Approved" ? "#E8F7EF" : "#FFF5DB");
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(8.5)
-    .fillColor(snapshot.approval.status === "Approved" ? "#167A4A" : "#946200")
-    .text(snapshot.approval.status.toUpperCase(), PAGE_WIDTH - MARGIN_X - 86, 167, {
-      width: 80,
-      align: "center",
-      characterSpacing: 0.7,
-    });
 
   doc.y = Math.max(titleBottom + 28, 242);
   const coverRows = [
@@ -463,8 +461,6 @@ function drawCover(
     });
 
   const metricsY = summaryY + summaryHeight + 24;
-  // A tile reading "0 FORMS & DOCUMENTS" tells the reader nothing and takes up
-  // a third of the row on the cover. Report the counts that exist.
   const metrics = (
     [
       ["Documented items", snapshot.totals.items],
@@ -499,12 +495,6 @@ function drawCover(
   doc.y = metricsY + 76;
 }
 
-/**
- * Severity is emphasised by weight and a restrained colour rather than a
- * traffic-light badge: this prints on a professional document that may be read
- * alongside an invoice or a tenancy dispute, and the label already says the
- * word.
- */
 function severityColor(label: string) {
   const key = label.trim().toLowerCase();
   if (key === "critical") return "#9E2B25";
@@ -527,7 +517,10 @@ function drawItems(
   if (startOnNewPage) doc.addPage();
   sectionHeading(doc, "Documented Items", primary);
   snapshot.items.forEach((item, index) => {
-    ensureSpace(doc, 98);
+    const minimumTogether = item.mediaIds.length
+      ? 86 + getPrimaryMediaHeight(style)
+      : 98;
+    ensureSpace(doc, Math.min(minimumTogether, CONTENT_BOTTOM - 56));
     const startY = doc.y;
     if (style?.evidenceNumbering !== false) {
       doc
@@ -538,9 +531,6 @@ function drawItems(
           characterSpacing: 1,
         });
     }
-    // Severity is what tells a reader which conditions matter most, so it sits
-    // with the category on the item's top line. It is printed only when a
-    // technician set it; an unrated item shows nothing rather than a guess.
     const topRight = [item.severity ? `${item.severity} severity` : null, item.category]
       .filter(Boolean)
       .join("  ·  ");
@@ -682,7 +672,8 @@ function drawSections(
 ) {
   snapshot.sections.forEach((section) => {
     ensureSpace(doc, 95);
-    sectionHeading(doc, section.title, primary);
+    const title = section.id === "final-notes" ? "Closing Notes" : section.title;
+    sectionHeading(doc, title, primary);
     if (section.summary) {
       doc
         .font("Helvetica")
@@ -702,42 +693,30 @@ function drawSections(
   });
 }
 
-function drawApproval(
+function drawCompletion(
   doc: PDFKit.PDFDocument,
   snapshot: FinalReportSnapshot,
   primary: string,
   border: string,
 ) {
-  ensureSpace(doc, 142);
-  sectionHeading(doc, "Approval", primary);
+  const hasCompletion = Boolean(
+    snapshot.approval.reviewedBy || snapshot.approval.approvedAt,
+  );
+  if (!hasCompletion) return;
+  ensureSpace(doc, 154);
+  sectionHeading(doc, "Report Completion", primary);
   const y = doc.y;
-  doc.roundedRect(MARGIN_X, y, CONTENT_WIDTH, 92, 9).strokeColor(border).stroke();
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(13)
-    .fillColor(snapshot.approval.status === "Approved" ? "#167A4A" : "#946200")
-    .text(snapshot.approval.status, MARGIN_X + 18, y + 17, {
-      width: CONTENT_WIDTH - 36,
-    });
-  const approvalRows = [
+  doc.roundedRect(MARGIN_X, y, CONTENT_WIDTH, 102, 9).strokeColor(border).stroke();
+  const completionRows = [
     snapshot.approval.reviewedBy
-      ? `Reviewed by ${snapshot.approval.reviewedBy}`
+      ? { label: "Completed by", value: snapshot.approval.reviewedBy }
       : null,
     snapshot.approval.approvedAt
-      ? `Approved ${snapshot.approval.approvedAt}`
+      ? { label: "Completed", value: snapshot.approval.approvedAt }
       : null,
-  ].filter((value): value is string => Boolean(value));
-  doc
-    .font("Helvetica")
-    .fontSize(9.5)
-    .fillColor("#4B5563")
-    .text(
-      approvalRows.join("\n") || "Approval is pending.",
-      MARGIN_X + 18,
-      y + 44,
-      { width: CONTENT_WIDTH - 36, lineGap: 3 },
-    );
-  doc.y = y + 108;
+  ].filter((value): value is FinalReportDetail => Boolean(value));
+  drawDetailRows(doc, completionRows, { columns: 2 });
+  doc.y = Math.max(doc.y, y + 118);
 }
 
 function addPageFurniture(
@@ -758,9 +737,6 @@ function addPageFurniture(
   for (let pageIndex = range.start; pageIndex < range.start + range.count; pageIndex += 1) {
     doc.switchToPage(pageIndex);
     const originalBottomMargin = doc.page.margins.bottom;
-    // Page furniture intentionally sits inside the physical page margin. PDFKit's
-    // line wrapper otherwise treats the footer baseline as content overflow and
-    // silently appends a blank page for every rendered footer.
     doc.page.margins.bottom = 0;
     if (watermarkText) {
       const opacity =
@@ -805,7 +781,7 @@ function addPageFurniture(
         .strokeColor(border)
         .stroke();
     }
-    if (footerLabel || showPageNumber || style?.showGeneratedByCred) {
+    if (footerLabel || showPageNumber) {
       doc
         .moveTo(MARGIN_X, PAGE_HEIGHT - 42)
         .lineTo(PAGE_WIDTH - MARGIN_X, PAGE_HEIGHT - 42)
@@ -815,10 +791,6 @@ function addPageFurniture(
       doc.font("Helvetica").fontSize(7.5).fillColor("#7A8495");
       if (footerLabel) {
         doc.text(footerLabel, MARGIN_X, PAGE_HEIGHT - 31, {
-          width: CONTENT_WIDTH / 2,
-        });
-      } else if (style?.showGeneratedByCred) {
-        doc.text("Generated by CRED", MARGIN_X, PAGE_HEIGHT - 31, {
           width: CONTENT_WIDTH / 2,
         });
       }
@@ -879,7 +851,7 @@ export async function renderExecutiveReportPdf(params: {
   drawDocuments(doc, snapshot, assets, primary, border, branding);
   drawSections(doc, snapshot, primary);
   if (!style || style.approvalBlock || branding.show_signature_block) {
-    drawApproval(doc, snapshot, primary, border);
+    drawCompletion(doc, snapshot, primary, border);
   }
   addPageFurniture(doc, snapshot, border, branding);
   doc.end();
