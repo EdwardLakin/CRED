@@ -18,9 +18,9 @@ Last updated: 2026-09-10
 
 ## Migration state
 
-Repository and production are **in sync** as of 2026-09-10: 67 migration files,
-67 rows in `supabase_migrations.schema_migrations`, latest
-`20260910000100_restore_updated_at_function_and_triggers`.
+Repository and production are **in sync** as of 2026-09-10: 68 migration files,
+68 rows in `supabase_migrations.schema_migrations`, latest
+`20260910120000_clear_legacy_diagnostic_placeholder_bodies`.
 
 How that sync was reached matters, because it was not a clean `supabase db push`:
 

@@ -34,7 +34,7 @@ import { ReportEditAutosaveForm } from "@/features/reports/review/ReportEditAuto
 import { SummaryAssistantEditor } from "@/features/reports/review/SummaryAssistantEditor";
 import { EvidenceObservationAssistant } from "@/features/reports/review/EvidenceObservationAssistant";
 import { AutoGrowTextarea } from "@/features/reports/review/AutoGrowTextarea";
-import { diagnosticSectionPromptForTitle } from "@/features/reports/report-structure";
+import { customerFacingSectionBody, diagnosticSectionPromptForTitle } from "@/features/reports/report-structure";
 import { useSavedSignature } from "@/features/signatures/actions";
 import type { Database } from "@/lib/supabase/database.types";
 
@@ -604,7 +604,7 @@ export function ReportReview({
   isGenericEvidenceReport,
   reportDocument,
   timeZone,
-  signatureCount = 0,
+  hasSignature: hasSignatureProp = false,
   isReadyForExport,
 }: {
   reportSections: AiReportDraftSection[];
@@ -641,8 +641,8 @@ export function ReportReview({
   isGenericEvidenceReport: boolean;
   reportDocument: ReturnType<typeof buildUniversalReportDocument<CaptureItem>>;
   timeZone: string | null;
-  /** Signatures captured for this session, used so the outline reflects reality. */
-  signatureCount?: number;
+  /** Whether the signature panel will render a signature — report-specific or an enabled default. */
+  hasSignature?: boolean;
   /** Approval state as the page header computes it, so both agree. */
   isReadyForExport?: boolean;
   reportTemplates?: Array<{ id: string; name: string; is_default: boolean }>;
@@ -656,8 +656,11 @@ export function ReportReview({
   const unusedReportSections = reportSections.filter(
     (section) => !visibleReportSections.some((visible) => visible.id === section.id),
   );
-  const { shared: sharedTechnicianNotes, uniqueBySection: technicianNotesBySection } =
-    splitSharedTechnicianNotes(visibleReportSections, supportingEvidence);
+  const {
+    shared: sharedTechnicianNotes,
+    uniqueBySection: technicianNotesBySection,
+    usesSharedNotes: sectionsUsingSharedNotes,
+  } = splitSharedTechnicianNotes(visibleReportSections, supportingEvidence);
   const sourceFieldGroups = sourceFieldEntries.reduce<Record<string, [string, unknown][]>>(
     (groups, entry) => {
       const group = getFieldGroupTitle(entry[0], reportTypeHint);
@@ -690,8 +693,10 @@ export function ReportReview({
   }).length;
   const hasSummary = Boolean(stripConfidenceText(currentReport?.summary ?? "").trim());
   // Was hardcoded to false, so the outline reported a missing signature even
-  // when one was captured and visible in the signature panel below.
-  const hasSignature = signatureCount > 0;
+  // when one was captured and visible in the signature panel below. It now
+  // comes from the page, which resolves report-specific and default signatures
+  // the same way the signature panel does.
+  const hasSignature = hasSignatureProp;
   // The page header derives approval from isReadyForExport; the outline and the
   // quality list used to derive it from currentReport.status independently, so
   // the page could say "Approved" and "Not ready yet" at the same time.
@@ -772,10 +777,8 @@ export function ReportReview({
             ) : null}
           </div>
         </div>
-        {currentReport?.status === "approved" ? (
+        {isApproved ? (
           <p className="status-pill success">Ready</p>
-        ) : currentReport ? (
-          <p className="status-pill neutral">Review Required</p>
         ) : (
           <p className="status-pill neutral">Review Required</p>
         )}
@@ -995,7 +998,7 @@ export function ReportReview({
                           {sectionOwnNotes.join("\n")}
                         </div>
                       </div>
-                    ) : sharedTechnicianNotes.length > 0 ? (
+                    ) : sectionsUsingSharedNotes.has(section.id) ? (
                       <p className="muted report-shared-notes-ref">
                         Draws on the session notes above.
                       </p>
@@ -1006,7 +1009,7 @@ export function ReportReview({
                         className="input text-area"
                         name={`section_body_${section.id}`}
                         rows={5}
-                        defaultValue={stripConfidenceText(section.body ?? "")}
+                        defaultValue={customerFacingSectionBody(section.body)}
                         placeholder={
                           diagnosticSectionPromptForTitle(stripConfidenceText(section.title)) ??
                           "Add the text the customer will read in this section."
@@ -1369,7 +1372,15 @@ function splitSharedTechnicianNotes(
   const uniqueBySection = new Map(
     [...notesBySection].map(([id, notes]) => [id, notes.filter((note) => !sharedSet.has(note))] as const),
   );
-  return { shared, uniqueBySection };
+  // A section with no linked notes at all also ends up with an empty "own"
+  // list, so it must not be described as drawing on the shared notes. Only
+  // sections that actually carried one of them get that reference.
+  const usesSharedNotes = new Set(
+    [...notesBySection]
+      .filter(([, notes]) => notes.some((note) => sharedSet.has(note)))
+      .map(([id]) => id),
+  );
+  return { shared, uniqueBySection, usesSharedNotes };
 }
 
 function getObservationCategoryLabel(

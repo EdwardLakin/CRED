@@ -131,6 +131,14 @@ export function EvidenceObservationAssistant({
   }, []);
   useEffect(() => {
     resize();
+    const element = textareaRef.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    // Width changes rewrap the text, so a height computed only when the value
+    // changed goes stale — and overflow-y is hidden, which would make the
+    // overflow unreachable until the next edit.
+    const observer = new ResizeObserver(() => resize());
+    observer.observe(element);
+    return () => observer.disconnect();
   }, [resize, text]);
 
   return (

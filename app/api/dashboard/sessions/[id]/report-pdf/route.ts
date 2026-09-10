@@ -24,6 +24,7 @@ import {
   getNormalizedFindingModels,
   getNormalizedRecommendedActions,
   isMeaningfulCustomerReportText,
+  customerFacingSectionBody,
   normalizeDraftSections,
   normalizeFormBlueprintSections,
   shouldRenderDetail,
@@ -1551,7 +1552,7 @@ function buildFormStructuredReportHtml(
         })
         .join("");
       const sectionEvidence = evidenceFor(section.key, null);
-      return `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2>${section.body ? `<p>${escapeHtml(cleanCustomerFacingText(stripConfidenceText(section.body)))}</p>` : ""}${rows ? `<table class="checklist-table"><tbody>${rows}</tbody></table>` : `<p class="muted">No captured fields in this section.</p>`}${sectionEvidence}</section>`;
+      return `<section class="item service-section"><h2>${escapeHtml(section.title)}</h2>${customerFacingSectionBody(section.body) ? `<p>${escapeHtml(cleanCustomerFacingText(customerFacingSectionBody(section.body)))}</p>` : ""}${rows ? `<table class="checklist-table"><tbody>${rows}</tbody></table>` : `<p class="muted">No captured fields in this section.</p>`}${sectionEvidence}</section>`;
     })
     .join("")}`;
 }
