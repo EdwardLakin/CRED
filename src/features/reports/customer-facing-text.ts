@@ -72,3 +72,22 @@ export function cleanCustomerFacingText(
 
   return cleaned;
 }
+
+/**
+ * Clean a value that is rendered as a heading rather than prose — an item title
+ * or an asset name.
+ *
+ * cleanCustomerFacingText() ends every value with terminal punctuation, which is
+ * right for a sentence and wrong for a title: the delivered report carried
+ * headings like "Master Bathroom Linoleum Torn and Lifting." while others had no
+ * stop at all, depending on which cleanup path the value took. Headings get the
+ * same normalization without the full stop.
+ */
+export function cleanCustomerFacingHeading(text: string | null | undefined): string {
+  const cleaned = cleanCustomerFacingText(text);
+  if (!cleaned) return "";
+  // Strip a single trailing period only. Ellipses, question marks and
+  // exclamation marks are meaningful, and abbreviations ending in a period are
+  // preserved by the multi-dot check.
+  return cleaned.replace(/(?<![.])\.$/, "").trim();
+}

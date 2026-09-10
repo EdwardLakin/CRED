@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ReportStudioRoute } from "@/features/report-studio-v2/ReportStudioRoute";
+import { getItemSeverityLabel } from "@/features/capture/item-severity";
 import { normalizeBrandProfile } from "@/features/branding/types";
 import { normalizeReportTemplate } from "@/features/branding/templates";
 import { requireSessionWorkspace } from "@/features/sessions/data";
@@ -195,6 +196,7 @@ export default async function BrandingStudioPage({
           title,
           description: note === title ? "" : note,
           category: primary?.evidence_category ?? null,
+          severity: getItemSeverityLabel(primary?.severity) ?? null,
           details: [],
           recommendations: [],
           mediaIds: ordered

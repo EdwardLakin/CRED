@@ -27,6 +27,8 @@ export type FinalReportItem = Readonly<{
   title: string;
   description: string;
   category: string | null;
+  /** Technician-set severity label, or null when the item was left unrated. Never inferred. */
+  severity: string | null;
   details: readonly FinalReportDetail[];
   recommendations: readonly string[];
   mediaIds: readonly string[];
@@ -195,6 +197,7 @@ export function buildFinalReportSnapshot(
           `Documented item ${String(index + 1).padStart(2, "0")}`,
         description,
         category: cleanFinalReportText(item.category)?.replace(/[.]$/, "") || null,
+        severity: cleanFinalReportText(item.severity)?.replace(/[.]$/, "") || null,
         details: cleanDetails(item.details),
         recommendations: uniqueStrings(item.recommendations),
         mediaIds,

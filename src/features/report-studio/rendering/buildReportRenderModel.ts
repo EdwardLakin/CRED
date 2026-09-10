@@ -17,7 +17,8 @@ export function buildReportRenderModel(input: { session?: ReportRenderSession | 
       { label: 'Asset / Equipment', value: session?.asset_label || 'No asset recorded' },
     ],
     media: (session?.evidence || []).map((item) => ({ id: item.id, kind: item.mediaKind === 'document' ? 'document' : 'photo', label: item.label, capturedAt: null })),
-    items: (session?.evidence || []).filter((item) => item.mediaKind !== 'document').map((item) => ({ id: item.id, title: item.label, description: item.note || '', category: null, details: [], recommendations: [], mediaIds: [item.id] })),
+    items: (session?.evidence || []).filter((item) => item.mediaKind !== 'document').map((item) => ({ id: item.id, title: item.label, description: item.note || '', category: null,
+    severity: null, details: [], recommendations: [], mediaIds: [item.id] })),
     documents: (session?.evidence || []).filter((item) => item.mediaKind === 'document').map((item) => ({ id: item.id, title: item.label, summary: item.note || '', details: [], mediaId: item.id })),
     status: session?.review_status || session?.status,
   })

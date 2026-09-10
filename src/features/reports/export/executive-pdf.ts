@@ -463,12 +463,22 @@ function drawCover(
     });
 
   const metricsY = summaryY + summaryHeight + 24;
-  const metrics = [
-    ["Documented items", String(snapshot.totals.items)],
-    ["Supporting photos", String(snapshot.totals.photos)],
-    ["Forms & documents", String(snapshot.totals.documents)],
-  ];
-  const metricWidth = (CONTENT_WIDTH - 18) / 3;
+  // A tile reading "0 FORMS & DOCUMENTS" tells the reader nothing and takes up
+  // a third of the row on the cover. Report the counts that exist.
+  const metrics = (
+    [
+      ["Documented items", snapshot.totals.items],
+      ["Supporting photos", snapshot.totals.photos],
+      ["Forms & documents", snapshot.totals.documents],
+    ] as const
+  )
+    .filter(([, value]) => value > 0)
+    .map(([label, value]) => [label, String(value)] as const);
+  if (!metrics.length) {
+    doc.y = metricsY;
+    return;
+  }
+  const metricWidth = (CONTENT_WIDTH - 9 * (metrics.length - 1)) / metrics.length;
   metrics.forEach(([label, value], index) => {
     const x = MARGIN_X + index * (metricWidth + 9);
     doc.roundedRect(x, metricsY, metricWidth, 62, 8).strokeColor(border).stroke();
@@ -487,6 +497,20 @@ function drawCover(
       });
   });
   doc.y = metricsY + 76;
+}
+
+/**
+ * Severity is emphasised by weight and a restrained colour rather than a
+ * traffic-light badge: this prints on a professional document that may be read
+ * alongside an invoice or a tenancy dispute, and the label already says the
+ * word.
+ */
+function severityColor(label: string) {
+  const key = label.trim().toLowerCase();
+  if (key === "critical") return "#9E2B25";
+  if (key === "high") return "#A65A16";
+  if (key === "medium") return "#7A6318";
+  return "#4A5568";
 }
 
 function drawItems(
@@ -514,12 +538,18 @@ function drawItems(
           characterSpacing: 1,
         });
     }
-    if (item.category) {
+    // Severity is what tells a reader which conditions matter most, so it sits
+    // with the category on the item's top line. It is printed only when a
+    // technician set it; an unrated item shows nothing rather than a guess.
+    const topRight = [item.severity ? `${item.severity} severity` : null, item.category]
+      .filter(Boolean)
+      .join("  ·  ");
+    if (topRight) {
       doc
-        .font("Helvetica")
+        .font(item.severity ? "Helvetica-Bold" : "Helvetica")
         .fontSize(7.5)
-        .fillColor("#667085")
-        .text(item.category.toUpperCase(), MARGIN_X, startY, {
+        .fillColor(item.severity ? severityColor(item.severity) : "#667085")
+        .text(topRight.toUpperCase(), MARGIN_X, startY, {
           width: CONTENT_WIDTH,
           align: "right",
           characterSpacing: 0.5,

@@ -29,7 +29,12 @@ export default async function SharedReportPage({ params }: { params: Promise<{ t
 
   const { data: profile } = await supabase.from('profiles').select('timezone').eq('id', shareToken.created_by ?? '').eq('organization_id', shareToken.organization_id).maybeSingle()
 
-  const reportUrl = `/api/dashboard/sessions/${session.id}/report-pdf?share_token=${token}`
+  // The export route returns a PDF by default and the readable HTML report only
+  // under preview=1. An inline PDF inside an iframe renders as page one with no
+  // way to page through it on iOS, which is why a recipient saw only the cover.
+  // The readable HTML is what the page shows; the PDF stays available to save.
+  const htmlReportUrl = `/api/dashboard/sessions/${session.id}/report-pdf?share_token=${token}&preview=1`
+  const pdfReportUrl = `/api/dashboard/sessions/${session.id}/report-pdf?share_token=${token}`
 
   return (
     <main className="page-shell dashboard-shell report-preview-shell">
@@ -42,10 +47,11 @@ export default async function SharedReportPage({ params }: { params: Promise<{ t
       </div>
       <section className="card detail-card report-preview-card">
         <div className="shared-report-actions">
-          <a className="button button-primary touch-target" href={reportUrl}>Open the full report</a>
-          <p className="muted">Opens the complete report on its own page. Use your browser&rsquo;s Print or Share menu there to save or print a copy.</p>
+          <a className="button button-primary touch-target" href={htmlReportUrl}>Open the full report</a>
+          <a className="button button-secondary touch-target" href={pdfReportUrl}>Download PDF</a>
+          <p className="muted">The full report is below. Open it on its own page to scroll or print it, or download the PDF to keep a copy.</p>
         </div>
-        <SharedReportFrame src={reportUrl} title={`Shared printable report for ${session.title}`} />
+        <SharedReportFrame src={htmlReportUrl} title={`Shared report for ${session.title}`} />
       </section>
     </main>
   )

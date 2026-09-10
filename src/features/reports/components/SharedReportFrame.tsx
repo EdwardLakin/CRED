@@ -5,12 +5,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 /**
  * Embeds the printable report and grows to its full height.
  *
- * The share page previously rendered the report in a `min-height: 78vh` iframe.
- * The document inside is many pages long, so reading it meant scrolling *within*
- * the iframe — which iOS Safari and Chrome handle badly: the gesture is taken by
- * the outer page, and the recipient sees the cover and nothing else. Since the
- * frame is same-origin we can measure the document and size the frame to it, so
- * there is no inner scroll region at all and the page scrolls normally.
+ * The share page embeds the HTML report (preview=1), not the PDF. An inline PDF
+ * in an iframe renders as page one on iOS with no way to page through it, which
+ * is what left a recipient looking at the cover. HTML also has to be readable
+ * without an inner scroll region, though: iOS routes a scroll gesture inside a
+ * nested frame to the outer page. Since the frame is same-origin HTML we can
+ * measure the document and size the frame to it, so the page scrolls normally
+ * and nothing is trapped.
  *
  * If measurement is unavailable for any reason, the frame keeps a tall fallback
  * height and the "Open the full report" link above it is the way through.

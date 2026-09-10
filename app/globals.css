@@ -6088,3 +6088,38 @@ textarea[data-autogrow="true"],
 
 /* Deliberately NOT sticky. Pinning this panel means it scrolls over the very
    fields it summarises; it belongs at the top of the editor and stays there. */
+
+/* Severity is the technician's own judgement of how serious an item is, so it
+   sits with the category on the item card rather than below the fold. Colour
+   reinforces the word; it never replaces it. */
+.evidence-severity-pills {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.evidence-severity-pills > .label {
+  margin: 0;
+  width: 100%;
+}
+
+.evidence-severity-pill {
+  cursor: pointer;
+}
+
+.evidence-severity-hint {
+  flex: 1 1 100%;
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.evidence-severity-pill.severity-critical.success {
+  background: color-mix(in srgb, var(--danger, #9e2b25) 16%, transparent);
+  color: var(--danger-strong, #9e2b25);
+}
+
+.evidence-severity-pill.severity-high.success {
+  background: color-mix(in srgb, var(--warning) 22%, transparent);
+  color: var(--warning-strong);
+}
