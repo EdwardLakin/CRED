@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 
 import { formatDateTime } from '@/features/sessions'
+import { SharedReportFrame } from '@/features/reports/components/SharedReportFrame'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 export default async function SharedReportPage({ params }: { params: Promise<{ token: string }> }) {
@@ -28,6 +29,8 @@ export default async function SharedReportPage({ params }: { params: Promise<{ t
 
   const { data: profile } = await supabase.from('profiles').select('timezone').eq('id', shareToken.created_by ?? '').eq('organization_id', shareToken.organization_id).maybeSingle()
 
+  const reportUrl = `/api/dashboard/sessions/${session.id}/report-pdf?share_token=${token}`
+
   return (
     <main className="page-shell dashboard-shell report-preview-shell">
       <div className="section-header page-header report-preview-header">
@@ -38,8 +41,11 @@ export default async function SharedReportPage({ params }: { params: Promise<{ t
         </div>
       </div>
       <section className="card detail-card report-preview-card">
-        <p className="muted">Open the printable report from the secure shared preview below. Use your browser’s Print or Share menu to save a printable report.</p>
-        <iframe src={`/api/dashboard/sessions/${session.id}/report-pdf?share_token=${token}`} title={`Shared printable report preview for ${session.title}`} className="report-preview-frame" />
+        <div className="shared-report-actions">
+          <a className="button button-primary touch-target" href={reportUrl}>Open the full report</a>
+          <p className="muted">Opens the complete report on its own page. Use your browser&rsquo;s Print or Share menu there to save or print a copy.</p>
+        </div>
+        <SharedReportFrame src={reportUrl} title={`Shared printable report for ${session.title}`} />
       </section>
     </main>
   )
