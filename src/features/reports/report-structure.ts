@@ -1634,7 +1634,29 @@ export function dedupeSemanticReportText(values: string[]) {
     .sort((a, b) => cleanedValues.findIndex((value) => value === a) - cleanedValues.findIndex((value) => value === b))
 }
 
+/**
+ * Placeholder prose that older drafts stored as a section body before the
+ * report builder stopped writing it. 20260910120000 clears these rows, but the
+ * strings are matched on read as well so a restored backup or an unmigrated
+ * environment can never print them to a customer.
+ */
+export const LEGACY_DIAGNOSTIC_PLACEHOLDER_BODIES = [
+  'No technician diagnostic summary entered.',
+  'No technician next step or escalation note entered.',
+] as const
+
+export function isLegacyDiagnosticPlaceholderBody(value: string | null | undefined) {
+  const text = stripConfidenceText(value ?? '').trim()
+  return (LEGACY_DIAGNOSTIC_PLACEHOLDER_BODIES as readonly string[]).includes(text)
+}
+
+/** Section body for display and export, with legacy placeholder prose removed. */
+export function customerFacingSectionBody(value: string | null | undefined) {
+  return isLegacyDiagnosticPlaceholderBody(value) ? '' : stripConfidenceText(value ?? '')
+}
+
 export function isMeaningfulCustomerReportText(value: string) {
+  if (isLegacyDiagnosticPlaceholderBody(value)) return false
   const text = stripConfidenceText(value).trim()
   return text.length >= 8 && !/^(?:n\/?a|none|null|test|testing|just testing(?: this)?\.?|placeholder|sample|lorem ipsum|generated filler|empty notes?|no notes?|additional notes?)$/i.test(text)
 }

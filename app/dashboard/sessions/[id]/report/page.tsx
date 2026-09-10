@@ -259,6 +259,13 @@ export default async function SessionReportPreviewPage({
     if (data?.signedUrl) signatureUrls.__default_signature = data.signedUrl;
   }
 
+  // The signature panel renders either a report-specific signature or, failing
+  // that, the profile's enabled default. The outline has to agree with what the
+  // page actually shows, or it reports "Signature needed" beside a visible one.
+  const hasRenderedSignature =
+    (signatures ?? []).length > 0 ||
+    Boolean(profile.use_default_signature && profile.default_signature_path);
+
   const currentReport =
     (aiDrafts ?? []).find((draft) => draft.status === "approved") ??
     (aiDrafts ?? []).find((draft) => draft.status !== "superseded") ??
@@ -603,7 +610,7 @@ export default async function SessionReportPreviewPage({
             isGenericEvidenceReport={isGenericEvidenceReport}
             reportDocument={reportDocument}
             timeZone={profile.timezone}
-            signatureCount={signatures?.length ?? 0}
+            hasSignature={hasRenderedSignature}
             isReadyForExport={isReadyForExport}
           />
 
