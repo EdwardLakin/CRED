@@ -77,12 +77,20 @@ function sectionHeading(
 function drawDetailRows(
   doc: PDFKit.PDFDocument,
   rows: readonly FinalReportDetail[],
-  options: { columns?: 1 | 2; compact?: boolean; muted?: string } = {},
+  options: {
+    columns?: 1 | 2;
+    compact?: boolean;
+    muted?: string;
+    x?: number;
+    width?: number;
+  } = {},
 ) {
   if (!rows.length) return;
   const columns = options.columns ?? 2;
   const gap = 18;
-  const width = (CONTENT_WIDTH - gap * (columns - 1)) / columns;
+  const baseX = options.x ?? MARGIN_X;
+  const availableWidth = options.width ?? CONTENT_WIDTH;
+  const width = (availableWidth - gap * (columns - 1)) / columns;
   for (let start = 0; start < rows.length; start += columns) {
     const group = rows.slice(start, start + columns);
     doc.font("Helvetica-Bold").fontSize(7.5);
@@ -109,7 +117,7 @@ function drawDetailRows(
     ensureSpace(doc, groupHeight);
     const y = doc.y;
     group.forEach((row, column) => {
-      const x = MARGIN_X + column * (width + gap);
+      const x = baseX + column * (width + gap);
       doc
         .font("Helvetica-Bold")
         .fontSize(7.5)
@@ -290,7 +298,7 @@ function drawCompactOpening(
     });
   doc
     .moveTo(MARGIN_X, 98)
-    .lineTo(PAGE_WIDTH - MARGIN_X, 98)
+    .lineTo(MARGIN_X + CONTENT_WIDTH, 98)
     .lineWidth(1)
     .strokeColor(border)
     .stroke();
@@ -517,9 +525,21 @@ function drawItems(
   if (startOnNewPage) doc.addPage();
   sectionHeading(doc, "Documented Items", primary);
   snapshot.items.forEach((item, index) => {
+    doc.font("Times-Bold").fontSize(17);
+    const titleHeight = doc.heightOfString(item.title, { width: CONTENT_WIDTH });
+    let descriptionHeight = 0;
+    if (item.description) {
+      doc.font("Helvetica").fontSize(10);
+      descriptionHeight =
+        doc.heightOfString(item.description, {
+          width: CONTENT_WIDTH,
+          lineGap: 3,
+        }) + 10;
+    }
+    const introHeight = 18 + titleHeight + 7 + descriptionHeight;
     const minimumTogether = item.mediaIds.length
-      ? 86 + getPrimaryMediaHeight(style)
-      : 98;
+      ? introHeight + getPrimaryMediaHeight(style) + 14
+      : Math.max(98, introHeight);
     ensureSpace(doc, Math.min(minimumTogether, CONTENT_BOTTOM - 56));
     const startY = doc.y;
     if (style?.evidenceNumbering !== false) {
@@ -715,7 +735,12 @@ function drawCompletion(
       ? { label: "Completed", value: snapshot.approval.approvedAt }
       : null,
   ].filter((value): value is FinalReportDetail => Boolean(value));
-  drawDetailRows(doc, completionRows, { columns: 2 });
+  doc.y = y + 18;
+  drawDetailRows(doc, completionRows, {
+    columns: 2,
+    x: MARGIN_X + 18,
+    width: CONTENT_WIDTH - 36,
+  });
   doc.y = Math.max(doc.y, y + 118);
 }
 
