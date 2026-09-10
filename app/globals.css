@@ -5877,12 +5877,14 @@ a:focus-visible {
   background: transparent;
   border: 0;
   border-radius: 0;
+  bottom: max(1rem, env(safe-area-inset-bottom));
   justify-content: flex-end;
   padding: 0;
   pointer-events: none;
-  position: sticky;
-  top: 0.5rem;
-  z-index: 3;
+  position: fixed;
+  right: 1rem;
+  width: auto;
+  z-index: 5;
 }
 
 .report-autosave-bar > .status-pill {
@@ -6001,6 +6003,7 @@ textarea[data-autogrow="true"],
 
 @media (min-width: 980px) {
   .report-studio-sidebar {
+    align-items: start;
     grid-template-columns: minmax(0, 1fr) minmax(280px, 0.45fr);
   }
 }
@@ -6055,12 +6058,5 @@ textarea[data-autogrow="true"],
   }
 }
 
-/* The outline is navigation, so it should stay reachable while you scroll the
-   document it navigates. */
-@media (min-width: 980px) {
-  .report-studio-sidebar {
-    position: sticky;
-    top: 0.5rem;
-    z-index: 2;
-  }
-}
+/* Deliberately NOT sticky. Pinning this panel means it scrolls over the very
+   fields it summarises; it belongs at the top of the editor and stays there. */
