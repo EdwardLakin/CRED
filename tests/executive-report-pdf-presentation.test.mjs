@@ -20,8 +20,17 @@ test('executive PDF uses customer-facing completion and closing language', () =>
   assert.match(source, /section\.id === "final-notes" \? "Closing Notes"/)
 })
 
-test('documented item pagination keeps the first photo with its item context', () => {
+test('documented item pagination measures the item copy before reserving the first photo', () => {
+  assert.match(source, /const titleHeight = doc\.heightOfString\(item\.title/)
+  assert.match(source, /doc\.heightOfString\(item\.description/)
+  assert.match(source, /const introHeight = 18 \+ titleHeight \+ 7 \+ descriptionHeight/)
   assert.match(source, /const minimumTogether = item\.mediaIds\.length/)
-  assert.match(source, /getPrimaryMediaHeight\(style\)/)
+  assert.match(source, /introHeight \+ getPrimaryMediaHeight\(style\) \+ 14/)
   assert.match(source, /ensureSpace\(doc, Math\.min\(minimumTogether/)
+})
+
+test('report completion details render inside the completion card padding', () => {
+  assert.match(source, /doc\.y = y \+ 18/)
+  assert.match(source, /x: MARGIN_X \+ 18/)
+  assert.match(source, /width: CONTENT_WIDTH - 36/)
 })
