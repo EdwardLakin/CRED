@@ -463,12 +463,22 @@ function drawCover(
     });
 
   const metricsY = summaryY + summaryHeight + 24;
-  const metrics = [
-    ["Documented items", String(snapshot.totals.items)],
-    ["Supporting photos", String(snapshot.totals.photos)],
-    ["Forms & documents", String(snapshot.totals.documents)],
-  ];
-  const metricWidth = (CONTENT_WIDTH - 18) / 3;
+  // A tile reading "0 FORMS & DOCUMENTS" tells the reader nothing and takes up
+  // a third of the row on the cover. Report the counts that exist.
+  const metrics = (
+    [
+      ["Documented items", snapshot.totals.items],
+      ["Supporting photos", snapshot.totals.photos],
+      ["Forms & documents", snapshot.totals.documents],
+    ] as const
+  )
+    .filter(([, value]) => value > 0)
+    .map(([label, value]) => [label, String(value)] as const);
+  if (!metrics.length) {
+    doc.y = metricsY;
+    return;
+  }
+  const metricWidth = (CONTENT_WIDTH - 9 * (metrics.length - 1)) / metrics.length;
   metrics.forEach(([label, value], index) => {
     const x = MARGIN_X + index * (metricWidth + 9);
     doc.roundedRect(x, metricsY, metricWidth, 62, 8).strokeColor(border).stroke();

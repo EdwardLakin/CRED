@@ -13,7 +13,7 @@ import {
   normalizeFieldServiceDetails,
 } from "@/features/field-service";
 import { normalizeEvidenceCategory } from "@/features/capture/evidence-category";
-import { cleanCustomerFacingText } from "@/features/reports/customer-facing-text";
+import { cleanCustomerFacingHeading, cleanCustomerFacingText } from "@/features/reports/customer-facing-text";
 import { buildUniversalReportDocument } from "@/features/reports/report-document";
 import {
   buildCustomerAssetRows,
@@ -537,25 +537,25 @@ function conciseHeadingFromNote(note: string) {
 function getCustomerFacingEvidenceTitle(capture: ReportCapture, index: number) {
   const storedTitle = getObservationReportTitleState(capture.extracted_data);
   if (storedTitle.approved)
-    return cleanCustomerFacingText(stripConfidenceText(storedTitle.approved));
+    return cleanCustomerFacingHeading(stripConfidenceText(storedTitle.approved));
 
   const explicitTitle =
     getCaptureStringField(capture, "title") ||
     getCaptureStringField(capture, "display_title");
   if (explicitTitle && !looksLikeRawUploadFilename(explicitTitle))
-    return cleanCustomerFacingText(stripConfidenceText(explicitTitle));
+    return cleanCustomerFacingHeading(stripConfidenceText(explicitTitle));
 
   if (storedTitle.suggested)
-    return cleanCustomerFacingText(stripConfidenceText(storedTitle.suggested));
+    return cleanCustomerFacingHeading(stripConfidenceText(storedTitle.suggested));
 
   const noteHeading = conciseHeadingFromNote(
     getCustomerObservationText(capture),
   );
   if (noteHeading && !looksLikeRawUploadFilename(noteHeading))
-    return cleanCustomerFacingText(noteHeading);
+    return cleanCustomerFacingHeading(noteHeading);
   const trustedCaption = getTrustedCaption(capture);
   if (trustedCaption)
-    return cleanCustomerFacingText(stripConfidenceText(trustedCaption));
+    return cleanCustomerFacingHeading(stripConfidenceText(trustedCaption));
   const category = normalizeEvidenceCategory(capture.evidence_category);
   if (category && category !== "supporting_evidence")
     return category
