@@ -29,14 +29,19 @@ export function buildApprovalHtml(params: {
   const signatureUrl = signature
     ? params.signatureUrls[signature.id]
     : params.signatureUrls.__default_signature;
-  const approvedAt =
+  const completedAt =
     params.helpers.getApprovalDate(params.draft, params.session) ??
     signature?.signed_at ??
     null;
+  const completedBy =
+    signature?.signer_name ||
+    params.branding?.prepared_by_name ||
+    params.profile?.full_name ||
+    "";
   const rows = [
     {
-      label: params.branding?.report_style?.reviewedByLabel || "Approved by",
-      value: signature?.signer_name || params.branding?.prepared_by_name || params.profile?.full_name || "",
+      label: "Completed by",
+      value: completedBy,
     },
     {
       label: "Role / Title",
@@ -46,18 +51,18 @@ export function buildApprovalHtml(params: {
         "",
     },
     ...(params.branding?.report_style?.signatureDate === false ? [] : [{
-      label: "Approved date / time",
-      value: approvedAt
-        ? formatDateTimeInTimeZone(approvedAt, params.timeZone)
+      label: "Completed date / time",
+      value: completedAt
+        ? formatDateTimeInTimeZone(completedAt, params.timeZone)
         : "",
     }]),
   ];
   const typedSignature = params.branding?.report_style?.typedSignature?.trim();
   const sig = signatureUrl
-    ? `<div class="signature-block approval-signature"><p class="signature-label">Signature</p><img class="signature-image" src="${escapeHtmlAttributeRaw(signatureUrl)}" alt="Approval signature" /></div>`
+    ? `<div class="signature-block approval-signature"><p class="signature-label">Signature</p><img class="signature-image" src="${escapeHtmlAttributeRaw(signatureUrl)}" alt="Signature of ${escapeHtmlAttributeRaw(completedBy || "report author")}" /></div>`
     : typedSignature
       ? `<div class="signature-block approval-signature"><p class="signature-label">Signature</p><p>${escapeHtml(typedSignature)}</p></div>`
       : '<div class="signature-block signature-empty"><p class="signature-label">Signature</p><p class="muted">No signature captured</p></div>';
   const blockHtml = enabledBlocks.slice(1).map((block) => `<div class="signature-block signature-empty"><p class="signature-label">${escapeHtml(block.label)}</p>${block.showSignatureLine ? `<p class="signature-line">${escapeHtml(block.typedName || "")}</p>` : ""}${block.showDate ? `<p class="muted">Date</p>` : ""}</div>`).join("");
-  return `<section class="item service-section approval-section signoff-section"><div class="section-heading"><p class="eyebrow">Formal sign-off</p><h2>Approval</h2></div><div class="approval-grid"><div>${params.helpers.renderDefinitionRows(rows)}</div>${sig}</div>${blockHtml}</section>`;
+  return `<section class="item service-section approval-section signoff-section"><div class="section-heading"><p class="eyebrow">Report completion</p><h2>Completed</h2></div><div class="approval-grid"><div>${params.helpers.renderDefinitionRows(rows)}</div>${sig}</div>${blockHtml}</section>`;
 }
