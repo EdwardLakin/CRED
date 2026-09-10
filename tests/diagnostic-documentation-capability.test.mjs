@@ -63,8 +63,13 @@ test('service diagnostic report export uses generic evidence sections', () => {
 test('diagnostic report assembly preserves chronology and avoids generated diagnosis content', () => {
   assert.match(reportActions, /GENERIC_REPORT_SECTION_TITLES\.map\(\(title, index\)/)
   assert.match(reportActions, /sort_order: index/)
-  assert.match(reportActions, /if \(title === 'Diagnostic Summary'\) return 'No technician diagnostic summary entered\.'/)
-  assert.match(reportActions, /if \(title === 'Recommended Next Step \/ Escalation'\) return 'No technician next step or escalation note entered\.'/)
+  // Technician-owned sections must stay empty until a person writes them, and
+  // must never carry placeholder prose into the customer's export. The body is
+  // null and the prompt lives in the editor as a textarea placeholder instead.
+  assert.match(reportActions, /body: isTechnicianOwnedDiagnosticSection\(title\) \? null : matchingSection\?\.body \?\? null/)
+  assert.doesNotMatch(reportActions, /No technician diagnostic summary entered|No technician next step or escalation note entered/)
+  assert.match(reportStructure, /export function diagnosticSectionPromptForTitle/)
+  assert.match(reportStructure, /TECHNICIAN_OWNED_SECTION_TITLES/)
   assert.match(reportActions, /isTechnicianOwnedDiagnosticSection\(title\) \? null : draftOutput\.sections\.find/)
   assert.match(reportActions, /if \(isTechnicianOwnedDiagnosticSection\(title\)\) return noteCaptureIds/)
   assert.match(reportActions, /if \(title === 'Reference Documents Reviewed'\) return referenceDocumentCaptureIds/)

@@ -121,9 +121,10 @@ export function SummaryAssistantEditor({ initialSummary, sessionId }: { initialS
   return (
     <div className="summary-editor-stack">
       <label className="field-stack" htmlFor={textareaId}>
-        <span id="report-summary-editor" className="label">Executive Summary</span>
+        <span id="report-summary-editor" className="label">Report overview</span>
         <span id={descriptionId} className="muted">
-          Customer-facing overview shown at the beginning of the report.
+          Prints as the opening overview of the report. This is a different
+          field from Final summary / report notes, which prints at the end.
         </span>
         <textarea
           id={textareaId}
@@ -141,9 +142,9 @@ export function SummaryAssistantEditor({ initialSummary, sessionId }: { initialS
       </div>
       <section className="summary-assistant-panel" data-no-autosave aria-labelledby="summary-assistant-heading">
         <div>
-          <h4 id="summary-assistant-heading">Summary Assistant</h4>
+          <h4 id="summary-assistant-heading">Overview assistant</h4>
           <p className="muted">
-            Use these tools to refine the Executive Summary. Suggestions appear in the editable summary field before saving.
+            Refine the report overview. Suggestions land in the field above so you can read them before they save.
           </p>
         </div>
         <div className="field-stack summary-style-selector">

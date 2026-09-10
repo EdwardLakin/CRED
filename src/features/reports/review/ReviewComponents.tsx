@@ -33,6 +33,8 @@ import { PendingActionButton } from "@/features/reports/review/PendingActionButt
 import { ReportEditAutosaveForm } from "@/features/reports/review/ReportEditAutosaveForm";
 import { SummaryAssistantEditor } from "@/features/reports/review/SummaryAssistantEditor";
 import { EvidenceObservationAssistant } from "@/features/reports/review/EvidenceObservationAssistant";
+import { AutoGrowTextarea } from "@/features/reports/review/AutoGrowTextarea";
+import { diagnosticSectionPromptForTitle } from "@/features/reports/report-structure";
 import { useSavedSignature } from "@/features/signatures/actions";
 import type { Database } from "@/lib/supabase/database.types";
 
@@ -92,7 +94,11 @@ function getReportTypeHint(session: Pick<DocumentationSession, "session_type" | 
 
 function isApplicableReportSection(title: string, reportType: string) {
   const normalized = title.toLowerCase();
-  if (/cover|executive|summary|concern|observation|evidence|signoff|signature|approval|recommendation/.test(normalized)) return true;
+  // Technician-owned sections (diagnostic summary, next step / escalation) now
+  // carry a null body until a technician writes one, so they can no longer rely
+  // on placeholder text to qualify as "has content". They stay applicable here
+  // so the editor keeps prompting for them instead of hiding them.
+  if (/cover|executive|summary|concern|observation|evidence|signoff|signature|approval|recommendation|recommended|next step|escalation|diagnostic/.test(normalized)) return true;
   if (reportType === "rental") return /property|customer|documented/.test(normalized);
   if (reportType === "automotive") return /vehicle|asset|dtc|fault|freeze|live data|measurement|functional|test|road|repair|verification/.test(normalized);
   return !/freeze|live data|dtc|road test/.test(normalized);
@@ -598,6 +604,8 @@ export function ReportReview({
   isGenericEvidenceReport,
   reportDocument,
   timeZone,
+  signatureCount = 0,
+  isReadyForExport,
 }: {
   reportSections: AiReportDraftSection[];
   currentReport: AiReportDraft | null;
@@ -633,6 +641,10 @@ export function ReportReview({
   isGenericEvidenceReport: boolean;
   reportDocument: ReturnType<typeof buildUniversalReportDocument<CaptureItem>>;
   timeZone: string | null;
+  /** Signatures captured for this session, used so the outline reflects reality. */
+  signatureCount?: number;
+  /** Approval state as the page header computes it, so both agree. */
+  isReadyForExport?: boolean;
   reportTemplates?: Array<{ id: string; name: string; is_default: boolean }>;
 }) {
   const reportTypeHint = getReportTypeHint(session, reportSections);
@@ -644,6 +656,8 @@ export function ReportReview({
   const unusedReportSections = reportSections.filter(
     (section) => !visibleReportSections.some((visible) => visible.id === section.id),
   );
+  const { shared: sharedTechnicianNotes, uniqueBySection: technicianNotesBySection } =
+    splitSharedTechnicianNotes(visibleReportSections, supportingEvidence);
   const sourceFieldGroups = sourceFieldEntries.reduce<Record<string, [string, unknown][]>>(
     (groups, entry) => {
       const group = getFieldGroupTitle(entry[0], reportTypeHint);
@@ -675,24 +689,30 @@ export function ReportReview({
     );
   }).length;
   const hasSummary = Boolean(stripConfidenceText(currentReport?.summary ?? "").trim());
-  const hasSignature = false;
+  // Was hardcoded to false, so the outline reported a missing signature even
+  // when one was captured and visible in the signature panel below.
+  const hasSignature = signatureCount > 0;
+  // The page header derives approval from isReadyForExport; the outline and the
+  // quality list used to derive it from currentReport.status independently, so
+  // the page could say "Approved" and "Not ready yet" at the same time.
+  const isApproved = isReadyForExport ?? currentReport?.status === "approved";
   const qualityChecks = [
     { label: "Cover/title present", ok: Boolean(displayReportTitle.trim()) },
-    { label: "Executive summary ready", ok: hasSummary },
+    { label: hasSummary ? "Report overview ready" : "Report overview needed", ok: hasSummary },
     { label: `${uniqueObservationCount} observations documented`, ok: uniqueObservationCount > 0 },
     { label: missingEvidenceCount ? `${missingEvidenceCount} observations missing supporting photos` : `${includedEvidenceCount} items included`, ok: missingEvidenceCount === 0 && includedEvidenceCount > 0 },
     { label: "Technician notes present", ok: observationEntries.some((entry) => getEvidenceNote(entry.capture)) },
-    { label: "Approval complete", ok: currentReport?.status === "approved" },
+    { label: isApproved ? "Approved" : "Approval pending", ok: isApproved },
     { label: "Blank unused sections tucked away", ok: unusedReportSections.length === 0 || visibleReportSections.length > 0 },
   ];
   const qualityScore = Math.round((qualityChecks.filter((check) => check.ok).length / qualityChecks.length) * 100);
   const outlineItems = [
     { label: "Cover", href: "report-cover-editor", ok: Boolean(displayReportTitle.trim()) },
-    { label: hasSummary ? "Executive Summary" : "Executive Summary missing", href: "report-summary-editor", ok: hasSummary },
+    { label: hasSummary ? "Report overview" : "Report overview needed", href: "report-summary-editor", ok: hasSummary },
     { label: `Observations (${uniqueObservationCount})`, href: "report-observations-editor", ok: uniqueObservationCount > 0 },
     { label: missingEvidenceCount ? `${missingEvidenceCount} observations missing required items` : `Included Items (${includedEvidenceCount})`, href: "report-evidence-editor", ok: missingEvidenceCount === 0 && includedEvidenceCount > 0 },
-    { label: "Signature", href: "report-signoff-editor", ok: hasSignature },
-    { label: currentReport?.status === "approved" ? "Ready to Export" : "Not ready yet", href: "report-export-actions", ok: currentReport?.status === "approved" },
+    { label: hasSignature ? "Signature" : "Signature needed", href: "report-signoff-editor", ok: hasSignature },
+    { label: isApproved ? "Ready to export" : "Approval pending", href: "report-export-actions", ok: isApproved },
   ];
   const coverDetails = [
     ["Report Title", displayReportTitle],
@@ -930,14 +950,26 @@ export function ReportReview({
 
           <details id="report-observations-editor" className="report-subsection report-edit-panel" open>
             <summary>
-              <h3>Documented Observations</h3>
+              <h3>Report sections</h3>
               <p className="muted">
-                Edit the customer-facing sections detected for this report. Unused engine sections are tucked away below.
+                The customer-facing sections of this report. Unused sections are tucked away below.
               </p>
             </summary>
-            <div className="report-content-grid">
+            {sharedTechnicianNotes.length > 0 ? (
+              <details className="report-shared-notes" open>
+                <summary>
+                  <span className="label">Session notes</span>
+                  <span className="muted">Captured by the technician and shared across the sections below.</span>
+                </summary>
+                <div className="report-field-card observation-technician-notes">
+                  {sharedTechnicianNotes.join("\n")}
+                </div>
+              </details>
+            ) : null}
+            <div className="report-sections-grid">
               {visibleReportSections.map((section) => {
                 const included = !isHiddenFromReport(section.metadata);
+                const sectionOwnNotes = technicianNotesBySection.get(section.id) ?? [];
                 return (
                   <article
                     id={`report-section-${section.id}`}
@@ -956,19 +988,29 @@ export function ReportReview({
                         defaultValue={getSectionDisplayTitle(section)}
                       />
                     </label>
-                    <div className="field-stack">
-                      <span className="label">Technician Notes</span>
-                      <div className="report-field-card observation-technician-notes">
-                        {getSectionTechnicianNotes(section, supportingEvidence) || "No technician notes linked to this observation."}
+                    {sectionOwnNotes.length > 0 ? (
+                      <div className="field-stack">
+                        <span className="label">Notes for this section</span>
+                        <div className="report-field-card observation-technician-notes">
+                          {sectionOwnNotes.join("\n")}
+                        </div>
                       </div>
-                    </div>
+                    ) : sharedTechnicianNotes.length > 0 ? (
+                      <p className="muted report-shared-notes-ref">
+                        Draws on the session notes above.
+                      </p>
+                    ) : null}
                     <label className="field-stack">
-                      <span className="label">Customer Facing Report Text</span>
-                      <textarea
+                      <span className="label">Customer-facing text</span>
+                      <AutoGrowTextarea
                         className="input text-area"
                         name={`section_body_${section.id}`}
                         rows={5}
                         defaultValue={stripConfidenceText(section.body ?? "")}
+                        placeholder={
+                          diagnosticSectionPromptForTitle(stripConfidenceText(section.title)) ??
+                          "Add the text the customer will read in this section."
+                        }
                       />
                     </label>
                     {normalizeDraftSections([section], []).flatMap(
@@ -1221,7 +1263,7 @@ export function InspectorFacilityPanel({
               <summary>
                 <h3>Sign Report</h3>
               </summary>
-              <SignatureCaptureForm sessionId={sessionId} />
+              <SignatureCaptureForm sessionId={sessionId} defaultSignerName={profile.full_name ?? ""} />
             </details>
           </div>
         )}
@@ -1290,18 +1332,44 @@ export function InspectorFacilityPanel({
       ) : (
         <p className="muted">No report-specific signature captured.</p>
       )}
-      <SignatureCaptureForm sessionId={sessionId} />
+      <SignatureCaptureForm sessionId={sessionId} defaultSignerName={profile.full_name ?? ""} />
     </details>
   );
 }
 
-function getSectionTechnicianNotes(section: AiReportDraftSection, supportingEvidence: SupportingEvidenceItem[]) {
+function getSectionTechnicianNoteList(section: AiReportDraftSection, supportingEvidence: SupportingEvidenceItem[]) {
   const ids = new Set(Array.isArray(section.source_capture_ids) ? section.source_capture_ids.filter((id): id is string => typeof id === "string") : []);
   const notes = supportingEvidence
     .filter((item) => ids.has(item.capture.id))
     .map((item) => stripConfidenceText(item.capture.technician_note?.trim() || item.capture.transcript?.trim() || item.note || ""))
     .filter(Boolean);
-  return Array.from(new Set(notes)).join("\n");
+  return Array.from(new Set(notes));
+}
+
+/**
+ * The generic report builder assigns the same capture ids to most sections, so
+ * every section used to render the entire session note blob verbatim. That made
+ * the page enormous and told a reviewer nothing about which note belonged where.
+ * Notes common to every section are lifted out and shown once; each section then
+ * shows only what is genuinely its own.
+ */
+function splitSharedTechnicianNotes(
+  sections: AiReportDraftSection[],
+  supportingEvidence: SupportingEvidenceItem[],
+) {
+  const notesBySection = new Map(
+    sections.map((section) => [section.id, getSectionTechnicianNoteList(section, supportingEvidence)] as const),
+  );
+  const sectionsWithNotes = [...notesBySection.values()].filter((notes) => notes.length > 0);
+  const shared =
+    sectionsWithNotes.length > 1
+      ? sectionsWithNotes.reduce((common, notes) => common.filter((note) => notes.includes(note)))
+      : [];
+  const sharedSet = new Set(shared);
+  const uniqueBySection = new Map(
+    [...notesBySection].map(([id, notes]) => [id, notes.filter((note) => !sharedSet.has(note))] as const),
+  );
+  return { shared, uniqueBySection };
 }
 
 function getObservationCategoryLabel(

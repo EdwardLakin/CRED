@@ -31,7 +31,7 @@ import {
 } from '@/features/reports/observation-titles'
 import type { OrganizationPlan } from '@/lib/stripe'
 import { buildEvidenceGroups, buildEvidencePackages,
-  sanitizeReportStructureForSession, buildNormalizedReportFields, deriveFormSectionsFromCaptures, extractFormBlueprint, mapEvidenceToFormBlueprint, scoreFormReferenceCapture, selectPrimaryFormCaptures, stripConfidenceText, GENERIC_REPORT_SECTION_TITLES, getReportStructureSourceMetadata, sanitizeCapturesForImageAiAssist, getFormStructureReliability } from '@/features/reports/report-structure'
+  sanitizeReportStructureForSession, buildNormalizedReportFields, deriveFormSectionsFromCaptures, extractFormBlueprint, mapEvidenceToFormBlueprint, scoreFormReferenceCapture, selectPrimaryFormCaptures, stripConfidenceText, GENERIC_REPORT_SECTION_TITLES, TECHNICIAN_OWNED_SECTION_TITLES, getReportStructureSourceMetadata, sanitizeCapturesForImageAiAssist, getFormStructureReliability } from '@/features/reports/report-structure'
 import { buildSafeReportTitle, isPlaceholderReportTitle } from '@/features/reports/report-title'
 import { isCaptureIncludedInOutput } from '@/features/reports/capture-inclusion'
 import type { Json } from '@/lib/supabase/database.types'
@@ -45,13 +45,7 @@ function isReferenceDocumentCapture(capture: { technician_note?: string | null; 
 }
 
 function isTechnicianOwnedDiagnosticSection(title: string) {
-  return title === 'Diagnostic Summary' || title === 'Recommended Next Step / Escalation'
-}
-
-function diagnosticPlaceholderForTitle(title: string) {
-  if (title === 'Diagnostic Summary') return 'No technician diagnostic summary entered.'
-  if (title === 'Recommended Next Step / Escalation') return 'No technician next step or escalation note entered.'
-  return null
+  return (TECHNICIAN_OWNED_SECTION_TITLES as readonly string[]).includes(title)
 }
 
 function genericFallbackDraftSections(draftOutput: Awaited<ReturnType<typeof generateReportDraft>>, captures: Array<{ id: string; technician_note?: string | null; transcript?: string | null; media_kind?: string | null; type?: string | null; extracted_data?: Json | null }> = []) {
@@ -82,7 +76,7 @@ function genericFallbackDraftSections(draftOutput: Awaited<ReturnType<typeof gen
     return {
       section_key: title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''),
       title,
-      body: diagnosticPlaceholderForTitle(title) ?? matchingSection?.body ?? null,
+      body: isTechnicianOwnedDiagnosticSection(title) ? null : matchingSection?.body ?? null,
       status: matchingSection?.status ?? 'informational' as const,
       confidence: matchingSection?.confidence ?? draftOutput.confidence,
       source_capture_ids: getSectionSourceCaptureIds(title, matchingSection?.source_capture_ids, allCaptureIds, noteCaptureIds, vehicleEvidenceCaptureIds, referenceDocumentCaptureIds),

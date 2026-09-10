@@ -12,15 +12,15 @@ Last updated: 2026-09-10
 | --- | --- |
 | Production database | Supabase project `CREDP` (`eanryhodbotrsrgtsyxl`, us-east-2, Postgres 17) |
 | Shared test database | Supabase project `CRED test` (`qcupjulmgbmyxtqwlxlm`, us-west-2) — used by `.github/workflows/integration-e2e.yml` |
-| Hosting | **None yet.** No Vercel project exists for CRED. `cred.profixiq.com` is not served. |
-| Domain | Not attached |
+| Hosting | **Live at `cred.profixiq.com`.** Not under the Vercel team `edward-lakins-projects`, which contains only `pro-fix-iq` — the host for CRED is a different account or provider and is not recorded here yet. Fill this in. |
+| Domain | `cred.profixiq.com`, serving |
 | Analytics / error monitoring | None installed |
 
 ## Migration state
 
-Repository and production are **in sync** as of 2026-09-10: 66 migration files,
-66 rows in `supabase_migrations.schema_migrations`, latest
-`20260910000000_harden_internal_function_grants`.
+Repository and production are **in sync** as of 2026-09-10: 67 migration files,
+67 rows in `supabase_migrations.schema_migrations`, latest
+`20260910000100_restore_updated_at_function_and_triggers`.
 
 How that sync was reached matters, because it was not a clean `supabase db push`:
 
@@ -72,8 +72,8 @@ apply the whole chain from scratch, rather than reconciling it by hand.
 1. **Never apply DDL through the Supabase dashboard.** Every schema change goes
    in a migration file, committed, then applied. Hand-applied DDL is what caused
    the June–September drift and hid two migrations that could never have run.
-2. **Deploying and migrating are one act.** Once the Vercel project exists, do
-   not merge a migration without applying it.
+2. **Deploying and migrating are one act.** Production is live, so a merged
+   migration that has not been applied is a broken deploy waiting to happen.
 3. **Update this file** when either changes.
 
 ## Known-good verification
@@ -92,8 +92,8 @@ npm run build       # exit 0, incl. offline shell verification
 These are real gaps, consciously deferred until someone outside the team can
 sign up. Do not spend a scarce CRED evening on them before that:
 
-- Vercel project, domain, production environment variables (12 of them — see
-  `.env.example`).
+- Recording where production is actually hosted, and confirming all 12
+  production environment variables are set there (see `.env.example`).
 - Product screenshots. `public/marketing/cred/` is empty, so every screenshot
   slot on the landing page renders a placeholder.
 - Terms, privacy, and a contact route. The landing page says "contact us" twice

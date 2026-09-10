@@ -12,6 +12,10 @@ import './globals.css'
 export const metadata: Metadata = {
   title: 'CRED by ProFixIQ',
   description: 'Capture, Review, Extract, Document',
+  // iOS data detectors were turning permit, certification and licence numbers
+  // into tappable phone links in the report signature panel, so identical
+  // fields rendered in different colours and one of them offered to dial.
+  formatDetection: { telephone: false, date: false, address: false },
   manifest: '/manifest.webmanifest',
   applicationName: 'CRED',
   appleWebApp: {

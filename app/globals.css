@@ -5870,15 +5870,113 @@ a:focus-visible {
   color: var(--warning-strong);
 }
 
+/* The save indicator used to be a full-width opaque block pinned mid-viewport,
+   so it sat on top of the section headings and field labels behind it. It is
+   now a floating chip that stays out of the reading column. */
 .report-autosave-bar {
-  background: var(--surface-muted);
-  border: 1px dashed var(--border-strong);
-  border-radius: 16px;
-  justify-content: space-between;
-  padding: 0.75rem 1rem;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  justify-content: flex-end;
+  padding: 0;
+  pointer-events: none;
   position: sticky;
-  top: 0.75rem;
-  z-index: 2;
+  top: 0.5rem;
+  z-index: 3;
+}
+
+.report-autosave-bar > .status-pill {
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+}
+
+/* Kept for assistive tech; the behaviour is self-evident once you type. */
+.report-autosave-hint {
+  border: 0;
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+/* Grid panels stretched to match a taller sibling were distributing their rows
+   into the extra space, which is what left the Report Outline mostly empty. */
+.report-edit-panel,
+.report-outline-nav,
+.report-quality-panel {
+  align-content: start;
+}
+
+/* Session notes shared by every section, lifted out of the per-section cards
+   so the same paragraph is not repeated once per section. */
+.report-shared-notes {
+  background: var(--surface-muted);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  padding: 0.85rem 1rem;
+}
+
+.report-shared-notes > summary {
+  align-items: baseline;
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.report-shared-notes > summary .label {
+  margin: 0;
+}
+
+.report-shared-notes > .observation-technician-notes {
+  margin-top: 0.75rem;
+}
+
+.report-shared-notes-ref {
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+/* Secondary AI actions live behind a disclosure so the customer-facing text
+   stays the most prominent thing in each item card. */
+.observation-ai-more {
+  position: relative;
+}
+
+.observation-ai-more > summary {
+  display: inline-flex;
+  list-style: none;
+}
+
+.observation-ai-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.observation-ai-more-menu {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+}
+
+.observation-ai-more-menu p {
+  font-size: 0.8rem;
+  margin: 0.25rem 0 0;
+}
+
+/* Grow-to-fit fields: never clip the text a reviewer is approving. */
+textarea[data-autogrow="true"],
+.evidence-card-ai-editor textarea {
+  overflow-y: hidden;
+  resize: vertical;
 }
 
 .report-observation-order-row {
@@ -5939,4 +6037,30 @@ a:focus-visible {
 .summary-assistant-panel .report-ai-writing-actions {
   border-top: 0;
   padding-top: 0;
+}
+
+/* Report sections are prose editors, so they get one readable column at every
+   width rather than two cramped ones. Two columns of long-form text side by
+   side is what made the review page feel like a form to survive. */
+.report-sections-grid {
+  display: grid;
+  gap: 14px;
+}
+
+/* Item cards carry a thumbnail, a category choice and two text fields. Two of
+   those side by side only works on a genuinely wide screen; a tablet is not one. */
+@media (max-width: 1180px) {
+  .review-photo-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* The outline is navigation, so it should stay reachable while you scroll the
+   document it navigates. */
+@media (min-width: 980px) {
+  .report-studio-sidebar {
+    position: sticky;
+    top: 0.5rem;
+    z-index: 2;
+  }
 }
