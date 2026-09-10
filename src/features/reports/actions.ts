@@ -10,6 +10,7 @@ import {
   invalidateReportApproval,
   reportIsReadyForDelivery,
 } from '@/features/reports/approval-state'
+import { normalizeItemSeverity } from '@/features/capture/item-severity'
 import { normalizeEvidenceCategory } from '@/features/capture/evidence-category'
 import { DEFAULT_REPORT_TYPE, SESSION_METADATA_FIELDS, normalizeReportType, normalizeSessionMetadata, sessionMetadataToJson } from '@/features/sessions/report-types'
 import { appendDiagnosticReportApprovedAuditEvent } from '@/features/diagnostic-procedures/actions'
@@ -1681,13 +1682,16 @@ export async function saveReportEdits(draftId: string, formData: FormData) {
     const originalTechnicianNote = sanitizeReportText(formData.get(`capture_original_technician_note_${capture.id}`), 2000) || capture.original_technician_note || capture.technician_note
     const lastAiObservation = sanitizeReportText(formData.get(`capture_last_ai_observation_${capture.id}`), 4000)
     const evidenceCategory = normalizeEvidenceCategory(getString(formData, `capture_category_${capture.id}`))
+    // Null when the technician left it unrated, which the report prints as no
+    // severity rather than substituting a default.
+    const severity = normalizeItemSeverity(getString(formData, `capture_severity_${capture.id}`))
     const groupWith = getString(formData, `capture_group_with_${capture.id}`)
     const observationGroupId = groupWith && groupWith !== capture.id ? groupWith : capture.observation_group_id
     const requestedOrder = Number(getString(formData, `capture_report_order_${capture.id}`))
     const reportOrder = Number.isFinite(requestedOrder) && requestedOrder > 0 ? requestedOrder : capture.report_order
     const { error: captureUpdateError } = await supabase
       .from('capture_items')
-      .update({ include_in_report: includeInReport, technician_note: note, customer_facing_observation: customerObservation, original_technician_note: originalTechnicianNote, last_ai_observation: lastAiObservation, evidence_category: evidenceCategory, observation_group_id: observationGroupId || null, report_order: reportOrder, updated_at: now })
+      .update({ include_in_report: includeInReport, technician_note: note, customer_facing_observation: customerObservation, original_technician_note: originalTechnicianNote, last_ai_observation: lastAiObservation, evidence_category: evidenceCategory, severity, observation_group_id: observationGroupId || null, report_order: reportOrder, updated_at: now })
       .eq('id', capture.id)
       .eq('documentation_session_id', session.id)
       .eq('organization_id', profile.organization_id)

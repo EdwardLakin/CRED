@@ -35,6 +35,7 @@ import { SummaryAssistantEditor } from "@/features/reports/review/SummaryAssista
 import { EvidenceObservationAssistant } from "@/features/reports/review/EvidenceObservationAssistant";
 import { AutoGrowTextarea } from "@/features/reports/review/AutoGrowTextarea";
 import { customerFacingSectionBody, diagnosticSectionPromptForTitle } from "@/features/reports/report-structure";
+import { ITEM_SEVERITIES, ITEM_SEVERITY_HINTS, ITEM_SEVERITY_LABELS, normalizeItemSeverity } from "@/features/capture/item-severity";
 import { useSavedSignature } from "@/features/signatures/actions";
 import type { Database } from "@/lib/supabase/database.types";
 
@@ -1803,6 +1804,42 @@ function EvidenceGallery({
                     {EVIDENCE_CATEGORY_LABELS[category]}
                   </label>
                 ))}
+              </div>
+              <div
+                className="evidence-severity-pills"
+                role="radiogroup"
+                aria-label={`Severity for ${item.title}`}
+              >
+                <span className="label">Severity</span>
+                <label
+                  className={`status-pill compact evidence-severity-pill ${normalizeItemSeverity(item.capture.severity) === null ? "success" : "neutral"}`}
+                >
+                  <input
+                    type="radio"
+                    name={`capture_severity_${item.capture.id}`}
+                    value=""
+                    defaultChecked={normalizeItemSeverity(item.capture.severity) === null}
+                  />
+                  Not rated
+                </label>
+                {ITEM_SEVERITIES.map((severity) => (
+                  <label
+                    key={severity}
+                    className={`status-pill compact evidence-severity-pill severity-${severity} ${severity === normalizeItemSeverity(item.capture.severity) ? "success" : "neutral"}`}
+                    title={ITEM_SEVERITY_HINTS[severity]}
+                  >
+                    <input
+                      type="radio"
+                      name={`capture_severity_${item.capture.id}`}
+                      value={severity}
+                      defaultChecked={severity === normalizeItemSeverity(item.capture.severity)}
+                    />
+                    {ITEM_SEVERITY_LABELS[severity]}
+                  </label>
+                ))}
+                <p className="muted evidence-severity-hint">
+                  How serious this is, in your judgement. Left unrated, the report prints no severity for this item.
+                </p>
               </div>
               <label className="field-stack">
                 <span className="label">

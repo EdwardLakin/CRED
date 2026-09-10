@@ -719,6 +719,7 @@ export interface Database {
           report_order: number | null
           include_in_report: boolean
           evidence_category: string
+          severity: string | null
           deleted_at: string | null
           ai_status: string | null
           processing_status: string
@@ -772,6 +773,7 @@ export interface Database {
           report_order?: number | null
           include_in_report?: boolean
           evidence_category?: string
+          severity?: string | null
           deleted_at?: string | null
           ai_status?: string | null
           processing_status?: string
@@ -825,6 +827,7 @@ export interface Database {
           report_order?: number | null
           include_in_report?: boolean
           evidence_category?: string
+          severity?: string | null
           deleted_at?: string | null
           ai_status?: string | null
           processing_status?: string
