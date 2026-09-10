@@ -172,6 +172,28 @@ type FormStructureReliability = {
   fieldCount: number
 }
 
+/**
+ * Sections CRED must never write for the technician. The report builder refuses
+ * the AI draft's matching section for these titles, so they stay empty until a
+ * person fills them in.
+ */
+export const TECHNICIAN_OWNED_SECTION_TITLES = [
+  'Diagnostic Summary',
+  'Recommended Next Step / Escalation',
+] as const
+
+/**
+ * Prompt shown in the review editor when a technician-owned section is still
+ * empty. This is a UI hint rendered as the textarea placeholder — it is never
+ * written into section.body, so an unanswered section exports as absent rather
+ * than printing "No technician diagnostic summary entered." to the customer.
+ */
+export function diagnosticSectionPromptForTitle(title: string) {
+  if (title === 'Diagnostic Summary') return 'Enter the technician diagnostic summary.'
+  if (title === 'Recommended Next Step / Escalation') return 'Enter the recommended next step or escalation note.'
+  return null
+}
+
 export const GENERIC_REPORT_SECTION_TITLES = [
   'Customer Concern',
   'Vehicle / Asset Information',

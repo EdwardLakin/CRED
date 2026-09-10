@@ -603,6 +603,8 @@ export default async function SessionReportPreviewPage({
             isGenericEvidenceReport={isGenericEvidenceReport}
             reportDocument={reportDocument}
             timeZone={profile.timezone}
+            signatureCount={signatures?.length ?? 0}
+            isReadyForExport={isReadyForExport}
           />
 
           {isEditingReport ? (

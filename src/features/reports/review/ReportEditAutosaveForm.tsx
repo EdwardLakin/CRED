@@ -80,7 +80,10 @@ export function ReportEditAutosaveForm({
     >
       <div className="report-autosave-bar" aria-live="polite">
         <span className={className}>{label}</span>
-        <span className="muted">Autosaves text, the executive summary, and section settings. Use explicit controls for approval, export, signatures, and deletes.</span>
+        <span className="report-autosave-hint muted">
+          Text and section settings save as you type. Approval, export,
+          signatures and deletes use their own buttons.
+        </span>
       </div>
       {children}
       <div id="report-export-actions" className="form-actions report-inline-actions report-primary-flow report-manual-save-fallback">

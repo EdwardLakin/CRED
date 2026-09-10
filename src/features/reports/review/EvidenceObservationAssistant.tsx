@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { runObservationWritingAction } from "@/features/reports/actions";
 
@@ -16,14 +16,20 @@ type ActionKey =
   | "generate_observation"
   | "explain_clearly";
 
-const ACTIONS: Array<{ key: ActionKey; label: string }> = [
-  { key: "improve_writing", label: "Improve Writing" },
-  { key: "rewrite_for_customer", label: "Rewrite for Customer" },
-  { key: "make_more_technical", label: "Make More Technical" },
-  { key: "make_more_concise", label: "Make More Concise" },
-  { key: "expand_description", label: "Expand Description" },
-  { key: "generate_observation", label: "Generate Observation" },
-  { key: "explain_clearly", label: "Explain Clearly" },
+// The two actions a reviewer reaches for constantly stay on the surface; the
+// rest live behind a disclosure. Eighteen items x nine always-visible buttons
+// buried the text the reviewer actually came to read.
+const PRIMARY_ACTIONS: Array<{ key: ActionKey; label: string }> = [
+  { key: "improve_writing", label: "Improve writing" },
+  { key: "rewrite_for_customer", label: "Rewrite for customer" },
+];
+
+const MORE_ACTIONS: Array<{ key: ActionKey; label: string }> = [
+  { key: "make_more_technical", label: "More technical" },
+  { key: "make_more_concise", label: "More concise" },
+  { key: "expand_description", label: "Expand" },
+  { key: "generate_observation", label: "Generate observation" },
+  { key: "explain_clearly", label: "Explain clearly" },
 ];
 
 export function EvidenceObservationAssistant({
@@ -114,16 +120,31 @@ export function EvidenceObservationAssistant({
     dispatchAutosave(originalText);
   }
 
+  // Grow to fit: this field was fixed at three rows, so customer-facing text was
+  // routinely clipped mid-sentence in the one place it most needs proofreading.
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const resize = useCallback(() => {
+    const element = textareaRef.current;
+    if (!element) return;
+    element.style.height = "auto";
+    element.style.height = `${element.scrollHeight}px`;
+  }, []);
+  useEffect(() => {
+    resize();
+  }, [resize, text]);
+
   return (
     <div className="observation-ai-editor-stack evidence-card-ai-editor" data-capture-ai-editor={captureId}>
       <label className="field-stack" htmlFor={textareaId}>
-        <span className="label">Customer Facing Observation</span>
+        <span className="label">Customer-facing observation</span>
         <textarea
           id={textareaId}
+          ref={textareaRef}
           className="input text-area"
           name={textareaName}
           rows={3}
           value={text}
+          placeholder="What the customer will read about this item."
           onChange={(event) => {
             setText(event.target.value);
             setMessage(null);
@@ -138,15 +159,28 @@ export function EvidenceObservationAssistant({
           <span className="status-pill neutral compact">This item only</span>
         </div>
         <div className="observation-ai-action-grid">
-          {ACTIONS.map((action) => (
+          {PRIMARY_ACTIONS.map((action) => (
             <button key={action.key} type="button" className="button button-secondary touch-target" disabled={busyAction !== null} onClick={() => void runAction(action.key)}>
               {busyAction === action.key ? "Writing…" : action.label}
             </button>
           ))}
-          <button type="button" className="button button-secondary touch-target" disabled={!history.length || busyAction !== null} onClick={undoLastAiRewrite}>Undo Last AI Rewrite</button>
-          <button type="button" className="button button-secondary touch-target" disabled={busyAction !== null} onClick={restoreOriginal}>Restore Original</button>
+          <details className="observation-ai-more">
+            <summary className="button button-secondary touch-target">More…</summary>
+            <div className="observation-ai-more-menu">
+              {MORE_ACTIONS.map((action) => (
+                <button key={action.key} type="button" className="button button-secondary touch-target" disabled={busyAction !== null} onClick={() => void runAction(action.key)}>
+                  {busyAction === action.key ? "Writing…" : action.label}
+                </button>
+              ))}
+              <button type="button" className="button button-secondary touch-target" disabled={!history.length || busyAction !== null} onClick={undoLastAiRewrite}>Undo last rewrite</button>
+              <button type="button" className="button button-secondary touch-target" disabled={busyAction !== null} onClick={restoreOriginal}>Restore original</button>
+              <p className="muted">
+                These actions read this item&rsquo;s photo, notes, classification and
+                surrounding report context. They never write a recommendation for you.
+              </p>
+            </div>
+          </details>
         </div>
-        <p className="muted">One-click actions use this capture image, vision details, notes, classification, supports relationship, nearby observations, report context, and extracted metadata.</p>
         {message ? <p className="success compact-success" aria-live="polite">{message}</p> : null}
         {error ? <p className="error" role="alert">{error}</p> : null}
       </section>
