@@ -29,8 +29,8 @@ function getOrganizationDisplayName(
   } | null,
 ) {
   return (
-    companyProfile?.company_name ||
-    companyProfile?.facility_name ||
+    companyProfile?.company_name?.trim() ||
+    companyProfile?.facility_name?.trim() ||
     organizationName
   );
 }
@@ -76,6 +76,10 @@ export function buildReportCoverHtml(params: {
 }) {
   const style = params.branding?.report_style ?? DEFAULT_BRAND_PROFILE.report_style;
   if (style.coverPage === "none") return "";
+  const organizationDisplayName = getOrganizationDisplayName(
+    params.organizationName,
+    params.companyProfile,
+  );
   const allRows = [
     { key: "client", label: "Customer / Client", value: getReportInfoValue(params.draft, params.session, "customer_client") || params.session.customer_name || "" },
     { key: "subject", label: "Subject", value: getReportInfoValue(params.draft, params.session, "subject_name") || "" },
@@ -84,17 +88,17 @@ export function buildReportCoverHtml(params: {
     { key: "reportId", label: "Report ID", value: params.session.display_id ?? "" },
     { key: "reference", label: "Reference / File Note", value: getReportInfoValue(params.draft, params.session, "reference_number") },
     { key: "date", label: "Report Date", value: formatDateTimeInTimeZone(params.draft?.updated_at ?? params.session.updated_at ?? params.session.created_at, params.timeZone) },
-    { key: "organization", label: "Organization", value: getOrganizationDisplayName(params.organizationName, params.companyProfile) },
+    { key: "organization", label: "Organization", value: organizationDisplayName },
   ];
   const rows = allRows.filter((row) => row.key === "client" ? style.showCoverClient : row.key === "asset" ? style.showCoverAsset : row.key === "location" ? style.showCoverLocation : row.key === "reportId" ? style.showCoverReportId : row.key === "date" ? style.showCoverDate : true);
   const definitionRows = [...rows.map(({ label, value }) => ({ label, value })), ...buildCustomFieldRows(params.branding ?? null, params.draft, "showInCover")];
   const coverImageHtml = getCoverImageHtml(params.captures, params.imageAssets, params.allowCoverImage && style.showCoverImage && style.coverImageSource !== "none", params.helpers);
   const brand = params.branding;
-  const brandName = brand?.display_name?.trim();
-  const logoHtml = params.logoUrl ? `<img class="brand-report-logo" src="${escapeHtmlAttributeRaw(params.logoUrl)}" alt="${escapeHtmlAttributeRaw(brandName || params.organizationName)} logo" />` : "";
+  const brandName = organizationDisplayName;
+  const logoHtml = params.logoUrl ? `<img class="brand-report-logo" src="${escapeHtmlAttributeRaw(params.logoUrl)}" alt="${escapeHtmlAttributeRaw(brandName)} logo" />` : "";
   const coverTextVar = /^#[0-9A-Fa-f]{6}$/.test(style.coverTextColor) ? `--cover-text:${escapeHtmlAttributeRaw(style.coverTextColor)};` : "";
   const coverVars = `--cover-bg:${escapeHtmlAttributeRaw(style.coverBackgroundColor)};--cover-grad-a:${escapeHtmlAttributeRaw(style.coverGradientStart)};--cover-grad-b:${escapeHtmlAttributeRaw(style.coverGradientEnd)};--cover-accent:${escapeHtmlAttributeRaw(style.coverAccentColor)};${coverTextVar}text-align:${escapeHtmlAttributeRaw(style.coverTitleAlignment)}`;
   const visibleLogoHtml = style.showCoverLogo ? logoHtml : "";
-  const identityHtml = brand && style.showCoverCompanyInfo ? `<div class="brand-report-identity">${visibleLogoHtml}<div><strong>${escapeHtml(brandName || params.organizationName)}</strong>${brand.tagline ? `<p>${escapeHtml(brand.tagline)}</p>` : ""}<p>${escapeHtml([brand.phone, brand.email, brand.website].filter(Boolean).join(" · "))}</p>${brand.address ? `<p>${escapeHtml(brand.address)}</p>` : ""}</div></div>` : "";
-  return `<section style="${coverVars}" class="report-cover item branded-cover branded-cover-${escapeHtmlAttributeRaw(brand?.header_layout || "classic")} cover-${escapeHtmlAttributeRaw(style.coverPage)} logo-${escapeHtmlAttributeRaw(style.coverLogoSize)}${coverImageHtml ? "" : " report-cover-no-image"}"><div class="cover-copy">${identityHtml}<div class="cover-kicker"><span>Documentation Report</span><span>${escapeHtml(params.reportType)}</span></div>${style.showCoverTitle ? `<h1>${escapeHtml(params.reportTitle)}</h1>` : ""}<p class="cover-trust">${escapeHtml(brand?.tagline || "Report identity and approved customer-facing documentation.")}</p>${params.helpers.renderDefinitionRows(definitionRows)}</div>${coverImageHtml}</section>`;
+  const identityHtml = style.showCoverCompanyInfo ? `<div class="brand-report-identity">${visibleLogoHtml}<div><strong>${escapeHtml(brandName)}</strong>${brand?.tagline ? `<p>${escapeHtml(brand.tagline)}</p>` : ""}<p>${escapeHtml([brand?.phone, brand?.email, brand?.website].filter(Boolean).join(" · "))}</p>${brand?.address ? `<p>${escapeHtml(brand.address)}</p>` : ""}</div></div>` : "";
+  return `<section style="${coverVars}" class="report-cover item branded-cover branded-cover-${escapeHtmlAttributeRaw(brand?.header_layout || "classic")} cover-${escapeHtmlAttributeRaw(style.coverPage)} logo-${escapeHtmlAttributeRaw(style.coverLogoSize)}${coverImageHtml ? "" : " report-cover-no-image"}"><div class="cover-copy">${identityHtml}<div class="cover-kicker"><span>Report</span><span>${escapeHtml(params.reportType)}</span></div>${style.showCoverTitle ? `<h1>${escapeHtml(params.reportTitle)}</h1>` : ""}${params.helpers.renderDefinitionRows(definitionRows)}</div>${coverImageHtml}</section>`;
 }

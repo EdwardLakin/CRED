@@ -7,6 +7,12 @@ export type ReportSignatureRenderHelpers = {
   getApprovalDate: (draft: ReportDraft | null | undefined, session: ReportSession) => string | null;
 };
 
+function getCompletedByLabel(branding?: ExportBranding | null) {
+  const configured = branding?.report_style?.reviewedByLabel?.trim();
+  if (!configured || /^(reviewed|approved) by$/i.test(configured)) return "Completed by";
+  return configured;
+}
+
 export function buildApprovalHtml(params: {
   profile: {
     full_name?: string | null;
@@ -29,14 +35,26 @@ export function buildApprovalHtml(params: {
   const signatureUrl = signature
     ? params.signatureUrls[signature.id]
     : params.signatureUrls.__default_signature;
-  const approvedAt =
-    params.helpers.getApprovalDate(params.draft, params.session) ??
-    signature?.signed_at ??
-    null;
+  const approvalDate = params.helpers.getApprovalDate(params.draft, params.session);
+  const isCompleted = Boolean(
+    signature?.signed_at ||
+    approvalDate ||
+    params.draft?.status === "approved" ||
+    params.session.status === "finalized" ||
+    params.session.review_status === "ready_for_delivery" ||
+    params.session.review_status === "reviewed",
+  );
+  const completedAt = signature?.signed_at ?? approvalDate ?? null;
+  const completedBy =
+    signature?.signer_name ||
+    params.branding?.prepared_by_name ||
+    params.profile?.full_name ||
+    "";
+  const primaryLabel = isCompleted ? getCompletedByLabel(params.branding) : "Prepared by";
   const rows = [
     {
-      label: params.branding?.report_style?.reviewedByLabel || "Approved by",
-      value: signature?.signer_name || params.branding?.prepared_by_name || params.profile?.full_name || "",
+      label: primaryLabel,
+      value: completedBy,
     },
     {
       label: "Role / Title",
@@ -46,18 +64,20 @@ export function buildApprovalHtml(params: {
         "",
     },
     ...(params.branding?.report_style?.signatureDate === false ? [] : [{
-      label: "Approved date / time",
-      value: approvedAt
-        ? formatDateTimeInTimeZone(approvedAt, params.timeZone)
+      label: isCompleted ? "Completed date / time" : "Date / time",
+      value: completedAt
+        ? formatDateTimeInTimeZone(completedAt, params.timeZone)
         : "",
     }]),
   ];
   const typedSignature = params.branding?.report_style?.typedSignature?.trim();
   const sig = signatureUrl
-    ? `<div class="signature-block approval-signature"><p class="signature-label">Signature</p><img class="signature-image" src="${escapeHtmlAttributeRaw(signatureUrl)}" alt="Approval signature" /></div>`
+    ? `<div class="signature-block approval-signature"><p class="signature-label">Signature</p><img class="signature-image" src="${escapeHtmlAttributeRaw(signatureUrl)}" alt="Signature of ${escapeHtmlAttributeRaw(completedBy || "report author")}" /></div>`
     : typedSignature
       ? `<div class="signature-block approval-signature"><p class="signature-label">Signature</p><p>${escapeHtml(typedSignature)}</p></div>`
       : '<div class="signature-block signature-empty"><p class="signature-label">Signature</p><p class="muted">No signature captured</p></div>';
   const blockHtml = enabledBlocks.slice(1).map((block) => `<div class="signature-block signature-empty"><p class="signature-label">${escapeHtml(block.label)}</p>${block.showSignatureLine ? `<p class="signature-line">${escapeHtml(block.typedName || "")}</p>` : ""}${block.showDate ? `<p class="muted">Date</p>` : ""}</div>`).join("");
-  return `<section class="item service-section approval-section signoff-section"><div class="section-heading"><p class="eyebrow">Formal sign-off</p><h2>Approval</h2></div><div class="approval-grid"><div>${params.helpers.renderDefinitionRows(rows)}</div>${sig}</div>${blockHtml}</section>`;
+  const eyebrow = isCompleted ? "Report completion" : "Report sign-off";
+  const heading = isCompleted ? "Completed" : "Sign-off";
+  return `<section class="item service-section approval-section signoff-section"><div class="section-heading"><p class="eyebrow">${eyebrow}</p><h2>${heading}</h2></div><div class="approval-grid"><div>${params.helpers.renderDefinitionRows(rows)}</div>${sig}</div>${blockHtml}</section>`;
 }
