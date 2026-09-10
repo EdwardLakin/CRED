@@ -20,19 +20,13 @@ begin
 
   truncate table pg_temp.multi_workspace_billing_owner_groups;
 
-  insert into pg_temp.multi_workspace_billing_owner_groups (
-    owner_user_id,
-    canonical_billing_account_id,
-    canonical_name,
-    canonical_created_at
-  )
   with single_owner_workspaces as (
     select
       o.id as organization_id,
       o.name as organization_name,
       coalesce(o.created_at, now()) as organization_created_at,
       o.billing_account_id,
-      min(p.user_id) as owner_user_id
+      (array_agg(distinct p.user_id))[1] as owner_user_id
     from public.organizations o
     join public.profiles p on p.organization_id = o.id and p.role = 'owner'
     group by o.id, o.name, o.created_at, o.billing_account_id
@@ -62,6 +56,12 @@ begin
     from canonical_source
     returning owner_user_id, id, name, created_at
   )
+  insert into pg_temp.multi_workspace_billing_owner_groups (
+    owner_user_id,
+    canonical_billing_account_id,
+    canonical_name,
+    canonical_created_at
+  )
   select owner_user_id, billing_account_id, name, created_at from canonical_existing
   union all
   select owner_user_id, id, name, created_at from inserted;
@@ -71,7 +71,7 @@ begin
   from (
     select
       o.id as organization_id,
-      min(p.user_id) as owner_user_id
+      (array_agg(distinct p.user_id))[1] as owner_user_id
     from public.organizations o
     join public.profiles p on p.organization_id = o.id and p.role = 'owner'
     group by o.id

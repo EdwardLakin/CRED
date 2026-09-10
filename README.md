@@ -11,7 +11,7 @@ If your Supabase project was provisioned manually or migrations were not applied
 
 ## PWA asset note
 
-Apple touch PNG icons should be generated manually from public/icons/cred-icon.svg before production launch.
+Apple touch PNG icons are generated automatically at build time by `scripts/generate-apple-touch-icon.mjs` (wired into `prebuild`) from public/icons/cred-icon.svg. No manual step is required.
 
 
 ## Stripe subscription billing setup

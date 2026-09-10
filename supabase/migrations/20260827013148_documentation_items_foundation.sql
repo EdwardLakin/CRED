@@ -170,6 +170,13 @@ alter table public.capture_items
   add column attachment_order integer,
   add column attachment_kind text;
 
+-- The capture scope-retarget guard rejects any UPDATE against a soft-deleted
+-- row, and this backfill must stamp every capture row (deleted ones included)
+-- before documentation_item_id becomes NOT NULL. Suspend that guard for the
+-- duration of the backfill; it is restored below, inside the same transaction.
+alter table public.capture_items
+  disable trigger prevent_capture_item_scope_retarget;
+
 -- Legacy observation_group_id uses the first capture id as its root. Coalescing
 -- it with capture_items.id safely preserves both grouped and standalone rows.
 with grouped_captures as (
@@ -278,6 +285,9 @@ set
   end
 from ranked_attachments
 where capture_items.id = ranked_attachments.capture_item_id;
+
+alter table public.capture_items
+  enable trigger prevent_capture_item_scope_retarget;
 
 alter table public.capture_items
   alter column documentation_item_id set not null,

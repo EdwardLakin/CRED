@@ -1,5 +1,12 @@
 # CRED MVP Launch Readiness Audit
 
+> **Stale as of 2026-09-10.** This audit describes the June 2026 MVP. It predates
+> the CRED Essentials / Professional / Investigation tiers, the evidence and
+> deliverables engine, multi-workspace membership, and workspace branding, and
+> the prices quoted below (Team $99, Shop $199) are superseded by $129 and $249.
+> Section 4's manual QA checklist is still the best thing to run against a fresh
+> production environment. For current state, read `docs/STATE.md`.
+
 Audit date: 2026-06-11
 
 Scope: small controlled beta / first public ad test readiness for the current MVP only. This audit intentionally does **not** recommend dispatch, invoicing, inventory, scheduling, CRM, customer portals, or third-party integrations.
