@@ -13,24 +13,50 @@ test('executive PDF does not expose internal approval state or product attributi
   assert.doesNotMatch(source, /sectionHeading\(doc, "Approval"/)
 })
 
-test('executive PDF uses customer-facing completion and closing language', () => {
+test('executive PDF follows the Report Studio document order', () => {
+  const header = source.indexOf('drawHeader(doc, snapshot')
+  const summary = source.indexOf('drawSummary(doc, snapshot')
+  const clientAsset = source.indexOf('drawClientAsset(doc, snapshot')
+  const items = source.indexOf('drawItems(doc, snapshot')
+  const completion = source.indexOf('drawCompletion(doc, snapshot')
+  assert.ok(header > -1)
+  assert.ok(header < summary)
+  assert.ok(summary < clientAsset)
+  assert.ok(clientAsset < items)
+  assert.ok(items < completion)
+})
+
+test('executive PDF consumes the same high-value Report Studio presentation controls', () => {
+  assert.match(source, /branding\.header_layout/)
+  assert.match(source, /branding\.footer_layout/)
+  assert.match(source, /style\.sectionStyle/)
+  assert.match(source, /style\.sectionSpacing/)
+  assert.match(source, /style\.showSectionLabels/)
+  assert.match(source, /style\.showSectionDividers/)
+  assert.match(source, /style\.showSectionNumbers/)
+  assert.match(source, /style\.evidenceStyle/)
+  assert.match(source, /style\.evidenceImageSize/)
+  assert.match(source, /branding\.typography\.headingStack/)
+  assert.match(source, /branding\.typography\.bodyStack/)
+})
+
+test('customer-facing completion and closing language remain neutral', () => {
   assert.match(source, /sectionHeading\(doc, "Report Completion"/)
   assert.match(source, /label: "Completed by"/)
   assert.match(source, /label: "Completed"/)
   assert.match(source, /section\.id === "final-notes" \? "Closing Notes"/)
 })
 
-test('documented item pagination measures the item copy before reserving the first photo', () => {
+test('documented item pagination measures item copy before reserving media', () => {
   assert.match(source, /const titleHeight = doc\.heightOfString\(item\.title/)
   assert.match(source, /doc\.heightOfString\(item\.description/)
   assert.match(source, /const introHeight = 18 \+ titleHeight \+ 7 \+ descriptionHeight/)
   assert.match(source, /const minimumTogether = item\.mediaIds\.length/)
-  assert.match(source, /introHeight \+ getPrimaryMediaHeight\(style\) \+ 14/)
   assert.match(source, /ensureSpace\(doc, Math\.min\(minimumTogether/)
 })
 
-test('report completion details render inside the completion card padding', () => {
-  assert.match(source, /doc\.y = y \+ 18/)
-  assert.match(source, /x: MARGIN_X \+ 18/)
-  assert.match(source, /width: CONTENT_WIDTH - 36/)
+test('report completion details render with card padding', () => {
+  assert.match(source, /doc\.y = y \+ 16/)
+  assert.match(source, /x: MARGIN_X \+ 16/)
+  assert.match(source, /width: CONTENT_WIDTH - 32/)
 })

@@ -44,10 +44,6 @@ export function PreviewClientAsset({
             )}
           </dd>
         </div>
-        <div>
-          <dt>Status</dt>
-          <dd>{session?.snapshot?.approval?.status ?? "In review"}</dd>
-        </div>
       </dl>
     </button>
   );

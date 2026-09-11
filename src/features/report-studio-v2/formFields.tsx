@@ -8,7 +8,8 @@ export function ReportStudioHiddenFields({ brand, selectedSessionId, selectedTem
   };
   return <>
     <input type="hidden" name="selected_session_output_id" value={selectedSessionId ?? ""} />
-    <input type="hidden" name="selected_template_id" value={selectedTemplateId ?? ""} />
+    <input type="hidden" name="selected_template_id" value="draft" />
+    <input type="hidden" name="studio_selected_template_id" value={selectedTemplateId ?? ""} />
     {(["display_name","tagline","phone","email","website","address","license_number","certification_number","tax_number","insurance_number","business_hours","department","prepared_by_name","prepared_by_title","footer_text"] as const).map((k)=><input key={k} type="hidden" name={k} value={(brand[k] as string | null) ?? ""} />)}
     {(["logo","dark_logo","icon","signature"] as const).map((k)=><input key={k} type="hidden" name={`current_${k}`} value={(k==="logo"?brand.logo_storage_path:k==="dark_logo"?brand.dark_logo_storage_path:k==="icon"?brand.icon_storage_path:brand.signature_storage_path) ?? ""} />)}
     {Object.entries(brand.colors).map(([k,v])=><input key={k} type="hidden" name={`color_${k}`} value={v} />)}

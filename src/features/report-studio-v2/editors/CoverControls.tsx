@@ -6,11 +6,7 @@ const coverOptions = [
   ['simple_cover', 'Simple'],
   ['professional_cover', 'Professional'],
   ['minimal_cover', 'Minimal'],
-  ['classic_cover', 'Classic'],
-  ['modern_gradient_cover', 'Modern gradient'],
-  ['full_color_cover', 'Full color'],
-  ['split_panel_cover', 'Split panel'],
-  ['photo_cover', 'Photo cover'],
+  ['modern_gradient_cover', 'Accent cover'],
   ['industrial_bold_cover', 'Industrial bold'],
 ];
 
@@ -29,8 +25,6 @@ export function CoverControls({brand,patch}:any){
   return <>
     <Select label="Cover" value={rs.coverPage} onChange={(v:string)=>p({coverPage:v})}>{coverOptions.map(([value,label])=><option key={value} value={value}>{label}</option>)}</Select>
     <Color label="Background color" value={rs.coverBackgroundColor ?? '#ffffff'} onChange={(v)=>p({coverBackgroundColor:v})}/>
-    <Color label="Gradient start" value={rs.coverGradientStart ?? brand.colors.primary} onChange={(v)=>p({coverGradientStart:v})}/>
-    <Color label="Gradient end" value={rs.coverGradientEnd ?? '#ffffff'} onChange={(v)=>p({coverGradientEnd:v})}/>
     <Color label="Accent color" value={rs.coverAccentColor ?? brand.colors.primary} onChange={(v)=>p({coverAccentColor:v})}/>
     <CoverTextColor value={rs.coverTextColor ?? 'auto'} onChange={(v)=>p({coverTextColor:v})}/>
     <Select label="Title alignment" value={rs.coverTitleAlignment ?? 'left'} onChange={(v:string)=>p({coverTitleAlignment:v})}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></Select>
@@ -40,6 +34,5 @@ export function CoverControls({brand,patch}:any){
     <Check label="Show date" checked={rs.showCoverDate} onChange={(v:boolean)=>p({showCoverDate:v})}/>
     <Check label="Show customer" checked={rs.showCoverClient} onChange={(v:boolean)=>p({showCoverClient:v})}/>
     <Check label="Show asset" checked={rs.showCoverAsset} onChange={(v:boolean)=>p({showCoverAsset:v})}/>
-    <Check label="Show cover image" checked={rs.showCoverImage} onChange={(v:boolean)=>p({showCoverImage:v,coverImageSource:v?'first_evidence_image':'none'})}/>
   </>;
 }
