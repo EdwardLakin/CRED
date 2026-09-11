@@ -58,9 +58,12 @@ export async function saveReportStudioDraftAndExport(
       .select('id')
       .single()
     if (error || !data?.id) return { ok: false, error: error?.message ?? 'Unable to snapshot the Report Studio draft.' }
-    templateId = data.id
+    templateId = String(data.id)
   }
 
+  if (!templateId) {
+    return { ok: false, error: 'Unable to resolve the Report Studio export snapshot.' }
+  }
   formData.set('selected_template_id', templateId)
   const result = await saveBrandingAndExport(previousState, formData)
   return (result ?? { ok: false, error: 'Unable to start report export.' }) as ExportState
