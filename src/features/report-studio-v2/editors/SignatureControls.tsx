@@ -1,2 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Check, Select, Text } from './ControlsShared';import { SIGNATURE_LAYOUTS } from '@/features/branding/types'; export function SignatureControls({brand,patch}:any){const rs=brand.report_style,p=(x:any)=>patch({...brand,report_style:{...rs,...x}});return <><Check label="Show signature block" checked={brand.show_signature_block} onChange={(v:boolean)=>patch({...brand,show_signature_block:v})}/><Select label="Layout" value={rs.signatureLayout} onChange={(v:string)=>p({signatureLayout:v})}>{SIGNATURE_LAYOUTS.map(x=><option key={x}>{x}</option>)}</Select><Text label="Typed signature" value={rs.typedSignature} onChange={(v:string)=>p({typedSignature:v})}/><Check label="Date visibility" checked={rs.signatureDate} onChange={(v:boolean)=>p({signatureDate:v})}/></>}
+import { Check, Text } from './ControlsShared';
+
+export function SignatureControls({brand,patch}:any){
+  const rs=brand.report_style,p=(x:any)=>patch({...brand,report_style:{...rs,...x}});
+  return <>
+    <Check label="Show completion / signature block" checked={brand.show_signature_block} onChange={(v:boolean)=>patch({...brand,show_signature_block:v})}/>
+    <Text label="Typed signature fallback" value={rs.typedSignature} onChange={(v:string)=>p({typedSignature:v,signatureLayout:'single_signature'})}/>
+    <Check label="Show completed date" checked={rs.signatureDate} onChange={(v:boolean)=>p({signatureDate:v,signatureLayout:'single_signature'})}/>
+  </>;
+}
