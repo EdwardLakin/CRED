@@ -54,12 +54,8 @@ function copyProfile(profile: WorkspaceBrandProfile): WorkspaceBrandProfile {
       ...profile.report_style,
       watermark: { ...profile.report_style.watermark },
       headerOptions: { ...profile.report_style.headerOptions },
-      signatureBlocks: profile.report_style.signatureBlocks.map((block) => ({
-        ...block,
-      })),
-      customFields: profile.report_style.customFields.map((field) => ({
-        ...field,
-      })),
+      signatureBlocks: profile.report_style.signatureBlocks.map((block) => ({ ...block })),
+      customFields: profile.report_style.customFields.map((field) => ({ ...field })),
     },
   };
 }
@@ -78,14 +74,11 @@ export function applyBuiltInReportPreset(
     showCoverDate: true,
     showCoverReportId: true,
     showSectionLabels: true,
+    showSectionDividers: true,
     evidenceNumbering: true,
     approvalBlock: true,
   };
-  const common = {
-    ...base,
-    show_signature_block: true,
-    show_report_id: true,
-  };
+  const common = { ...base, show_signature_block: true, show_report_id: true };
 
   switch (presetId) {
     case "preset:executive":
@@ -184,7 +177,7 @@ export function applyBuiltInReportPreset(
           sectionStyle: "clean_document",
           sectionSpacing: "standard",
           evidenceImageSize: "standard",
-          evidenceStyle: "photo_left_notes_right",
+          evidenceStyle: "standard_cards",
           signatureLayout: "single_signature",
         },
       };
