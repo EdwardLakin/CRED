@@ -14,7 +14,7 @@ test('Export Report submits and persists the exact visible Studio draft before o
   assert.match(toolbar, /form id="report-studio-export-form" action=\{exportAction\}/)
   assert.match(toolbar, /<button className="button button-primary" type="submit" disabled=\{!state\.selectedSessionId\}>Export Report<\/button>/)
   assert.doesNotMatch(toolbar, /href=\{exportHref\}/)
-  assert.match(fields, /name="selected_template_id" value="workspace-default"/)
+  assert.match(fields, /name="selected_template_id" value="draft"/)
   assert.match(fields, /name="studio_selected_template_id" value=\{selectedTemplateId \?\? ""\}/)
 })
 
