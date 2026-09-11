@@ -5,13 +5,14 @@ import { setDefaultReportTemplate } from "@/features/branding/actions";
 import { BRAND_PALETTES, COLOR_LABELS } from "@/features/branding/types";
 import { BUILT_IN_REPORT_PRESETS, applyBuiltInReportPreset } from "@/features/branding/report-presets";
 
+const INTERNAL_EXPORT_TEMPLATE = "__report_studio_export_draft__";
 type DrawerMode = "templates" | "palettes";
 type TemplateTab = "system" | "saved";
 
 export function ReportTemplateDrawer({ templates, baseBrand, onClose, onApply, onApplyPalette, defaultTemplateId, mode = "templates" }: any) {
   const drawerMode = mode as DrawerMode;
   const [tab, setTab] = useState<TemplateTab>("system");
-  const saved = templates ?? [];
+  const saved = (templates ?? []).filter((template:any) => template.name !== INTERNAL_EXPORT_TEMPLATE);
   const title = drawerMode === "palettes" ? "Color Palettes" : "Templates";
   return <div className="rsv2-drawer-backdrop"><aside className="rsv2-drawer" data-scrollable="ipad-safari">
     <div className="rsv2-drawer-head"><div><p className="eyebrow">Design library</p><h2>{title}</h2></div><button type="button" className="button button-secondary" onClick={onClose}>Close</button></div>
