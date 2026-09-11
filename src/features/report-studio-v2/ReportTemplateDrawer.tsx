@@ -1,24 +1,26 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
-import { useState } from 'react';
-import { setDefaultReportTemplate } from '@/features/branding/actions';
-import { BRAND_PALETTES, COLOR_LABELS, DEFAULT_REPORT_STYLE, REPORT_TEMPLATES, TYPOGRAPHY_OPTIONS, normalizeBrandProfile, type TypographyPreset } from '@/features/branding/types';
+import { useState } from "react";
+import { setDefaultReportTemplate } from "@/features/branding/actions";
+import { BRAND_PALETTES, COLOR_LABELS } from "@/features/branding/types";
+import { BUILT_IN_REPORT_PRESETS, applyBuiltInReportPreset } from "@/features/branding/report-presets";
 
-type DrawerMode = 'templates' | 'palettes';
-type TemplateTab = 'system' | 'saved';
+const INTERNAL_EXPORT_TEMPLATE = "__report_studio_export_draft__";
+type DrawerMode = "templates" | "palettes";
+type TemplateTab = "system" | "saved";
 
-// Regression compatibility: System Templates type="button" onApply(normalizeBrandProfile Saved Custom Templates type="button" onApply(t,t.id) Saved Templates Color Palettes Applying a template changes layout only. Apply default palette Set as default Currently default
-export function ReportTemplateDrawer({templates,onClose,onApply,onApplyDefaultPalette,onApplyPalette,defaultTemplateId,mode='templates'}:any){
+export function ReportTemplateDrawer({ templates, baseBrand, onClose, onApply, onApplyPalette, defaultTemplateId, mode = "templates" }: any) {
   const drawerMode = mode as DrawerMode;
-  const [tab,setTab]=useState<TemplateTab>('system');
-  const buildSystemTemplate=(t:any)=>normalizeBrandProfile({typography:TYPOGRAPHY_OPTIONS[t.typography as TypographyPreset],header_layout:t.header_layout,report_style:{...DEFAULT_REPORT_STYLE,sectionStyle:t.sectionStyle,evidenceStyle:t.evidenceStyle,templatePack:t.name}});
-  const buildSystemTemplateWithPalette=(t:any)=>normalizeBrandProfile({...buildSystemTemplate(t),colors:BRAND_PALETTES.find(p=>p.name===t.palette)?.colors});
-  const saved=templates ?? [];
-  const title = drawerMode === 'palettes' ? 'Color Palettes' : 'Templates';
-  return <div className="rsv2-drawer-backdrop"><aside className="rsv2-drawer" data-scrollable="ipad-safari"><div className="rsv2-drawer-head"><div><p className="eyebrow">Design library</p><h2>{title}</h2></div><button type="button" className="button button-secondary" onClick={onClose}>Close</button></div>
-    {drawerMode==='templates'&&<><div className="rsv2-drawer-tabs" role="tablist" aria-label="Template drawer sections"><button type="button" role="tab" aria-selected={tab==='system'} onClick={()=>setTab('system')}>System Templates</button><button type="button" role="tab" aria-selected={tab==='saved'} onClick={()=>setTab('saved')}>Saved Templates</button></div>
-    {tab==='system'&&<section><h3>System Templates</h3><p className="muted">Applying a template changes layout only. Use “Apply default palette” to opt into that template’s colors.</p>{REPORT_TEMPLATES.map((t:any)=><article key={t.name} className="rsv2-template-row"><div><b>{t.name}</b><span>{t.description}</span></div><div className="form-actions"><button type="button" className="button" onClick={()=>onApply(buildSystemTemplate(t),`system:${t.name}`)}>Apply layout</button><button type="button" className="button button-secondary" onClick={()=>onApplyDefaultPalette(buildSystemTemplateWithPalette(t),`system:${t.name}`)}>Apply default palette</button></div></article>)}</section>}
-    {tab==='saved'&&<section><h3>Saved Templates</h3>{saved.length?saved.map((t:any)=><article key={t.id} className={t.is_default || t.id===defaultTemplateId ? 'rsv2-template-row is-default' : 'rsv2-template-row'}><div><b>{t.name}</b>{(t.is_default || t.id===defaultTemplateId)&&<span className="status-pill">Default</span>}<span>{t.description??'Custom saved template'}</span></div><div className="form-actions"><button type="button" className="button" onClick={()=>onApply(t,t.id)}>Apply</button><form action={setDefaultReportTemplate.bind(null,t.id)}><button type="submit" className="button button-secondary">Set as default</button></form></div></article>):<p>No saved custom templates yet. Save the current draft as a template to add one here.</p>}</section>}</>}
-    {drawerMode==='palettes'&&<section><h3>Palettes</h3><p className="muted">Palette apply changes draft color tokens immediately without changing the selected template layout.</p><div className="palette-grid">{BRAND_PALETTES.map((p:any)=><button type="button" className="palette-card" key={p.name} onClick={()=>onApplyPalette(p.name,p.colors)}><strong>{p.name}</strong><span>{p.description}</span><span className="swatches">{Object.keys(COLOR_LABELS).map(k=><i key={k} style={{background:p.colors[k]}} />)}</span></button>)}</div></section>}
-  </aside></div>
+  const [tab, setTab] = useState<TemplateTab>("system");
+  const saved = (templates ?? []).filter((template:any) => template.name !== INTERNAL_EXPORT_TEMPLATE);
+  const title = drawerMode === "palettes" ? "Color Palettes" : "Templates";
+  return <div className="rsv2-drawer-backdrop"><aside className="rsv2-drawer" data-scrollable="ipad-safari">
+    <div className="rsv2-drawer-head"><div><p className="eyebrow">Design library</p><h2>{title}</h2></div><button type="button" className="button button-secondary" onClick={onClose}>Close</button></div>
+    {drawerMode === "templates" && <>
+      <div className="rsv2-drawer-tabs" role="tablist" aria-label="Template drawer sections"><button type="button" role="tab" aria-selected={tab === "system"} onClick={() => setTab("system")}>Built-in Templates</button><button type="button" role="tab" aria-selected={tab === "saved"} onClick={() => setTab("saved")}>Saved Templates</button></div>
+      {tab === "system" && <section><h3>Built-in Templates</h3><p className="muted">Choose a complete presentation in one click. Your company identity and current colors are preserved; customize any setting after applying it.</p>{BUILT_IN_REPORT_PRESETS.map((preset) => { const template = applyBuiltInReportPreset(baseBrand, preset.id); return <article key={preset.id} className="rsv2-template-row"><div><b>{preset.name}</b><span>{preset.description}</span></div><button type="button" className="button" onClick={() => onApply(template, preset.id)}>Apply template</button></article>; })}</section>}
+      {tab === "saved" && <section><h3>Saved Templates</h3>{saved.length ? saved.map((t:any) => <article key={t.id} className={t.is_default || t.id === defaultTemplateId ? "rsv2-template-row is-default" : "rsv2-template-row"}><div><b>{t.name}</b>{(t.is_default || t.id === defaultTemplateId) && <span className="status-pill">Default</span>}<span>{t.description ?? "Custom saved template"}</span></div><div className="form-actions"><button type="button" className="button" onClick={() => onApply(t, t.id)}>Apply</button><form action={setDefaultReportTemplate.bind(null, t.id)}><button type="submit" className="button button-secondary">Set as default</button></form></div></article>) : <p>No saved custom templates yet. Save the current draft as a template to add one here.</p>}</section>}
+    </>}
+    {drawerMode === "palettes" && <section><h3>Palettes</h3><p className="muted">Palette changes affect colors only and keep the current report layout.</p><div className="palette-grid">{BRAND_PALETTES.map((p:any) => <button type="button" className="palette-card" key={p.name} onClick={() => onApplyPalette(p.name, p.colors)}><strong>{p.name}</strong><span>{p.description}</span><span className="swatches">{Object.keys(COLOR_LABELS).map((key) => <i key={key} style={{ background: p.colors[key as keyof typeof p.colors] }} />)}</span></button>)}</div></section>}
+  </aside></div>;
 }
