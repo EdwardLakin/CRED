@@ -1,13 +1,11 @@
 import PDFDocument from "pdfkit";
 
 import type { WorkspaceBrandProfile } from "@/features/branding/types";
-import type {
-  FinalReportDetail,
-  FinalReportSnapshot,
-} from "@/features/reports/final-report-snapshot";
+import type { FinalReportDetail, FinalReportSnapshot } from "@/features/reports/final-report-snapshot";
 
 export type ExecutivePdfAssets = Readonly<{
   logo?: Buffer | null;
+  signature?: Buffer | null;
   media?: Readonly<Record<string, Buffer | null | undefined>>;
 }>;
 
@@ -18,489 +16,245 @@ const CONTENT_WIDTH = PAGE_WIDTH - MARGIN_X * 2;
 const CONTENT_BOTTOM = PAGE_HEIGHT - 62;
 
 type ExecutivePdfStyle = WorkspaceBrandProfile["report_style"];
-
-function getExecutiveStyle(branding: WorkspaceBrandProfile) {
-  return branding.report_style as ExecutivePdfStyle | undefined;
-}
-
-function getWatermarkText(style: ExecutivePdfStyle | undefined) {
-  const watermark = style?.watermark;
-  if (!watermark || watermark.option === "none") return "";
-  if (watermark.draftOnly) return "";
-  if (watermark.option === "custom_text") return watermark.text.trim();
-  return watermark.option.toUpperCase();
-}
+type FontPair = Readonly<{ regular: string; bold: string }>;
+type PdfTheme = Readonly<{
+  primary: string;
+  accent: string;
+  evidenceAccent: string;
+  border: string;
+  muted: string;
+  heading: string;
+  headerBackground: string;
+  headerText: string;
+  footerBackground: string;
+  footerText: string;
+  fonts: Readonly<{
+    cover: FontPair;
+    header: FontPair;
+    section: FontPair;
+    body: FontPair;
+    evidenceTitle: FontPair;
+    evidenceNote: FontPair;
+    footer: FontPair;
+    signature: FontPair;
+  }>;
+  sectionGap: number;
+}>;
 
 function safeHex(value: string | null | undefined, fallback: string) {
-  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value)
-    ? value
-    : fallback;
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
+}
+
+function pdfFontFromStack(stack: string | null | undefined, bold = false) {
+  const value = (stack ?? "").toLowerCase();
+  if (/courier|mono|menlo|consolas/.test(value)) return bold ? "Courier-Bold" : "Courier";
+  if (/georgia|times|serif|garamond|baskerville|palatino|merriweather/.test(value)) return bold ? "Times-Bold" : "Times-Roman";
+  return bold ? "Helvetica-Bold" : "Helvetica";
+}
+
+function fontPair(stack: string | null | undefined): FontPair {
+  return { regular: pdfFontFromStack(stack), bold: pdfFontFromStack(stack, true) };
+}
+
+function buildTheme(branding: WorkspaceBrandProfile): PdfTheme {
+  const style = branding.report_style;
+  const area = (branding.typography as { areaStacks?: Record<string, string> }).areaStacks ?? {};
+  const heading = branding.typography.headingStack;
+  const body = branding.typography.bodyStack;
+  return {
+    primary: safeHex(branding.colors.primary, "#2457C5"),
+    accent: safeHex(branding.colors.accent, "#172033"),
+    evidenceAccent: safeHex(branding.colors.evidenceAccent, safeHex(branding.colors.primary, "#2457C5")),
+    border: safeHex(branding.colors.border, "#D9E0EA"),
+    muted: safeHex(branding.colors.mutedBackground, "#F4F6F9"),
+    heading: safeHex(branding.colors.sectionHeading, "#172033"),
+    headerBackground: safeHex(branding.colors.headerBackground, "#FFFFFF"),
+    headerText: safeHex(branding.colors.headerText, "#172033"),
+    footerBackground: safeHex(branding.colors.footerBackground, "#FFFFFF"),
+    footerText: safeHex(branding.colors.footerText, "#667085"),
+    fonts: {
+      cover: fontPair(area.cover_page ?? heading),
+      header: fontPair(area.header ?? heading),
+      section: fontPair(area.section_headings ?? heading),
+      body: fontPair(area.body_text ?? body),
+      evidenceTitle: fontPair(area.evidence_titles ?? heading),
+      evidenceNote: fontPair(area.evidence_notes ?? body),
+      footer: fontPair(area.footer ?? body),
+      signature: fontPair(area.signature ?? body),
+    },
+    sectionGap: style.sectionSpacing === "compact" ? 10 : style.sectionSpacing === "spacious" ? 28 : 18,
+  };
 }
 
 function collectPdf(doc: PDFKit.PDFDocument): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    doc.on("data", (chunk: Buffer | Uint8Array) =>
-      chunks.push(Buffer.from(chunk)),
-    );
+    doc.on("data", (chunk: Buffer | Uint8Array) => chunks.push(Buffer.from(chunk)));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
   });
 }
 
 function ensureSpace(doc: PDFKit.PDFDocument, needed: number) {
-  if (doc.y + needed <= CONTENT_BOTTOM) return;
+  if (doc.y + needed <= CONTENT_BOTTOM) return false;
   doc.addPage();
+  return true;
 }
 
-function sectionHeading(
-  doc: PDFKit.PDFDocument,
-  title: string,
-  primary: string,
-) {
-  ensureSpace(doc, 52);
-  doc
-    .moveTo(MARGIN_X, doc.y)
-    .lineTo(MARGIN_X + 28, doc.y)
-    .lineWidth(3)
-    .strokeColor(primary)
-    .stroke();
-  doc.moveDown(0.65);
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(15)
-    .fillColor("#172033")
-    .text(title, MARGIN_X, doc.y, { width: CONTENT_WIDTH });
-  doc.moveDown(0.7);
+function getWatermarkText(style: ExecutivePdfStyle) {
+  const watermark = style.watermark;
+  if (!watermark || watermark.option === "none" || watermark.draftOnly) return "";
+  if (watermark.option === "custom_text") return watermark.text.trim();
+  return watermark.option.toUpperCase();
 }
 
-function drawDetailRows(
-  doc: PDFKit.PDFDocument,
-  rows: readonly FinalReportDetail[],
-  options: {
-    columns?: 1 | 2;
-    compact?: boolean;
-    muted?: string;
-    x?: number;
-    width?: number;
-  } = {},
-) {
+function organizationName(snapshot: FinalReportSnapshot, branding: WorkspaceBrandProfile) {
+  return branding.display_name?.trim() || snapshot.organizationName;
+}
+
+function drawRule(doc: PDFKit.PDFDocument, y: number, color: string, width = 0.7) {
+  doc.moveTo(MARGIN_X, y).lineTo(PAGE_WIDTH - MARGIN_X, y).lineWidth(width).strokeColor(color).stroke();
+}
+
+function sectionHeading(doc: PDFKit.PDFDocument, title: string, branding: WorkspaceBrandProfile, theme: PdfTheme, number?: number) {
+  const style = branding.report_style;
+  ensureSpace(doc, 48);
+  const y = doc.y;
+  if (style.sectionStyle === "boxed" || style.sectionStyle === "carded") {
+    doc.roundedRect(MARGIN_X, y, CONTENT_WIDTH, 30, 5).fill(theme.muted);
+  } else if (["executive", "clean_document", "ruled", "inspection"].includes(style.sectionStyle)) {
+    doc.moveTo(MARGIN_X, y + 1).lineTo(MARGIN_X + 32, y + 1).lineWidth(3).strokeColor(theme.primary).stroke();
+  }
+  const showLabel = style.showSectionLabels !== false;
+  const label = showLabel ? `${style.showSectionNumbers && number ? `${number}. ` : ""}${title}` : "";
+  if (label) {
+    const inset = style.sectionStyle === "boxed" || style.sectionStyle === "carded" ? 12 : 0;
+    doc.font(theme.fonts.section.bold).fontSize(style.sectionStyle === "minimal" ? 13 : 15).fillColor(theme.heading).text(label, MARGIN_X + inset, y + (inset ? 8 : 9), { width: CONTENT_WIDTH - inset * 2 });
+    doc.y = Math.max(doc.y + 6, y + 38);
+  } else {
+    doc.y = y + 12;
+  }
+  if (style.showSectionDividers) drawRule(doc, doc.y, theme.border, 0.6);
+  doc.y += style.sectionSpacing === "compact" ? 8 : 12;
+}
+
+function drawDetailRows(doc: PDFKit.PDFDocument, rows: readonly FinalReportDetail[], theme: PdfTheme, options: { columns?: 1 | 2; compact?: boolean; x?: number; width?: number; background?: string | null; font?: FontPair } = {}) {
   if (!rows.length) return;
   const columns = options.columns ?? 2;
   const gap = 18;
-  const baseX = options.x ?? MARGIN_X;
+  const x = options.x ?? MARGIN_X;
   const availableWidth = options.width ?? CONTENT_WIDTH;
-  const width = (availableWidth - gap * (columns - 1)) / columns;
+  const columnWidth = (availableWidth - gap * (columns - 1)) / columns;
+  const font = options.font ?? theme.fonts.body;
   for (let start = 0; start < rows.length; start += columns) {
     const group = rows.slice(start, start + columns);
-    doc.font("Helvetica-Bold").fontSize(7.5);
-    const labelHeight = Math.max(
-      ...group.map((entry) =>
-        doc.heightOfString(entry.label.toUpperCase(), {
-          width,
-          characterSpacing: 0.6,
-        }),
-      ),
-    );
-    doc.font("Helvetica").fontSize(9.5);
-    const valueHeight = Math.max(
-      ...group.map((entry) =>
-        doc.heightOfString(entry.value, { width, lineGap: 1 }),
-      ),
-    );
+    doc.font(font.bold).fontSize(7.5);
+    const labelHeight = Math.max(...group.map((entry) => doc.heightOfString(entry.label.toUpperCase(), { width: columnWidth, characterSpacing: 0.45 })));
+    doc.font(font.regular).fontSize(9.5);
+    const valueHeight = Math.max(...group.map((entry) => doc.heightOfString(entry.value, { width: columnWidth, lineGap: 1 })));
     const valueOffset = Math.max(13, labelHeight + 4);
-    const minimumContentHeight = options.compact ? 28 : 36;
-    const bottomPadding = options.compact ? 4 : 8;
-    const groupHeight =
-      Math.max(minimumContentHeight, valueOffset + valueHeight) + bottomPadding;
-
+    const groupHeight = Math.max(options.compact ? 27 : 35, valueOffset + valueHeight + 7);
     ensureSpace(doc, groupHeight);
     const y = doc.y;
+    if (options.background) doc.roundedRect(x - 8, y - 5, availableWidth + 16, groupHeight + 4, 5).fill(options.background);
     group.forEach((row, column) => {
-      const x = baseX + column * (width + gap);
-      doc
-        .font("Helvetica-Bold")
-        .fontSize(7.5)
-        .fillColor(options.muted ?? "#667085")
-        .text(row.label.toUpperCase(), x, y, {
-          width,
-          characterSpacing: 0.6,
-        });
-      doc
-        .font("Helvetica")
-        .fontSize(9.5)
-        .fillColor("#172033")
-        .text(row.value, x, y + valueOffset, { width, lineGap: 1 });
+      const rowX = x + column * (columnWidth + gap);
+      doc.font(font.bold).fontSize(7.5).fillColor("#667085").text(row.label.toUpperCase(), rowX, y, { width: columnWidth, characterSpacing: 0.45 });
+      doc.font(font.regular).fontSize(9.5).fillColor(theme.accent).text(row.value, rowX, y + valueOffset, { width: columnWidth, lineGap: 1 });
     });
     doc.y = y + groupHeight;
   }
 }
 
-function drawImage(
-  doc: PDFKit.PDFDocument,
-  asset: Buffer | null | undefined,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  border: string,
-) {
-  doc
-    .roundedRect(x, y, width, height, 7)
-    .fillAndStroke("#F5F7FA", border);
+function drawImage(doc: PDFKit.PDFDocument, asset: Buffer | null | undefined, x: number, y: number, width: number, height: number, theme: PdfTheme) {
+  doc.roundedRect(x, y, width, height, 7).fillAndStroke("#F8FAFC", theme.border);
   if (!asset) {
-    doc
-      .font("Helvetica")
-      .fontSize(8)
-      .fillColor("#7A8495")
-      .text("Preview unavailable", x + 10, y + height / 2 - 5, {
-        width: width - 20,
-        align: "center",
-      });
+    doc.font(theme.fonts.body.regular).fontSize(8).fillColor("#7A8495").text("Preview unavailable", x + 10, y + height / 2 - 5, { width: width - 20, align: "center" });
     return;
   }
   try {
-    doc.image(asset, x + 4, y + 4, {
-      fit: [width - 8, height - 8],
-      align: "center",
-      valign: "center",
-    });
+    doc.image(asset, x + 4, y + 4, { fit: [width - 8, height - 8], align: "center", valign: "center" });
   } catch {
-    doc
-      .font("Helvetica")
-      .fontSize(8)
-      .fillColor("#7A8495")
-      .text("Preview unavailable", x + 10, y + height / 2 - 5, {
-        width: width - 20,
-        align: "center",
-      });
+    doc.font(theme.fonts.body.regular).fontSize(8).fillColor("#7A8495").text("Preview unavailable", x + 10, y + height / 2 - 5, { width: width - 20, align: "center" });
   }
 }
 
-function getPrimaryMediaHeight(style: ExecutivePdfStyle | undefined) {
-  const size = style?.evidenceImageSize ?? "standard";
-  return size === "compact"
-    ? 112
-    : size === "large"
-      ? 224
-      : size === "full_width"
-        ? 270
-        : 190;
+function getPrimaryMediaHeight(style: ExecutivePdfStyle) {
+  return style.evidenceImageSize === "compact" ? 104 : style.evidenceImageSize === "large" ? 220 : style.evidenceImageSize === "full_width" ? 270 : 154;
 }
 
-function drawItemMedia(
-  doc: PDFKit.PDFDocument,
-  mediaIds: readonly string[],
-  assets: ExecutivePdfAssets,
-  border: string,
-  style: ExecutivePdfStyle | undefined,
-) {
-  if (!mediaIds.length) return;
-  const size = style?.evidenceImageSize ?? "standard";
-  const height = getPrimaryMediaHeight(style);
-  const gridStyle = [
-    "two_column_photo_grid",
-    "insurance_photo_grid",
-    "photo_grid",
-  ].includes(style?.evidenceStyle ?? "");
-  if (gridStyle) {
-    const gap = 10;
-    const width = (CONTENT_WIDTH - gap) / 2;
-    const cellHeight = Math.min(height, 180);
-    for (let index = 0; index < mediaIds.length; index += 2) {
-      ensureSpace(doc, cellHeight + gap);
-      const rowY = doc.y;
-      mediaIds.slice(index, index + 2).forEach((id, column) => {
-        drawImage(
-          doc,
-          assets.media?.[id],
-          MARGIN_X + column * (width + gap),
-          rowY,
-          width,
-          cellHeight,
-          border,
-        );
-      });
-      doc.y = rowY + cellHeight + gap;
-    }
-    doc.y += 4;
-    return;
+function drawHeader(doc: PDFKit.PDFDocument, snapshot: FinalReportSnapshot, branding: WorkspaceBrandProfile, assets: ExecutivePdfAssets, theme: PdfTheme) {
+  const layout = branding.header_layout;
+  const y = doc.y;
+  const height = layout === "compact_service" || layout === "minimal" ? 62 : 82;
+  if (theme.headerBackground !== "#FFFFFF") doc.roundedRect(MARGIN_X, y, CONTENT_WIDTH, height, 8).fill(theme.headerBackground);
+  const rail = branding.report_style.headerOptions?.gradientPreset || layout === "left_rail" || layout === "industrial_strip";
+  if (rail) doc.rect(MARGIN_X, y, 8, height).fill(theme.primary);
+  const left = MARGIN_X + (rail ? 18 : 14);
+  const right = MARGIN_X + CONTENT_WIDTH - 14;
+  const name = organizationName(snapshot, branding);
+  const centered = layout === "centered_logo" || layout === "report_cover";
+  const companyX = centered ? MARGIN_X + 110 : left;
+  const companyWidth = centered ? CONTENT_WIDTH - 220 : 220;
+  if (assets.logo) {
+    try { doc.image(assets.logo, companyX, y + 12, { fit: [110, 34] }); }
+    catch { doc.font(theme.fonts.header.bold).fontSize(11).fillColor(theme.headerText).text(name, companyX, y + 15, { width: companyWidth, align: centered ? "center" : "left" }); }
+  } else {
+    doc.font(theme.fonts.header.bold).fontSize(11).fillColor(theme.headerText).text(name, companyX, y + 15, { width: companyWidth, align: centered ? "center" : "left" });
   }
-
-  ensureSpace(doc, height + 14);
-  const primaryY = doc.y;
-  const primaryWidth = Math.min(
-    CONTENT_WIDTH,
-    mediaIds.length === 1 && size === "compact" ? 360 : CONTENT_WIDTH,
-  );
-  drawImage(
-    doc,
-    assets.media?.[mediaIds[0]],
-    MARGIN_X,
-    primaryY,
-    primaryWidth,
-    height,
-    border,
-  );
-  doc.y = primaryY + height + 10;
-
-  const remaining = mediaIds.slice(1);
-  if (remaining.length) {
-    const gap = 10;
-    const thumbWidth = (CONTENT_WIDTH - gap) / 2;
-    const thumbHeight =
-      size === "compact" ? 96 : size === "large" ? 145 : size === "full_width" ? 155 : 118;
-    for (let index = 0; index < remaining.length; index += 2) {
-      ensureSpace(doc, thumbHeight + gap);
-      const rowY = doc.y;
-      remaining.slice(index, index + 2).forEach((id, column) => {
-        drawImage(
-          doc,
-          assets.media?.[id],
-          MARGIN_X + column * (thumbWidth + gap),
-          rowY,
-          thumbWidth,
-          thumbHeight,
-          border,
-        );
-      });
-      doc.y = rowY + thumbHeight + gap;
-    }
-  }
-  doc.y += 4;
+  if (branding.tagline) doc.font(theme.fonts.header.regular).fontSize(8).fillColor(theme.headerText).text(branding.tagline, companyX, y + 44, { width: companyWidth, align: centered ? "center" : "left" });
+  const contact = [branding.address, branding.phone, branding.email].filter(Boolean).join("\n");
+  if (branding.show_contact_info !== false && contact && !centered && layout !== "minimal") doc.font(theme.fonts.header.regular).fontSize(8).fillColor(theme.headerText).text(contact, MARGIN_X + 250, y + 13, { width: 150, align: "center", lineGap: 2 });
+  if (branding.show_report_id) doc.font(theme.fonts.header.bold).fontSize(8.2).fillColor(theme.headerText).text(snapshot.reportId, right - 112, y + 15, { width: 112, align: "right" });
+  doc.y = y + height + theme.sectionGap;
 }
 
-function drawCompactOpening(
-  doc: PDFKit.PDFDocument,
-  snapshot: FinalReportSnapshot,
-  branding: WorkspaceBrandProfile,
-  assets: ExecutivePdfAssets,
-  primary: string,
-  accent: string,
-  border: string,
-  muted: string,
-) {
-  const style = getExecutiveStyle(branding);
-  if (assets.logo && style?.showCoverLogo !== false) {
-    try {
-      doc.image(assets.logo, MARGIN_X, 46, { fit: [122, 38] });
-    } catch {
-      // Text identity remains available.
-    }
-  }
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(9)
-    .fillColor(accent)
-    .text(snapshot.organizationName, MARGIN_X, 50, {
-      width: CONTENT_WIDTH,
-      align: "right",
-    });
-  doc
-    .moveTo(MARGIN_X, 98)
-    .lineTo(MARGIN_X + CONTENT_WIDTH, 98)
-    .lineWidth(1)
-    .strokeColor(border)
-    .stroke();
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(8)
-    .fillColor(primary)
-    .text(snapshot.reportType.toUpperCase(), MARGIN_X, 118, {
-      characterSpacing: 1,
-    });
-  doc
-    .font("Times-Bold")
-    .fontSize(24)
-    .fillColor("#172033")
-    .text(snapshot.reportTitle, MARGIN_X, 137, { width: CONTENT_WIDTH });
-  doc.moveDown(0.6);
-  drawDetailRows(
-    doc,
-    [
-      { label: "Report reference", value: snapshot.reportId },
-      { label: "Report date", value: snapshot.reportDate },
-      ...snapshot.identity,
-    ].slice(0, 6),
-    { columns: 2 },
-  );
-  ensureSpace(doc, 98);
-  const summaryHeight = Math.max(
-    80,
-    doc.heightOfString(snapshot.summary, {
-      width: CONTENT_WIDTH - 32,
-      lineGap: 3,
-    }) + 42,
-  );
-  doc.roundedRect(MARGIN_X, doc.y, CONTENT_WIDTH, summaryHeight, 9).fill(muted);
-  const summaryY = doc.y;
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(8)
-    .fillColor(primary)
-    .text("EXECUTIVE SUMMARY", MARGIN_X + 16, summaryY + 15, {
-      characterSpacing: 0.9,
-    });
-  doc
-    .font("Helvetica")
-    .fontSize(10)
-    .fillColor("#263044")
-    .text(snapshot.summary, MARGIN_X + 16, summaryY + 36, {
-      width: CONTENT_WIDTH - 32,
-      lineGap: 3,
-    });
-  doc.y = summaryY + summaryHeight + 24;
+function drawSummary(doc: PDFKit.PDFDocument, snapshot: FinalReportSnapshot, branding: WorkspaceBrandProfile, theme: PdfTheme) {
+  sectionHeading(doc, "Executive Summary", branding, theme);
+  const height = Math.max(82, doc.font(theme.fonts.body.regular).fontSize(10.5).heightOfString(snapshot.summary, { width: CONTENT_WIDTH - 32, lineGap: 3 }) + 30);
+  ensureSpace(doc, height + 8);
+  const y = doc.y;
+  doc.roundedRect(MARGIN_X, y, CONTENT_WIDTH, height, 8).fill(theme.muted);
+  doc.font(theme.fonts.body.regular).fontSize(10.5).fillColor("#263044").text(snapshot.summary, MARGIN_X + 16, y + 15, { width: CONTENT_WIDTH - 32, lineGap: 3 });
+  doc.y = y + height + theme.sectionGap;
 }
 
-function drawCover(
-  doc: PDFKit.PDFDocument,
-  snapshot: FinalReportSnapshot,
-  branding: WorkspaceBrandProfile,
-  assets: ExecutivePdfAssets,
-  primary: string,
-  accent: string,
-  border: string,
-  muted: string,
-) {
-  const style = getExecutiveStyle(branding);
-  const coverBackground = safeHex(style?.coverBackgroundColor, "#FFFFFF");
-  if (coverBackground !== "#FFFFFF") {
-    doc.rect(0, 0, PAGE_WIDTH, PAGE_HEIGHT).fill(coverBackground);
-  }
-  if (assets.logo && style?.showCoverLogo !== false) {
-    try {
-      doc.image(assets.logo, MARGIN_X, 45, {
-        fit: [150, 46],
-        valign: "center",
-      });
-    } catch {
-      // The organization name remains the accessible identity fallback.
-    }
-  }
-  if (style?.showCoverCompanyInfo !== false) {
-    doc
-      .font("Helvetica-Bold")
-      .fontSize(10)
-      .fillColor(accent)
-      .text(snapshot.organizationName, MARGIN_X, 50, {
-        width: CONTENT_WIDTH,
-        align: "right",
-      });
-  }
-  if (branding.tagline && style?.showCoverCompanyInfo !== false) {
-    doc
-      .font("Helvetica")
-      .fontSize(8)
-      .fillColor("#667085")
-      .text(branding.tagline, MARGIN_X, 66, {
-        width: CONTENT_WIDTH,
-        align: "right",
-      });
-  }
-  doc
-    .moveTo(MARGIN_X, 101)
-    .lineTo(PAGE_WIDTH - MARGIN_X, 101)
-    .lineWidth(1)
-    .strokeColor(border)
-    .stroke();
+function drawClientAsset(doc: PDFKit.PDFDocument, snapshot: FinalReportSnapshot, branding: WorkspaceBrandProfile, theme: PdfTheme) {
+  const visible = snapshot.identity.filter((row) => row.value?.trim()).slice(0, 8);
+  if (!visible.length) return;
+  sectionHeading(doc, "Client / Asset", branding, theme, 1);
+  drawDetailRows(doc, visible, theme, { columns: visible.length === 1 ? 1 : 2, background: ["boxed", "carded", "clean_document", "executive"].includes(branding.report_style.sectionStyle) ? theme.muted : null });
+  doc.y += theme.sectionGap;
+}
 
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(8.5)
-    .fillColor(primary)
-    .text(snapshot.reportType.toUpperCase(), MARGIN_X, 134, {
-      characterSpacing: 1.5,
-    });
-  if (style?.showCoverTitle !== false) {
-    doc
-      .font("Times-Bold")
-      .fontSize(31)
-      .fillColor("#111827")
-      .text(snapshot.reportTitle, MARGIN_X, 158, {
-        width: CONTENT_WIDTH,
-        lineGap: 2,
-        align: style?.coverTitleAlignment ?? "left",
-      });
+function drawCover(doc: PDFKit.PDFDocument, snapshot: FinalReportSnapshot, branding: WorkspaceBrandProfile, assets: ExecutivePdfAssets, theme: PdfTheme) {
+  const style = branding.report_style;
+  const background = safeHex(style.coverBackgroundColor, "#FFFFFF");
+  const textColor = style.coverTextColor === "auto" ? theme.accent : safeHex(style.coverTextColor, theme.accent);
+  if (background !== "#FFFFFF") doc.rect(0, 0, PAGE_WIDTH, PAGE_HEIGHT).fill(background);
+  if (["modern_gradient_cover", "full_color_cover", "industrial_bold_cover"].includes(style.coverPage)) doc.rect(0, 0, 18, PAGE_HEIGHT).fill(safeHex(style.coverAccentColor, theme.primary));
+  if (assets.logo && style.showCoverLogo !== false) {
+    try { const maxWidth = style.coverLogoSize === "large" ? 180 : style.coverLogoSize === "small" ? 100 : 140; doc.image(assets.logo, MARGIN_X, 54, { fit: [maxWidth, 48] }); } catch {}
   }
-  const titleBottom = doc.y;
-
-  doc.y = Math.max(titleBottom + 28, 242);
-  const coverRows = [
-    ...(style?.showCoverReportId === false
-      ? []
-      : [{ label: "Report reference", value: snapshot.reportId }]),
-    ...(style?.showCoverDate === false
-      ? []
-      : [{ label: "Report date", value: snapshot.reportDate }]),
+  if (style.showCoverCompanyInfo !== false) doc.font(theme.fonts.cover.bold).fontSize(10).fillColor(textColor).text(organizationName(snapshot, branding), MARGIN_X, 58, { width: CONTENT_WIDTH, align: "right" });
+  drawRule(doc, 118, theme.border, 0.8);
+  doc.font(theme.fonts.cover.bold).fontSize(8.5).fillColor(theme.primary).text(snapshot.reportType.toUpperCase(), MARGIN_X, 148, { characterSpacing: 1.2 });
+  if (style.showCoverTitle !== false) doc.font(theme.fonts.cover.bold).fontSize(30).fillColor(textColor).text(snapshot.reportTitle, MARGIN_X, 174, { width: CONTENT_WIDTH, align: style.coverTitleAlignment, lineGap: 3 });
+  doc.y = Math.max(doc.y + 28, 275);
+  const rows = [
+    ...(style.showCoverReportId ? [{ label: "Report reference", value: snapshot.reportId }] : []),
+    ...(style.showCoverDate ? [{ label: "Report date", value: snapshot.reportDate }] : []),
     ...snapshot.identity.filter((row) => {
-      if (/customer|client/i.test(row.label)) return style?.showCoverClient !== false;
-      if (/asset|equipment|subject/i.test(row.label)) return style?.showCoverAsset !== false;
-      if (/location|address/i.test(row.label)) return style?.showCoverLocation !== false;
+      const label = row.label.toLowerCase();
+      if (/customer|client/.test(label)) return style.showCoverClient;
+      if (/location|address/.test(label)) return style.showCoverLocation;
+      if (/asset|equipment|subject|unit|make|model|serial|vin|licen[cs]e|odometer|hours|work order|po/.test(label)) return style.showCoverAsset;
       return true;
     }),
-  ].slice(0, 8);
-  drawDetailRows(doc, coverRows, { columns: 2, muted: "#667085" });
-
-  const summaryY = Math.max(doc.y + 8, 356);
-  const summaryHeight = Math.max(
-    128,
-    doc.heightOfString(snapshot.summary, {
-      width: CONTENT_WIDTH - 36,
-      lineGap: 4,
-    }) + 58,
-  );
-  doc
-    .roundedRect(MARGIN_X, summaryY, CONTENT_WIDTH, summaryHeight, 10)
-    .fill(muted);
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(8)
-    .fillColor(primary)
-    .text("EXECUTIVE SUMMARY", MARGIN_X + 18, summaryY + 18, {
-      characterSpacing: 1,
-    });
-  doc
-    .font("Helvetica")
-    .fontSize(11)
-    .fillColor("#263044")
-    .text(snapshot.summary, MARGIN_X + 18, summaryY + 41, {
-      width: CONTENT_WIDTH - 36,
-      lineGap: 4,
-    });
-
-  const metricsY = summaryY + summaryHeight + 24;
-  const metrics = (
-    [
-      ["Documented items", snapshot.totals.items],
-      ["Supporting photos", snapshot.totals.photos],
-      ["Forms & documents", snapshot.totals.documents],
-    ] as const
-  )
-    .filter(([, value]) => value > 0)
-    .map(([label, value]) => [label, String(value)] as const);
-  if (!metrics.length) {
-    doc.y = metricsY;
-    return;
-  }
-  const metricWidth = (CONTENT_WIDTH - 9 * (metrics.length - 1)) / metrics.length;
-  metrics.forEach(([label, value], index) => {
-    const x = MARGIN_X + index * (metricWidth + 9);
-    doc.roundedRect(x, metricsY, metricWidth, 62, 8).strokeColor(border).stroke();
-    doc
-      .font("Times-Bold")
-      .fontSize(20)
-      .fillColor(accent)
-      .text(value, x + 12, metricsY + 10, { width: metricWidth - 24 });
-    doc
-      .font("Helvetica")
-      .fontSize(7.5)
-      .fillColor("#667085")
-      .text(label.toUpperCase(), x + 12, metricsY + 38, {
-        width: metricWidth - 24,
-        characterSpacing: 0.5,
-      });
-  });
-  doc.y = metricsY + 76;
+  ].slice(0, 10);
+  drawDetailRows(doc, rows, theme, { columns: 2, font: theme.fonts.cover });
+  doc.y += 18;
+  doc.font(theme.fonts.cover.regular).fontSize(10).fillColor(textColor).text(snapshot.summary, MARGIN_X, doc.y, { width: CONTENT_WIDTH, lineGap: 3 });
 }
 
 function severityColor(label: string) {
@@ -511,375 +265,222 @@ function severityColor(label: string) {
   return "#4A5568";
 }
 
-function drawItems(
-  doc: PDFKit.PDFDocument,
-  snapshot: FinalReportSnapshot,
-  assets: ExecutivePdfAssets,
-  primary: string,
-  border: string,
-  branding: WorkspaceBrandProfile,
-  startOnNewPage = true,
-) {
+function measureItemIntro(doc: PDFKit.PDFDocument, item: FinalReportSnapshot["items"][number], theme: PdfTheme, width: number) {
+  doc.font(theme.fonts.evidenceTitle.bold).fontSize(13.5);
+  const titleHeight = doc.heightOfString(item.title, { width });
+  doc.font(theme.fonts.evidenceNote.regular).fontSize(9.2);
+  const descriptionHeight = item.description ? doc.heightOfString(item.description, { width, lineGap: 2 }) + 9 : 0;
+  return 18 + titleHeight + 7 + descriptionHeight;
+}
+
+function drawItemCopy(doc: PDFKit.PDFDocument, item: FinalReportSnapshot["items"][number], index: number, branding: WorkspaceBrandProfile, theme: PdfTheme, x: number, y: number, width: number) {
+  const style = branding.report_style;
+  if (style.evidenceNumbering) doc.font(theme.fonts.evidenceTitle.bold).fontSize(7.5).fillColor(theme.evidenceAccent).text(`ITEM ${String(index + 1).padStart(2, "0")}`, x, y, { width, characterSpacing: 0.8 });
+  const meta = [item.severity ? `${item.severity} severity` : null, style.captureMetadata ? item.category : null].filter(Boolean).join(" · ");
+  if (meta) doc.font(theme.fonts.evidenceTitle.bold).fontSize(7).fillColor(item.severity ? severityColor(item.severity) : "#667085").text(meta.toUpperCase(), x, y, { width, align: "right" });
+  doc.font(theme.fonts.evidenceTitle.bold).fontSize(13.5).fillColor(theme.heading).text(item.title, x, y + 18, { width, lineGap: 1 });
+  let nextY = doc.y + 6;
+  if (item.description && style.notes !== false) {
+    doc.font(theme.fonts.evidenceNote.regular).fontSize(9.2).fillColor("#374151").text(item.description, x, nextY, { width, lineGap: 2 });
+    nextY = doc.y + 7;
+  }
+  return nextY;
+}
+
+function reserveHeadingWithFirstItem(doc: PDFKit.PDFDocument, snapshot: FinalReportSnapshot, branding: WorkspaceBrandProfile, theme: PdfTheme) {
+  const first = snapshot.items[0];
+  if (!first) return;
+  const style = branding.report_style;
+  const sideBySide = ["standard_cards", "photo_left_notes_right", "clean_evidence_list"].includes(style.evidenceStyle) && first.mediaIds.length > 0;
+  const photoWidth = style.evidenceImageSize === "large" ? 220 : 185;
+  const copyWidth = sideBySide ? CONTENT_WIDTH - photoWidth - 18 : CONTENT_WIDTH;
+  const intro = measureItemIntro(doc, first, theme, copyWidth);
+  const media = first.mediaIds.length ? getPrimaryMediaHeight(style) : 0;
+  ensureSpace(doc, Math.min(58 + Math.max(intro, sideBySide ? media : intro + media), CONTENT_BOTTOM - 56));
+}
+
+function drawItems(doc: PDFKit.PDFDocument, snapshot: FinalReportSnapshot, assets: ExecutivePdfAssets, branding: WorkspaceBrandProfile, theme: PdfTheme, startOnNewPage: boolean) {
   if (!snapshot.items.length) return;
-  const style = getExecutiveStyle(branding);
   if (startOnNewPage) doc.addPage();
-  sectionHeading(doc, "Documented Items", primary);
+  else reserveHeadingWithFirstItem(doc, snapshot, branding, theme);
+  sectionHeading(doc, "Documented Items", branding, theme, 2);
+  const style = branding.report_style;
   snapshot.items.forEach((item, index) => {
-    doc.font("Times-Bold").fontSize(17);
-    const titleHeight = doc.heightOfString(item.title, { width: CONTENT_WIDTH });
-    let descriptionHeight = 0;
-    if (item.description) {
-      doc.font("Helvetica").fontSize(10);
-      descriptionHeight =
-        doc.heightOfString(item.description, {
-          width: CONTENT_WIDTH,
-          lineGap: 3,
-        }) + 10;
+    const sideBySide = ["standard_cards", "photo_left_notes_right", "clean_evidence_list"].includes(style.evidenceStyle) && item.mediaIds.length > 0;
+    const compactList = ["compact_list", "clean_list", "numbered_appendix"].includes(style.evidenceStyle);
+    const grid = ["photo_grid", "two_column_photo_grid", "insurance_photo_grid"].includes(style.evidenceStyle);
+    const mediaHeight = getPrimaryMediaHeight(style);
+    if (sideBySide) {
+      const gap = 18;
+      const photoWidth = style.evidenceImageSize === "large" ? 220 : 185;
+      const copyWidth = CONTENT_WIDTH - photoWidth - gap;
+      const introHeight = measureItemIntro(doc, item, theme, copyWidth);
+      ensureSpace(doc, Math.min(Math.max(mediaHeight, introHeight) + 20, CONTENT_BOTTOM - 56));
+      const y = doc.y;
+      const photoLeft = style.evidenceStyle === "photo_left_notes_right";
+      const photoX = photoLeft ? MARGIN_X : MARGIN_X + copyWidth + gap;
+      const copyX = photoLeft ? MARGIN_X + photoWidth + gap : MARGIN_X;
+      drawImage(doc, assets.media?.[item.mediaIds[0]], photoX, y, photoWidth, mediaHeight, theme);
+      const copyBottom = drawItemCopy(doc, item, index, branding, theme, copyX, y, copyWidth);
+      doc.y = Math.max(y + mediaHeight, copyBottom) + 10;
+      const extras = item.mediaIds.slice(1);
+      if (extras.length) {
+        const thumbWidth = (CONTENT_WIDTH - 10) / 2;
+        for (let start = 0; start < extras.length; start += 2) {
+          ensureSpace(doc, 112);
+          const extraY = doc.y;
+          extras.slice(start, start + 2).forEach((id, column) => drawImage(doc, assets.media?.[id], MARGIN_X + column * (thumbWidth + 10), extraY, thumbWidth, 102, theme));
+          doc.y = extraY + 112;
+        }
+      }
+    } else if (grid && item.mediaIds.length) {
+      const introHeight = measureItemIntro(doc, item, theme, CONTENT_WIDTH);
+      ensureSpace(doc, Math.min(introHeight + 120, CONTENT_BOTTOM - 56));
+      const y = doc.y;
+      doc.y = drawItemCopy(doc, item, index, branding, theme, MARGIN_X, y, CONTENT_WIDTH);
+      const cellWidth = (CONTENT_WIDTH - 10) / 2;
+      const cellHeight = Math.min(mediaHeight, 165);
+      for (let start = 0; start < item.mediaIds.length; start += 2) {
+        ensureSpace(doc, cellHeight + 10);
+        const rowY = doc.y;
+        item.mediaIds.slice(start, start + 2).forEach((id, column) => drawImage(doc, assets.media?.[id], MARGIN_X + column * (cellWidth + 10), rowY, cellWidth, cellHeight, theme));
+        doc.y = rowY + cellHeight + 10;
+      }
+    } else {
+      const imageHeight = compactList ? 94 : mediaHeight;
+      const introHeight = measureItemIntro(doc, item, theme, CONTENT_WIDTH);
+      ensureSpace(doc, Math.min(item.mediaIds.length ? introHeight + imageHeight + 14 : Math.max(90, introHeight), CONTENT_BOTTOM - 56));
+      const y = doc.y;
+      doc.y = drawItemCopy(doc, item, index, branding, theme, MARGIN_X, y, CONTENT_WIDTH);
+      for (const id of item.mediaIds) {
+        ensureSpace(doc, imageHeight + 12);
+        drawImage(doc, assets.media?.[id], MARGIN_X, doc.y, compactList ? 180 : CONTENT_WIDTH, imageHeight, theme);
+        doc.y += imageHeight + 10;
+      }
     }
-    const introHeight = 18 + titleHeight + 7 + descriptionHeight;
-    const minimumTogether = item.mediaIds.length
-      ? introHeight + getPrimaryMediaHeight(style) + 14
-      : Math.max(98, introHeight);
-    ensureSpace(doc, Math.min(minimumTogether, CONTENT_BOTTOM - 56));
-    const startY = doc.y;
-    if (style?.evidenceNumbering !== false) {
-      doc
-        .font("Helvetica-Bold")
-        .fontSize(7.5)
-        .fillColor(primary)
-        .text(`ITEM ${String(index + 1).padStart(2, "0")}`, MARGIN_X, startY, {
-          characterSpacing: 1,
-        });
-    }
-    const topRight = [item.severity ? `${item.severity} severity` : null, item.category]
-      .filter(Boolean)
-      .join("  ·  ");
-    if (topRight) {
-      doc
-        .font(item.severity ? "Helvetica-Bold" : "Helvetica")
-        .fontSize(7.5)
-        .fillColor(item.severity ? severityColor(item.severity) : "#667085")
-        .text(topRight.toUpperCase(), MARGIN_X, startY, {
-          width: CONTENT_WIDTH,
-          align: "right",
-          characterSpacing: 0.5,
-        });
-    }
-    doc
-      .font("Times-Bold")
-      .fontSize(17)
-      .fillColor("#172033")
-      .text(item.title, MARGIN_X, startY + 18, { width: CONTENT_WIDTH });
-    doc.y += 7;
-    if (item.description) {
-      doc
-        .font("Helvetica")
-        .fontSize(10)
-        .fillColor("#374151")
-        .text(item.description, MARGIN_X, doc.y, {
-          width: CONTENT_WIDTH,
-          lineGap: 3,
-        });
-      doc.moveDown(0.7);
-    }
-    drawItemMedia(doc, item.mediaIds, assets, border, style);
-    drawDetailRows(
-      doc,
-      item.details.filter(
-        (detail) => style?.timestamps !== false || !/captured|date|time/i.test(detail.label),
-      ),
-      { columns: 2 },
-    );
+    const details = item.details.filter((detail) => style.timestamps || !/captured|date|time/i.test(detail.label));
+    drawDetailRows(doc, details, theme, { columns: 2, compact: true });
     if (item.recommendations.length) {
-      ensureSpace(doc, 44);
-      doc
-        .font("Helvetica-Bold")
-        .fontSize(8)
-        .fillColor("#667085")
-        .text("NEXT ACTION", MARGIN_X, doc.y, { characterSpacing: 0.8 });
-      doc.moveDown(0.35);
-      item.recommendations.forEach((recommendation) => {
-        ensureSpace(doc, 24);
-        doc
-          .font("Helvetica")
-          .fontSize(9.5)
-          .fillColor("#263044")
-          .text(`-  ${recommendation}`, MARGIN_X + 3, doc.y, {
-            width: CONTENT_WIDTH - 3,
-            lineGap: 2,
-          });
-        doc.moveDown(0.25);
-      });
+      ensureSpace(doc, 42);
+      doc.font(theme.fonts.evidenceNote.bold).fontSize(7.5).fillColor("#667085").text("NEXT ACTION", MARGIN_X, doc.y, { characterSpacing: 0.7 });
+      doc.y += 14;
+      item.recommendations.forEach((recommendation) => { doc.font(theme.fonts.evidenceNote.regular).fontSize(9).fillColor("#263044").text(`• ${recommendation}`, MARGIN_X + 2, doc.y, { width: CONTENT_WIDTH - 2, lineGap: 2 }); doc.y += 5; });
     }
-    doc.moveDown(0.8);
-    doc
-      .moveTo(MARGIN_X, doc.y)
-      .lineTo(PAGE_WIDTH - MARGIN_X, doc.y)
-      .lineWidth(0.6)
-      .strokeColor(border)
-      .stroke();
-    doc.moveDown(1.1);
+    if (style.showSectionDividers) drawRule(doc, doc.y + 4, theme.border, 0.5);
+    doc.y += theme.sectionGap + 8;
   });
 }
 
-function drawDocuments(
-  doc: PDFKit.PDFDocument,
-  snapshot: FinalReportSnapshot,
-  assets: ExecutivePdfAssets,
-  primary: string,
-  border: string,
-  branding: WorkspaceBrandProfile,
-) {
+function drawDocuments(doc: PDFKit.PDFDocument, snapshot: FinalReportSnapshot, assets: ExecutivePdfAssets, branding: WorkspaceBrandProfile, theme: PdfTheme) {
   if (!snapshot.documents.length) return;
-  const style = getExecutiveStyle(branding);
-  ensureSpace(doc, 130);
-  sectionHeading(doc, "Forms & Documents", primary);
+  sectionHeading(doc, "Forms & Documents", branding, theme, 3);
+  const style = branding.report_style;
   snapshot.documents.forEach((document, index) => {
-    ensureSpace(doc, 106);
+    ensureSpace(doc, 96);
     const y = doc.y;
-    const previewWidth = document.mediaId ? 112 : 0;
-    if (document.mediaId) {
-      drawImage(
-        doc,
-        assets.media?.[document.mediaId],
-        MARGIN_X,
-        y,
-        previewWidth,
-        82,
-        border,
-      );
-    }
+    const previewWidth = document.mediaId ? 108 : 0;
+    if (document.mediaId) drawImage(doc, assets.media?.[document.mediaId], MARGIN_X, y, previewWidth, 80, theme);
     const copyX = MARGIN_X + (previewWidth ? previewWidth + 16 : 0);
     const copyWidth = CONTENT_WIDTH - (previewWidth ? previewWidth + 16 : 0);
-    doc
-      .font("Helvetica-Bold")
-      .fontSize(7.5)
-      .fillColor(primary)
-      .text(`DOCUMENT ${String(index + 1).padStart(2, "0")}`, copyX, y, {
-        width: copyWidth,
-        characterSpacing: 0.8,
-      });
-    doc
-      .font("Times-Bold")
-      .fontSize(14)
-      .fillColor("#172033")
-      .text(document.title, copyX, y + 17, { width: copyWidth });
-    if (document.summary) {
-      doc
-        .font("Helvetica")
-        .fontSize(9)
-        .fillColor("#4B5563")
-        .text(document.summary, copyX, doc.y + 5, {
-          width: copyWidth,
-          lineGap: 2,
-        });
-    }
-    doc.y = Math.max(doc.y + 9, y + (previewWidth ? 92 : 72));
-    drawDetailRows(
-      doc,
-      document.details.filter(
-        (detail) => style?.timestamps !== false || !/captured|date|time/i.test(detail.label),
-      ),
-      { columns: 2 },
-    );
+    doc.font(theme.fonts.evidenceTitle.bold).fontSize(7).fillColor(theme.evidenceAccent).text(`DOCUMENT ${String(index + 1).padStart(2, "0")}`, copyX, y, { width: copyWidth });
+    doc.font(theme.fonts.evidenceTitle.bold).fontSize(13).fillColor(theme.heading).text(document.title, copyX, y + 16, { width: copyWidth });
+    if (document.summary) doc.font(theme.fonts.evidenceNote.regular).fontSize(9).fillColor("#4B5563").text(document.summary, copyX, doc.y + 4, { width: copyWidth, lineGap: 2 });
+    doc.y = Math.max(doc.y + 8, y + 90);
+    const details = document.details.filter((detail) => style.timestamps || !/captured|date|time/i.test(detail.label));
+    drawDetailRows(doc, details, theme, { columns: 2, compact: true });
   });
+  doc.y += theme.sectionGap;
 }
 
-function drawSections(
-  doc: PDFKit.PDFDocument,
-  snapshot: FinalReportSnapshot,
-  primary: string,
-) {
+function drawSections(doc: PDFKit.PDFDocument, snapshot: FinalReportSnapshot, branding: WorkspaceBrandProfile, theme: PdfTheme) {
+  let sectionNumber = 4;
   snapshot.sections.forEach((section) => {
-    ensureSpace(doc, 95);
-    const title = section.id === "final-notes" ? "Closing Notes" : section.title;
-    sectionHeading(doc, title, primary);
-    if (section.summary) {
-      doc
-        .font("Helvetica")
-        .fontSize(10)
-        .fillColor("#374151")
-        .text(section.summary, MARGIN_X, doc.y, {
-          width: CONTENT_WIDTH,
-          lineGap: 3,
-        });
-      doc.moveDown(0.7);
-    }
-    drawDetailRows(doc, section.rows, {
-      columns: 2,
-      compact: section.title === "Source Index",
-    });
-    doc.moveDown(0.45);
+    if (section.title === "Source Index" && !branding.report_style.evidenceAppendix) return;
+    ensureSpace(doc, 88);
+    sectionHeading(doc, section.id === "final-notes" ? "Closing Notes" : section.title, branding, theme, sectionNumber++);
+    if (section.summary) { doc.font(theme.fonts.body.regular).fontSize(9.5).fillColor("#374151").text(section.summary, MARGIN_X, doc.y, { width: CONTENT_WIDTH, lineGap: 3 }); doc.y += 10; }
+    drawDetailRows(doc, section.rows, theme, { columns: 2, compact: section.title === "Source Index" });
+    doc.y += theme.sectionGap;
   });
 }
 
-function drawCompletion(
-  doc: PDFKit.PDFDocument,
-  snapshot: FinalReportSnapshot,
-  primary: string,
-  border: string,
-) {
-  const hasCompletion = Boolean(
-    snapshot.approval.reviewedBy || snapshot.approval.approvedAt,
-  );
-  if (!hasCompletion) return;
-  ensureSpace(doc, 154);
-  sectionHeading(doc, "Report Completion", primary);
+function drawCompletion(doc: PDFKit.PDFDocument, snapshot: FinalReportSnapshot, branding: WorkspaceBrandProfile, assets: ExecutivePdfAssets, theme: PdfTheme) {
+  if (!branding.show_signature_block) return;
+  const completedBy = snapshot.approval.reviewedBy?.trim() || "";
+  const completedAt = snapshot.approval.approvedAt || "";
+  const role = completedBy && branding.prepared_by_name?.trim() === completedBy ? branding.prepared_by_title?.trim() || "" : "";
+  if (!completedBy && !completedAt) return;
+  ensureSpace(doc, 170);
+  sectionHeading(doc, "Report Completion", branding, theme);
   const y = doc.y;
-  doc.roundedRect(MARGIN_X, y, CONTENT_WIDTH, 102, 9).strokeColor(border).stroke();
-  const completionRows = [
-    snapshot.approval.reviewedBy
-      ? { label: "Completed by", value: snapshot.approval.reviewedBy }
-      : null,
-    snapshot.approval.approvedAt
-      ? { label: "Completed", value: snapshot.approval.approvedAt }
-      : null,
-  ].filter((value): value is FinalReportDetail => Boolean(value));
-  doc.y = y + 18;
-  drawDetailRows(doc, completionRows, {
-    columns: 2,
-    x: MARGIN_X + 18,
-    width: CONTENT_WIDTH - 36,
-  });
-  doc.y = Math.max(doc.y, y + 118);
+  const cardHeight = 112;
+  doc.roundedRect(MARGIN_X, y, CONTENT_WIDTH, cardHeight, 8).strokeColor(theme.border).stroke();
+  const rows: FinalReportDetail[] = [
+    ...(completedBy ? [{ label: "Completed by", value: completedBy }] : []),
+    ...(role ? [{ label: "Role / Title", value: role }] : []),
+    ...(completedAt && branding.report_style.signatureDate ? [{ label: "Completed", value: completedAt }] : []),
+  ];
+  doc.y = y + 16;
+  drawDetailRows(doc, rows, theme, { columns: rows.length > 1 ? 2 : 1, x: MARGIN_X + 16, width: CONTENT_WIDTH - 32, compact: true, font: theme.fonts.signature });
+  const signatureY = y + 63;
+  if (assets.signature) {
+    try { doc.image(assets.signature, MARGIN_X + 16, signatureY, { fit: [150, 34] }); } catch {}
+  } else if (branding.report_style.typedSignature) {
+    doc.font(theme.fonts.signature.regular).fontSize(13).fillColor(theme.accent).text(branding.report_style.typedSignature, MARGIN_X + 16, signatureY, { width: 180 });
+  }
+  doc.y = y + cardHeight + theme.sectionGap;
 }
 
-function addPageFurniture(
-  doc: PDFKit.PDFDocument,
-  snapshot: FinalReportSnapshot,
-  border: string,
-  branding: WorkspaceBrandProfile,
-) {
-  const style = getExecutiveStyle(branding);
+function addPageFurniture(doc: PDFKit.PDFDocument, snapshot: FinalReportSnapshot, branding: WorkspaceBrandProfile, theme: PdfTheme) {
+  const style = branding.report_style;
   const watermarkText = getWatermarkText(style);
-  const showPageNumber = style ? style.showPageNumber : true;
-  const footerLabel =
-    branding.footer_text?.trim() ||
-    (branding.show_confidentiality_note || style?.showConfidentialityLabel
-      ? "Confidential"
-      : "");
+  const showPageNumber = style.showPageNumber;
   const range = doc.bufferedPageRange();
+  const company = organizationName(snapshot, branding);
   for (let pageIndex = range.start; pageIndex < range.start + range.count; pageIndex += 1) {
     doc.switchToPage(pageIndex);
     const originalBottomMargin = doc.page.margins.bottom;
     doc.page.margins.bottom = 0;
     if (watermarkText) {
-      const opacity =
-        style?.watermark.opacity === "strong"
-          ? 0.15
-          : style?.watermark.opacity === "standard"
-            ? 0.1
-            : 0.065;
-      doc.save();
-      doc.opacity(opacity);
-      doc
-        .font("Helvetica-Bold")
-        .fontSize(48)
-        .fillColor("#64748B")
-        .rotate(style?.watermark.placement === "diagonal" ? -34 : 0, {
-          origin: [PAGE_WIDTH / 2, PAGE_HEIGHT / 2],
-        })
-        .text(watermarkText, 56, PAGE_HEIGHT / 2 - 24, {
-          width: PAGE_WIDTH - 112,
-          align: "center",
-        });
-      doc.restore();
+      const opacity = style.watermark.opacity === "strong" ? 0.15 : style.watermark.opacity === "standard" ? 0.1 : 0.065;
+      doc.save(); doc.opacity(opacity); doc.font(theme.fonts.section.bold).fontSize(48).fillColor("#64748B").rotate(style.watermark.placement === "diagonal" ? -34 : 0, { origin: [PAGE_WIDTH / 2, PAGE_HEIGHT / 2] }).text(watermarkText, 56, PAGE_HEIGHT / 2 - 24, { width: PAGE_WIDTH - 112, align: "center" }); doc.restore();
     }
     if (pageIndex > 0) {
-      doc
-        .font("Helvetica")
-        .fontSize(7.5)
-        .fillColor("#7A8495")
-        .text(snapshot.organizationName, MARGIN_X, 29, {
-          width: CONTENT_WIDTH / 2,
-        });
-      if (branding.show_report_id) {
-        doc.text(snapshot.reportId, MARGIN_X + CONTENT_WIDTH / 2, 29, {
-          width: CONTENT_WIDTH / 2,
-          align: "right",
-        });
-      }
-      doc
-        .moveTo(MARGIN_X, 43)
-        .lineTo(PAGE_WIDTH - MARGIN_X, 43)
-        .lineWidth(0.5)
-        .strokeColor(border)
-        .stroke();
+      doc.font(theme.fonts.header.regular).fontSize(7.5).fillColor("#7A8495").text(company, MARGIN_X, 29, { width: CONTENT_WIDTH / 2 });
+      if (branding.show_report_id) doc.text(snapshot.reportId, MARGIN_X + CONTENT_WIDTH / 2, 29, { width: CONTENT_WIDTH / 2, align: "right" });
+      drawRule(doc, 43, theme.border, 0.5);
     }
-    if (footerLabel || showPageNumber) {
-      doc
-        .moveTo(MARGIN_X, PAGE_HEIGHT - 42)
-        .lineTo(PAGE_WIDTH - MARGIN_X, PAGE_HEIGHT - 42)
-        .lineWidth(0.5)
-        .strokeColor(border)
-        .stroke();
-      doc.font("Helvetica").fontSize(7.5).fillColor("#7A8495");
-      if (footerLabel) {
-        doc.text(footerLabel, MARGIN_X, PAGE_HEIGHT - 31, {
-          width: CONTENT_WIDTH / 2,
-        });
-      }
-      if (showPageNumber) {
-        doc.text(`Page ${pageIndex + 1} of ${range.count}`, MARGIN_X, PAGE_HEIGHT - 31, {
-          width: CONTENT_WIDTH,
-          align: "right",
-          lineBreak: false,
-        });
-      }
+    const footerText = branding.footer_text?.trim() || (branding.show_confidentiality_note || style.showConfidentialityLabel ? "Confidential" : "");
+    if (footerText || showPageNumber || branding.show_page_date || branding.show_report_id) {
+      const footerY = PAGE_HEIGHT - 42;
+      if (theme.footerBackground !== "#FFFFFF") doc.rect(0, footerY - 4, PAGE_WIDTH, 46).fill(theme.footerBackground); else drawRule(doc, footerY, theme.border, 0.5);
+      doc.font(theme.fonts.footer.regular).fontSize(7.5).fillColor(theme.footerText);
+      if (footerText) doc.text(footerText, MARGIN_X, PAGE_HEIGHT - 30, { width: String(branding.footer_layout) === "minimal" ? CONTENT_WIDTH : CONTENT_WIDTH / 2, align: String(branding.footer_layout) === "contact_footer" ? "center" : "left", lineBreak: false });
+      const rightBits = [branding.show_page_date ? snapshot.reportDate : null, branding.show_report_id ? snapshot.reportId : null, showPageNumber ? `Page ${pageIndex + 1} of ${range.count}` : null].filter(Boolean).join("  ·  ");
+      if (rightBits) doc.text(rightBits, MARGIN_X, PAGE_HEIGHT - 30, { width: CONTENT_WIDTH, align: "right", lineBreak: false });
     }
     doc.page.margins.bottom = originalBottomMargin;
   }
 }
 
-export async function renderExecutiveReportPdf(params: {
-  snapshot: FinalReportSnapshot;
-  branding: WorkspaceBrandProfile;
-  assets?: ExecutivePdfAssets;
-}): Promise<Buffer> {
+export async function renderExecutiveReportPdf(params: { snapshot: FinalReportSnapshot; branding: WorkspaceBrandProfile; assets?: ExecutivePdfAssets }): Promise<Buffer> {
   const { snapshot, branding } = params;
   const assets = params.assets ?? {};
-  const primary = safeHex(branding.colors.primary, "#2457C5");
-  const accent = safeHex(branding.colors.accent, "#172033");
-  const border = safeHex(branding.colors.border, "#D9E0EA");
-  const muted = safeHex(branding.colors.mutedBackground, "#F4F6F9");
-  const stableDate = new Date(
-    snapshot.approval.approvedAt || snapshot.reportDate || "2000-01-01T00:00:00.000Z",
-  );
-  const creationDate = Number.isNaN(stableDate.getTime())
-    ? new Date("2000-01-01T00:00:00.000Z")
-    : stableDate;
-  const doc = new PDFDocument({
-    autoFirstPage: true,
-    bufferPages: true,
-    compress: true,
-    size: "LETTER",
-    margins: { top: 56, right: MARGIN_X, bottom: 66, left: MARGIN_X },
-    info: {
-      Title: snapshot.reportTitle,
-      Author: snapshot.organizationName,
-      Subject: snapshot.reportType,
-      Keywords: "executive report, documented items, supporting photos",
-      CreationDate: creationDate,
-      ModDate: creationDate,
-    },
-  });
+  const theme = buildTheme(branding);
+  const stableDate = new Date(snapshot.approval.approvedAt || snapshot.reportDate || "2000-01-01T00:00:00.000Z");
+  const creationDate = Number.isNaN(stableDate.getTime()) ? new Date("2000-01-01T00:00:00.000Z") : stableDate;
+  const doc = new PDFDocument({ autoFirstPage: true, bufferPages: true, compress: true, size: "LETTER", margins: { top: 56, right: MARGIN_X, bottom: 66, left: MARGIN_X }, info: { Title: snapshot.reportTitle, Author: organizationName(snapshot, branding), Subject: snapshot.reportType, Keywords: "professional report, documented items, supporting photos", CreationDate: creationDate, ModDate: creationDate } });
   const output = collectPdf(doc);
-
-  const style = getExecutiveStyle(branding);
-  const hasCover = !style || style.coverPage !== "none";
-  if (hasCover) {
-    drawCover(doc, snapshot, branding, assets, primary, accent, border, muted);
-  } else {
-    drawCompactOpening(doc, snapshot, branding, assets, primary, accent, border, muted);
-  }
-  drawItems(doc, snapshot, assets, primary, border, branding, hasCover);
-  drawDocuments(doc, snapshot, assets, primary, border, branding);
-  drawSections(doc, snapshot, primary);
-  if (!style || style.approvalBlock || branding.show_signature_block) {
-    drawCompletion(doc, snapshot, primary, border);
-  }
-  addPageFurniture(doc, snapshot, border, branding);
+  const hasCover = branding.report_style.coverPage !== "none";
+  if (hasCover) { drawCover(doc, snapshot, branding, assets, theme); doc.addPage(); }
+  drawHeader(doc, snapshot, branding, assets, theme);
+  drawSummary(doc, snapshot, branding, theme);
+  drawClientAsset(doc, snapshot, branding, theme);
+  drawItems(doc, snapshot, assets, branding, theme, false);
+  drawDocuments(doc, snapshot, assets, branding, theme);
+  drawSections(doc, snapshot, branding, theme);
+  if (branding.report_style.approvalBlock || branding.show_signature_block) drawCompletion(doc, snapshot, branding, assets, theme);
+  addPageFurniture(doc, snapshot, branding, theme);
   doc.end();
-
   return output;
 }
