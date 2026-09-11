@@ -20,6 +20,5 @@ export function HeaderControls({brand,patch}:any){
     <Color label="Text color" value={brand.colors.headerText} onChange={(v:string)=>p({colors:{...brand.colors,headerText:v}})}/>
     <Color label="Divider/accent color" value={brand.colors.primary} onChange={(v:string)=>p({colors:{...brand.colors,primary:v}})}/>
     <Select label="Font family" value={(brand.typography as any).areaStacks?.header??brand.typography.headingStack} onChange={(v:string)=>p({typography:{...brand.typography,areaStacks:{...(brand.typography as any).areaStacks,header:v}}})}>{SAFE_FONT_STACKS.map(f=><option key={f}>{f}</option>)}</Select>
-    <Select label="Font weight" value={brand.typography.headingWeight} onChange={(v:string)=>p({typography:{...brand.typography,headingWeight:Number(v)}})}><option>400</option><option>600</option><option>700</option><option>800</option><option>900</option></Select>
   </>;
 }
